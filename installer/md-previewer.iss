@@ -6,7 +6,7 @@
 ;   -> output: dist\MdPreviewer-Setup-<ver>.exe
 
 #define AppName        "MD Previewer"
-#define AppVersion     "1.0.0"
+#define AppVersion     "1.0.1"
 #define AppPublisher   "Yuki Wakimoto"
 #define AppExeName     "md-previewer.exe"
 #define ProgID         "MdPreviewer.md"
@@ -41,9 +41,11 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 [Files]
 Source: "..\target\release\{#AppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\assets\*"; DestDir: "{app}\assets"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\samples\*"; DestDir: "{app}\samples"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExeName}"; IconFilename: "{app}\{#AppExeName}"
+Name: "{group}\Sample Documents"; Filename: "{app}\samples"; IconFilename: "{app}\{#AppExeName}"; Comment: "機能デモ用 Markdown サンプル / Sample markdown files demonstrating features"
 Name: "{group}\Third-party Licenses"; Filename: "{app}\assets\THIRD_PARTY_LICENSES.txt"; Comment: "Open-source licenses for bundled libraries (marked / mermaid / KaTeX / highlight.js / Marp / CodeMirror, etc.)"
 Name: "{group}\Uninstall {#AppName}"; Filename: "{uninstallexe}"
 Name: "{userdesktop}\{#AppName}"; Filename: "{app}\{#AppExeName}"; IconFilename: "{app}\{#AppExeName}"; Tasks: desktopicon

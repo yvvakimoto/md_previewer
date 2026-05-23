@@ -34,6 +34,14 @@ iscc installer\md-previewer.iss
 
 Output: `dist\MdPreviewer-Setup-<version>.exe`
 
+## Samples
+
+リポジトリ直下の `samples/` は `..\samples\*` 経由で `{app}\samples`
+（= `%LOCALAPPDATA%\Programs\MdPreviewer\samples`）に展開され、スタートメニュー
+の **"Sample Documents"** ショートカットからエクスプローラで開けます。
+機能デモ用の `.md` ファイル一式で、アンインストール時に他のファイルと
+一緒に削除されます。任意なので、ユーザーが削除しても本体動作には影響しません。
+
 ## Third-party licenses
 
 `assets/THIRD_PARTY_LICENSES.txt` is included automatically through the
