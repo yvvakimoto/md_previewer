@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <title>Editor — MD Previewer</title>
+    <link rel="stylesheet" href="editor.css" />
+</head>
+<body>
+    <div id="root"></div>
+    <script src="libs/editor/editor.iife.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const root = document.getElementById('root');
+            try {
+                window.MdEditor.create(root);
+            } catch (e) {
+                root.textContent = 'Editor init failed: ' + (e && e.message || e);
+                try { fetch('/__log/editor%20init%20failed:%20' + encodeURIComponent(e && e.message || e)); } catch (_) {}
+            }
+        });
+    </script>
+</body>
+</html>

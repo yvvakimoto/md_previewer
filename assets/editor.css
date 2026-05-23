@@ -1,0 +1,208 @@
+:root {
+    --bg: #fafafa;
+    --fg: #1a1a1a;
+    --muted: #6a6a6a;
+    --border: #e0e0e0;
+    --status-bg: #f0f0f0;
+    --modal-bg: rgba(0, 0, 0, 0.4);
+    --panel-bg: #ffffff;
+}
+
+body.theme-dark {
+    --bg: #1a1a1a;
+    --fg: #e6e6e6;
+    --muted: #9a9a9a;
+    --border: #2e2e2e;
+    --status-bg: #232323;
+    --panel-bg: #2a2a2a;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: "Yu Gothic UI", "Segoe UI", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+}
+
+#root {
+    position: relative;
+    height: 100vh;
+    overflow: hidden;
+}
+
+.status-bar {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 26px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 12px;
+    background: var(--status-bg);
+    border-bottom: 1px solid var(--border);
+    font-size: 12px;
+    color: var(--muted);
+    user-select: none;
+    z-index: 50;
+    transform: translateY(-100%);
+    opacity: 0;
+    transition: transform 150ms ease, opacity 150ms ease;
+}
+.status-bar:hover,
+.status-hotzone:hover + .status-bar,
+body.status-pinned .status-bar,
+body.vim-panel-open .status-bar {
+    transform: translateY(0);
+    opacity: 1;
+}
+.status-file { font-weight: 600; color: var(--fg); }
+.status-right { display: flex; align-items: center; gap: 12px; }
+.status-info:hover { color: var(--fg); }
+.status-ctrls { display: flex; gap: 6px; }
+.status-btn {
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    color: var(--muted);
+    font: inherit;
+    padding: 0 8px;
+    height: 18px;
+    line-height: 16px;
+    cursor: pointer;
+}
+.status-btn:hover { color: var(--fg); background: var(--panel-bg); }
+.status-btn.active { color: var(--fg); border-color: var(--fg); }
+
+/* Top-edge hot zone that reveals the auto-hidden status bar on hover. */
+.status-hotzone {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 8px;
+    z-index: 49;
+}
+
+.editor-host {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+}
+.editor-host .cm-editor { height: 100%; }
+.editor-host .cm-editor.cm-focused { outline: none; }
+
+/* Vim ex-command (:) and search (/) prompt — promoted to a centered modal
+ * with a readable monospaced font. The replit/codemirror-vim plugin renders
+ * its prompt into `.cm-panels .cm-vim-panel` at the bottom of the editor;
+ * we re-position it as a floating dialog. */
+.cm-panels .cm-vim-panel,
+.cm-panels-bottom .cm-vim-panel {
+    position: fixed;
+    top: 30%;
+    left: 50%;
+    transform: translateX(-50%);
+    width: min(640px, 80vw);
+    background: var(--panel-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    box-shadow: 0 12px 48px rgba(0, 0, 0, 0.35);
+    padding: 14px 16px;
+    z-index: 200;
+    color: var(--fg);
+    font-family: Consolas, "Cascadia Code", "Source Han Code JP", "Yu Gothic UI", monospace;
+    font-size: 16px;
+    line-height: 1.4;
+}
+.cm-panels .cm-vim-panel input,
+.cm-panels-bottom .cm-vim-panel input,
+.cm-panels .cm-vim-panel-input,
+.cm-panels-bottom .cm-vim-panel-input {
+    width: 100%;
+    background: transparent;
+    border: none;
+    outline: none;
+    color: var(--fg);
+    font-family: inherit;
+    font-size: inherit;
+    line-height: inherit;
+    padding: 4px 0;
+    caret-color: var(--fg);
+}
+.cm-panels .cm-vim-panel .cm-vim-message,
+.cm-panels-bottom .cm-vim-panel .cm-vim-message {
+    color: var(--muted);
+    font-size: 13px;
+    margin-top: 6px;
+}
+
+/* Char count modal */
+.cc-modal {
+    position: fixed;
+    inset: 0;
+    background: var(--modal-bg);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+}
+.cc-panel {
+    background: var(--panel-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px 24px;
+    min-width: 380px;
+    max-width: 520px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+    position: relative;
+}
+.cc-panel h2 {
+    margin: 0 0 12px;
+    font-size: 16px;
+    font-weight: 600;
+}
+.cc-close {
+    position: absolute;
+    top: 8px;
+    right: 10px;
+    background: none;
+    border: none;
+    font-size: 22px;
+    line-height: 1;
+    cursor: pointer;
+    color: var(--muted);
+}
+.cc-close:hover { color: var(--fg); }
+.cc-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+.cc-table td {
+    padding: 6px 4px;
+    border-bottom: 1px solid var(--border);
+}
+.cc-table td.num {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+}
+.cc-hint {
+    margin-top: 10px;
+    font-size: 11px;
+    color: var(--muted);
+    text-align: right;
+}
+.cc-hint kbd {
+    background: var(--status-bg);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 1px 5px;
+    font-family: monospace;
+}

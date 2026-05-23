@@ -1,0 +1,3780 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Markdown Previewer</title>
+    <script src="libs/marked.min.js"></script>
+    <link rel="stylesheet" href="libs/katex/katex.min.css">
+    <link rel="stylesheet" href="libs/highlight.js/github.min.css">
+    <script src="libs/highlight.js/highlight.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            background: #f5f5f5;
+        }
+
+        #drop-zone {
+            display: none;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            border: 3px dashed #bdc3c7;
+            margin: 20px;
+            border-radius: 10px;
+            background: white;
+            transition: all 0.3s ease;
+        }
+
+        #splash {
+            position: fixed;
+            inset: 0;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            background: #f5f5f5;
+            z-index: 9999;
+            transition: opacity 0.2s ease;
+        }
+        #splash.hidden { opacity: 0; pointer-events: none; }
+        #splash .spinner {
+            width: 42px;
+            height: 42px;
+            border: 4px solid #e1e4e8;
+            border-top-color: #3498db;
+            border-radius: 50%;
+            animation: splash-spin 0.8s linear infinite;
+        }
+        #splash .label {
+            margin-top: 16px;
+            font-size: 13px;
+            color: #7f8c8d;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+        @keyframes splash-spin { to { transform: rotate(360deg); } }
+        body.dark-mode #splash { background: #0d1117; }
+        body.dark-mode #splash .label { color: #8b949e; }
+        body.dark-mode #splash .spinner { border-color: #30363d; border-top-color: #58a6ff; }
+
+        #drop-zone.drag-over {
+            border-color: #3498db;
+            background: #ebf5fb;
+        }
+
+        .drop-icon {
+            font-size: 64px;
+            color: #95a5a6;
+            margin-bottom: 20px;
+        }
+
+        .drop-text {
+            font-size: 18px;
+            color: #7f8c8d;
+            margin-bottom: 10px;
+        }
+
+        .drop-hint {
+            font-size: 14px;
+            color: #95a5a6;
+        }
+
+        #preview-container {
+            flex: 1;
+            overflow-y: auto;
+            background: white;
+        }
+
+        #preview {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 40px 20px;
+        }
+
+
+        /* Markdown styling */
+        #preview h1, #preview h2, #preview h3, #preview h4, #preview h5, #preview h6 {
+            margin-top: 24px;
+            margin-bottom: 16px;
+            font-weight: 600;
+            line-height: 1.25;
+        }
+
+        #preview h1 {
+            font-size: 2em;
+            border-bottom: 1px solid #eaecef;
+            padding-bottom: 0.3em;
+        }
+
+        #preview h2 {
+            font-size: 1.5em;
+            border-bottom: 1px solid #eaecef;
+            padding-bottom: 0.3em;
+        }
+
+        #preview h3 { font-size: 1.25em; }
+        #preview h4 { font-size: 1em; }
+        #preview h5 { font-size: 0.875em; }
+        #preview h6 { font-size: 0.85em; color: #6a737d; }
+
+        /* Section numbering (toggled by `N` key). Themes can override the
+           ::before content / styling for a custom presentation. */
+        body.numbered #preview { counter-reset: num-h2; }
+        body.numbered #preview h2 { counter-increment: num-h2; counter-reset: num-h3; }
+        body.numbered #preview h3 { counter-increment: num-h3; counter-reset: num-h4; }
+        body.numbered #preview h4 { counter-increment: num-h4; }
+
+        body.numbered #preview h2::before {
+            content: counter(num-h2) ".\00a0\00a0";
+            display: inline;
+            font-variant-numeric: tabular-nums;
+        }
+        body.numbered #preview h3::before {
+            content: counter(num-h2) "." counter(num-h3) "\00a0\00a0";
+            display: inline;
+            font-variant-numeric: tabular-nums;
+        }
+        body.numbered #preview h4::before {
+            content: counter(num-h2) "." counter(num-h3) "." counter(num-h4) "\00a0\00a0";
+            display: inline;
+            font-variant-numeric: tabular-nums;
+        }
+
+        /* Mirror the numbering into the TOC sidebar. Uses a separate counter
+           family so theme overrides on `#preview h2::before` etc. don't bleed
+           into the sidebar. */
+        body.numbered #toc-nav { counter-reset: num-toc-h2; }
+        body.numbered #toc-nav .toc-item[data-level="2"] {
+            counter-increment: num-toc-h2;
+            counter-reset: num-toc-h3;
+        }
+        body.numbered #toc-nav .toc-item[data-level="3"] {
+            counter-increment: num-toc-h3;
+            counter-reset: num-toc-h4;
+        }
+        body.numbered #toc-nav .toc-item[data-level="4"] {
+            counter-increment: num-toc-h4;
+        }
+        body.numbered #toc-nav .toc-item[data-level="2"]::before {
+            content: counter(num-toc-h2) ".\00a0\00a0";
+            font-variant-numeric: tabular-nums;
+        }
+        body.numbered #toc-nav .toc-item[data-level="3"]::before {
+            content: counter(num-toc-h2) "." counter(num-toc-h3) "\00a0\00a0";
+            font-variant-numeric: tabular-nums;
+        }
+        body.numbered #toc-nav .toc-item[data-level="4"]::before {
+            content: counter(num-toc-h2) "." counter(num-toc-h3) "." counter(num-toc-h4) "\00a0\00a0";
+            font-variant-numeric: tabular-nums;
+        }
+
+        #preview p {
+            margin-bottom: 16px;
+            line-height: 1.6;
+        }
+
+        #preview code {
+            background: #f6f8fa;
+            padding: 0.2em 0.4em;
+            border-radius: 3px;
+            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+            font-size: 85%;
+        }
+
+        #preview pre {
+            background: #f6f8fa;
+            padding: 16px;
+            border-radius: 6px;
+            overflow-x: auto;
+            margin-bottom: 16px;
+            position: relative;
+        }
+
+        #preview pre code {
+            background: none;
+            padding: 0;
+        }
+
+        /* Code block wrapper for copy button */
+        .code-block-wrapper {
+            position: relative;
+            margin-bottom: 16px;
+        }
+
+        .copy-button {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            padding: 6px 12px;
+            background: #ffffff;
+            border: 1px solid #d1d5da;
+            border-radius: 6px;
+            font-size: 12px;
+            cursor: pointer;
+            color: #24292e;
+            transition: all 0.2s ease;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            opacity: 0;
+        }
+
+        .code-block-wrapper:hover .copy-button {
+            opacity: 1;
+        }
+
+        .copy-button:hover {
+            background: #f3f4f6;
+            border-color: #959da5;
+        }
+
+        .copy-button:active {
+            background: #edeff2;
+        }
+
+        .copy-button.copied {
+            background: #28a745;
+            color: white;
+            border-color: #28a745;
+        }
+
+        #preview blockquote {
+            border-left: 4px solid #dfe2e5;
+            padding-left: 16px;
+            color: #6a737d;
+            margin-bottom: 16px;
+        }
+
+        #preview ul, #preview ol {
+            margin-bottom: 16px;
+            padding-left: 2em;
+        }
+
+        #preview li {
+            margin-bottom: 4px;
+        }
+
+        #preview table {
+            border-collapse: collapse;
+            width: 100%;
+            margin-bottom: 16px;
+        }
+
+        #preview th, #preview td {
+            border: 1px solid #dfe2e5;
+            padding: 6px 13px;
+        }
+
+        #preview th {
+            background: #f6f8fa;
+            font-weight: 600;
+        }
+
+        #preview img {
+            max-width: 100%;
+            height: auto;
+            display: block;
+            margin: 0 auto;
+        }
+
+        #preview a {
+            color: #0366d6;
+            text-decoration: none;
+        }
+
+        #preview a:hover {
+            text-decoration: underline;
+        }
+
+        #preview hr {
+            border: none;
+            border-top: 1px solid #dfe2e5;
+            margin: 24px 0;
+        }
+
+        /* Mermaid diagram styling */
+        .mermaid {
+            margin: 16px 0;
+            text-align: center;
+        }
+
+        /* KaTeX math styling */
+        .katex-display {
+            margin: 16px 0;
+            overflow-x: auto;
+            overflow-y: hidden;
+        }
+
+        .katex {
+            font-size: 1.1em;
+        }
+
+        /* SmartArt diagram styling */
+        .smartart {
+            margin: 16px 0;
+            text-align: center;
+        }
+
+        .smartart svg {
+            max-width: 100%;
+            height: auto;
+        }
+
+        /* App container - flex layout for sidebar + content */
+        #app-container {
+            display: none;
+            flex: 1;
+            flex-direction: row;
+            overflow: hidden;
+            height: 100vh;
+        }
+
+        /* TOC Sidebar */
+        #toc-sidebar {
+            width: 280px;
+            min-width: 280px;
+            background: #f8f9fa;
+            border-right: 1px solid #e1e4e8;
+            display: flex;
+            flex-direction: column;
+            transition: width 0.3s ease, min-width 0.3s ease;
+            position: relative;
+        }
+
+        #toc-sidebar.collapsed {
+            width: 50px;
+            min-width: 50px;
+        }
+
+        #toc-toggle {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            width: 28px;
+            height: 28px;
+            background: transparent;
+            border: none;
+            cursor: pointer;
+            padding: 4px;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 10;
+        }
+
+        #toc-toggle:hover {
+            background: #e1e4e8;
+        }
+
+        .toggle-icon {
+            display: block;
+            width: 18px;
+            height: 2px;
+            background: #586069;
+            position: relative;
+        }
+
+        .toggle-icon::before,
+        .toggle-icon::after {
+            content: '';
+            position: absolute;
+            width: 18px;
+            height: 2px;
+            background: #586069;
+            left: 0;
+        }
+
+        .toggle-icon::before {
+            top: -6px;
+        }
+
+        .toggle-icon::after {
+            top: 6px;
+        }
+
+        #toc-content {
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+            opacity: 1;
+            transition: opacity 0.2s ease;
+            overflow: hidden;
+        }
+
+        #toc-sidebar.collapsed #toc-content {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        #toc-title {
+            padding: 16px 48px 12px 16px;
+            font-size: 14px;
+            font-weight: 600;
+            color: #24292e;
+            border-bottom: 1px solid #e1e4e8;
+            flex-shrink: 0;
+        }
+
+        #toc-nav {
+            flex: 1;
+            overflow-y: auto;
+            padding: 8px 0;
+        }
+
+        .toc-item {
+            display: block;
+            padding: 6px 16px;
+            color: #586069;
+            text-decoration: none;
+            font-size: 13px;
+            line-height: 1.4;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            cursor: pointer;
+            transition: background-color 0.15s ease, color 0.15s ease;
+        }
+
+        .toc-item:hover {
+            background: #e1e4e8;
+            color: #24292e;
+        }
+
+        .toc-item.active {
+            background: #dbeafe;
+            color: #0366d6;
+            border-right: 3px solid #0366d6;
+        }
+
+        .toc-item[data-level="1"] { padding-left: 16px; font-weight: 600; }
+        .toc-item[data-level="2"] { padding-left: 28px; }
+        .toc-item[data-level="3"] { padding-left: 40px; }
+        .toc-item[data-level="4"] { padding-left: 52px; font-size: 12px; }
+        .toc-item[data-level="5"] { padding-left: 64px; font-size: 12px; }
+        .toc-item[data-level="6"] { padding-left: 76px; font-size: 12px; }
+
+        .toc-empty {
+            padding: 16px;
+            color: #6a737d;
+            font-size: 13px;
+            font-style: italic;
+        }
+
+        /* Workspace ToC (file tree with foldable per-file heading hierarchy) */
+        #file-tree {
+            flex: 1;
+            overflow-y: auto;
+            padding: 8px 0;
+        }
+        #file-tree.empty { display: none; }
+        #file-tree-title {
+            padding: 12px 48px 8px 16px;
+            font-size: 11px;
+            font-weight: 600;
+            color: #6a737d;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }
+        #file-tree ul {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+        }
+        #file-tree li { margin: 0; }
+        #file-tree .ft-item {
+            display: block;
+            padding: 4px 8px 4px 24px;
+            color: #24292e;
+            text-decoration: none;
+            font-size: 13px;
+            line-height: 1.4;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            cursor: pointer;
+            border-left: 2px solid transparent;
+        }
+        #file-tree .ft-item:hover { background: #e1e4e8; }
+        #file-tree .ft-item.active {
+            background: #dbeafe;
+            color: #0366d6;
+            border-left-color: #0366d6;
+            font-weight: 600;
+        }
+        #file-tree details { margin: 0; }
+        #file-tree details > summary {
+            list-style: none;
+            cursor: pointer;
+            font-size: 13px;
+            color: #24292e;
+            user-select: none;
+            display: flex;
+            align-items: center;
+            padding: 0;
+        }
+        #file-tree details > summary::-webkit-details-marker { display: none; }
+        #file-tree details > summary::before {
+            content: '▸';
+            display: inline-block;
+            width: 12px;
+            margin-left: 8px;
+            margin-right: 0;
+            transition: transform 0.15s ease;
+            color: #6a737d;
+            font-size: 10px;
+            flex-shrink: 0;
+        }
+        #file-tree details[open] > summary::before { transform: rotate(90deg); }
+        /* Group summary (folder) carries label inline. */
+        #file-tree details.ft-group > summary {
+            padding: 4px 8px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.02em;
+            font-size: 11px;
+            color: #6a737d;
+        }
+        #file-tree details.ft-group > summary:hover { background: #e1e4e8; }
+        /* File summary: the <a> handles the click. */
+        #file-tree details.ft-file > summary > .ft-file-title {
+            flex: 1;
+            padding-left: 4px;
+            font-weight: 600;
+        }
+        #file-tree .ft-file-title { font-weight: 600; }
+        #file-tree .ft-file-title.leaf { padding-left: 24px; }
+        #file-tree .ft-subheadings { padding-left: 0; }
+        #file-tree .ft-heading {
+            display: block;
+            color: #586069;
+            text-decoration: none;
+            font-size: 12px;
+            line-height: 1.4;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            cursor: pointer;
+            border-left: 2px solid transparent;
+            padding: 3px 8px 3px 24px;
+        }
+        #file-tree .ft-heading[data-level="2"] { padding-left: 36px; }
+        #file-tree .ft-heading[data-level="3"] { padding-left: 48px; font-size: 11.5px; }
+        #file-tree .ft-heading[data-level="4"] { padding-left: 60px; font-size: 11.5px; }
+        #file-tree .ft-heading[data-level="5"] { padding-left: 72px; font-size: 11px; }
+        #file-tree .ft-heading[data-level="6"] { padding-left: 84px; font-size: 11px; }
+        #file-tree .ft-heading:hover { background: #e1e4e8; color: #24292e; }
+        #file-tree .ft-heading.active {
+            background: #dbeafe;
+            color: #0366d6;
+            border-left-color: #0366d6;
+        }
+        #file-tree details ul { padding-left: 0; }
+        #toc-sidebar.collapsed #file-tree { display: none; }
+        /* Workspace mode: hide the legacy single-document heading ToC. */
+        body.workspace #toc-content { display: none; }
+
+        body.dark-mode #file-tree-title { color: #8b949e; }
+        body.dark-mode #file-tree .ft-item { color: #c9d1d9; }
+        body.dark-mode #file-tree .ft-item:hover { background: #21262d; }
+        body.dark-mode #file-tree .ft-item.active {
+            background: #1f2937;
+            color: #58a6ff;
+            border-left-color: #58a6ff;
+        }
+        body.dark-mode #file-tree details > summary { color: #c9d1d9; }
+        body.dark-mode #file-tree details.ft-group > summary { color: #8b949e; }
+        body.dark-mode #file-tree details.ft-group > summary:hover { background: #21262d; }
+        body.dark-mode #file-tree details > summary::before { color: #8b949e; }
+        body.dark-mode #file-tree .ft-heading { color: #8b949e; }
+        body.dark-mode #file-tree .ft-heading:hover { background: #21262d; color: #c9d1d9; }
+        body.dark-mode #file-tree .ft-heading.active {
+            background: #1f2937;
+            color: #58a6ff;
+            border-left-color: #58a6ff;
+        }
+        /* In Marp + workspace mode, hide the headings ToC but keep the file tree. */
+        body.marp.workspace #toc-content { display: none; }
+
+        /* Line number display (toggled with L key) */
+        [data-line]::before {
+            content: attr(data-line);
+            display: none;
+            color: #bbb;
+            font-size: 0.8em;
+            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+            margin-right: 8px;
+            user-select: none;
+            min-width: 3ch;
+            text-align: right;
+            font-weight: normal;
+        }
+        body.show-line-numbers #preview [data-line]::before {
+            display: inline-block;
+        }
+        body.show-line-numbers #preview li[data-line] {
+            list-style-position: inside;
+        }
+
+        /* Dark mode */
+        body.dark-mode {
+            background: #0d1117;
+            color: #c9d1d9;
+        }
+
+        body.dark-mode #preview-container {
+            background: #0d1117;
+        }
+
+        body.dark-mode #drop-zone {
+            background: #161b22;
+            border-color: #30363d;
+        }
+
+        body.dark-mode .drop-icon {
+            color: #6e7681;
+        }
+
+        body.dark-mode .drop-text {
+            color: #c9d1d9;
+        }
+
+        body.dark-mode .drop-hint {
+            color: #8b949e;
+        }
+
+        body.dark-mode #drop-zone.drag-over {
+            border-color: #58a6ff;
+            background: #0d2a4a;
+        }
+
+        body.dark-mode #preview h1,
+        body.dark-mode #preview h2 {
+            border-bottom-color: #30363d;
+        }
+
+        body.dark-mode #preview h6 {
+            color: #8b949e;
+        }
+
+        body.dark-mode #preview code {
+            background: #161b22;
+            color: #c9d1d9;
+        }
+
+        body.dark-mode #preview pre {
+            background: #161b22;
+        }
+
+        body.dark-mode #preview pre code {
+            background: none;
+        }
+
+        body.dark-mode #preview blockquote {
+            border-left-color: #30363d;
+            color: #8b949e;
+        }
+
+        body.dark-mode #preview th,
+        body.dark-mode #preview td {
+            border-color: #30363d;
+        }
+
+        body.dark-mode #preview th {
+            background: #161b22;
+        }
+
+        body.dark-mode #preview a {
+            color: #58a6ff;
+        }
+
+        body.dark-mode #preview hr {
+            border-top-color: #30363d;
+        }
+
+        body.dark-mode .copy-button {
+            background: #21262d;
+            border-color: #30363d;
+            color: #c9d1d9;
+        }
+
+        body.dark-mode .copy-button:hover {
+            background: #30363d;
+            border-color: #6e7681;
+        }
+
+        body.dark-mode .copy-button.copied {
+            background: #238636;
+            border-color: #238636;
+            color: #ffffff;
+        }
+
+        body.dark-mode #toc-sidebar {
+            background: #161b22;
+            border-right-color: #30363d;
+        }
+
+        body.dark-mode #toc-title {
+            color: #c9d1d9;
+            border-bottom-color: #30363d;
+        }
+
+        body.dark-mode #toc-toggle:hover {
+            background: #30363d;
+        }
+
+        body.dark-mode .toggle-icon,
+        body.dark-mode .toggle-icon::before,
+        body.dark-mode .toggle-icon::after {
+            background: #c9d1d9;
+        }
+
+        body.dark-mode .toc-item {
+            color: #8b949e;
+        }
+
+        body.dark-mode .toc-item:hover {
+            background: #21262d;
+            color: #c9d1d9;
+        }
+
+        body.dark-mode .toc-item.active {
+            background: #0d2a4a;
+            color: #58a6ff;
+            border-right-color: #58a6ff;
+        }
+
+        body.dark-mode .toc-empty {
+            color: #8b949e;
+        }
+
+        body.dark-mode [data-line]::before {
+            color: #484f58;
+        }
+
+        /* Highlight.js dark token overrides (GitHub Dark palette) */
+        body.dark-mode .hljs {
+            color: #c9d1d9;
+            background: transparent;
+        }
+        body.dark-mode .hljs-keyword,
+        body.dark-mode .hljs-selector-tag,
+        body.dark-mode .hljs-literal,
+        body.dark-mode .hljs-tag .hljs-name,
+        body.dark-mode .hljs-deletion {
+            color: #ff7b72;
+        }
+        body.dark-mode .hljs-string,
+        body.dark-mode .hljs-attr,
+        body.dark-mode .hljs-meta-string,
+        body.dark-mode .hljs-regexp,
+        body.dark-mode .hljs-addition {
+            color: #a5d6ff;
+        }
+        body.dark-mode .hljs-comment,
+        body.dark-mode .hljs-quote,
+        body.dark-mode .hljs-meta {
+            color: #8b949e;
+        }
+        body.dark-mode .hljs-number,
+        body.dark-mode .hljs-symbol,
+        body.dark-mode .hljs-variable,
+        body.dark-mode .hljs-template-variable,
+        body.dark-mode .hljs-attribute {
+            color: #79c0ff;
+        }
+        body.dark-mode .hljs-title,
+        body.dark-mode .hljs-section,
+        body.dark-mode .hljs-name,
+        body.dark-mode .hljs-selector-id,
+        body.dark-mode .hljs-selector-class,
+        body.dark-mode .hljs-function .hljs-title,
+        body.dark-mode .hljs-title.function_ {
+            color: #d2a8ff;
+        }
+        body.dark-mode .hljs-built_in,
+        body.dark-mode .hljs-builtin-name,
+        body.dark-mode .hljs-type,
+        body.dark-mode .hljs-class .hljs-title {
+            color: #ffa657;
+        }
+        body.dark-mode .hljs-params,
+        body.dark-mode .hljs-property {
+            color: #7ee787;
+        }
+
+        /* Footnotes */
+        #preview .footnote-ref {
+            font-size: 0.75em;
+            line-height: 1;
+            vertical-align: super;
+        }
+        #preview .footnote-ref a {
+            text-decoration: none;
+            padding: 0 1px;
+        }
+        #preview .footnote-ref a::before { content: "["; }
+        #preview .footnote-ref a::after  { content: "]"; }
+        #preview .footnotes {
+            margin-top: 2em;
+            font-size: 0.9em;
+            color: #57606a;
+        }
+        #preview .footnotes hr {
+            margin-bottom: 1em;
+        }
+        #preview .footnotes ol {
+            padding-left: 1.5em;
+        }
+        #preview .footnote-item {
+            margin-bottom: 0.4em;
+        }
+        #preview .footnote-item:target {
+            background: #fff8c5;
+            transition: background 1.2s ease;
+        }
+        #preview .footnote-content {
+            display: inline;
+        }
+        #preview .footnote-content > p:first-child {
+            display: inline;
+        }
+        #preview .footnote-content > p {
+            margin: 0.5em 0;
+        }
+        #preview .footnote-backrefs {
+            margin-left: 0.4em;
+        }
+        #preview .footnote-backref {
+            text-decoration: none;
+            color: #6a737d;
+            font-size: 0.9em;
+        }
+        #preview .footnote-backref:hover {
+            color: #0366d6;
+        }
+        body.dark-mode #preview .footnotes {
+            color: #8b949e;
+        }
+        body.dark-mode #preview .footnote-item:target {
+            background: #3b341a;
+        }
+        body.dark-mode #preview .footnote-backref {
+            color: #8b949e;
+        }
+        body.dark-mode #preview .footnote-backref:hover {
+            color: #58a6ff;
+        }
+
+        #footnote-tooltip {
+            position: fixed;
+            z-index: 10000;
+            max-width: 360px;
+            padding: 10px 12px;
+            background: #ffffff;
+            color: #24292e;
+            border: 1px solid #d0d7de;
+            border-radius: 6px;
+            box-shadow: 0 6px 24px rgba(0, 0, 0, 0.15);
+            font-size: 0.9em;
+            line-height: 1.45;
+            pointer-events: auto;
+            opacity: 0;
+            transition: opacity 0.12s ease;
+        }
+        #footnote-tooltip.visible {
+            opacity: 1;
+        }
+        #footnote-tooltip[hidden] {
+            display: none;
+        }
+        #footnote-tooltip p {
+            margin: 0.4em 0;
+        }
+        #footnote-tooltip p:first-child { margin-top: 0; }
+        #footnote-tooltip p:last-child  { margin-bottom: 0; }
+        #footnote-tooltip code {
+            background: #f6f8fa;
+            padding: 0.1em 0.3em;
+            border-radius: 3px;
+            font-size: 0.9em;
+        }
+        body.dark-mode #footnote-tooltip {
+            background: #161b22;
+            color: #c9d1d9;
+            border-color: #30363d;
+            box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
+        }
+        body.dark-mode #footnote-tooltip code {
+            background: #1f242c;
+        }
+
+        /* Print styles - ensure full document prints */
+        @media print {
+            body.show-line-numbers #preview [data-line]::before {
+                display: none;
+            }
+
+            body {
+                height: auto;
+                overflow: visible;
+            }
+
+            #preview-container {
+                display: block !important;
+                overflow: visible;
+                height: auto;
+            }
+
+            #drop-zone {
+                display: none !important;
+            }
+
+            #preview {
+                max-width: 100%;
+            }
+
+            /* Avoid page breaks inside code blocks and tables */
+            pre, table, .code-block-wrapper {
+                page-break-inside: avoid;
+            }
+
+            /* Prevent images from being cut off at page breaks */
+            #preview img {
+                display: block;
+                break-inside: avoid;
+                page-break-inside: avoid;
+                overflow: visible;
+                position: static;
+                max-width: 100%;
+            }
+
+            /* Also prevent breaks in mermaid diagrams, math expressions, and SmartArt */
+            .mermaid, .katex-display, .smartart {
+                break-inside: avoid;
+                page-break-inside: avoid;
+            }
+
+            .smartart svg {
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+            }
+
+            /* Hide copy buttons when printing */
+            .copy-button {
+                display: none !important;
+            }
+
+            /* Hide footnote hover tooltip when printing */
+            #footnote-tooltip {
+                display: none !important;
+            }
+
+            /* Hide TOC sidebar when printing */
+            #toc-sidebar {
+                display: none !important;
+            }
+
+            #app-container {
+                display: block !important;
+            }
+
+            /* Preserve code block backgrounds when printing */
+            #preview pre {
+                background: #f6f8fa !important;
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+            }
+
+            #preview code {
+                background: #f6f8fa !important;
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+            }
+
+            /* Preserve syntax highlighting colors */
+            #preview pre code {
+                background: none !important;
+            }
+
+            /* Force light backgrounds for print even when dark mode is active */
+            body.dark-mode,
+            body.dark-mode #preview-container,
+            body.dark-mode #preview {
+                background: #ffffff !important;
+                color: #24292e !important;
+            }
+            body.dark-mode #preview pre,
+            body.dark-mode #preview code,
+            body.dark-mode #preview th {
+                background: #f6f8fa !important;
+                color: #24292e !important;
+            }
+            body.dark-mode #preview a {
+                color: #0366d6 !important;
+            }
+            body.dark-mode #preview blockquote {
+                color: #6a737d !important;
+                border-left-color: #dfe2e5 !important;
+            }
+            body.dark-mode #preview h1,
+            body.dark-mode #preview h2 {
+                border-bottom-color: #eaecef !important;
+            }
+            body.dark-mode #preview th,
+            body.dark-mode #preview td {
+                border-color: #dfe2e5 !important;
+            }
+        }
+
+        #toast {
+            position: fixed;
+            bottom: 24px;
+            left: 50%;
+            transform: translateX(-50%) translateY(20px);
+            background: rgba(30, 30, 30, 0.92);
+            color: #fff;
+            padding: 8px 18px;
+            border-radius: 20px;
+            font-size: 13px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.2s ease, transform 0.2s ease;
+            z-index: 10000;
+        }
+        #toast.visible {
+            opacity: 1;
+            transform: translateX(-50%) translateY(0);
+        }
+
+        #help-modal {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.5);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 10001;
+            opacity: 0;
+            transition: opacity 0.15s ease;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+        #help-modal.visible {
+            display: flex;
+            opacity: 1;
+        }
+        #help-modal .panel {
+            background: #ffffff;
+            color: #24292e;
+            border: 1px solid #e1e4e8;
+            border-radius: 10px;
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
+            width: min(520px, calc(100vw - 40px));
+            max-height: 80vh;
+            overflow-y: auto;
+            padding: 24px 28px;
+            position: relative;
+        }
+        #help-modal h2 {
+            margin: 0 0 16px 0;
+            font-size: 18px;
+            font-weight: 600;
+            border: none;
+            padding: 0;
+        }
+        #help-modal .close {
+            position: absolute;
+            top: 10px;
+            right: 14px;
+            background: transparent;
+            border: none;
+            font-size: 22px;
+            line-height: 1;
+            cursor: pointer;
+            color: #6a737d;
+            padding: 4px 8px;
+            border-radius: 4px;
+        }
+        #help-modal .close:hover {
+            background: #f0f0f0;
+            color: #24292e;
+        }
+        #help-modal table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        #help-modal td {
+            padding: 6px 4px;
+            font-size: 13px;
+            vertical-align: middle;
+            border: none;
+        }
+        #help-modal td.keys {
+            white-space: nowrap;
+            width: 1%;
+            padding-right: 14px;
+        }
+        #help-modal kbd {
+            display: inline-block;
+            padding: 2px 7px;
+            font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+            font-size: 12px;
+            line-height: 1.4;
+            color: #24292e;
+            background: #f6f8fa;
+            border: 1px solid #d1d5da;
+            border-bottom-width: 2px;
+            border-radius: 4px;
+            margin: 0 1px;
+        }
+        body.dark-mode #help-modal .panel {
+            background: #161b22;
+            color: #c9d1d9;
+            border-color: #30363d;
+        }
+        body.dark-mode #help-modal .close {
+            color: #8b949e;
+        }
+        body.dark-mode #help-modal .close:hover {
+            background: #21262d;
+            color: #c9d1d9;
+        }
+        body.dark-mode #help-modal kbd {
+            color: #c9d1d9;
+            background: #21262d;
+            border-color: #30363d;
+        }
+        #help-modal .help-footer {
+            margin-top: 14px;
+            padding-top: 10px;
+            border-top: 1px solid #e1e4e8;
+            font-size: 12px;
+            text-align: right;
+        }
+        #help-modal .help-footer a {
+            color: #586069;
+            text-decoration: none;
+        }
+        #help-modal .help-footer a:hover { text-decoration: underline; }
+        body.dark-mode #help-modal .help-footer { border-top-color: #30363d; }
+        body.dark-mode #help-modal .help-footer a { color: #8b949e; }
+        #licenses-pane {
+            margin-top: 12px;
+            padding: 12px;
+            background: #f6f8fa;
+            border: 1px solid #e1e4e8;
+            border-radius: 6px;
+            font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+            font-size: 11px;
+            line-height: 1.45;
+            max-height: 50vh;
+            overflow: auto;
+            white-space: pre-wrap;
+            word-break: break-word;
+            color: #24292e;
+        }
+        body.dark-mode #licenses-pane {
+            background: #0d1117;
+            border-color: #30363d;
+            color: #c9d1d9;
+        }
+
+        /* ---- Marp slide mode ---- */
+        body.marp #toc-sidebar { display: flex; }
+        body.marp:not(.workspace) #toc-sidebar { display: none; }
+        body.marp #preview { max-width: none; padding: 0; background: #2a2a2a; }
+        body.marp #preview > div.marpit > svg[data-marpit-svg],
+        body.marp #preview > section.footnotes-slide {
+            display: block;
+            margin: 24px auto;
+            background: white;
+            box-shadow: 0 2px 18px rgba(0,0,0,0.35);
+        }
+        body.marp #preview > div.marpit > svg[data-marpit-svg] {
+            width: min(1100px, calc(100% - 48px));
+            height: auto;
+            aspect-ratio: 16 / 9;
+        }
+        body.marp #preview > section.footnotes-slide {
+            width: min(1100px, calc(100% - 48px));
+            padding: 32px 56px;
+            color: #24292e;
+            font-size: 15px;
+            line-height: 1.6;
+            box-sizing: border-box;
+        }
+        body.marp #preview > section.footnotes-slide ol { padding-left: 1.6em; }
+        body.marp #preview > section.footnotes-slide .footnote-item { margin-bottom: 8px; }
+        body.marp.numbered #preview h2::before,
+        body.marp.numbered #preview h3::before,
+        body.marp.numbered #preview h4::before { content: none; }
+
+        /* Deck (single-slide presentation) mode */
+        body.marp.deck-mode #preview-container { background: #000; }
+        body.marp.deck-mode #preview {
+            background: #000;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0;
+        }
+        body.marp.deck-mode #preview > div.marpit { display: contents; }
+        body.marp.deck-mode #preview > div.marpit > svg[data-marpit-svg],
+        body.marp.deck-mode #preview > section.footnotes-slide {
+            display: none;
+            margin: 0;
+        }
+        body.marp.deck-mode #preview > div.marpit > svg[data-marpit-svg].active {
+            display: block;
+            width: min(98vw, calc(98vh * 16 / 9));
+            height: min(98vh, calc(98vw * 9 / 16));
+            max-width: none;
+        }
+        body.marp.deck-mode #preview > section.footnotes-slide.active {
+            display: block;
+            width: min(98vw, calc(98vh * 16 / 9));
+            height: min(98vh, calc(98vw * 9 / 16));
+            max-width: none;
+            overflow: auto;
+        }
+        body.marp.deck-mode #slide-counter { display: block; }
+
+        /* List (grid overview) mode — every slide as a clickable 16:9 thumbnail. */
+        body.marp.list-mode #preview {
+            padding: 24px;
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 20px;
+            align-content: start;
+        }
+        body.marp.list-mode #preview > div.marpit { display: contents; }
+        body.marp.list-mode #preview > div.marpit > svg[data-marpit-svg],
+        body.marp.list-mode #preview > section.footnotes-slide {
+            display: block;
+            margin: 0;
+            width: 100%;
+            height: auto;
+            aspect-ratio: 16 / 9;
+            background: white;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.45);
+            cursor: pointer;
+            transition: transform 0.12s ease, box-shadow 0.12s ease;
+            overflow: hidden;
+            box-sizing: border-box;
+        }
+        body.marp.list-mode #preview > section.footnotes-slide {
+            padding: 16px 24px;
+            font-size: 11px;
+            line-height: 1.4;
+            color: #24292e;
+        }
+        body.marp.list-mode #preview > div.marpit > svg[data-marpit-svg]:hover,
+        body.marp.list-mode #preview > section.footnotes-slide:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 22px rgba(0,0,0,0.55);
+        }
+        body.marp.list-mode #slide-counter { display: none; }
+
+        #slide-counter {
+            display: none;
+            position: fixed;
+            bottom: 14px;
+            right: 18px;
+            background: rgba(0,0,0,0.65);
+            color: #fff;
+            padding: 4px 12px;
+            border-radius: 4px;
+            font-size: 13px;
+            z-index: 9000;
+            pointer-events: none;
+            font-variant-numeric: tabular-nums;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+    </style>
+</head>
+<body>
+    <div id="splash">
+        <div class="spinner"></div>
+        <div class="label">Loading…</div>
+    </div>
+    <div id="drop-zone">
+        <div class="drop-icon">📄</div>
+        <div class="drop-text">Drop your files here</div>
+        <div class="drop-hint">Drop markdown with images together, or image files directly</div>
+    </div>
+
+    <div id="app-container">
+        <div id="toc-sidebar">
+            <button id="toc-toggle" title="Toggle Table of Contents">
+                <span class="toggle-icon"></span>
+            </button>
+            <section id="file-tree" class="empty">
+                <div id="file-tree-title">Files</div>
+                <ul id="file-tree-root"></ul>
+            </section>
+            <div id="toc-content">
+                <div id="toc-title">Contents</div>
+                <nav id="toc-nav"></nav>
+            </div>
+        </div>
+        <div id="preview-container">
+            <div id="preview"></div>
+        </div>
+    </div>
+
+
+    <script>
+        // Style cycle: 'light' (no class), 'dark' (.dark-mode), or a user css filename
+        // discovered by Rust at startup and exposed via window.__userStyles.
+        const __builtinStyles = ['light', 'dark'];
+        function __availableStyles() {
+            const user = Array.isArray(window.__userStyles) ? window.__userStyles : [];
+            return __builtinStyles.concat(user);
+        }
+        function __resolveInitialStyle() {
+            const legacy = localStorage.getItem('darkMode');
+            if (legacy !== null && localStorage.getItem('styleName') === null) {
+                localStorage.setItem('styleName', legacy === 'true' ? 'dark' : 'light');
+                localStorage.removeItem('darkMode');
+            }
+            const saved = localStorage.getItem('styleName') || 'light';
+            return __availableStyles().includes(saved) ? saved : 'light';
+        }
+        let currentStyle = __resolveInitialStyle();
+        function resetPreviewScrollToStart() {
+            previewContainer.scrollTop = 0;
+            // In `writing-mode: vertical-rl` (tategaki.css) the document's
+            // logical start sits at the visual right edge. WebView2's
+            // unnormalized scroll places `scrollLeft = 0` at the visual left
+            // (= end of content), so we jump to scrollWidth and let the
+            // browser clamp it to the max valid value.
+            const wm = (preview && getComputedStyle(preview).writingMode) || '';
+            if (wm.startsWith('vertical-rl') || wm === 'tb-rl') {
+                previewContainer.scrollLeft = previewContainer.scrollWidth;
+            } else {
+                previewContainer.scrollLeft = 0;
+            }
+        }
+
+        // Capture/restore reader's position across a style swap. The DOM is
+        // rebuilt by renderMarkdown(), so we anchor by [data-line] (source-line
+        // attribute already stamped for editor-sync). Writing mode may flip
+        // mid-cycle (e.g. light → tategaki.css), so raw scrollTop/scrollLeft
+        // values are not interchangeable; we store the anchor's viewport-edge
+        // offset in the axis matching the current writing mode and adapt at
+        // restore time.
+        function capturePreviewAnchor() {
+            const blocks = preview.querySelectorAll('[data-line]');
+            if (!blocks.length) return null;
+            const wm = getComputedStyle(preview).writingMode;
+            const vertical = wm.startsWith('vertical-');
+            const cRect = previewContainer.getBoundingClientRect();
+            for (const el of blocks) {
+                const r = el.getBoundingClientRect();
+                if (vertical) {
+                    // vertical-rl: scan from the visual right edge (= reading
+                    // start). First block whose left edge sits at or left of
+                    // the viewport's right edge is the topmost visible block.
+                    if (r.left >= cRect.right) continue;
+                    const line = parseInt(el.getAttribute('data-line'), 10);
+                    if (!Number.isFinite(line)) continue;
+                    return { line, vertical: true, edge: cRect.right - r.right };
+                } else {
+                    if (r.bottom <= cRect.top) continue;
+                    const line = parseInt(el.getAttribute('data-line'), 10);
+                    if (!Number.isFinite(line)) continue;
+                    return { line, vertical: false, edge: r.top - cRect.top };
+                }
+            }
+            return null;
+        }
+
+        function restorePreviewAnchor(anchor) {
+            if (!anchor) { resetPreviewScrollToStart(); return; }
+            const target = preview.querySelector('[data-line="' + anchor.line + '"]');
+            if (!target) { resetPreviewScrollToStart(); return; }
+            const wm = getComputedStyle(preview).writingMode;
+            const vertical = wm.startsWith('vertical-');
+            const cRect = previewContainer.getBoundingClientRect();
+            const tRect = target.getBoundingClientRect();
+            // Cross-axis swap: edge offset doesn't translate — pin to edge.
+            const edge = (anchor.vertical === vertical) ? anchor.edge : 0;
+            if (vertical) {
+                // dx s.t. tRect.right - dx = cRect.right - edge
+                previewContainer.scrollLeft += (tRect.right - cRect.right) + edge;
+            } else {
+                previewContainer.scrollTop += (tRect.top - cRect.top) - edge;
+            }
+        }
+
+        function applyStyle(name) {
+            currentStyle = name;
+            localStorage.setItem('styleName', name);
+            document.body.classList.toggle('dark-mode', name === 'dark');
+            const existing = document.getElementById('user-style');
+            if (existing) existing.remove();
+            // Resolves when the new <link> has finished loading so callers
+            // that depend on the new writing-mode/layout (e.g. anchor scroll
+            // restore on M-cycle into tategaki.css) can await it.
+            let cssReady = Promise.resolve();
+            if (name !== 'light' && name !== 'dark') {
+                const link = document.createElement('link');
+                link.id = 'user-style';
+                link.rel = 'stylesheet';
+                link.href = name;
+                cssReady = new Promise((resolve) => {
+                    link.addEventListener('load', () => resolve(), { once: true });
+                    link.addEventListener('error', () => resolve(), { once: true });
+                });
+                document.head.appendChild(link);
+            }
+            if (typeof mermaid !== 'undefined') {
+                mermaid.initialize({
+                    startOnLoad: false,
+                    theme: name === 'dark' ? 'dark' : 'default',
+                    securityLevel: 'loose'
+                });
+            }
+            return cssReady;
+        }
+        applyStyle(currentStyle);
+
+        let toastTimer = null;
+        function showToast(msg) {
+            const t = document.getElementById('toast');
+            if (!t) return;
+            t.textContent = msg;
+            t.classList.add('visible');
+            clearTimeout(toastTimer);
+            toastTimer = setTimeout(() => t.classList.remove('visible'), 1400);
+        }
+
+        // Lazy-load library helper. Returns a cached promise per URL.
+        const _libCache = {};
+        function loadLib(url) {
+            if (_libCache[url]) return _libCache[url];
+            _libCache[url] = new Promise((resolve, reject) => {
+                const s = document.createElement('script');
+                s.src = url;
+                s.onload = () => resolve();
+                s.onerror = () => reject(new Error('Failed to load ' + url));
+                document.head.appendChild(s);
+            });
+            return _libCache[url];
+        }
+        async function ensureMermaid() {
+            await loadLib('libs/mermaid.min.js');
+            mermaid.initialize({
+                startOnLoad: false,
+                theme: document.body.classList.contains('dark-mode') ? 'dark' : 'default',
+                securityLevel: 'loose'
+            });
+        }
+        function ensureKatex() { return loadLib('libs/katex/katex.min.js'); }
+        function ensureSmartArt() { return loadLib('libs/smartart.js'); }
+        function ensureMarp() { return loadLib('libs/marp/marp.iife.js'); }
+        // User-defined Marp theme CSS files discovered by the Rust host in
+        // assets/marp/*.css. Fetched once, cached, and registered with
+        // marp.themeSet.add() on each render. Themes must begin with a
+        // `/* @theme <name> */` header; selection happens via the standard
+        // `theme:` front-matter directive.
+        // Forensic log bridge — sends a message to the Rust-side debug log
+        // (md-previewer.log next to the exe). Best-effort, swallows errors.
+        function __dbgLog(msg) {
+            try { fetch('/__log/' + encodeURIComponent(String(msg))); } catch (e) {}
+        }
+
+        const __marpThemeCache = new Map();
+        // Store the in-flight promise (not a boolean) so concurrent callers all
+        // wait for the same fetch batch instead of racing past a partially-set
+        // flag.
+        let __marpThemesPromise = null;
+        function ensureMarpThemes() {
+            if (__marpThemesPromise) return __marpThemesPromise;
+            __marpThemesPromise = (async () => {
+                const names = Array.isArray(window.__marpThemes) ? window.__marpThemes : [];
+                __dbgLog('ensureMarpThemes start, names=' + JSON.stringify(names));
+                await Promise.all(names.map(async (name) => {
+                    try {
+                        const res = await fetch('marp/' + encodeURIComponent(name));
+                        if (!res.ok) throw new Error('HTTP ' + res.status);
+                        const text = await res.text();
+                        __marpThemeCache.set(name, text);
+                        __dbgLog('fetched theme ' + name + ' bytes=' + text.length);
+                    } catch (e) {
+                        console.warn('Failed to fetch Marp theme', name, e);
+                        __dbgLog('fetch FAILED theme=' + name + ' err=' + (e && e.message));
+                    }
+                }));
+                __dbgLog('ensureMarpThemes done, cache=' + JSON.stringify(Array.from(__marpThemeCache.keys())));
+            })();
+            return __marpThemesPromise;
+        }
+
+        const splash = document.getElementById('splash');
+        function hideSplash() {
+            if (!splash || splash.classList.contains('hidden')) return;
+            splash.classList.add('hidden');
+            setTimeout(() => { splash.style.display = 'none'; }, 200);
+        }
+        // Fallback: if no file is provided within a short window, reveal drop-zone.
+        // Rust's init_script will call window.__showDropZone() immediately when no file is queued.
+        window.__showDropZone = function() {
+            const dz = document.getElementById('drop-zone');
+            if (dz) dz.style.display = 'flex';
+            hideSplash();
+        };
+
+        const dropZone = document.getElementById('drop-zone');
+        const appContainer = document.getElementById('app-container');
+        const previewContainer = document.getElementById('preview-container');
+        const preview = document.getElementById('preview');
+        const tocSidebar = document.getElementById('toc-sidebar');
+        const tocNav = document.getElementById('toc-nav');
+        const tocToggle = document.getElementById('toc-toggle');
+        let mermaidCounter = 0;
+        let smartartCounter = 0;
+        let currentMarkdown = '';
+        let currentFilePath = '';
+        let suppressHistoryPush = false;
+        let tocCollapsed = localStorage.getItem('tocCollapsed') === 'true';
+        let scrollSpyObserver = null;
+
+        // Initialize TOC collapsed state from localStorage
+        if (tocCollapsed) {
+            tocSidebar.classList.add('collapsed');
+        }
+
+        // TOC toggle click handler
+        tocToggle.addEventListener('click', () => {
+            tocCollapsed = !tocCollapsed;
+            tocSidebar.classList.toggle('collapsed', tocCollapsed);
+            localStorage.setItem('tocCollapsed', tocCollapsed);
+        });
+
+        // 縦書きモード時、マウスホイールの縦方向回転を横スクロールに変換する。
+        // (vertical-rl の文書では読書方向が横軸なので、自然な読み進めを可能にする)
+        previewContainer.addEventListener('wheel', (e) => {
+            const wm = getComputedStyle(preview).writingMode;
+            if (wm !== 'vertical-rl' && wm !== 'vertical-lr') return;
+            // ユーザーが Shift キーで明示的に横スクロールしている場合は重複させない
+            if (e.shiftKey) return;
+            // 既に横方向の入力があれば (タッチパッドの横スワイプ等) そちらを優先
+            if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
+            // vertical-rl では右→左に読むので、ホイール下方向 (deltaY > 0) を
+            // scrollLeft 減方向 (左へ = 次のページへ) にマップする
+            const delta = e.deltaY;
+            const dir = wm === 'vertical-rl' ? -1 : 1;
+            previewContainer.scrollLeft += delta * dir;
+            e.preventDefault();
+        }, { passive: false });
+
+        // Line number toggle (L key)
+        if (localStorage.getItem('showLineNumbers') === 'true') {
+            document.body.classList.add('show-line-numbers');
+        }
+        document.addEventListener('keydown', (e) => {
+            if (e.ctrlKey || e.metaKey || e.altKey) return;
+            if (e.key !== 'l' && e.key !== 'L') return;
+            const t = e.target;
+            if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+            document.body.classList.toggle('show-line-numbers');
+            localStorage.setItem('showLineNumbers', document.body.classList.contains('show-line-numbers'));
+        });
+
+        // Section numbering toggle (N key). Baseline counter rules live in the inline <style>
+        // above so numbering works on every theme by default; user themes may
+        // override the ::before content/styling for their custom number presentation.
+        if (localStorage.getItem('numbered') === 'true') {
+            document.body.classList.add('numbered');
+        }
+        document.addEventListener('keydown', (e) => {
+            if (e.ctrlKey || e.metaKey || e.altKey) return;
+            if (e.key !== 'n' && e.key !== 'N') return;
+            const t = e.target;
+            if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+            const on = document.body.classList.toggle('numbered');
+            localStorage.setItem('numbered', on);
+            showToast('Numbering: ' + (on ? 'on' : 'off'));
+        });
+
+        // Style cycle (M key): light → dark → user1.css → user2.css → light
+        document.addEventListener('keydown', async (e) => {
+            if (e.ctrlKey || e.metaKey || e.altKey) return;
+            if (e.key !== 'm' && e.key !== 'M') return;
+            const t = e.target;
+            if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+            if (document.body.classList.contains('marp')) {
+                showToast('Theme is fixed by Marp directives');
+                return;
+            }
+            const cycle = __availableStyles();
+            const idx = cycle.indexOf(currentStyle);
+            const next = cycle[(idx + 1) % cycle.length];
+            // Anchor by source-line BEFORE swapping — DOM is rebuilt by
+            // renderMarkdown() so element refs would be stale.
+            const anchor = capturePreviewAnchor();
+            // applyStyle returns a Promise resolved on <link> load. Awaiting
+            // it ensures the new writing-mode (e.g. tategaki.css's vertical-rl)
+            // is active before we measure for scroll restore.
+            const cssReady = applyStyle(next);
+            showToast(next);
+            const renderDone = currentMarkdown ? renderMarkdown(currentMarkdown) : Promise.resolve();
+            await Promise.all([cssReady, renderDone]);
+            // One more frame so layout has reflowed under the new CSS.
+            requestAnimationFrame(() => restorePreviewAnchor(anchor));
+        });
+
+        // Marp deck-mode navigation (P toggle, F fullscreen, arrows/PgUp/PgDn/Home/End).
+        document.addEventListener('keydown', (e) => {
+            if (!document.body.classList.contains('marp')) return;
+            if (e.ctrlKey || e.metaKey || e.altKey) return;
+            const t = e.target;
+            if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+            if (e.key === 'p' || e.key === 'P') {
+                e.preventDefault();
+                const order = ['scroll', 'deck', 'list'];
+                const cur = document.body.classList.contains('deck-mode') ? 'deck'
+                          : document.body.classList.contains('list-mode') ? 'list'
+                          : 'scroll';
+                const next = order[(order.indexOf(cur) + 1) % order.length];
+                setMarpView(next);
+                if (next === 'deck') __marpUpdateDeck();
+                showToast('Slides: ' + next);
+                return;
+            }
+            if (e.key === 'f' || e.key === 'F') {
+                e.preventDefault();
+                window.ipc && window.ipc.postMessage('fullscreen:toggle');
+                return;
+            }
+            if (!document.body.classList.contains('deck-mode')) return;
+            if (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === ' ') {
+                e.preventDefault(); __marpDeckIndex++; __marpUpdateDeck();
+            } else if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
+                e.preventDefault(); __marpDeckIndex--; __marpUpdateDeck();
+            } else if (e.key === 'Home') {
+                e.preventDefault(); __marpDeckIndex = 0; __marpUpdateDeck();
+            } else if (e.key === 'End') {
+                e.preventDefault(); __marpDeckIndex = __marpSlides().length - 1; __marpUpdateDeck();
+            }
+        });
+
+        // Help modal toggle (H key) — lists every keyboard shortcut.
+        // The #help-modal element is at the end of <body>, parsed after this script,
+        // so resolve it lazily from the handlers.
+        function __helpModal() { return document.getElementById('help-modal'); }
+        function setHelpOpen(open) {
+            const m = __helpModal();
+            if (m) m.classList.toggle('visible', open);
+        }
+        document.addEventListener('keydown', (e) => {
+            if (e.ctrlKey || e.metaKey || e.altKey) return;
+            const t = e.target;
+            if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+            const m = __helpModal();
+            if (!m) return;
+            if (e.key === 'h' || e.key === 'H') {
+                e.preventDefault();
+                setHelpOpen(!m.classList.contains('visible'));
+            } else if (e.key === 'Escape' && m.classList.contains('visible')) {
+                e.preventDefault();
+                setHelpOpen(false);
+            }
+        });
+        document.addEventListener('click', (e) => {
+            const m = __helpModal();
+            if (!m || !m.classList.contains('visible')) return;
+            // "Third-party licenses" link: fetch the bundled TXT and reveal in a <pre>.
+            const lnk = e.target instanceof Element ? e.target.closest('#show-licenses') : null;
+            if (lnk) {
+                e.preventDefault();
+                const pane = document.getElementById('licenses-pane');
+                if (!pane) return;
+                if (!pane.hidden) { pane.hidden = true; return; }
+                pane.hidden = false;
+                if (!pane.dataset.loaded) {
+                    pane.textContent = 'Loading…';
+                    fetch('THIRD_PARTY_LICENSES.txt')
+                        .then(r => r.ok ? r.text() : Promise.reject(r.status))
+                        .then(t => { pane.textContent = t; pane.dataset.loaded = '1'; })
+                        .catch(err => { pane.textContent = 'Failed to load THIRD_PARTY_LICENSES.txt (' + err + ')'; });
+                }
+                return;
+            }
+            if (e.target === m || (e.target instanceof Element && e.target.closest('#help-modal .close'))) {
+                setHelpOpen(false);
+            }
+        });
+
+        // Export current document as a self-contained .html artifact (E key).
+        // The artifact:
+        //   - clones the live #preview DOM (mermaid/smartart/katex are already rendered to inline SVG / spans,
+        //     and images are already base64 via Rust upstream — so the file is fully standalone),
+        //   - inlines the active stylesheet so it looks identical to the preview,
+        //   - includes CDN <link>s for KaTeX / highlight.js CSS only when the document actually uses those,
+        //   - inherits the TOC sidebar and a tiny inline script for the collapse toggle.
+        const EXPORT_KATEX_CSS_CDN = 'https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css';
+        const EXPORT_HLJS_CSS_CDN = 'https://cdn.jsdelivr.net/npm/highlight.js@11.10.0/styles/github.min.css';
+
+        // Build the export artifact HTML for whatever is currently rendered in the
+        // preview DOM. If `pageRelPath` is provided (workspace export), file-tree
+        // anchors are rewritten to point to the per-page .html siblings, computed
+        // as paths relative to `pageRelPath`.
+        async function buildExportArtifact({ pageRelPath = null } = {}) {
+            // Snapshot live DOM. Cloning preserves rendered SVGs, KaTeX spans, and hljs token markup.
+            const previewClone = preview.cloneNode(true);
+            const tocClone = tocSidebar.cloneNode(true);
+
+            // Rewrite workspace-ToC anchors so they navigate the exported site.
+            if (pageRelPath) {
+                const fromParts = pageRelPath.replace(/\\/g, '/').split('/').filter(Boolean);
+                fromParts.pop(); // drop the file segment to get the directory
+                // workspace.tree gives us abs->rel for heading anchors.
+                const absToRel = {};
+                (function collect(nodes) {
+                    for (const n of nodes) {
+                        if (n.kind === 'file') absToRel[String(n.absPath).toLowerCase()] = n.relPath;
+                        if (n.children) collect(n.children);
+                    }
+                })((currentWorkspace && currentWorkspace.tree) || []);
+                function relFor(targetRel) {
+                    const toParts = targetRel.split('/').filter(Boolean);
+                    let i = 0;
+                    while (i < fromParts.length && i < toParts.length
+                            && fromParts[i].toLowerCase() === toParts[i].toLowerCase()) i++;
+                    const ups = fromParts.slice(i).map(() => '..');
+                    const tail = toParts.slice(i);
+                    let rel = ups.concat(tail).join('/') || '.';
+                    return rel.replace(/\.(md|markdown)$/i, '.html');
+                }
+                tocClone.querySelectorAll('.ft-item').forEach(a => {
+                    const target = (a.getAttribute('data-rel') || '').replace(/\\/g, '/');
+                    if (!target) return;
+                    a.setAttribute('href', relFor(target));
+                });
+                tocClone.querySelectorAll('.ft-heading').forEach(a => {
+                    const abs = String(a.getAttribute('data-abs') || '').toLowerCase();
+                    const slug = a.getAttribute('data-slug') || '';
+                    const rel = absToRel[abs];
+                    if (!rel) return;
+                    a.setAttribute('href', relFor(rel) + (slug ? '#' + slug : ''));
+                });
+            } else {
+                // Single-file export: strip file-tree section entirely if present.
+                const ft = tocClone.querySelector('#file-tree');
+                if (ft) ft.remove();
+            }
+
+            // Strip preview-only artifacts that don't belong in a static artifact.
+            previewClone.querySelectorAll('[data-line]').forEach(el => el.removeAttribute('data-line'));
+            previewClone.querySelectorAll('.copy-button').forEach(el => el.remove());
+            // Unwrap .code-block-wrapper (it only existed to host the copy button).
+            previewClone.querySelectorAll('.code-block-wrapper').forEach(wrapper => {
+                while (wrapper.firstChild) wrapper.parentNode.insertBefore(wrapper.firstChild, wrapper);
+                wrapper.remove();
+            });
+
+            // Rewrite absolute file:/// hrefs to paths relative to the source markdown's directory.
+            // Live preview converts every relative link to file:/// so the WebView2 click handler can
+            // intercept it and route .md navigation back through Rust. In a static artifact those
+            // absolute paths leak the author's local filesystem and won't work when hosted, so we
+            // re-relativize. Sibling .md / .markdown targets are remapped to .html on the assumption
+            // that the user will export the linked docs alongside this one.
+            const baseDir = currentFilePath
+                ? currentFilePath.replace(/\\/g, '/').replace(/\/[^\/]*$/, '')
+                : '';
+            if (baseDir) {
+                const fromParts = baseDir.split('/').filter(Boolean);
+                previewClone.querySelectorAll('a[href]').forEach(a => {
+                    const href = a.getAttribute('href');
+                    if (!href || !/^file:\/\/\//i.test(href)) return;
+                    let rest;
+                    try { rest = decodeURI(href.replace(/^file:\/\/\//i, '')); }
+                    catch (e) { return; }
+                    let fragment = '';
+                    const hashAt = rest.indexOf('#');
+                    if (hashAt >= 0) { fragment = rest.slice(hashAt); rest = rest.slice(0, hashAt); }
+                    const toParts = rest.replace(/\\/g, '/').split('/').filter(Boolean);
+                    let i = 0;
+                    while (i < fromParts.length && i < toParts.length
+                            && fromParts[i].toLowerCase() === toParts[i].toLowerCase()) i++;
+                    const ups = fromParts.slice(i).map(() => '..');
+                    const tail = toParts.slice(i);
+                    let rel = ups.concat(tail).join('/') || '.';
+                    rel = rel.replace(/\.(md|markdown)$/i, '.html');
+                    a.setAttribute('href', rel + fragment);
+                });
+            }
+
+            // Drop the toggle button's data we don't need; keep the structure so the inline script can rebind.
+            // (Cloning a button drops live event listeners, which is what we want.)
+
+            // Detect feature usage.
+            const needsKatex = previewClone.querySelector('.katex') !== null;
+            const needsHljs = previewClone.querySelector('pre code.hljs, code.hljs') !== null;
+
+            // Gather all base CSS from the document's first <style> block — robust to future style changes.
+            const baseStyleEl = document.querySelector('style');
+            const baseCss = baseStyleEl ? baseStyleEl.textContent : '';
+
+            // Resolve active theme into inline CSS.
+            // For 'light' and 'dark' the rules already live in baseCss; we just need the `body.dark-mode` class
+            // applied or not. For a user CSS file, fetch its text and append.
+            let userCssText = '';
+            const isUserStyle = currentStyle !== 'light' && currentStyle !== 'dark';
+            if (isUserStyle) {
+                try {
+                    const resp = await fetch(currentStyle);
+                    if (resp.ok) userCssText = await resp.text();
+                } catch (err) {
+                    console.warn('export: failed to inline user CSS', err);
+                }
+            }
+
+            // Conditional CDN links.
+            const cdnLinks = [];
+            if (needsKatex) cdnLinks.push(`<link rel="stylesheet" href="${EXPORT_KATEX_CSS_CDN}">`);
+            if (needsHljs) cdnLinks.push(`<link rel="stylesheet" href="${EXPORT_HLJS_CSS_CDN}">`);
+
+            const bodyClasses = [];
+            if (currentStyle === 'dark') bodyClasses.push('dark-mode');
+            if (document.body.classList.contains('numbered')) bodyClasses.push('numbered');
+            const bodyClass = bodyClasses.join(' ');
+            // Title: prefer the source filename basename (without .md/.markdown) so browser tabs and
+            // bookmarks identify the document. Falls back to document.title for files opened via
+            // drag-drop where we somehow don't have a path.
+            const rawTitle = (() => {
+                if (currentFilePath) {
+                    const base = currentFilePath.split(/[\\/]/).pop() || '';
+                    const stripped = base.replace(/\.(md|markdown)$/i, '');
+                    if (stripped) return stripped;
+                }
+                return document.title || 'Exported document';
+            })();
+            const titleText = rawTitle
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;');
+
+            // Inline script: TOC collapse toggle + persistence, scrollspy, footnote tooltips.
+            const tocScript = `
+(function () {
+  var sidebar = document.getElementById('toc-sidebar');
+  var toggle = document.getElementById('toc-toggle');
+  var previewContainer = document.getElementById('preview-container');
+
+  // --- TOC collapse toggle ---
+  if (sidebar && toggle) {
+    try {
+      if (localStorage.getItem('tocCollapsed') === 'true') sidebar.classList.add('collapsed');
+    } catch (e) {}
+    toggle.addEventListener('click', function () {
+      var collapsed = sidebar.classList.toggle('collapsed');
+      try { localStorage.setItem('tocCollapsed', collapsed); } catch (e) {}
+    });
+  }
+
+  // --- File-tree: highlight current page in workspace exports ---
+  var ft = document.getElementById('file-tree');
+  if (ft) {
+    var herePath = location.pathname.replace(/\\\\/g, '/').toLowerCase();
+    var hereFile = herePath.split('/').pop();
+    var bestMatch = null;
+    ft.querySelectorAll('.ft-item').forEach(function (a) {
+      var href = a.getAttribute('href') || '';
+      var hrefName = href.split('/').pop().split('?')[0].toLowerCase();
+      if (hrefName && hrefName === hereFile) bestMatch = a;
+    });
+    if (bestMatch) {
+      bestMatch.classList.add('active');
+      var parent = bestMatch.parentElement;
+      while (parent && parent !== ft) {
+        if (parent.tagName === 'DETAILS') parent.open = true;
+        parent = parent.parentElement;
+      }
+    }
+  }
+
+  // --- Scrollspy: highlight active TOC item as body scrolls ---
+  if (sidebar && previewContainer && 'IntersectionObserver' in window) {
+    var tocItems = sidebar.querySelectorAll('.toc-item[data-target]');
+    if (tocItems.length > 0) {
+      var headings = [];
+      tocItems.forEach(function (item) {
+        var id = item.getAttribute('data-target');
+        var h = id ? document.getElementById(id) : null;
+        if (h) headings.push(h);
+        item.addEventListener('click', function (e) {
+          var target = document.getElementById(item.getAttribute('data-target'));
+          if (target) {
+            e.preventDefault();
+            target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }
+        });
+      });
+      var observer = new IntersectionObserver(function (entries) {
+        entries.forEach(function (entry) {
+          if (entry.isIntersecting) {
+            var id = entry.target.id;
+            tocItems.forEach(function (item) {
+              item.classList.toggle('active', item.getAttribute('data-target') === id);
+            });
+          }
+        });
+      }, { root: previewContainer, rootMargin: '-10% 0px -80% 0px', threshold: 0 });
+      headings.forEach(function (h) { observer.observe(h); });
+    }
+  }
+
+  // --- Footnote popup tooltips ---
+  var footnoteItems = document.querySelectorAll('.footnotes .footnote-item');
+  if (footnoteItems.length > 0) {
+    function footnoteSafeId(id) {
+      return String(id).replace(/[^A-Za-z0-9_-]/g, '_');
+    }
+    var defs = {};
+    footnoteItems.forEach(function (li) {
+      var id = li.id.replace(/^fn-/, '');
+      var content = li.querySelector('.footnote-content');
+      if (id && content) defs[id] = content.innerHTML;
+    });
+
+    var styleEl = document.createElement('style');
+    styleEl.textContent = ''
+      + '.footnote-popup{position:absolute;z-index:9999;max-width:400px;padding:10px 14px;'
+      + 'background:#fff;color:#24292e;border:1px solid #d0d7de;border-radius:6px;'
+      + 'box-shadow:0 4px 16px rgba(0,0,0,0.15);font-size:0.92em;line-height:1.5;'
+      + 'display:none;pointer-events:auto;}'
+      + '.footnote-popup.visible{display:block;}'
+      + '.footnote-popup p{margin:0 0 0.5em 0;}'
+      + '.footnote-popup p:last-child{margin-bottom:0;}'
+      + 'body.dark-mode .footnote-popup{background:#161b22;color:#c9d1d9;border-color:#30363d;'
+      + 'box-shadow:0 4px 16px rgba(0,0,0,0.6);}';
+    document.head.appendChild(styleEl);
+
+    var popup = document.createElement('div');
+    popup.className = 'footnote-popup';
+    document.body.appendChild(popup);
+
+    var hideTimer = null;
+    function cancelHide() { if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; } }
+    function scheduleHide() {
+      cancelHide();
+      hideTimer = setTimeout(function () { popup.classList.remove('visible'); }, 180);
+    }
+    function showPopup(trigger, id) {
+      var html = defs[id];
+      if (!html) return;
+      cancelHide();
+      popup.innerHTML = html;
+      popup.classList.add('visible');
+      var rect = trigger.getBoundingClientRect();
+      var pw = popup.offsetWidth;
+      var ph = popup.offsetHeight;
+      var vw = window.innerWidth;
+      var vh = window.innerHeight;
+      var left = rect.left + window.scrollX;
+      var top = rect.bottom + window.scrollY + 6;
+      if (left + pw > window.scrollX + vw - 8) left = window.scrollX + vw - pw - 8;
+      if (left < window.scrollX + 8) left = window.scrollX + 8;
+      if (rect.bottom + 6 + ph > vh && rect.top - 6 - ph > 0) {
+        top = rect.top + window.scrollY - ph - 6;
+      }
+      popup.style.left = left + 'px';
+      popup.style.top = top + 'px';
+    }
+
+    popup.addEventListener('mouseenter', cancelHide);
+    popup.addEventListener('mouseleave', scheduleHide);
+
+    var activeRef = null;
+    document.querySelectorAll('.footnote-ref a[data-footnote-id]').forEach(function (a) {
+      var id = footnoteSafeId(a.getAttribute('data-footnote-id'));
+      a.addEventListener('mouseenter', function () { activeRef = a; showPopup(a, id); });
+      a.addEventListener('mouseleave', scheduleHide);
+      a.addEventListener('focus', function () { activeRef = a; showPopup(a, id); });
+      a.addEventListener('blur', scheduleHide);
+      a.addEventListener('pointerdown', function (e) {
+        if (e.pointerType === 'touch') {
+          e.preventDefault();
+          if (activeRef === a && popup.classList.contains('visible')) {
+            popup.classList.remove('visible');
+            activeRef = null;
+          } else {
+            activeRef = a;
+            showPopup(a, id);
+          }
+        }
+      });
+    });
+
+    document.addEventListener('pointerdown', function (e) {
+      if (e.pointerType !== 'touch') return;
+      if (popup.contains(e.target)) return;
+      if (e.target.closest && e.target.closest('.footnote-ref')) return;
+      popup.classList.remove('visible');
+      activeRef = null;
+    });
+  }
+})();`;
+
+            const html =
+`<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>${titleText}</title>
+${cdnLinks.join('\n')}
+<style>
+${baseCss}
+${userCssText ? '\n/* user style */\n' + userCssText : ''}
+/* export overrides: artifact is always visible (no splash / drop-zone gating) */
+#app-container { display: flex !important; }
+#splash, #drop-zone { display: none !important; }
+</style>
+</head>
+<body${bodyClass ? ` class="${bodyClass}"` : ''}>
+<div id="app-container">
+${tocClone.outerHTML}
+<div id="preview-container">
+${previewClone.outerHTML}
+</div>
+</div>
+<script>${tocScript}<\/script>
+</body>
+</html>`;
+
+            // Suggest a filename derived from the current file.
+            let suggestedName = 'untitled.html';
+            if (currentFilePath) {
+                const base = currentFilePath.split(/[\\/]/).pop() || 'untitled';
+                suggestedName = base.replace(/\.(md|markdown)$/i, '') + '.html';
+            }
+
+            return { html, suggestedName };
+        }
+
+        async function exportHtml() {
+            if (!currentMarkdown) return;
+            // Per-style export dispatch: if the active style (e.g. foo.css) has
+            // a sibling foo_export.js registered in window.__styleExporters
+            // (populated by the Rust host at startup), delegate to its
+            // exportStyle({currentMarkdown, currentFilePath, preview}). Falls
+            // through to the general export when no entry exists.
+            const exporterFile = window.__styleExporters && window.__styleExporters[currentStyle];
+            if (exporterFile) {
+                try {
+                    const mod = await import('./' + exporterFile);
+                    if (typeof mod.exportStyle === 'function') {
+                        return mod.exportStyle({ currentMarkdown, currentFilePath, preview });
+                    }
+                } catch (err) {
+                    console.warn('style exporter failed, falling back to general export:', exporterFile, err);
+                }
+            }
+            const { html, suggestedName } = await buildExportArtifact();
+            if (window.ipc && typeof window.ipc.postMessage === 'function') {
+                window.ipc.postMessage('exporthtml:' + JSON.stringify({ suggestedName, html }));
+            }
+        }
+
+        // Iterate every file in the workspace, render each, snapshot the artifact,
+        // and post a single exportdir: payload back to Rust. Restores live preview state at end.
+        async function exportWorkspace() {
+            if (!currentWorkspace) { return exportHtml(); }
+            const files = [];
+            (function walk(nodes) {
+                for (const n of nodes) {
+                    if (n.kind === 'file' && n.absPath) files.push(n);
+                    else if (n.children) walk(n.children);
+                }
+            })(currentWorkspace.tree);
+            if (files.length === 0) return;
+
+            const savedMarkdown = currentMarkdown;
+            const savedFilePath = currentFilePath;
+
+            const pages = [];
+            for (const f of files) {
+                let md;
+                try {
+                    const url = 'app://localhost/userfile/' + encodeURI(f.absPath.replace(/\\/g, '/'));
+                    const resp = await fetch(url);
+                    if (!resp.ok) continue;
+                    md = await resp.text();
+                } catch (e) { console.warn('export: fetch failed', f.absPath, e); continue; }
+
+                currentMarkdown = md;
+                currentFilePath = f.absPath;
+                await renderMarkdown(md);
+                const { html } = await buildExportArtifact({ pageRelPath: f.relPath });
+                const outRel = f.relPath.replace(/\.(md|markdown)$/i, '.html');
+                pages.push({ relPath: outRel, html });
+            }
+
+            // Restore the previously-viewed page.
+            if (savedFilePath && savedMarkdown != null) {
+                currentMarkdown = savedMarkdown;
+                currentFilePath = savedFilePath;
+                await renderMarkdown(savedMarkdown);
+            }
+
+            // index.html: redirect to the first page (keeps the artifact simple).
+            const firstHref = pages[0] ? pages[0].relPath.replace(/\\/g, '/') : '';
+            const rootSeg = (currentWorkspace.root || '').split(/[\\/]/).filter(Boolean).pop() || 'workspace';
+            const safeRootSeg = rootSeg.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            const safeFirst = firstHref.replace(/"/g, '&quot;');
+            const indexHtml = firstHref
+                ? `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${safeRootSeg}</title><meta http-equiv="refresh" content="0; url=${safeFirst}"></head><body><p>Redirecting to <a href="${safeFirst}">${safeFirst}</a>…</p></body></html>`
+                : '';
+
+            if (window.ipc && typeof window.ipc.postMessage === 'function') {
+                window.ipc.postMessage('exportdir:' + JSON.stringify({ pages, indexHtml, rootName: rootSeg }));
+            }
+        }
+
+        // Editor window (E key) — opens the dedicated editor for the current file.
+        document.addEventListener('keydown', (e) => {
+            if (e.ctrlKey || e.metaKey || e.altKey) return;
+            if (e.key !== 'e' && e.key !== 'E') return;
+            const t = e.target;
+            if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+            if (window.ipc && typeof window.ipc.postMessage === 'function') {
+                window.ipc.postMessage('openeditor:');
+            }
+        });
+
+        // Export shortcut (X key) — single-page or workspace export.
+        document.addEventListener('keydown', (e) => {
+            if (e.ctrlKey || e.metaKey || e.altKey) return;
+            if (e.key !== 'x' && e.key !== 'X') return;
+            const t = e.target;
+            if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+            if (currentWorkspace) { exportWorkspace(); } else { exportHtml(); }
+        });
+
+        // Compute starting source-line for each top-level block token
+        function computeBlockLineNumbers(markdown) {
+            let tokens;
+            try {
+                tokens = marked.lexer(markdown);
+            } catch (err) {
+                return [];
+            }
+            const blocks = [];
+            let currentLine = 1;
+            for (const token of tokens) {
+                const raw = token.raw || '';
+                const newlines = (raw.match(/\n/g) || []).length;
+                if (token.type !== 'space' && token.type !== 'def') {
+                    blocks.push({ line: currentLine, token });
+                }
+                currentLine += newlines;
+            }
+            return blocks;
+        }
+
+        // After DOM render, stamp data-line on top-level children and list items
+        function stampLineNumbers(blocks) {
+            const children = preview.children;
+            const n = Math.min(children.length, blocks.length);
+            for (let i = 0; i < n; i++) {
+                const el = children[i];
+                const { line, token } = blocks[i];
+                el.setAttribute('data-line', line);
+                if (token.type === 'list' && Array.isArray(token.items)) {
+                    const lis = el.querySelectorAll(':scope > li');
+                    let itemLine = line;
+                    token.items.forEach((item, idx) => {
+                        if (lis[idx]) lis[idx].setAttribute('data-line', itemLine);
+                        const raw = item.raw || '';
+                        itemLine += (raw.match(/\n/g) || []).length;
+                    });
+                }
+            }
+        }
+
+        // Transform image paths - local images are already embedded as base64 data URIs by Rust
+        // This function handles any remaining cases (HTTP URLs, data URIs, etc.)
+        function transformImagePath(src) {
+            // Return src as-is - Rust has already embedded local images as base64 data URIs
+            return src || '';
+        }
+
+        // Obsidian-style image sizing via the alt-text suffix:
+        //   ![alt|300](p)      width = 300px
+        //   ![alt|300x200](p)  width = 300, height = 200
+        //   ![alt|x200](p)     height-only
+        //   ![alt|@0.5](p)     scale by 0.5 of the natural size
+        // The suffix is stripped from the alt attribute after sizing is applied.
+        function applyImageSizing(root) {
+            if (!root) return;
+            const pxRe = /^(.*)\|(\d+)?(?:x(\d+))?$/;
+            const scaleRe = /^(.*)\|@(\d*\.?\d+)$/;
+            root.querySelectorAll('img').forEach(img => {
+                const alt = img.getAttribute('alt') || '';
+                let m = alt.match(scaleRe);
+                if (m) {
+                    const scale = parseFloat(m[2]);
+                    if (isFinite(scale) && scale > 0) {
+                        const apply = () => {
+                            if (img.naturalWidth) img.width = Math.round(img.naturalWidth * scale);
+                        };
+                        if (img.complete && img.naturalWidth) apply();
+                        else img.addEventListener('load', apply, { once: true });
+                        img.setAttribute('alt', m[1]);
+                    }
+                    return;
+                }
+                m = alt.match(pxRe);
+                if (m && (m[2] || m[3])) {
+                    if (m[2]) img.setAttribute('width', m[2]);
+                    if (m[3]) img.setAttribute('height', m[3]);
+                    img.setAttribute('alt', m[1]);
+                }
+            });
+        }
+
+        // Resolve a relative path against the current markdown file's directory
+        function resolveRelativePath(href) {
+            if (!currentFilePath) return href;
+
+            // Get parent directory of the current markdown file
+            // currentFilePath is a Windows absolute path like "C:\Users\...\file.md"
+            const normalized = currentFilePath.replace(/\\/g, '/');
+            const dirParts = normalized.split('/');
+            dirParts.pop(); // remove filename
+
+            // Split the relative href and resolve . and ..
+            const hrefParts = href.replace(/\\/g, '/').split('/');
+            const resolved = [...dirParts];
+            for (const part of hrefParts) {
+                if (part === '..') {
+                    resolved.pop();
+                } else if (part !== '.' && part !== '') {
+                    resolved.push(part);
+                }
+            }
+            return 'file:///' + resolved.join('/');
+        }
+
+        // Helper function to escape HTML in attributes
+        function escapeHtmlAttr(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Generate GitHub-compatible heading ID. Keep the raw Unicode slug as
+        // the id (browsers match decoded fragments against raw ids), and do not
+        // collapse runs of hyphens \u2014 GitHub preserves them, and links like
+        // `#ldmor--\u5229\u7528\u8005\u5411\u3051\u30AF\u30A4\u30C3\u30AF\u30AC\u30A4\u30C9\u65E5\u672C\u8A9E` (from `# LDMOR \u2014 \u5229\u7528\u8005\u2026`)
+        // depend on that.
+        function generateHeadingId(text, existingIds) {
+            let slug = text
+                .toLowerCase()
+                .trim()
+                .replace(/\s+/g, '-')
+                .replace(/[^\w\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF\u3400-\u4DBF-]/g, '')
+                .replace(/^-|-$/g, '');
+
+            if (!slug) slug = 'heading';
+
+            let finalId = slug;
+            let counter = 1;
+            while (existingIds.has(finalId)) {
+                finalId = `${slug}-${counter}`;
+                counter++;
+            }
+            existingIds.add(finalId);
+
+            return finalId;
+        }
+
+        // Generate Table of Contents from headings
+        function generateTOC() {
+            const headings = preview.querySelectorAll('h1, h2, h3, h4, h5, h6');
+            const existingIds = new Set();
+
+            // Clear previous TOC
+            tocNav.innerHTML = '';
+
+            // Clean up previous scroll spy observer
+            if (scrollSpyObserver) {
+                scrollSpyObserver.disconnect();
+                scrollSpyObserver = null;
+            }
+
+            if (headings.length === 0) {
+                tocNav.innerHTML = '<div class="toc-empty">No headings found</div>';
+                return;
+            }
+
+            const tocItems = [];
+
+            headings.forEach((heading) => {
+                const text = heading.textContent.trim();
+                if (!text) return; // Skip empty headings
+
+                const level = parseInt(heading.tagName.charAt(1));
+
+                // Generate and assign ID to heading
+                const id = generateHeadingId(text, existingIds);
+                heading.id = id;
+
+                // Create TOC item
+                const tocItem = document.createElement('a');
+                tocItem.className = 'toc-item';
+                tocItem.setAttribute('data-level', level);
+                tocItem.setAttribute('data-target', id);
+                tocItem.href = '#' + id;
+                tocItem.textContent = text;
+                tocItem.title = text; // Show full text on hover
+
+                // Click handler for smooth scrolling
+                tocItem.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    const targetHeading = document.getElementById(id);
+                    if (targetHeading) {
+                        targetHeading.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                        // Update active state immediately
+                        tocNav.querySelectorAll('.toc-item').forEach(item => item.classList.remove('active'));
+                        tocItem.classList.add('active');
+                    }
+                });
+
+                tocNav.appendChild(tocItem);
+                tocItems.push({ element: tocItem, targetId: id });
+            });
+
+            // Setup scroll spy
+            setupScrollSpy(tocItems);
+        }
+
+        // Setup scroll spy to highlight active TOC item
+        function setupScrollSpy(tocItems) {
+            if (tocItems.length === 0) return;
+
+            const options = {
+                root: previewContainer,
+                rootMargin: '-10% 0px -80% 0px',
+                threshold: 0
+            };
+
+            scrollSpyObserver = new IntersectionObserver((entries) => {
+                entries.forEach((entry) => {
+                    if (entry.isIntersecting) {
+                        const id = entry.target.id;
+                        tocNav.querySelectorAll('.toc-item').forEach(item => {
+                            item.classList.toggle('active', item.getAttribute('data-target') === id);
+                        });
+                    }
+                });
+            }, options);
+
+            // Observe all headings
+            tocItems.forEach(({ targetId }) => {
+                const heading = document.getElementById(targetId);
+                if (heading) {
+                    scrollSpyObserver.observe(heading);
+                }
+            });
+        }
+
+        // Configure marked.js without custom image renderer (use regex post-processing instead)
+        marked.use({
+            breaks: true,
+            gfm: true
+        });
+
+        // ----- Footnote support -----
+        // Per-render registry. Reset at the start of each renderMarkdown() call.
+        const footnoteState = {
+            defs: {},        // id -> raw markdown body
+            order: [],       // ordered list of ids actually referenced
+            refCounts: {},   // id -> number of in-text occurrences (for back-links)
+            suspend: false   // disable ref tokenization while rendering footnote bodies
+        };
+
+        function footnoteSafeId(id) {
+            return id.replace(/[^A-Za-z0-9_-]/g, '_');
+        }
+
+        // Strip block-level footnote definitions ([^id]: body, plus indented continuations)
+        // from a markdown source and stash bodies in footnoteState.defs.
+        function extractFootnoteDefinitions(md) {
+            const lines = md.split('\n');
+            const out = [];
+            let i = 0;
+            let fence = null; // active fenced-code-block opener (``` or ~~~)
+            while (i < lines.length) {
+                // Track fenced code blocks so we don't extract footnote-looking lines inside them.
+                const fenceMatch = lines[i].match(/^\s{0,3}(`{3,}|~{3,})/);
+                if (fenceMatch) {
+                    const marker = fenceMatch[1];
+                    if (fence === null) {
+                        fence = marker;
+                    } else if (marker[0] === fence[0] && marker.length >= fence.length) {
+                        const rest = lines[i].slice(lines[i].indexOf(marker) + marker.length).trim();
+                        if (rest === '') fence = null;
+                    }
+                    out.push(lines[i]);
+                    i++;
+                    continue;
+                }
+                if (fence !== null) {
+                    out.push(lines[i]);
+                    i++;
+                    continue;
+                }
+                const m = lines[i].match(/^\[\^([^\]\s]+)\]:[ \t]+(.*)$/);
+                if (m) {
+                    const id = m[1];
+                    const bodyLines = [m[2]];
+                    i++;
+                    while (i < lines.length) {
+                        if (lines[i].trim() === '') {
+                            // Lookahead: continuation only if a following non-blank line is indented.
+                            let j = i + 1;
+                            while (j < lines.length && lines[j].trim() === '') j++;
+                            if (j < lines.length && /^( {4}|\t)/.test(lines[j])) {
+                                // Preserve a blank line so paragraph breaks survive.
+                                bodyLines.push('');
+                                i++;
+                                continue;
+                            }
+                            break;
+                        }
+                        if (/^( {4}|\t)/.test(lines[i])) {
+                            bodyLines.push(lines[i].replace(/^( {4}|\t)/, ''));
+                            i++;
+                        } else {
+                            break;
+                        }
+                    }
+                    footnoteState.defs[id] = bodyLines.join('\n').replace(/\s+$/, '');
+                    continue;
+                }
+                out.push(lines[i]);
+                i++;
+            }
+            return out.join('\n');
+        }
+
+        // Inline marked extension for [^id] references.
+        marked.use({
+            extensions: [{
+                name: 'footnoteRef',
+                level: 'inline',
+                start(src) {
+                    const i = src.indexOf('[^');
+                    return i < 0 ? undefined : i;
+                },
+                tokenizer(src) {
+                    if (footnoteState.suspend) return;
+                    const m = /^\[\^([^\]\s]+)\]/.exec(src);
+                    if (m) {
+                        return { type: 'footnoteRef', raw: m[0], id: m[1] };
+                    }
+                },
+                renderer(token) {
+                    const id = token.id;
+                    // No matching definition: render literally so the user sees their typo.
+                    if (!footnoteState.defs[id]) {
+                        return token.raw.replace(/&/g, '&amp;').replace(/</g, '&lt;');
+                    }
+                    if (!footnoteState.order.includes(id)) {
+                        footnoteState.order.push(id);
+                    }
+                    const num = footnoteState.order.indexOf(id) + 1;
+                    const occ = (footnoteState.refCounts[id] = (footnoteState.refCounts[id] || 0) + 1);
+                    const sid = footnoteSafeId(id);
+                    return '<sup class="footnote-ref">'
+                        + '<a href="#fn-' + sid + '" id="fnref-' + sid + '-' + occ + '"'
+                        + ' data-footnote-id="' + id.replace(/"/g, '&quot;') + '">'
+                        + num + '</a></sup>';
+                }
+            }]
+        });
+
+        // Build the footnotes section HTML from the registry, after marked.parse() has run.
+        function renderFootnotesSection() {
+            if (footnoteState.order.length === 0) return '';
+            let html = '<section class="footnotes" id="footnotes"><hr/><ol>';
+            footnoteState.suspend = true;
+            try {
+                footnoteState.order.forEach(id => {
+                    const sid = footnoteSafeId(id);
+                    const body = footnoteState.defs[id] || '';
+                    let rendered;
+                    if (/\n\s*\n/.test(body) || /\n/.test(body)) {
+                        rendered = marked.parse(body);
+                    } else {
+                        rendered = '<p>' + marked.parseInline(body) + '</p>';
+                    }
+                    const occ = footnoteState.refCounts[id] || 1;
+                    let backlinks = '';
+                    for (let n = 1; n <= occ; n++) {
+                        const sup = occ > 1 ? '<sup>' + n + '</sup>' : '';
+                        backlinks += '<a href="#fnref-' + sid + '-' + n + '" class="footnote-backref" aria-label="Back to reference">↩' + sup + '</a> ';
+                    }
+                    html += '<li id="fn-' + sid + '" class="footnote-item">'
+                        + '<div class="footnote-content">' + rendered + '</div>'
+                        + '<span class="footnote-backrefs">' + backlinks.trim() + '</span>'
+                        + '</li>';
+                });
+            } finally {
+                footnoteState.suspend = false;
+            }
+            html += '</ol></section>';
+            return html;
+        }
+
+
+
+        // Prevent default drag behaviors
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener(eventName, preventDefaults, false);
+            previewContainer.addEventListener(eventName, preventDefaults, false);
+            document.body.addEventListener(eventName, preventDefaults, false);
+        });
+
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+
+        // Highlight drop zone when item is dragged over it
+        ['dragenter', 'dragover'].forEach(eventName => {
+            dropZone.addEventListener(eventName, () => {
+                dropZone.classList.add('drag-over');
+            }, false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener(eventName, () => {
+                dropZone.classList.remove('drag-over');
+            }, false);
+        });
+
+        // Handle dropped files
+        dropZone.addEventListener('drop', handleDrop, false);
+        previewContainer.addEventListener('drop', handleDrop, false);
+
+        // Helper function to read file as data URL
+        function readFileAsDataURL(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = (e) => resolve(e.target.result);
+                reader.onerror = reject;
+                reader.readAsDataURL(file);
+            });
+        }
+
+        // Helper function to read file as text
+        function readFileAsText(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = (e) => resolve(e.target.result);
+                reader.onerror = reject;
+                reader.readAsText(file);
+            });
+        }
+
+        function handleDrop(e) {
+            const dt = e.dataTransfer;
+            const files = Array.from(dt.files);
+
+            // Separate markdown and image files
+            const mdFile = files.find(f => f.name.match(/\.(md|markdown)$/i));
+            const imageFiles = files.filter(f => f.name.match(/\.(png|jpe?g|gif|svg|webp|ico|bmp|tiff?|avif)$/i));
+
+            if (mdFile) {
+                handleMarkdownWithImages(mdFile, imageFiles);
+            } else if (imageFiles.length > 0) {
+                // Single image viewing
+                handleImageFile(imageFiles[0]);
+            } else {
+                alert('Please drop a markdown file (.md, .markdown) or image files');
+            }
+        }
+
+        // Handle markdown file with optional image files
+        async function handleMarkdownWithImages(mdFile, imageFiles) {
+            // Build image map from dropped images
+            const imageMap = {};
+            for (const imgFile of imageFiles) {
+                const dataUrl = await readFileAsDataURL(imgFile);
+                // Map by filename (e.g., "test.png" -> dataUrl)
+                imageMap[imgFile.name] = dataUrl;
+            }
+
+            // Read markdown
+            const markdown = await readFileAsText(mdFile);
+
+            // Replace image references with base64 data URLs
+            const processedMarkdown = markdown.replace(
+                /!\[([^\]]*)\]\(([^)]+)\)/g,
+                (match, alt, path) => {
+                    // Skip URLs and data URIs
+                    if (path.startsWith('http://') || path.startsWith('https://') || path.startsWith('data:')) {
+                        return match;
+                    }
+                    // Extract filename from path (e.g., "images/test.png" -> "test.png")
+                    const filename = path.split('/').pop().split('\\').pop();
+                    if (imageMap[filename]) {
+                        return `![${alt}](${imageMap[filename]})`;
+                    }
+                    return match; // Keep original if no matching image
+                }
+            );
+
+            // Render
+            currentMarkdown = processedMarkdown;
+            currentFilePath = '';
+            await renderMarkdown(processedMarkdown);
+            dropZone.style.display = 'none';
+            appContainer.style.display = 'flex';
+            hideSplash();
+            setWindowTitle(mdFile.name);
+        }
+
+        // Handle single image file
+        async function handleImageFile(file) {
+            const dataUrl = await readFileAsDataURL(file);
+            currentMarkdown = '';
+            currentFilePath = '';
+            preview.innerHTML = `<p><img src="${dataUrl}" alt="${file.name.replace(/"/g, '&quot;')}" style="max-width: 100%; display: block; margin: 0 auto;"></p>`;
+            dropZone.style.display = 'none';
+            appContainer.style.display = 'flex';
+            hideSplash();
+            setWindowTitle(file.name);
+            // Generate TOC for image (will show "No headings found")
+            generateTOC();
+        }
+
+        function setWindowTitle(name) {
+            if (window.ipc && typeof window.ipc.postMessage === 'function') {
+                window.ipc.postMessage('settitle:' + (name || ''));
+            }
+        }
+
+        // Substitute $$...$$ and $...$ in `text` with placeholders, pushing entries onto the
+        // shared `mathBlocks` array. `counterRef` is `{ value: number }` so callers can keep
+        // placeholder names unique across multiple sources (main body + footnote bodies).
+        function extractMathInto(text, mathBlocks, counterRef) {
+            // Mask Markdown code regions first so `$` inside `code` / ```fences``` is not
+            // treated as math. Fenced blocks first (line-delimited), then inline spans.
+            const codeMap = new Map();
+            let codeCounter = 0;
+            text = text.replace(/^( {0,3})(`{3,}|~{3,})[^\n]*\n[\s\S]*?(?:\n\1\2`{0,}[ \t]*(?=\n|$)|$)/gm, (match) => {
+                const placeholder = `MDFENCE${codeCounter}Z`;
+                codeCounter++;
+                codeMap.set(placeholder, match);
+                const newlineCount = (match.match(/\n/g) || []).length;
+                return placeholder + '\n'.repeat(newlineCount);
+            });
+            text = text.replace(/(`+)(?!`)[\s\S]+?\1(?!`)/g, (match) => {
+                const placeholder = `MDCODE${codeCounter}Z`;
+                codeCounter++;
+                codeMap.set(placeholder, match);
+                return placeholder;
+            });
+            // Display math ($$...$$). Pad placeholder with newlines equal to those the match
+            // consumed so downstream line-number mapping stays aligned in the main pass.
+            text = text.replace(/\$\$([\s\S]+?)\$\$/g, (match, formula) => {
+                const placeholder = `MATH_BLOCK_${counterRef.value}`;
+                mathBlocks.push({ type: 'display', formula: formula.trim(), placeholder });
+                counterRef.value++;
+                const newlineCount = (match.match(/\n/g) || []).length;
+                return placeholder + '\n'.repeat(newlineCount);
+            });
+            // Inline math ($...$).
+            text = text.replace(/\$([^\$\n]+?)\$/g, (match, formula) => {
+                const placeholder = `MATH_INLINE_${counterRef.value}`;
+                mathBlocks.push({ type: 'inline', formula: formula.trim(), placeholder });
+                counterRef.value++;
+                return placeholder;
+            });
+            // Restore masked code regions.
+            text = text.replace(/MD(?:FENCE|CODE)\d+Z/g, (m) => codeMap.has(m) ? codeMap.get(m) : m);
+            return text;
+        }
+
+        function processMathExpressions(markdown) {
+            const mathBlocks = [];
+            const counterRef = { value: 0 };
+            markdown = extractMathInto(markdown, mathBlocks, counterRef);
+            return { markdown, mathBlocks };
+        }
+
+        function renderMathExpressions(html, mathBlocks) {
+            mathBlocks.forEach(({ type, formula, placeholder }) => {
+                try {
+                    const rendered = katex.renderToString(formula, {
+                        displayMode: type === 'display',
+                        throwOnError: false,
+                        output: 'html'
+                    });
+                    html = html.replace(placeholder, rendered);
+                } catch (error) {
+                    const errorMsg = `<span style="color: red;">Math Error: ${error.message}</span>`;
+                    html = html.replace(placeholder, errorMsg);
+                }
+            });
+            return html;
+        }
+
+        // Decode HTML entities produced by marked's code-block escaping.
+        function decodeEntities(s) {
+            const ta = document.createElement('textarea');
+            ta.innerHTML = s;
+            return ta.value;
+        }
+
+        function escapeHtml(s) {
+            return String(s)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        // RFC 4180-style CSV parser: handles "quoted" fields containing commas,
+        // newlines, and "" as an escaped quote.
+        function parseCsv(text) {
+            const rows = [];
+            let row = [];
+            let field = '';
+            let inQuotes = false;
+            for (let i = 0; i < text.length; i++) {
+                const c = text[i];
+                if (inQuotes) {
+                    if (c === '"') {
+                        if (text[i + 1] === '"') { field += '"'; i++; }
+                        else { inQuotes = false; }
+                    } else {
+                        field += c;
+                    }
+                } else {
+                    if (c === '"') {
+                        inQuotes = true;
+                    } else if (c === ',') {
+                        row.push(field); field = '';
+                    } else if (c === '\n' || c === '\r') {
+                        row.push(field); field = '';
+                        rows.push(row); row = [];
+                        if (c === '\r' && text[i + 1] === '\n') i++;
+                    } else {
+                        field += c;
+                    }
+                }
+            }
+            // Flush the last field/row if there's any content pending.
+            if (field.length > 0 || row.length > 0) {
+                row.push(field);
+                rows.push(row);
+            }
+            return rows;
+        }
+
+        function renderDataTable(lang, encodedCode) {
+            const text = decodeEntities(encodedCode).replace(/\s+$/, '');
+            if (!text) return '';
+            let rows;
+            if (lang === 'tsv') {
+                rows = text.split(/\r?\n/).map(line => line.split('\t'));
+            } else {
+                rows = parseCsv(text);
+            }
+            // Strip fully empty rows anywhere in the data (handles blank lines between
+            // header and body, and trailing blank lines from editors).
+            rows = rows.filter(r => !r.every(cell => cell === ''));
+            if (rows.length === 0) return '';
+            const header = rows[0];
+            const body = rows.slice(1);
+            const thead = `<thead><tr>${header.map(c => `<th>${escapeHtml(c)}</th>`).join('')}</tr></thead>`;
+            const tbody = body.length
+                ? `<tbody>${body.map(r => `<tr>${r.map(c => `<td>${escapeHtml(c)}</td>`).join('')}</tr>`).join('')}</tbody>`
+                : '';
+            return `<div class="csv-table"><table>${thead}${tbody}</table></div>`;
+        }
+
+        // ===== Marp slide pipeline =====================================================
+        // Mode flag, slide cursor, and helpers shared between renderMarp() and the
+        // keyboard handler. Selectors match the marpit + footnotes-slide structure
+        // documented in renderMarp() below.
+        let __marpDeckIndex = 0;
+        function __marpSlides() {
+            return preview.querySelectorAll('div.marpit > svg[data-marpit-svg], section.footnotes-slide');
+        }
+        function setMarpView(mode) {
+            document.body.classList.toggle('deck-mode', mode === 'deck');
+            document.body.classList.toggle('list-mode', mode === 'list');
+            localStorage.setItem('marpView', mode);
+        }
+        function __marpUpdateDeck() {
+            const slides = __marpSlides();
+            if (slides.length === 0) return;
+            if (__marpDeckIndex < 0) __marpDeckIndex = 0;
+            if (__marpDeckIndex >= slides.length) __marpDeckIndex = slides.length - 1;
+            slides.forEach((s, i) => s.classList.toggle('active', i === __marpDeckIndex));
+            const counter = document.getElementById('slide-counter');
+            if (counter) counter.textContent = (__marpDeckIndex + 1) + ' / ' + slides.length;
+        }
+
+        async function renderMarp(markdown) {
+            document.body.classList.add('marp');
+            // Restore last view preference. Migrates the older boolean `deckMode` key
+            // (true → 'deck') on first read.
+            let __savedView = localStorage.getItem('marpView');
+            if (!__savedView) {
+                __savedView = localStorage.getItem('deckMode') === 'true' ? 'deck' : 'scroll';
+            }
+            if (__savedView !== 'scroll' && __savedView !== 'deck' && __savedView !== 'list') {
+                __savedView = 'scroll';
+            }
+            setMarpView(__savedView);
+
+            // Reset footnote registry. We run the existing extractor as a *pre-pass*
+            // because marp-core's markdown-it doesn't know our footnote syntax. Each
+            // `[^id]` reference is then swapped for a sentinel token that survives
+            // marp.render verbatim; after render we walk text nodes inside each slide
+            // and replace tokens with the canonical `<sup>` markup.
+            footnoteState.defs = {};
+            footnoteState.order = [];
+            footnoteState.refCounts = {};
+            footnoteState.suspend = false;
+            markdown = extractFootnoteDefinitions(markdown);
+
+            // Sentinel uses Unicode bracket pair unlikely to occur in normal prose.
+            const FN_OPEN = '⦃FN:';
+            const FN_CLOSE = '⦄';
+            markdown = markdown.replace(/\[\^([^\]\s]+)\]/g, (m, id) => {
+                if (!footnoteState.defs[id]) return m;
+                if (!footnoteState.order.includes(id)) footnoteState.order.push(id);
+                const occ = (footnoteState.refCounts[id] = (footnoteState.refCounts[id] || 0) + 1);
+                return FN_OPEN + id + ':' + occ + FN_CLOSE;
+            });
+
+            await ensureMarp();
+            await ensureMarpThemes();
+            const Marp = (window.MarpCore && window.MarpCore.Marp) || window.Marp;
+            // emoji.shortcode disabled: marp-core's twemoji turns `:x:` inside our
+            // footnote sentinel `⦃FN:id:occ⦄` into an emoji image, breaking the
+            // post-render token replacement.
+            const marp = new Marp({ script: false, html: false, emoji: { shortcode: false, unicode: false } });
+            // markdown-it's default validateLink rejects most data: URIs (only
+            // image/(gif|png|jpeg|webp) pass). Our Rust host embeds local images
+            // as data URIs of *any* MIME (svg+xml, bmp, …), so allow them all.
+            if (marp.markdown && typeof marp.markdown.validateLink === 'function') {
+                marp.markdown.validateLink = () => true;
+            }
+            console.log('[marp] registering themes:', Array.from(__marpThemeCache.keys()));
+            __dbgLog('themeSet.add starting, count=' + __marpThemeCache.size);
+            __marpThemeCache.forEach((css, name) => {
+                try {
+                    marp.themeSet.add(css);
+                    __dbgLog('themeSet.add ok ' + name);
+                } catch (e) {
+                    console.error('Marp theme failed to register:', name, e);
+                    __dbgLog('themeSet.add FAILED ' + name + ' err=' + (e && e.message));
+                }
+            });
+            __dbgLog('themeSet now: ' + JSON.stringify(Array.from(marp.themeSet.themes()).map(t => t.name)));
+
+            // Build a slide → source-line map by scanning the (post-footnote-pre-pass)
+            // markdown for thematic breaks. Marp's default slide separator is `---`
+            // / `***` / `___` on its own line; the first `---` pair delimits YAML
+            // front-matter and must be skipped.
+            const __lines = markdown.split('\n');
+            const slideStartLines = [];
+            let __fmOpen = __lines.length > 0 && /^---\s*$/.test(__lines[0]);
+            let __fmClosed = !__fmOpen;
+            let __curStart = __fmOpen ? null : 1;
+            for (let i = 0; i < __lines.length; i++) {
+                const ln = i + 1;
+                if (__fmOpen && !__fmClosed) {
+                    if (ln > 1 && /^---\s*$/.test(__lines[i])) {
+                        __fmClosed = true;
+                        __curStart = ln + 1;
+                    }
+                    continue;
+                }
+                if (/^(---|\*\*\*|___)\s*$/.test(__lines[i])) {
+                    if (__curStart != null) slideStartLines.push(__curStart);
+                    __curStart = ln + 1;
+                }
+            }
+            if (__curStart != null) slideStartLines.push(__curStart);
+
+            const { html, css } = marp.render(markdown);
+
+            preview.innerHTML = '<style id="marp-style">' + css + '</style>' + html;
+
+            // Stamp data-line on each slide SVG so editor-sync (both directions)
+            // works in Marp mode.
+            const __slideSvgs = preview.querySelectorAll('div.marpit > svg[data-marpit-svg]');
+            __slideSvgs.forEach((svg, i) => {
+                if (slideStartLines[i] != null) {
+                    svg.setAttribute('data-line', slideStartLines[i]);
+                }
+            });
+
+            // Stamp data-part="I","II",… on each section-divider slide.
+            // CSS counters don't propagate across Marpit's per-slide <svg>/<foreignObject>
+            // wrappers, so user-supplied section-divider themes read this attr via attr().
+            const __toRoman = (n) => {
+                const map = [['M',1000],['CM',900],['D',500],['CD',400],['C',100],['XC',90],['L',50],['XL',40],['X',10],['IX',9],['V',5],['IV',4],['I',1]];
+                let s = '';
+                for (const [r, v] of map) { while (n >= v) { s += r; n -= v; } }
+                return s;
+            };
+            let __partIdx = 0;
+            preview.querySelectorAll('section.section').forEach(sec => {
+                __partIdx += 1;
+                const roman = __toRoman(__partIdx);
+                sec.setAttribute('data-part', roman);
+                // Also stamp on the big-title heading so theme CSS can use attr()
+                // directly in a ::before (CSS attr() only reads the same element).
+                // Themes may use either h1 or h2 for the big title.
+                // Pick the first heading that isn't the small-label heading.
+                const h1 = sec.querySelector('h1');
+                const h2 = sec.querySelector('h2');
+                if (h1 && !h2) h1.setAttribute('data-part', roman);
+                else if (h2 && !h1) h2.setAttribute('data-part', roman);
+            });
+
+            // Belt-and-braces: rewrite any <img src=...> that survived marp-core
+            // with a non-embedded src. (Base64 inlining in Rust covers the common
+            // case; this catches relative paths that came through markdown-it
+            // unmodified — e.g. if validateLink stripped them earlier, or if a
+            // future tweak changes the embed step.)
+            preview.querySelectorAll('img').forEach(img => {
+                const src = img.getAttribute('src');
+                if (!src) return;
+                if (/^(data:|https?:|file:)/i.test(src)) return;
+                const transformed = transformImagePath(src);
+                if (transformed && transformed !== src) img.setAttribute('src', transformed);
+            });
+
+            // Apply Obsidian-style image sizing inside Marp slides too.
+            applyImageSizing(preview);
+
+            // Restore footnote tokens to <sup> markup inside slides.
+            if (footnoteState.order.length > 0) {
+                const fnRegex = new RegExp(FN_OPEN.replace(/[⦃]/g, '\\u2983') + '([^:]+):(\\d+)' + FN_CLOSE.replace(/[⦄]/g, '\\u2984'), 'g');
+                const walker = document.createTreeWalker(preview, NodeFilter.SHOW_TEXT, null);
+                const targets = [];
+                let node;
+                while ((node = walker.nextNode())) {
+                    if (node.nodeValue.indexOf(FN_OPEN) >= 0) targets.push(node);
+                }
+                targets.forEach(textNode => {
+                    const frag = document.createDocumentFragment();
+                    let last = 0;
+                    const v = textNode.nodeValue;
+                    fnRegex.lastIndex = 0;
+                    let m;
+                    while ((m = fnRegex.exec(v)) !== null) {
+                        if (m.index > last) frag.appendChild(document.createTextNode(v.slice(last, m.index)));
+                        const id = m[1], occ = m[2];
+                        const sid = footnoteSafeId(id);
+                        const num = footnoteState.order.indexOf(id) + 1;
+                        const sup = document.createElement('sup');
+                        sup.className = 'footnote-ref';
+                        const a = document.createElement('a');
+                        a.href = '#fn-' + sid;
+                        a.id = 'fnref-' + sid + '-' + occ;
+                        a.setAttribute('data-footnote-id', id);
+                        a.textContent = String(num);
+                        sup.appendChild(a);
+                        frag.appendChild(sup);
+                        last = m.index + m[0].length;
+                    }
+                    if (last < v.length) frag.appendChild(document.createTextNode(v.slice(last)));
+                    textNode.parentNode.replaceChild(frag, textNode);
+                });
+            }
+
+            // Replace mermaid / smartart / csv / tsv code blocks inside each slide with
+            // the same DOM produced by the normal pipeline so the existing renderers
+            // (mermaid.render, SmartArt.renderAll, renderDataTable) just work.
+            let mCount = 0, sCount = 0;
+            preview.querySelectorAll('code[class*="language-"]').forEach(code => {
+                const m = code.className.match(/language-([A-Za-z0-9_+-]+)/);
+                if (!m) return;
+                const lang = m[1].toLowerCase();
+                const pre = code.closest('pre') || code.parentNode;
+                if (!pre) return;
+                if (lang === 'mermaid') {
+                    const div = document.createElement('div');
+                    div.className = 'mermaid';
+                    div.id = 'marp-mermaid-' + (mCount++);
+                    div.textContent = code.textContent;
+                    pre.replaceWith(div);
+                } else if (lang === 'smartart') {
+                    const div = document.createElement('div');
+                    div.className = 'smartart';
+                    div.id = 'marp-smartart-' + (sCount++);
+                    div.setAttribute('data-smartart', '1');
+                    div.setAttribute('data-smartart-source', encodeURIComponent(code.textContent));
+                    pre.replaceWith(div);
+                } else if (lang === 'csv' || lang === 'tsv') {
+                    const tableHtml = renderDataTable(lang, escapeHtml(code.textContent));
+                    if (!tableHtml) return;
+                    const tpl = document.createElement('template');
+                    tpl.innerHTML = tableHtml;
+                    pre.replaceWith(tpl.content);
+                }
+            });
+
+            // Append footnotes as a final slide outside the marpit container so the
+            // marp theme CSS (which targets `<section>` inside `data-marpit-svg`)
+            // doesn't fight our plain-page styling.
+            if (footnoteState.order.length > 0) {
+                const fnHtml = renderFootnotesSection();
+                if (fnHtml) {
+                    const fnSlide = document.createElement('section');
+                    fnSlide.className = 'footnotes-slide';
+                    fnSlide.innerHTML = '<h2>Footnotes</h2>' + fnHtml;
+                    preview.appendChild(fnSlide);
+                }
+            }
+
+            // Re-apply our highlight.js over marp-core's code blocks for consistent styling.
+            preview.querySelectorAll('section pre code').forEach(block => {
+                try { hljs.highlightElement(block); } catch (e) { /* ignore */ }
+            });
+
+            setupFootnoteTooltips();
+
+            // Render mermaid diagrams.
+            const mermaidEls = preview.querySelectorAll('.mermaid');
+            if (mermaidEls.length > 0) {
+                await ensureMermaid();
+                await Promise.all(Array.from(mermaidEls).map(async (el) => {
+                    try {
+                        const { svg } = await mermaid.render(el.id + '-svg', el.textContent);
+                        el.innerHTML = svg;
+                    } catch (err) {
+                        el.innerHTML = '<pre style="color:red;">Mermaid Error: ' + err.message + '</pre>';
+                    }
+                }));
+            }
+
+            // Render SmartArt diagrams. SmartArt sizes itself from clientWidth,
+            // which is 0 when the div has just been injected inside marp-core's
+            // <foreignObject>. Yield to layout once before calling renderAll so
+            // diagrams come out at the slide's real width.
+            if (preview.querySelector('[data-smartart]')) {
+                await ensureSmartArt();
+                await new Promise(r => requestAnimationFrame(() => r()));
+                SmartArt.renderAll(preview);
+            }
+
+            __marpDeckIndex = 0;
+            __marpUpdateDeck();
+
+            // List-mode click → jump into deck mode focused on that slide.
+            // Bind on #preview (delegated) so we only attach once per render.
+            preview.addEventListener('click', __marpListClickHandler);
+        }
+
+        function __marpListClickHandler(e) {
+            if (!document.body.classList.contains('list-mode')) return;
+            const slides = Array.from(__marpSlides());
+            const hit = e.target.closest('svg[data-marpit-svg], section.footnotes-slide');
+            const idx = slides.indexOf(hit);
+            if (idx < 0) return;
+            e.preventDefault();
+            __marpDeckIndex = idx;
+            setMarpView('deck');
+            __marpUpdateDeck();
+            showToast('Slides: deck');
+        }
+
+        // Detect a Marp document: must have a YAML front-matter block with `marp: true`.
+        function isMarpDocument(md) {
+            const m = md.match(/^---\s*\n([\s\S]*?)\n---\s*(\n|$)/);
+            if (!m) return false;
+            return /^\s*marp\s*:\s*true\s*$/m.test(m[1]);
+        }
+
+        async function renderMarkdown(markdown) {
+            mermaidCounter = 0;
+            smartartCounter = 0;
+
+            // Normalize line endings: Windows files reach us as CRLF, and several
+            // line-anchored regexes (notably the footnote-definition matcher) rely on
+            // `$` sitting flush at end-of-line, which fails when a `\r` is in the way.
+            markdown = markdown.replace(/\r\n?/g, '\n');
+
+            // Marp branch: presentation slides. Handles a separate pipeline (marp-core
+            // produces its own HTML + theme CSS; we re-apply mermaid / smartart / csv /
+            // footnotes post-render so the tool's extensions still work inside slides).
+            if (isMarpDocument(markdown)) {
+                await renderMarp(markdown);
+                return;
+            }
+            // Leaving a previous Marp document: shed mode classes and slide-counter.
+            document.body.classList.remove('marp', 'deck-mode', 'list-mode');
+
+            // Reset footnote registry so re-renders (auto-reload, navigation) start clean.
+            footnoteState.defs = {};
+            footnoteState.order = [];
+            footnoteState.refCounts = {};
+            footnoteState.suspend = false;
+
+            // Strip footnote definitions from the source before any further processing.
+            markdown = extractFootnoteDefinitions(markdown);
+
+            // Extract and protect math expressions. Share the counter across the main body
+            // and every footnote body so placeholder names stay unique; renderMathExpressions
+            // later runs over the concatenated HTML (which includes the appended footnotes
+            // section) and replaces them all in one pass.
+            const mathBlocks = [];
+            const mathCounter = { value: 0 };
+            Object.keys(footnoteState.defs).forEach(id => {
+                footnoteState.defs[id] = extractMathInto(footnoteState.defs[id], mathBlocks, mathCounter);
+            });
+            const processedMarkdown = extractMathInto(markdown, mathBlocks, mathCounter);
+
+            // Kick off lazy library loads in parallel as soon as we know they'll be needed.
+            // We don't await here — we await individually right before each library is used.
+            const needsMermaid = /```mermaid\b/.test(processedMarkdown);
+            const needsSmartArt = /```smartart\b/.test(processedMarkdown);
+            const needsKatex = mathBlocks.length > 0;
+            const mermaidReady = needsMermaid ? ensureMermaid() : null;
+            const smartartReady = needsSmartArt ? ensureSmartArt() : null;
+            const katexReady = needsKatex ? ensureKatex() : null;
+
+            // Compute source-line mapping from the original markdown (before math placeholder substitution
+            // — math blocks remain on the same source lines, so line counts still match)
+            const blockLineNumbers = computeBlockLineNumbers(processedMarkdown);
+
+            // Parse markdown to HTML
+            let html = marked.parse(processedMarkdown);
+
+            // Append the footnotes section (built from the registry populated during parse).
+            html += renderFootnotesSection();
+
+            // Replace mermaid code blocks with mermaid divs
+            html = html.replace(/<pre><code class="language-mermaid">([\s\S]*?)<\/code><\/pre>/g, (match, code) => {
+                const id = `mermaid-${mermaidCounter++}`;
+                return `<div class="mermaid" id="${id}">${code}</div>`;
+            });
+
+            // Replace smartart code blocks with smartart divs
+            html = html.replace(/<pre><code class="language-smartart">([\s\S]*?)<\/code><\/pre>/g, (match, code) => {
+                const id = `smartart-${smartartCounter++}`;
+                const textarea = document.createElement('textarea');
+                textarea.innerHTML = code;
+                const decoded = textarea.value;
+                return `<div class="smartart" id="${id}" data-smartart="1" data-smartart-source="${encodeURIComponent(decoded)}"></div>`;
+            });
+
+            // Replace csv / tsv code blocks with HTML tables
+            html = html.replace(
+                /<pre><code class="language-(csv|tsv)">([\s\S]*?)<\/code><\/pre>/g,
+                (match, lang, code) => renderDataTable(lang, code) || match
+            );
+
+            // Render math expressions (await katex if needed)
+            if (katexReady) await katexReady;
+            html = renderMathExpressions(html, mathBlocks);
+
+            // Transform image paths in HTML to use custom protocol for relative paths
+            const imgTagRegex = /<img[^>]+>/gi;
+            const srcRegex = /src=["']([^"']+)["']/i;
+
+            html = html.replace(imgTagRegex, (match) => {
+                const srcMatch = match.match(srcRegex);
+                if (srcMatch && srcMatch[1]) {
+                    const src = srcMatch[1];
+                    const transformedSrc = transformImagePath(src);
+                    return match.replace(srcRegex, `src="${transformedSrc}"`);
+                }
+                return match;
+            });
+
+            // Transform relative paths in links to absolute file:/// paths
+            const aTagRegex = /<a\s[^>]*href=["']([^"']+)["'][^>]*>/gi;
+            html = html.replace(aTagRegex, (match, href) => {
+                // Skip URLs, anchors, data URIs, and mailto links
+                if (/^(https?:\/\/|#|data:|mailto:|tel:|file:\/\/|\/\/)/.test(href)) {
+                    return match;
+                }
+                // Skip absolute Windows paths that are already full paths
+                if (/^[A-Za-z]:[\\/]/.test(href)) {
+                    const absHref = 'file:///' + href.replace(/\\/g, '/');
+                    return match.replace(href, absHref);
+                }
+                // Resolve relative path to absolute
+                const absHref = resolveRelativePath(href);
+                return match.replace(href, absHref);
+            });
+
+            preview.innerHTML = html;
+
+            // Apply Obsidian-style image sizing (`![alt|300x200](p)`, `![alt|@0.5](p)`, …)
+            applyImageSizing(preview);
+
+            // Stamp data-line attributes on top-level blocks and list items
+            stampLineNumbers(blockLineNumbers);
+
+            // Apply syntax highlighting to code blocks
+            preview.querySelectorAll('pre code').forEach((block) => {
+                hljs.highlightElement(block);
+            });
+
+            // Add copy buttons to code blocks
+            addCopyButtons();
+
+            // Wire up Wikipedia-style hover tooltips for footnote references
+            setupFootnoteTooltips();
+
+            // Render all mermaid diagrams (in parallel) once the library is loaded
+            const mermaidElements = preview.querySelectorAll('.mermaid');
+            if (mermaidElements.length > 0) {
+                if (mermaidReady) await mermaidReady;
+                await Promise.all(Array.from(mermaidElements).map(async (element) => {
+                    try {
+                        const { svg } = await mermaid.render(element.id + '-svg', element.textContent);
+                        element.innerHTML = svg;
+                    } catch (error) {
+                        element.innerHTML = `<pre style="color: red;">Mermaid Error: ${error.message}</pre>`;
+                    }
+                }));
+            }
+
+            // Render all SmartArt diagrams (await library if any are present)
+            if (preview.querySelector('[data-smartart]')) {
+                if (smartartReady) await smartartReady;
+                SmartArt.renderAll(preview);
+            }
+
+            // Generate table of contents
+            generateTOC();
+        }
+
+        let __footnoteTooltip = null;
+        let __footnoteHideTimer = null;
+        function ensureFootnoteTooltipEl() {
+            if (__footnoteTooltip) return __footnoteTooltip;
+            const el = document.createElement('div');
+            el.id = 'footnote-tooltip';
+            el.hidden = true;
+            const cancelHide = () => { if (__footnoteHideTimer) { clearTimeout(__footnoteHideTimer); __footnoteHideTimer = null; } };
+            const scheduleHide = () => {
+                cancelHide();
+                __footnoteHideTimer = setTimeout(() => {
+                    el.classList.remove('visible');
+                    el.hidden = true;
+                }, 150);
+            };
+            el.addEventListener('mouseenter', cancelHide);
+            el.addEventListener('mouseleave', scheduleHide);
+            el.__cancelHide = cancelHide;
+            el.__scheduleHide = scheduleHide;
+            document.body.appendChild(el);
+            __footnoteTooltip = el;
+            return el;
+        }
+        function setupFootnoteTooltips() {
+            const refs = preview.querySelectorAll('.footnote-ref a');
+            if (refs.length === 0) return;
+            const tip = ensureFootnoteTooltipEl();
+            refs.forEach(link => {
+                link.addEventListener('mouseenter', () => {
+                    const id = link.getAttribute('data-footnote-id');
+                    if (!id) return;
+                    const target = preview.querySelector('#fn-' + footnoteSafeId(id));
+                    if (!target) return;
+                    const content = target.querySelector('.footnote-content');
+                    if (!content) return;
+                    tip.__cancelHide();
+                    tip.innerHTML = content.innerHTML;
+                    tip.hidden = false;
+                    // Measure off-screen so we can position correctly.
+                    tip.style.left = '-9999px';
+                    tip.style.top = '0px';
+                    tip.classList.add('visible');
+                    const rect = link.getBoundingClientRect();
+                    const tt = tip.getBoundingClientRect();
+                    const margin = 8;
+                    let left = rect.left + rect.width / 2 - tt.width / 2;
+                    let top = rect.top - tt.height - margin;
+                    if (top < margin) top = rect.bottom + margin;
+                    if (left < margin) left = margin;
+                    if (left + tt.width > window.innerWidth - margin) left = window.innerWidth - tt.width - margin;
+                    tip.style.left = left + 'px';
+                    tip.style.top = top + 'px';
+                });
+                link.addEventListener('mouseleave', () => {
+                    if (__footnoteTooltip) __footnoteTooltip.__scheduleHide();
+                });
+            });
+        }
+
+        function addCopyButtons() {
+            const codeBlocks = preview.querySelectorAll('pre');
+
+            codeBlocks.forEach((pre) => {
+                // Skip if it's a mermaid diagram, smartart, or already has a wrapper
+                if (pre.querySelector('.mermaid') || pre.querySelector('.smartart') || pre.parentElement.classList.contains('code-block-wrapper')) {
+                    return;
+                }
+
+                // Create wrapper
+                const wrapper = document.createElement('div');
+                wrapper.className = 'code-block-wrapper';
+
+                // Create copy button
+                const copyButton = document.createElement('button');
+                copyButton.className = 'copy-button';
+                copyButton.textContent = 'Copy';
+
+                // Add click handler
+                copyButton.addEventListener('click', () => {
+                    const code = pre.querySelector('code')?.textContent || pre.textContent;
+
+                    // Use fallback method for WebView2 compatibility
+                    const textarea = document.createElement('textarea');
+                    textarea.value = code;
+                    textarea.style.position = 'fixed';
+                    textarea.style.opacity = '0';
+                    textarea.style.pointerEvents = 'none';
+                    document.body.appendChild(textarea);
+
+                    try {
+                        textarea.select();
+                        textarea.setSelectionRange(0, code.length);
+                        const successful = document.execCommand('copy');
+
+                        if (successful) {
+                            copyButton.textContent = 'Copied!';
+                            copyButton.classList.add('copied');
+
+                            setTimeout(() => {
+                                copyButton.textContent = 'Copy';
+                                copyButton.classList.remove('copied');
+                            }, 2000);
+                        } else {
+                            copyButton.textContent = 'Failed';
+                            setTimeout(() => {
+                                copyButton.textContent = 'Copy';
+                            }, 2000);
+                        }
+                    } catch (err) {
+                        console.error('Failed to copy:', err);
+                        copyButton.textContent = 'Failed';
+                        setTimeout(() => {
+                            copyButton.textContent = 'Copy';
+                        }, 2000);
+                    } finally {
+                        document.body.removeChild(textarea);
+                    }
+                });
+
+                // Wrap the pre element
+                pre.parentNode.insertBefore(wrapper, pre);
+                wrapper.appendChild(pre);
+                wrapper.appendChild(copyButton);
+            });
+        }
+
+        // Editor sync — reverse jump: clicking on a rendered block emits a
+        // jumpTo over the localhost WS so the editor can move its cursor.
+        // We piggy-back on the existing data-line stamping (see stampLineNumbers).
+        // Suppression flag avoids feedback loops when the click was itself the
+        // result of an inbound editor scroll (set by applyEditorScroll).
+        let suppressJumpUntil = 0;
+        preview.addEventListener('click', (e) => {
+            // Don't emit for link/button/copy clicks — those are interactive UI.
+            if (e.target.closest('a, button, .copy-button')) return;
+            if (Date.now() < suppressJumpUntil) return;
+            const block = e.target.closest('[data-line]');
+            if (!block) return;
+            const line = parseInt(block.getAttribute('data-line'), 10);
+            if (!Number.isFinite(line)) return;
+            if (window.ipc && typeof window.ipc.postMessage === 'function') {
+                window.ipc.postMessage('jumpto:' + line);
+            }
+        });
+
+        // Editor → preview scroll. Called from Rust when a {type:"scroll"} WS
+        // message arrives. Finds the block whose source line is closest to (but
+        // not after) `line` and scrolls it to the top of the viewport.
+        window.applyEditorScroll = function(line) {
+            // Marp mode: slides are stamped with data-line on their boundary line
+            // (see renderMarp). In deck mode we advance the deck to the matching
+            // slide; in scroll/list modes we fall through to the generic
+            // nearest-block scroll below.
+            if (document.body.classList.contains('marp')) {
+                if (document.body.classList.contains('deck-mode')) {
+                    const slides = preview.querySelectorAll('div.marpit > svg[data-marpit-svg], section.footnotes-slide');
+                    let idx = -1;
+                    for (let i = 0; i < slides.length; i++) {
+                        const sl = parseInt(slides[i].getAttribute('data-line') || '', 10);
+                        if (Number.isFinite(sl) && sl <= line) idx = i;
+                    }
+                    if (idx < 0) idx = 0;
+                    if (idx !== __marpDeckIndex) {
+                        __marpDeckIndex = idx;
+                        __marpUpdateDeck();
+                    }
+                    return;
+                }
+                // list mode has no useful scroll target — bail.
+                if (document.body.classList.contains('list-mode')) return;
+                // scroll mode: fall through to nearest-block scroller.
+            }
+            const blocks = preview.querySelectorAll('[data-line]');
+            if (!blocks.length) return;
+            let target = null;
+            let nextLine = null;
+            for (const el of blocks) {
+                const elLine = parseInt(el.getAttribute('data-line'), 10);
+                if (!Number.isFinite(elLine)) continue;
+                if (elLine <= line) {
+                    target = el;
+                } else {
+                    nextLine = elLine;
+                    break;
+                }
+            }
+            if (!target) target = blocks[0];
+
+            const containerRect = previewContainer.getBoundingClientRect();
+            const targetRect = target.getBoundingClientRect();
+            let offset = targetRect.top - containerRect.top + previewContainer.scrollTop;
+
+            // Sub-block interpolation: if there's a next block with a known line,
+            // fractionally scroll within the current block so smooth editor
+            // scrolling translates to smooth preview scrolling.
+            const targetLine = parseInt(target.getAttribute('data-line'), 10);
+            if (Number.isFinite(targetLine) && nextLine && line > targetLine && nextLine > targetLine) {
+                const frac = Math.min(1, (line - targetLine) / (nextLine - targetLine));
+                offset += frac * target.getBoundingClientRect().height;
+            }
+
+            // Top margin: land the cursor's block ~1/4 from the top so the
+            // reader retains upstream context above the active line.
+            const topMargin = previewContainer.clientHeight * 0.25;
+
+            // Suppress click-driven jumpTo for ~200 ms in case the scroll
+            // momentum nudges the cursor onto a different block.
+            suppressJumpUntil = Date.now() + 200;
+            previewContainer.scrollTo({ top: Math.max(0, offset - topMargin), behavior: 'auto' });
+        };
+
+        // Intercept clicks on .md / .markdown links and re-open them via the host app.
+        // WebView2 blocks file:// navigations for security, so we route the request
+        // back to Rust which loads the target file into the current viewer.
+        preview.addEventListener('click', (e) => {
+            const anchor = e.target.closest('a');
+            if (!anchor) return;
+            const href = anchor.getAttribute('href');
+            if (!href) return;
+
+            // Leave pure in-page anchors alone
+            if (href.startsWith('#')) return;
+
+            // Strip fragment for extension check
+            const noFrag = href.split('#')[0];
+            if (!/\.(md|markdown)$/i.test(noFrag)) return;
+
+            // Convert file:/// URL or raw path to a local absolute path
+            let localPath = noFrag;
+            if (localPath.startsWith('file:///')) {
+                localPath = decodeURIComponent(localPath.slice('file:///'.length));
+            } else if (localPath.startsWith('file://')) {
+                localPath = decodeURIComponent(localPath.slice('file://'.length));
+            }
+            // Normalize to backslashes for Windows
+            localPath = localPath.replace(/\//g, '\\');
+
+            e.preventDefault();
+            if (window.ipc && typeof window.ipc.postMessage === 'function') {
+                window.ipc.postMessage('openmd:' + localPath);
+            }
+        });
+
+        // Navigate back/forward via WebView2 context menu, Alt+Arrow, or mouse side buttons.
+        // history.state carries the filepath for each entry; popstate routes back to Rust.
+        window.addEventListener('popstate', (e) => {
+            const target = e.state && e.state.filepath;
+            if (!target) return;
+            if (window.ipc && typeof window.ipc.postMessage === 'function') {
+                suppressHistoryPush = true;
+                window.ipc.postMessage('openmd:' + target);
+            }
+        });
+
+        // === Workspace (directory) mode ===
+        // The Rust host invokes loadDirectoryFromRust(workspace) when a folder is
+        // opened. The workspace payload is { root, tree, fromToc, firstFile? }.
+        let currentWorkspace = null;
+        const fileTree = document.getElementById('file-tree');
+        const fileTreeRoot = document.getElementById('file-tree-root');
+
+        // Post-load scroll target set by ToC clicks before the file is requested.
+        // pendingHeadingSlug → scroll to that heading id.
+        // pendingScrollToTop → scroll the preview to the top (h1 click).
+        // Neither set → preserve scrollPos (auto-reload path).
+        let pendingHeadingSlug = null;
+        let pendingScrollToTop = false;
+
+        function pathsAreEqual(a, b) {
+            return String(a || '').replace(/\//g, '\\').toLowerCase()
+                === String(b || '').replace(/\//g, '\\').toLowerCase();
+        }
+
+        // Tree-click router: if the target file is already loaded, scroll
+        // directly without a round-trip through Rust. Otherwise queue the
+        // desired scroll target and request a load.
+        function openFromTree(absPath, headingSlug) {
+            const alreadyLoaded = pathsAreEqual(absPath, currentFilePath)
+                && appContainer.style.display === 'flex';
+            if (alreadyLoaded) {
+                if (headingSlug) {
+                    const el = document.getElementById(headingSlug);
+                    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                } else {
+                    previewContainer.scrollTo({ top: 0, behavior: 'smooth' });
+                }
+                return;
+            }
+            pendingHeadingSlug = headingSlug || null;
+            pendingScrollToTop = !headingSlug;
+            if (window.ipc && typeof window.ipc.postMessage === 'function') {
+                window.ipc.postMessage('openmd:' + absPath);
+            }
+        }
+
+        function persistDetails(details, key) {
+            try {
+                const stored = localStorage.getItem(key);
+                if (stored === 'open') details.open = true;
+                else if (stored === 'closed') details.open = false;
+                else details.open = true; // default open
+            } catch (e) { details.open = true; }
+            details.addEventListener('toggle', () => {
+                try { localStorage.setItem(key, details.open ? 'open' : 'closed'); } catch (e) {}
+            });
+        }
+
+        function renderHeadingChildren(node, ul) {
+            // Skip the first h1 (used as the file's own summary). Show every other heading.
+            let h1Skipped = false;
+            for (const h of node.headings || []) {
+                if (!h1Skipped && h.level === 1) { h1Skipped = true; continue; }
+                const li = document.createElement('li');
+                const a = document.createElement('a');
+                a.className = 'ft-heading';
+                a.setAttribute('data-level', String(h.level));
+                a.setAttribute('data-abs', node.absPath);
+                a.setAttribute('data-slug', h.slug);
+                a.href = '#';
+                a.textContent = h.text;
+                a.title = h.text;
+                a.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    openFromTree(node.absPath, h.slug);
+                });
+                li.appendChild(a);
+                ul.appendChild(li);
+            }
+        }
+
+        function renderFileTreeNodes(nodes, parentEl) {
+            for (const node of nodes) {
+                const li = document.createElement('li');
+                if (node.kind === 'dir') {
+                    const details = document.createElement('details');
+                    details.className = 'ft-group';
+                    const summary = document.createElement('summary');
+                    summary.textContent = node.name || '(group)';
+                    details.appendChild(summary);
+                    persistDetails(details, 'ft:' + currentWorkspace.root + ':' + node.relPath);
+                    const childUl = document.createElement('ul');
+                    if (node.children) renderFileTreeNodes(node.children, childUl);
+                    details.appendChild(childUl);
+                    li.appendChild(details);
+                } else if (node.kind === 'file') {
+                    const displayTitle = node.title || node.name;
+                    const hasSubs = (node.headings || []).filter(h => h.level !== 1).length > 0;
+                    if (hasSubs) {
+                        // File becomes a foldable group whose summary loads the doc.
+                        const details = document.createElement('details');
+                        details.className = 'ft-file';
+                        const summary = document.createElement('summary');
+                        const a = document.createElement('a');
+                        a.className = 'ft-item ft-file-title';
+                        a.textContent = displayTitle;
+                        a.title = node.relPath;
+                        a.href = '#';
+                        a.setAttribute('data-abs', node.absPath);
+                        a.setAttribute('data-rel', node.relPath);
+                        a.addEventListener('click', (e) => {
+                            e.preventDefault();
+                            openFromTree(node.absPath, null);
+                        });
+                        summary.appendChild(a);
+                        details.appendChild(summary);
+                        persistDetails(details, 'ft:' + currentWorkspace.root + ':' + node.relPath + '#');
+                        const subUl = document.createElement('ul');
+                        subUl.className = 'ft-subheadings';
+                        renderHeadingChildren(node, subUl);
+                        details.appendChild(subUl);
+                        li.appendChild(details);
+                    } else {
+                        const a = document.createElement('a');
+                        a.className = 'ft-item ft-file-title leaf';
+                        a.textContent = displayTitle;
+                        a.title = node.relPath;
+                        a.href = '#';
+                        a.setAttribute('data-abs', node.absPath);
+                        a.setAttribute('data-rel', node.relPath);
+                        a.addEventListener('click', (e) => {
+                            e.preventDefault();
+                            openFromTree(node.absPath, null);
+                        });
+                        li.appendChild(a);
+                    }
+                }
+                parentEl.appendChild(li);
+            }
+        }
+
+        function renderFileTree(workspace) {
+            currentWorkspace = workspace;
+            fileTreeRoot.innerHTML = '';
+            if (!workspace || !workspace.tree || workspace.tree.length === 0) {
+                fileTree.classList.add('empty');
+                document.body.classList.remove('workspace');
+                return;
+            }
+            fileTree.classList.remove('empty');
+            document.body.classList.add('workspace');
+            renderFileTreeNodes(workspace.tree, fileTreeRoot);
+            // Highlight current file if known.
+            if (currentFilePath) window.__setActiveFile(currentFilePath);
+        }
+
+        window.loadDirectoryFromRust = function(workspace) {
+            renderFileTree(workspace);
+        };
+        window.refreshFileTree = function(workspace) {
+            renderFileTree(workspace);
+        };
+        window.__setActiveFile = function(absPath) {
+            if (!absPath) return;
+            const norm = String(absPath).replace(/\//g, '\\').toLowerCase();
+            fileTreeRoot.querySelectorAll('.ft-item').forEach(el => {
+                const elPath = (el.getAttribute('data-abs') || '').replace(/\//g, '\\').toLowerCase();
+                el.classList.toggle('active', elPath === norm);
+            });
+        };
+        // Apply any workspace queued before this script ran.
+        if (window.__pendingWorkspace) {
+            try { window.loadDirectoryFromRust(window.__pendingWorkspace); }
+            finally { delete window.__pendingWorkspace; }
+        }
+
+        // Function to load file from Rust (called when opened via double-click or auto-reload)
+        window.loadFileFromRust = async function(fileData) {
+            const isReload = currentFilePath === fileData.filepath && appContainer.style.display === 'flex';
+
+            // Store scroll position before reload
+            const scrollPos = isReload ? previewContainer.scrollTop : 0;
+
+            currentMarkdown = fileData.content;
+            currentFilePath = fileData.filepath;
+            setWindowTitle(fileData.filename);
+            await renderMarkdown(currentMarkdown);
+            if (typeof window.__setActiveFile === 'function') window.__setActiveFile(currentFilePath);
+            // ToC-triggered scroll: heading takes priority, then "scroll to top".
+            if (pendingHeadingSlug) {
+                const target = document.getElementById(pendingHeadingSlug);
+                if (target) target.scrollIntoView({ behavior: 'auto', block: 'start' });
+                pendingHeadingSlug = null;
+                pendingScrollToTop = false;
+            } else if (pendingScrollToTop) {
+                resetPreviewScrollToStart();
+                pendingScrollToTop = false;
+            }
+
+            // Show preview, hide drop zone and splash
+            dropZone.style.display = 'none';
+            appContainer.style.display = 'flex';
+            hideSplash();
+
+            // Maintain browser history so WebView2's Back/Forward navigate between files.
+            // Skip when reloading the same file or when the load was triggered by popstate.
+            const hashUrl = '#' + encodeURIComponent(fileData.filename);
+            if (suppressHistoryPush) {
+                history.replaceState({ filepath: fileData.filepath }, '', hashUrl);
+            } else if (!history.state || !history.state.filepath) {
+                history.replaceState({ filepath: fileData.filepath }, '', hashUrl);
+            } else if (!isReload && history.state.filepath !== fileData.filepath) {
+                history.pushState({ filepath: fileData.filepath }, '', hashUrl);
+            }
+            suppressHistoryPush = false;
+
+            // Restore scroll position after reload
+            if (isReload) {
+                requestAnimationFrame(() => {
+                    previewContainer.scrollTop = scrollPos;
+                });
+            }
+        };
+    </script>
+    <div id="toast"></div>
+    <div id="slide-counter"></div>
+    <div id="help-modal" role="dialog" aria-modal="true" aria-labelledby="help-modal-title">
+        <div class="panel">
+            <button class="close" type="button" aria-label="Close">&times;</button>
+            <h2 id="help-modal-title">Keyboard Shortcuts</h2>
+            <table>
+                <tbody>
+                    <tr><td class="keys"><kbd>H</kbd></td><td>Show / hide this help</td></tr>
+                    <tr><td class="keys"><kbd>M</kbd></td><td>Cycle theme (Light → Dark → user CSS files)</td></tr>
+                    <tr><td class="keys"><kbd>N</kbd></td><td>Toggle auto section numbering</td></tr>
+                    <tr><td class="keys"><kbd>L</kbd></td><td>Toggle line numbers</td></tr>
+                    <tr><td class="keys"><kbd>E</kbd></td><td>Open editor window (Vim mode, math input assist, char counter)</td></tr>
+                    <tr><td class="keys"><kbd>X</kbd></td><td>Export current document as standalone HTML</td></tr>
+                    <tr><td class="keys"><kbd>Ctrl</kbd>+<kbd>+</kbd> / <kbd>Ctrl</kbd>+<kbd>-</kbd> / <kbd>Ctrl</kbd>+<kbd>0</kbd></td><td>Zoom in / out / reset</td></tr>
+                    <tr><td class="keys"><kbd>Alt</kbd>+<kbd>←</kbd> / <kbd>Alt</kbd>+<kbd>→</kbd></td><td>Navigate back / forward through opened files</td></tr>
+                    <tr><td class="keys"><kbd>P</kbd></td><td>Cycle Marp view: scroll → deck → list (click a thumbnail in list to open it in deck)</td></tr>
+                    <tr><td class="keys"><kbd>F</kbd></td><td>Toggle fullscreen (Marp documents)</td></tr>
+                    <tr><td class="keys"><kbd>←</kbd> / <kbd>→</kbd> / <kbd>PgUp</kbd> / <kbd>PgDn</kbd> / <kbd>Home</kbd> / <kbd>End</kbd></td><td>Navigate slides in Marp deck mode</td></tr>
+                    <tr><td class="keys"><kbd>Esc</kbd></td><td>Close this dialog</td></tr>
+                </tbody>
+            </table>
+            <div class="help-footer">
+                <a href="#" id="show-licenses">Third-party licenses</a>
+            </div>
+            <pre id="licenses-pane" hidden></pre>
+        </div>
+    </div>
+</body>
+</html>

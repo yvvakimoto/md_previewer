@@ -1,0 +1,95 @@
+/*
+ * parchment.css — warm cream / antique-paper theme (example user-defined style).
+ *
+ * Drop any .css file into this `assets/` folder and it will be picked up
+ * at startup and added to the M-key style cycle (Light → Dark → ...your styles).
+ *
+ * Selectors below mirror the inline <style> block in index.html. Override
+ * what you need; everything else inherits from the light theme.
+ */
+
+body {
+    background: #f4ecd8;
+    color: #3b2f24;
+    font-family: 'Georgia', 'Times New Roman', serif;
+}
+
+#preview-container {
+    background: #f4ecd8;
+}
+
+#preview {
+    background: #fbf6e8;
+    color: #3b2f24;
+    box-shadow: 0 2px 18px rgba(80, 50, 20, 0.08);
+}
+
+#preview h1,
+#preview h2,
+#preview h3,
+#preview h4,
+#preview h5,
+#preview h6 {
+    color: #5a3a1b;
+    font-family: 'Georgia', serif;
+    border-bottom-color: #d8c8a8;
+}
+
+#preview h1 {
+    border-bottom: 2px solid #b8965f;
+    padding-bottom: 0.3em;
+}
+
+#preview a {
+    color: #a04a1a;
+    text-decoration: underline;
+    text-decoration-color: rgba(160, 74, 26, 0.4);
+}
+
+#preview a:hover {
+    color: #6b2a05;
+}
+
+#preview blockquote {
+    border-left: 4px solid #b8965f;
+    background: rgba(184, 150, 95, 0.1);
+    color: #5a4530;
+}
+
+#preview code {
+    background: rgba(184, 150, 95, 0.18);
+    color: #5a3a1b;
+    border-radius: 3px;
+    padding: 0.1em 0.35em;
+    font-family: 'Consolas', 'Courier New', monospace;
+}
+
+#preview pre {
+    background: #2d2418;
+    color: #f4ecd8;
+    border: 1px solid #b8965f;
+    border-radius: 4px;
+}
+
+#preview pre code {
+    background: transparent;
+    color: inherit;
+}
+
+#preview table {
+    border-color: #b8965f;
+}
+
+#preview th {
+    background: #ead9b6;
+    color: #5a3a1b;
+}
+
+#preview td {
+    border-color: #d8c8a8;
+}
+
+#preview hr {
+    border: none;
+    border-top: 1px solid #b8965f;
+}

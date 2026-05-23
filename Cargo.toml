@@ -1,0 +1,20 @@
+[package]
+name = "md-previewer"
+version = "1.0.0"
+edition = "2021"
+license = "MIT"
+
+[dependencies]
+tao = "0.16"
+wry = "0.24"
+pulldown-cmark = "0.9"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+notify = "6.1"
+urlencoding = "2.1"
+base64 = "0.21"
+regex = "1"
+rfd = "0.14"
+
+[build-dependencies]
+embed-resource = "2"

@@ -1,0 +1,19 @@
+/target
+/assets/libs/*
+!/assets/libs/smartart.js
+/assets/THIRD_PARTY_LICENSES.txt
+/dist
+
+# Editor extension build artifacts
+extensions/**/target/
+extensions/vscode/node_modules/
+extensions/vscode/out/
+extensions/vscode/*.vsix
+
+# Marp bundler (Node toolchain)
+tools/build-marp/node_modules/
+tools/build-marp/package-lock.json
+
+# Editor bundler (Node toolchain)
+tools/build-editor/node_modules/
+tools/build-editor/package-lock.json

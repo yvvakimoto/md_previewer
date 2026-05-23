@@ -1,0 +1,223 @@
+/* @theme magenta */
+/* =================================================================
+   Magenta theme — a non-brand, visually distinct Marp theme.
+   Magenta accent + teal rule on a near-white canvas, chosen to be
+   obviously different from any brand themes at a glance.
+   Usage:
+     ---
+     marp: true
+     theme: magenta
+     paginate: true
+     ---
+   ================================================================= */
+
+@import "default";
+
+:root {
+  --accent:       #c2185b;
+  --accent-soft:  #fce4ec;
+  --accent-deep:  #880e4f;
+  --rule:         #00838f;
+  --rule-soft:    #b2ebf2;
+  --bg:           #fdfcfb;
+  --surface:      #ffffff;
+  --ink:          #1a1a1a;
+  --ink-2:        #4a4a4a;
+  --ink-3:        #7a7a7a;
+  --font-sans: "Yu Gothic UI", "Meiryo UI", "Segoe UI", "Hiragino Sans",
+               system-ui, -apple-system, sans-serif;
+  --font-mono: "Cascadia Mono", "Consolas", "MS Gothic", ui-monospace, monospace;
+}
+
+section {
+  font-family: var(--font-sans);
+  font-size: 26px;
+  line-height: 1.65;
+  color: var(--ink);
+  background: var(--bg);
+  padding: 60px 76px 68px;
+  align-content: start;
+  justify-content: flex-start;
+}
+
+section::after {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  color: var(--accent-deep);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  padding: 3px 12px;
+  bottom: 26px;
+  right: 30px;
+}
+
+section h1 {
+  font-size: 46px;
+  line-height: 1.2;
+  font-weight: 800;
+  color: var(--accent-deep);
+  margin: 0 0 18px;
+  padding-bottom: 10px;
+  border-bottom: 3px solid var(--accent);
+}
+
+section h2 {
+  font-size: 32px;
+  font-weight: 700;
+  color: var(--accent);
+  margin: 0 0 16px;
+}
+
+section h3 {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--rule);
+  margin: 22px 0 10px;
+}
+
+section p { margin: 0 0 14px; }
+
+section a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+
+section strong { color: var(--accent-deep); }
+
+section blockquote {
+  margin: 16px 0;
+  padding: 10px 18px;
+  border-left: 4px solid var(--rule);
+  background: var(--rule-soft);
+  color: var(--ink-2);
+  border-radius: 0 6px 6px 0;
+}
+
+section code {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  background: var(--accent-soft);
+  color: var(--accent-deep);
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+section pre {
+  background: #1f1f23;
+  color: #f4f4f1;
+  padding: 16px 18px;
+  border-radius: 8px;
+  border-left: 4px solid var(--accent);
+  overflow: auto;
+}
+
+section pre code {
+  background: transparent;
+  color: inherit;
+  padding: 0;
+}
+
+section table {
+  border-collapse: collapse;
+  margin: 12px 0;
+  font-size: 0.9em;
+}
+
+section th, section td {
+  border: 1px solid var(--rule-soft);
+  padding: 8px 12px;
+}
+
+section th {
+  background: var(--rule);
+  color: #fff;
+  font-weight: 700;
+}
+
+section ul, section ol { margin: 0 0 14px 1.4em; }
+section li { margin: 4px 0; }
+
+section hr {
+  border: none;
+  border-top: 2px dashed var(--rule);
+  margin: 18px 0;
+}
+
+/* ---- title slide ---------------------------------------------- */
+/* Use:  <!-- _class: title --> */
+section.title {
+  background:
+    radial-gradient(circle at 88% 12%, var(--accent-soft) 0%, transparent 55%),
+    var(--bg);
+  padding: 96px 88px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+section.title h1 {
+  font-size: 64px;
+  line-height: 1.15;
+  font-weight: 800;
+  color: var(--accent-deep);
+  border-bottom: none;
+  margin: 0 0 14px;
+  padding: 0;
+  max-width: 20ch;
+}
+section.title h1::before {
+  content: "";
+  display: block;
+  width: 64px;
+  height: 5px;
+  background: var(--accent);
+  border-radius: 3px;
+  margin-bottom: 28px;
+}
+section.title h2 {
+  font-size: 24px;
+  font-weight: 500;
+  color: var(--ink-2);
+  margin: 0 0 28px;
+}
+section.title p {
+  font-size: 16px;
+  color: var(--ink-3);
+  letter-spacing: .04em;
+  margin: 0;
+}
+
+/* ---- section divider ------------------------------------------ */
+/* Use:  <!-- _class: section --> */
+section.section {
+  background: linear-gradient(135deg, var(--accent-deep) 0%, var(--accent) 60%, var(--rule) 100%);
+  color: #fff;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 96px 88px;
+}
+section.section::after {
+  color: rgba(255, 255, 255, .8);
+  background: rgba(255, 255, 255, .12);
+  border-color: rgba(255, 255, 255, .35);
+}
+section.section h1 {
+  color: #fff;
+  font-size: 56px;
+  font-weight: 800;
+  border-bottom: none;
+  padding: 0;
+  margin: 0;
+}
+section.section h2 {
+  color: rgba(255, 255, 255, .85);
+  font-size: 18px;
+  font-weight: 500;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  margin: 0 0 18px;
+}

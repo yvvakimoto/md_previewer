@@ -1,0 +1,339 @@
+/*
+ * tategaki.css — 日本語縦書きテーマ (Japanese vertical writing).
+ *
+ * 和文組版の作法に沿って #preview を縦書き (writing-mode: vertical-rl) に
+ * 切り替える「機能テーマ」。配色は既存の Light / Dark に委ねるため、
+ * background / color は意図的に指定していない。dark-mode と併用可能。
+ *
+ * Marp / ワークスペースモードでは M キー自体が no-op のため影響しない。
+ */
+
+/* --- コンテナを横スクロールに切替 --- */
+#preview-container {
+    overflow-x: auto;
+    overflow-y: hidden;
+}
+
+/* --- 本文を縦書き化 --- */
+#preview {
+    writing-mode: vertical-rl;
+    text-orientation: mixed;
+
+    /* 横スクロールで読み進めるため、ビューポートいっぱいに高さを取る */
+    height: calc(100vh - 40px);
+    max-width: none;
+    max-height: none;
+    width: auto;
+    margin: 0;
+    padding: 32px 40px;
+
+    /* 和文フォント — Windows 標準で完結する明朝体優先 */
+    font-family: "Yu Mincho", "YuMincho", "Hiragino Mincho ProN",
+                 "Noto Serif JP", "MS Mincho", "ＭＳ 明朝", serif;
+    font-size: 17px;
+    line-height: 1.9;
+    letter-spacing: 0.02em;
+
+    /* 約物詰め (プロポーショナル和文メトリクス) */
+    font-feature-settings: "palt" 1, "pkna" 1;
+    font-kerning: normal;
+
+    /* 禁則処理 — 句読点・小書き仮名・括弧の行頭/行末禁則 */
+    line-break: strict;
+    word-break: normal;
+    overflow-wrap: break-word;
+
+    /* 行末の約物ぶら下げ */
+    hanging-punctuation: allow-end;
+}
+
+/* --- 段落: 全角1字下げ --- */
+#preview p {
+    text-indent: 1em;
+    margin: 0 0 1em 0;   /* 縦書きでは「下マージン」が次段落との行間に相当 */
+}
+
+/* 引用・リスト直下の段落は字下げを抑制 */
+#preview li > p,
+#preview blockquote > p:first-child {
+    text-indent: 0;
+}
+
+/* --- 縦中横: 半角2桁までの数字を正立合成 --- */
+#preview {
+    -webkit-text-combine: digits 2;
+    text-combine-upright: digits 2;
+}
+
+/* --- 見出し: 論理プロパティで罫線を回転対応 --- */
+#preview h1,
+#preview h2,
+#preview h3,
+#preview h4,
+#preview h5,
+#preview h6 {
+    font-family: inherit;
+    font-weight: 600;
+    text-indent: 0;
+    line-height: 1.5;
+    border-bottom: none;
+    /* 見出しの前後に十分なアキ (block 軸 = 画面横方向) を確保。
+     * 縦組み書籍では章節の頭で「行アキ」を大きく取るのが慣例。 */
+    margin-block-start: 2.5em;
+    margin-block-end: 1.2em;
+    /* 浮動表が見出しに被らないようクリア */
+    clear: both;
+}
+/* 文書冒頭の見出しに余白を付けない */
+#preview > :first-child {
+    margin-block-start: 0;
+}
+#preview h1 {
+    font-size: 1.6em;
+    padding-inline-end: 0.4em;
+    border-inline-end: 2px solid currentColor;
+}
+#preview h2 {
+    font-size: 1.35em;
+    padding-inline-end: 0.3em;
+    border-inline-end: 1px solid currentColor;
+}
+#preview h3 { font-size: 1.18em; }
+#preview h4 { font-size: 1.05em; }
+
+/* --- 引用: 行頭側 (= 横書きの左) に罫線 --- */
+#preview blockquote {
+    border-left: none;
+    border-inline-start: 4px solid #999;
+    padding-inline-start: 1em;
+    padding-inline-end: 0.3em;
+    margin-block: 1.5em;
+    margin-inline: 0;
+    /* 罫線 (画面上端の横線) が親いっぱいに伸びないよう、
+     * ブロックの大きさを内容に合わせる。
+     * vertical-rl では block 軸 = 画面横方向のため、
+     * 物理 width と論理 block-size の両方を fit-content に。
+     * さらに display: table で確実にシュリンク・トゥ・フィットを効かせる。 */
+    display: table;
+    width: -moz-fit-content;
+    width: fit-content;
+    block-size: fit-content;
+    max-block-size: max-content;
+}
+
+/* --- 区切り線: 縦書きでは縦の細線として描く --- */
+#preview hr {
+    border: none;
+    width: 1px;
+    height: auto;
+    min-height: 60%;
+    background: currentColor;
+    opacity: 0.3;
+    margin: 0 1em;
+    display: inline-block;
+    vertical-align: middle;
+}
+
+/* --- リスト: マーカー位置を調整 ---
+ * 浮動表の脇に箇条書きが回り込む際、外側に置いたマーカー (list-style-position: outside)
+ * が表の領域にめり込むため、内側 (inside) に配置する。
+ * 前後 (block 軸 = 画面横方向) に余白を取り、行頭側 (inline-start = 画面上方向)
+ * を少し下げて見やすくする。 */
+#preview ul,
+#preview ol {
+    margin-block: 0.6em;
+    margin-inline: 0;
+    padding-inline-start: 1em;
+    list-style-position: inside;
+}
+#preview li {
+    text-indent: 0;
+    margin-bottom: 0.3em;
+    padding-inline-start: 0.3em;
+}
+/* 入れ子リストはインデント */
+#preview li > ul,
+#preview li > ol {
+    padding-inline-start: 1.5em;
+}
+/* 番号付きリストのマーカー (1. 2. 10. など) を縦中横で正立合成。
+ * digits 2 だと "10." のドットで合成が崩れるため、マーカー全体を一塊に。 */
+#preview ol > li::marker {
+    text-combine-upright: all;
+    -webkit-text-combine: horizontal;
+}
+
+/* --- インラインコード: 寝かせず正立に近い表示 --- */
+#preview :not(pre) > code {
+    font-family: "Consolas", "Courier New", monospace;
+    font-size: 0.9em;
+    padding: 0.05em 0.3em;
+}
+
+/* --- ブロック要素は横書きの「島」として配置 ---
+ * 縦書きの流れの中でコード・画像・図を回転させず水平に保つ。
+ * 表と別行立て数式は別ルールで縦書きに参加させる (下記)。
+ */
+#preview pre,
+#preview img,
+#preview .mermaid,
+#preview .smartart,
+#preview figure {
+    writing-mode: horizontal-tb;
+    text-orientation: mixed;
+    display: block;
+    margin: 0.5em 0 1em;
+    text-indent: 0;
+    /* 縦書きでは「最大高さ」が紙幅相当 */
+    max-height: 90%;
+    /* 画像が縦書き行送り方向にはみ出さないよう */
+    max-width: none;
+}
+
+/* --- 別行立て数式: 縦書きの流れに参加させる ---
+ * KaTeX 内部の数式組版は横方向なので、ブロック自体は horizontal-tb のまま
+ * 90°回転させ、縦書き本文の中に「立てた」状態で配置する。
+ * 数式は読む際にページを左に傾ける形になるが、縦書き組版での
+ * 別行立て数式の慣行 (理工系縦書き書籍と同様) に沿う。
+ */
+#preview .katex-display {
+    /* ラッパは block 化して紙幅 (inline-axis = 画面の縦方向) いっぱいを占有。
+     * text-align: center で内側のインライン要素を inline 軸方向 (=画面縦方向) に中央寄せ → 上下センタリング。 */
+    display: block;
+    text-align: center;
+    margin: 1em 0;
+    text-indent: 0;
+    max-width: none;
+    writing-mode: vertical-rl;
+}
+#preview .katex-display > .katex {
+    /* 数式本体は横組みを保ち、90°回転して縦書き本文の中に立てる */
+    writing-mode: horizontal-tb;
+    text-orientation: mixed;
+    display: inline-block;
+    transform: rotate(90deg);
+    transform-origin: center center;
+    vertical-align: middle;
+}
+
+/* --- 表は回り込みにする ---
+ * 縦書きでは float: inline-start が「行頭側」(= 紙面上端) に寄り、
+ * 後続の本文が表の脇 (下側) を回り込む。
+ * カラム高さに収まるよう block-size を制限し、はみ出した内容は
+ * セル単位で横スクロール可能にする。
+ */
+/* --- 表: セル内の文字も含めて完全に縦書き化 ---
+ * 表本体に writing-mode: vertical-rl を適用すると、各セル内のテキストが
+ * 縦書きになるだけでなく、表のグリッド自体も回転する:
+ *   - 各行 (tr) 内のセル (td/th) は inline 軸 = 縦方向に積まれる
+ *   - 行同士は block 軸 = 横方向 (右から左) に積まれる
+ * つまり、Markdown の `| A | B | C |` という横並びの行は、縦組みでは
+ * A が上・C が下の縦列となり、複数の行はその縦列を右から左に並べた形になる。
+ * これは伝統的な和文縦組みの表組と同一のレイアウト。
+ *
+ * 本文は回り込まず、表は独立した中央寄せブロックとして配置される。 */
+#preview table,
+#preview .csv-table > table {
+    writing-mode: vertical-rl;
+    text-orientation: mixed;
+    display: table;
+    /* 浮動を完全に解除 */
+    float: none;
+    clear: both;
+    text-indent: 0;
+    /* block 軸 (画面横) = 表の前後のアキ
+     * inline 軸 (画面縦) で auto → 上下センタリング (要 max-inline-size) */
+    margin-block: 1.5em;
+    margin-inline: auto;
+    max-inline-size: max-content;
+    max-block-size: none;
+    border-collapse: collapse;
+    border-spacing: 0;
+    /* 縦中横などの組版設定は引き継ぐ */
+    font-feature-settings: inherit;
+}
+
+/* セル内余白と縦書き向け調整 */
+#preview table th,
+#preview table td {
+    padding: 0.6em 0.8em;
+    text-indent: 0;
+    line-height: 1.7;
+    /* セルの最小サイズを揃える (縦書きセル幅 = 横方向の太さ) */
+    min-inline-size: 6em;
+    vertical-align: top;
+}
+
+/* 表キャプション: 表自体が vertical-rl なので、caption-side: top は
+ * block-start = 右側に配置される。読み手にとって「表の手前側」に
+ * タイトルが現れる、和文縦組みの慣例どおりの位置取り。
+ * Markdown ネイティブの表構文には caption がないため、
+ * タイトルを付けたい表は HTML 直書きが必要:
+ *   <table><caption>表1：…</caption>…</table> */
+#preview table > caption {
+    caption-side: top;
+    font-weight: 600;
+    text-align: start;
+    padding: 0 0 0.6em 0;
+    font-size: 0.95em;
+    color: inherit;
+    writing-mode: vertical-rl;
+}
+
+/* CSV/TSV テーブルのラッパ */
+#preview .csv-table {
+    float: none;
+    clear: both;
+    display: block;
+    overflow: visible;
+    margin: 1.5em 0;
+    text-indent: 0;
+    text-align: center;
+}
+
+#preview pre {
+    padding: 0.8em 1em;
+    overflow-x: auto;
+    overflow-y: hidden;
+    font-size: 0.9em;
+    line-height: 1.5;
+}
+
+#preview pre code {
+    font-family: "Consolas", "Courier New", monospace;
+    font-feature-settings: normal;
+}
+
+#preview table {
+    border-collapse: collapse;
+    font-size: 0.95em;
+}
+
+#preview img {
+    height: auto;
+}
+
+/* --- 脚注セクション: 末尾なので縦書きのまま表示 --- */
+#preview .footnotes {
+    border-inline-start: 1px solid #999;
+    padding-inline-start: 1em;
+    margin-inline-start: 1.5em;
+    font-size: 0.9em;
+}
+
+/* --- リンク下線: 縦書きでは行末(下)側に来る --- */
+#preview a {
+    text-underline-position: under;
+}
+
+/* --- 自動セクション番号 (N キー) の表示位置調整 --- */
+body.numbered #preview h2::before,
+body.numbered #preview h3::before,
+body.numbered #preview h4::before {
+    margin-inline-end: 0.4em;
+}
+
+/* --- TOC サイドバーは横書きのまま維持 (既定が左ドック) --- */
+#toc-sidebar {
+    writing-mode: horizontal-tb;
+}
