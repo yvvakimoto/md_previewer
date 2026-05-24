@@ -24,6 +24,10 @@
     max-width: none;
     max-height: none;
     width: auto;
+    /* vertical-rl では width: auto がシュリンク・トゥ・フィットになるため、
+     * 短文時に #preview がコンテナ左端へ張り付いてしまう。
+     * コンテナ幅を常に確保することで、本文の起点 (右端) が画面右に来る。 */
+    min-width: 100%;
     margin: 0;
     padding: 32px 40px;
 
