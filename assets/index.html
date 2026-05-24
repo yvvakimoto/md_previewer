@@ -1485,6 +1485,11 @@
             const existing = document.getElementById('user-style');
             if (existing) existing.remove();
             if (!currentStyle) return Promise.resolve();
+            // In Marp mode the Marp theme is authoritative — skip injecting the
+            // user style so its `body` / `#preview` / heading rules don't cascade
+            // into the slide `<foreignObject>` content. The choice is still
+            // recorded above and will be restored when leaving Marp mode.
+            if (document.body.classList.contains('marp')) return Promise.resolve();
             const link = document.createElement('link');
             link.id = 'user-style';
             link.rel = 'stylesheet';
@@ -2956,6 +2961,13 @@ ${previewClone.outerHTML}
 
         async function renderMarp(markdown) {
             document.body.classList.add('marp');
+            // Strip the user-style <link> so its rules don't cascade into Marp
+            // slide content (foreignObject text inherits font-family etc. from
+            // ancestor selectors like body / #preview). localStorage.styleName
+            // is untouched — leaving Marp mode (see the non-Marp branch below)
+            // re-applies it.
+            const __userLink = document.getElementById('user-style');
+            if (__userLink) __userLink.remove();
             // Restore last view preference. Migrates the older boolean `deckMode` key
             // (true → 'deck') on first read.
             let __savedView = localStorage.getItem('marpView');
@@ -3249,7 +3261,10 @@ ${previewClone.outerHTML}
                 return;
             }
             // Leaving a previous Marp document: shed mode classes and slide-counter.
+            const __wasMarp = document.body.classList.contains('marp');
             document.body.classList.remove('marp', 'deck-mode', 'list-mode');
+            // Restore the user-style <link> that renderMarp() stripped on entry.
+            if (__wasMarp && currentStyle) applyUserStyle(currentStyle);
 
             // Reset footnote registry so re-renders (auto-reload, navigation) start clean.
             footnoteState.defs = {};

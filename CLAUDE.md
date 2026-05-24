@@ -137,7 +137,7 @@ When a markdown document begins with a YAML front-matter block containing `marp:
   - **Deck mode** (`body.deck-mode`) — one slide at a time, navigated by `←` / `→` / `PgUp` / `PgDn` / `Space` / `Home` / `End`, with a counter overlay in the bottom-right and `F` to toggle fullscreen.
   - **List mode** (`body.list-mode`) — every slide as a clickable 16:9 thumbnail in a responsive CSS grid; clicking a thumbnail jumps into deck mode focused on that slide.
 - **Persistence** — the active mode is persisted to `localStorage.marpView` (`'scroll' | 'deck' | 'list'`); the legacy `localStorage.deckMode` boolean is read once for back-compat.
-- **Constraints** — in Marp mode the TOC sidebar is hidden, section numbering and the `M`-key dark toggle and `S`-key style picker are no-ops (Marp themes win — a toast explains), and editor-sync scroll is disabled because marp-core output carries no `data-line` attributes.
+- **Constraints** — in Marp mode the TOC sidebar is hidden, section numbering and the `M`-key dark toggle and `S`-key style picker are no-ops (Marp themes win — a toast explains), and editor-sync scroll is disabled because marp-core output carries no `data-line` attributes. The user-style `<link id="user-style">` is also stripped from `<head>` on entering Marp mode (so generic `body` / `#preview` / heading rules from `parchment.css` / `tategaki.css` etc. don't cascade into slide `<foreignObject>` text); `localStorage.styleName` is preserved, and the link is re-injected automatically when the next non-Marp document is rendered.
 
 ## Workspace (Directory) Mode
 
