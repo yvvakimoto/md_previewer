@@ -24,7 +24,7 @@ import { history, historyKeymap, defaultKeymap, indentWithTab } from '@codemirro
 import { search, searchKeymap } from '@codemirror/search';
 import { autocompletion, completionKeymap } from '@codemirror/autocomplete';
 import { oneDark } from '@codemirror/theme-one-dark';
-import { vim, Vim } from '@replit/codemirror-vim';
+import { vim, Vim, getCM } from '@replit/codemirror-vim';
 
 import { mathInputAssistKeymap, isInsideMath } from './mathInputAssist.js';
 import { charCount } from './charCount.js';
@@ -311,7 +311,13 @@ export function create(root, opts = {}) {
     vimState = !!on;
     try { localStorage.setItem(LS_VIM, vimState ? 'on' : 'off'); } catch (_) {}
     view.dispatch({ effects: vimComp.reconfigure(vimState ? vim() : []) });
-    if (!vimState) window.__vimMode = '';
+    if (!vimState) {
+      window.__vimMode = '';
+      __vimSubAttached = null; // CM5 adapter is gone; force re-attach next time on.
+    } else {
+      // Defer until after the reconfigure flushes; getCM needs the adapter.
+      setTimeout(attachVimModeListener, 0);
+    }
     updateToolbar();
     updateStatus();
     setTimeout(() => view.focus(), 0);
@@ -512,15 +518,44 @@ export function create(root, opts = {}) {
       // Simpler: listen for Vim events.
     } catch (_) {}
   }
-  // Subscribe to Vim mode changes if API available.
-  try {
-    if (typeof Vim.onChangeMode === 'function') {
-      Vim.onChangeMode((cmInstance, modeObj) => {
-        window.__vimMode = modeObj && modeObj.mode ? modeObj.mode : '';
-        updateStatus();
-      });
-    }
-  } catch (_) {}
+  // Subscribe to Vim mode changes via the CM5 adapter that
+  // `@replit/codemirror-vim` attaches when the `vim()` extension is active.
+  // The `vim-mode-change` event fires on every INSERT / NORMAL / VISUAL
+  // transition (including Esc, Ctrl+[, `:stopinsert`, etc.); we use it to
+  // flip the OS IME back to half-width whenever the user leaves INSERT.
+  //
+  // The CM5 adapter only exists while `vim()` is in the editor's extensions,
+  // and a fresh one is created whenever vimComp is reconfigured. So we
+  // (re)attach on each Vim-on transition (see `setVim`), plus once now in
+  // case Vim is already ON from a previous session.
+  //
+  // NOTE: this package's `Vim.onChangeMode` is undefined — only the per-cm5
+  // `vim-mode-change` event works.
+  let __vimSubAttached = null; // the cm5 we currently have a listener on
+  function attachVimModeListener() {
+    if (!vimState) return;
+    let cm5 = null;
+    try { cm5 = getCM(view); } catch (_) {}
+    if (!cm5 || typeof cm5.on !== 'function') return;
+    if (__vimSubAttached === cm5) return;
+    __vimSubAttached = cm5;
+    cm5.on('vim-mode-change', (modeObj) => {
+      const mode = modeObj && modeObj.mode ? modeObj.mode : '';
+      window.__vimMode = mode;
+      updateStatus();
+      if (mode !== 'insert') {
+        try { window.ipc && window.ipc.postMessage && window.ipc.postMessage('editor:ime:off'); } catch (_) {}
+      }
+    });
+  }
+  setTimeout(attachVimModeListener, 0);
+
+  // Rust-side IME poller pushes open-status changes here so we can tint the
+  // cursor in both INSERT (cm-cursor) and NORMAL (cm-fat-cursor) modes. See
+  // editor.css's `body.ime-open` rules. Boolean: true = 全角/IME open.
+  window.__setImeOpen = (open) => {
+    try { document.body.classList.toggle('ime-open', !!open); } catch (_) {}
+  };
 
   // ---------- File loading ----------
   function loadFile(payload) {

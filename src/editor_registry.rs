@@ -11,6 +11,8 @@ use std::sync::{Arc, Mutex};
 
 use tao::dpi::{LogicalPosition, LogicalSize};
 use tao::event_loop::{EventLoopProxy, EventLoopWindowTarget};
+#[cfg(windows)]
+use tao::platform::windows::WindowExtWindows;
 use tao::window::{WindowBuilder, WindowId};
 use wry::webview::{WebView, WebViewBuilder};
 use wry::http::Response;
@@ -129,6 +131,21 @@ impl EditorRegistry {
         }
     }
 
+    /// Push an IME open-status change to the editor JS so it can toggle
+    /// `body.ime-open` and tint the cursor. Called from the main loop in
+    /// response to `CustomEvent::EditorImeStatus`, which the polling thread
+    /// spawned alongside the editor emits on transitions.
+    pub fn push_ime_status(&self, open: bool) {
+        let guard = self.inner.lock().unwrap();
+        if let Some(state) = guard.as_ref() {
+            let script = format!(
+                "if (typeof window.__setImeOpen === 'function') {{ window.__setImeOpen({}); }}",
+                open
+            );
+            let _ = state.webview.evaluate_script(&script);
+        }
+    }
+
     /// Preview was clicked at a given line; tell the editor to jump.
     pub fn push_jump_to_editor(&self, path: &Path, line: u32) {
         let guard = self.inner.lock().unwrap();
@@ -219,6 +236,13 @@ pub fn spawn_editor_window(
             // editor:ready — webview is ready; nothing to push (initial file
             // was injected via __initialFile).
             if message == "editor:ready" {
+                return;
+            }
+            // editor:log: — forensic-log bridge from editor JS, mirrors the
+            // preview's app://__log/ GET channel. Kept around so future
+            // editor-side debugging doesn't need a Rust round-trip to wire up.
+            if let Some(payload) = message.strip_prefix("editor:log:") {
+                crate::dbg_log_write(&format!("[editor:js] {}", payload));
                 return;
             }
             if let Some(payload) = message.strip_prefix("editor:save:") {
@@ -347,6 +371,19 @@ pub fn spawn_editor_window(
                 }
                 return;
             }
+            if message == "editor:ime:off" {
+                // JS posts this on Vim NORMAL-mode entry. Flip the OS IME
+                // back to direct-input (半角) so subsequent NORMAL-mode
+                // command keys aren't eaten by IME composition.
+                #[cfg(windows)]
+                {
+                    if let Some(s) = registry_for_ipc.inner.lock().unwrap().as_ref() {
+                        let hwnd = s.webview.window().hwnd() as *mut std::ffi::c_void;
+                        crate::ime_win::set_ime_open(hwnd, false);
+                    }
+                }
+                return;
+            }
             if message == "editor:close:" {
                 let _ = proxy_for_ipc.send_event(CustomEvent::EditorCloseRequested);
             }
@@ -359,5 +396,40 @@ pub fn spawn_editor_window(
         file: initial_file.to_path_buf(),
         dirty: false,
     });
+
+    // IME open-status poller. Runs on a background thread; sends state-change
+    // events back to the main loop via the proxy, which then calls
+    // `EditorRegistry::push_ime_status`. The HWND is shipped across threads
+    // as a `usize` (raw pointers are !Send); the thread exits cleanly when
+    // the OS window is destroyed (`IsWindow` returns false), so no explicit
+    // shutdown signaling from the registry is required.
+    #[cfg(windows)]
+    {
+        let hwnd_raw = {
+            let guard = registry.inner.lock().unwrap();
+            guard.as_ref().map(|s| s.webview.window().hwnd() as usize).unwrap_or(0)
+        };
+        if hwnd_raw != 0 {
+            let proxy_for_poll = event_proxy.clone();
+            std::thread::spawn(move || {
+                let hwnd = hwnd_raw as *mut std::ffi::c_void;
+                let mut last: Option<bool> = None;
+                loop {
+                    std::thread::sleep(std::time::Duration::from_millis(200));
+                    if !crate::ime_win::is_window(hwnd) {
+                        return;
+                    }
+                    let cur = crate::ime_win::get_ime_open(hwnd);
+                    if cur != last {
+                        if let Some(open) = cur {
+                            let _ = proxy_for_poll.send_event(CustomEvent::EditorImeStatus(open));
+                        }
+                        last = cur;
+                    }
+                }
+            });
+        }
+    }
+
     Ok(())
 }

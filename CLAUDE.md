@@ -111,6 +111,19 @@ Three right-aligned toggle buttons:
 
 All three prefs persist via `localStorage` keys `editor:vim` (`on` / `off`), `editor:lineNumbers` (`absolute` / `relative` / `off`), and `editor:theme` (`light` / `dark`).
 
+### IME (Windows) integration
+
+WebView2 exposes no JS API to read or set the OS IME open-status, so the editor uses a Rust-side bridge in `src/ime_win.rs` that wraps Win32 IMM32 (plus `SendInput` as a last-resort fallback):
+
+- **Auto half-width on Vim NORMAL** — we subscribe to the CM5 adapter's `vim-mode-change` event via `getCM(view).on('vim-mode-change', ...)` (the global `Vim.onChangeMode` from earlier `@replit/codemirror-vim` releases does **not** exist in the bundled version — only the per-cm5 event works). On any transition out of INSERT (Esc, `<C-[>`, `:stopinsert`, visual entry, …) the editor JS posts `editor:ime:off` IPC; the Rust handler in `editor_registry.rs` then calls `ime_win::set_ime_open(hwnd, false)`. The CM5 adapter is created/destroyed by the `vimComp` Compartment, so the listener is (re)attached from `setVim(true)` and once at boot — `__vimSubAttached` dedupes.
+- **`set_ime_open` strategy** — `set_ime_open` casts a wide net because Chromium's TSF backend often ignores IMM messages aimed at the tao top-level HWND:
+  1. Gather candidate HWNDs: focused descendant (`GetGUIThreadInfo`) → every child of the tao window (`EnumChildWindows`) → the tao window itself.
+  2. For each candidate: `ImmGetContext` + `ImmSetOpenStatus` (direct API) **and** `SendMessageW(ImmGetDefaultIMEWnd, WM_IME_CONTROL, IMC_SETOPENSTATUS)` (control-message API).
+  3. Re-read open-status; if any candidate still reports the opposite state, `SendInput` a synthetic `VK_KANJI` (0x19, 半角/全角) keystroke — the only path that reliably reaches WebView2's TSF-backed IME on most setups.
+  Bails immediately if no descendant of the editor's GUI thread has keyboard focus, so the SendInput fallback never yanks IME state away from another foreground app.
+- **Full-width cursor tint** — alongside the editor a 200 ms polling thread reads `ImmGetOpenStatus` (with the same multi-HWND candidate sweep) and sends transitions to the main loop as `CustomEvent::EditorImeStatus(bool)`; the main loop pushes the bool to JS via `window.__setImeOpen`, which toggles `body.ime-open`. `assets/editor.css` colors `.cm-cursor` / `.cm-cursor-primary` (INSERT thin caret) and `.cm-fat-cursor` (NORMAL block caret) amber when the class is on, with brighter equivalents under `body.theme-dark`. The poller exits cleanly when `IsWindow(hwnd)` reports the editor window is destroyed; it also no-ops when the editor isn't the focused window.
+- **Forensic log bridge** — the editor webview also has an `editor:log:<msg>` IPC handler that writes to `md-previewer.log`, mirroring the preview's `app://__log/…` GET channel. Useful for diagnosing future IME / Vim-mode issues without an attached debugger.
+
 ## Styles & Theming
 
 - **`M`-key dark/light toggle** — flips `body.dark-mode` and re-initializes mermaid with the matching theme (`dark` vs `default`). Persisted in `localStorage.darkMode` (`'true'` / `'false'`). Orthogonal to the user-style selection: e.g. `parchment.css` + dark mode compose freely.

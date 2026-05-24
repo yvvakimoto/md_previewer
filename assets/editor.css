@@ -98,6 +98,35 @@ body.vim-panel-open .status-bar {
 .editor-host .cm-editor { height: 100%; }
 .editor-host .cm-editor.cm-focused { outline: none; }
 
+/* IME open (全角/日本語入力モード) — tint the caret so the mode is visible
+ * before the user starts typing. Covers both the thin INSERT caret
+ * (`.cm-cursor`) and the @replit/codemirror-vim NORMAL block caret
+ * (`.cm-fat-cursor`). `body.ime-open` is toggled by `window.__setImeOpen`,
+ * driven by a Rust-side poll of Win32 `ImmGetOpenStatus`. */
+body.ime-open .cm-editor .cm-cursor,
+body.ime-open .cm-editor .cm-cursor-primary {
+    border-left-color: #d97706;
+    border-left-width: 2px;
+}
+body.ime-open .cm-editor .cm-fat-cursor {
+    background: rgba(217, 119, 6, 0.55);
+    outline-color: #d97706;
+}
+body.ime-open .cm-editor.cm-focused .cm-fat-cursor {
+    background: rgba(217, 119, 6, 0.65);
+}
+body.theme-dark.ime-open .cm-editor .cm-cursor,
+body.theme-dark.ime-open .cm-editor .cm-cursor-primary {
+    border-left-color: #fbbf24;
+}
+body.theme-dark.ime-open .cm-editor .cm-fat-cursor {
+    background: rgba(251, 191, 36, 0.55);
+    outline-color: #fbbf24;
+}
+body.theme-dark.ime-open .cm-editor.cm-focused .cm-fat-cursor {
+    background: rgba(251, 191, 36, 0.65);
+}
+
 /* Vim ex-command (:) and search (/) prompt — promoted to a centered modal
  * with a readable monospaced font. The replit/codemirror-vim plugin renders
  * its prompt into `.cm-panels .cm-vim-panel` at the bottom of the editor;

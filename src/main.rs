@@ -20,6 +20,7 @@ use regex::Regex;
 use std::collections::{HashMap, HashSet};
 
 mod editor_registry;
+mod ime_win;
 use editor_registry::EditorRegistry;
 
 // Path to a markdown file currently being viewed. Wrapped in Arc<Mutex>
@@ -86,6 +87,10 @@ enum CustomEvent {
     // Editor live (unsaved) content → re-render preview without disk write,
     // and re-anchor scroll to cursor `line`.
     EditorLiveContent { path: PathBuf, content: String, line: u32 },
+    // OS IME open-status changed for the editor window. Posted by the polling
+    // thread spawned alongside the editor; main loop pushes the bool down to
+    // the editor JS (`window.__setImeOpen`) so it can tint the cursor.
+    EditorImeStatus(bool),
 }
 
 const APP_NAME: &str = "Markdown Previewer";
@@ -101,7 +106,7 @@ fn dbg_log_init(exe_dir: &Path) {
     let _ = DBG_LOG.set(Mutex::new(file));
 }
 
-fn dbg_log_write(msg: &str) {
+pub(crate) fn dbg_log_write(msg: &str) {
     if let Some(lock) = DBG_LOG.get() {
         if let Ok(mut guard) = lock.lock() {
             if let Some(f) = guard.as_mut() {
@@ -1381,6 +1386,9 @@ fn main() -> wry::Result<()> {
                         load_and_render(&path, &webview, &current_dir, &current_file, &editor_registry);
                     }
                 }
+            }
+            Event::UserEvent(CustomEvent::EditorImeStatus(open)) => {
+                editor_registry.push_ime_status(open);
             }
             Event::UserEvent(CustomEvent::EditorCursorMoved { line }) => {
                 // Editor → preview: scroll preview to mirror cursor line.
