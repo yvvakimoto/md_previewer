@@ -68,6 +68,8 @@ The Vim extension (`@replit/codemirror-vim`) is swapped in/out of a CodeMirror `
 
 **Tab / Shift+Tab** インデント／アンインデントは `@codemirror/commands` の `indentWithTab` を `mathInputAssistKeymap()` の直後（`searchKeymap`/`defaultKeymap` より前）に挿入することで実現している。これにより数式コンテキスト（`$`+Tab / `\begin{}`+Tab 等）は引き続き YaTeX 風展開が先勝ちし、未マッチ時のみ通常インデントへフォールスルーする。これが無いと WebView2 が未捕捉 Tab をフォーカス遷移として扱い、ステータスバーのトグル等へフォーカスが飛んでしまう。
 
+**日本語ワード境界対応** — `w` / `b` / `e` / `W` / `B` / `E` / `ge` / `gE` および INSERT モードの `<C-w>`、加えて `dw` / `cw` / `yw` / `daw` / `diw` / `vw` などのオペレータ保留形を、漢字 (CJK) / ひらがな / カタカナ / ASCII 単語 / 記号 の文字クラス境界で停止させる。`tools/build-editor/jpWordMotion.js` が upstream `@replit/codemirror-vim` の `findWord` / `moveToWord` を移植して `Vim.defineMotion('moveByWords', ...)` で丸ごと差し替える形で実装。`W` / `B` / `E` の big word は ASCII 単語と ASCII 記号を 1 クラスに潰しつつ日本語 3 クラスは独立、というハイブリッド。長音符 `ー` (U+30FC) はカタカナ固定（`ラーメン` は 1 単語）。Vim OFF 時の CodeMirror 標準 word motion には影響しない。
+
 ### Math input assist (YaTeX 風)
 
 - `$`+Tab → `$|$`

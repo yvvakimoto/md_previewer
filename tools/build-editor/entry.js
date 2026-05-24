@@ -30,6 +30,7 @@ import { mathInputAssistKeymap, isInsideMath } from './mathInputAssist.js';
 import { charCount } from './charCount.js';
 import { texEnvCompletionSource } from './texEnvComplete.js';
 import { pathCompletionSource } from './pathComplete.js';
+import { installJpWordMotion } from './jpWordMotion.js';
 
 // ---------- ATX heading fold service ----------
 function headingLevel(line) {
@@ -413,6 +414,10 @@ export function create(root, opts = {}) {
     Vim.mapCommand('za', 'action', 'mdToggleSectionFold', {}, { context: 'normal' });
     Vim.mapCommand('zA', 'action', 'mdToggleAllFolds',    {}, { context: 'normal' });
   } catch (_) {}
+
+  // Japanese-aware w/b/e/W/B/E (and dw/cw/yw/daw/...) — segment by
+  // hiragana / katakana / han / ASCII-word / punctuation class boundaries.
+  try { installJpWordMotion(Vim); } catch (_) {}
 
   const saveKey = {
     key: 'Mod-s',
