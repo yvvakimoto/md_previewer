@@ -1060,7 +1060,8 @@
             transform: translateX(-50%) translateY(0);
         }
 
-        #help-modal {
+        #help-modal,
+        #style-modal {
             position: fixed;
             inset: 0;
             background: rgba(0, 0, 0, 0.5);
@@ -1072,11 +1073,13 @@
             transition: opacity 0.15s ease;
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
         }
-        #help-modal.visible {
+        #help-modal.visible,
+        #style-modal.visible {
             display: flex;
             opacity: 1;
         }
-        #help-modal .panel {
+        #help-modal .panel,
+        #style-modal .panel {
             background: #ffffff;
             color: #24292e;
             border: 1px solid #e1e4e8;
@@ -1088,14 +1091,16 @@
             padding: 24px 28px;
             position: relative;
         }
-        #help-modal h2 {
+        #help-modal h2,
+        #style-modal h2 {
             margin: 0 0 16px 0;
             font-size: 18px;
             font-weight: 600;
             border: none;
             padding: 0;
         }
-        #help-modal .close {
+        #help-modal .close,
+        #style-modal .close {
             position: absolute;
             top: 10px;
             right: 14px;
@@ -1108,15 +1113,18 @@
             padding: 4px 8px;
             border-radius: 4px;
         }
-        #help-modal .close:hover {
+        #help-modal .close:hover,
+        #style-modal .close:hover {
             background: #f0f0f0;
             color: #24292e;
         }
-        #help-modal table {
+        #help-modal table,
+        #style-modal table {
             width: 100%;
             border-collapse: collapse;
         }
-        #help-modal td {
+        #help-modal td,
+        #style-modal td {
             padding: 6px 4px;
             font-size: 13px;
             vertical-align: middle;
@@ -1140,15 +1148,29 @@
             border-radius: 4px;
             margin: 0 1px;
         }
-        body.dark-mode #help-modal .panel {
+        #style-modal td.mark {
+            white-space: nowrap;
+            width: 1.5em;
+            padding-right: 10px;
+            text-align: center;
+            color: #2c974b;
+            font-weight: 600;
+        }
+        #style-modal tr.style-row { cursor: pointer; }
+        #style-modal tr.style-row:hover td { background: #f6f8fa; }
+        #style-modal tr.style-row.active td { font-weight: 600; }
+        body.dark-mode #help-modal .panel,
+        body.dark-mode #style-modal .panel {
             background: #161b22;
             color: #c9d1d9;
             border-color: #30363d;
         }
-        body.dark-mode #help-modal .close {
+        body.dark-mode #help-modal .close,
+        body.dark-mode #style-modal .close {
             color: #8b949e;
         }
-        body.dark-mode #help-modal .close:hover {
+        body.dark-mode #help-modal .close:hover,
+        body.dark-mode #style-modal .close:hover {
             background: #21262d;
             color: #c9d1d9;
         }
@@ -1157,6 +1179,8 @@
             background: #21262d;
             border-color: #30363d;
         }
+        body.dark-mode #style-modal tr.style-row:hover td { background: #21262d; }
+        body.dark-mode #style-modal td.mark { color: #56d364; }
         #help-modal .help-footer {
             margin-top: 14px;
             padding-top: 10px;
@@ -1338,23 +1362,37 @@
 
 
     <script>
-        // Style cycle: 'light' (no class), 'dark' (.dark-mode), or a user css filename
-        // discovered by Rust at startup and exposed via window.__userStyles.
-        const __builtinStyles = ['light', 'dark'];
-        function __availableStyles() {
-            const user = Array.isArray(window.__userStyles) ? window.__userStyles : [];
-            return __builtinStyles.concat(user);
+        // Two orthogonal axes:
+        //   darkMode    — boolean. Drives body.dark-mode + mermaid theme.
+        //                 Persisted in localStorage.darkMode ('true' / 'false').
+        //                 Toggled by the M key.
+        //   currentStyle — user CSS filename from window.__userStyles, or null
+        //                  for "no extra style". Persisted in localStorage.styleName.
+        //                  Selected via the S-key modal.
+        // The two compose freely (e.g. parchment.css + dark mode).
+        function __userStyleList() {
+            return Array.isArray(window.__userStyles) ? window.__userStyles.slice() : [];
         }
-        function __resolveInitialStyle() {
-            const legacy = localStorage.getItem('darkMode');
-            if (legacy !== null && localStorage.getItem('styleName') === null) {
-                localStorage.setItem('styleName', legacy === 'true' ? 'dark' : 'light');
-                localStorage.removeItem('darkMode');
+        function __resolveInitialState() {
+            // Migrate the old single-axis schema where localStorage.styleName held
+            // 'light' / 'dark' / <filename>. Split into the two-axis schema.
+            const savedStyle = localStorage.getItem('styleName');
+            if (savedStyle === 'dark') {
+                localStorage.setItem('darkMode', 'true');
+                localStorage.removeItem('styleName');
+            } else if (savedStyle === 'light') {
+                localStorage.setItem('darkMode', 'false');
+                localStorage.removeItem('styleName');
             }
-            const saved = localStorage.getItem('styleName') || 'light';
-            return __availableStyles().includes(saved) ? saved : 'light';
+            const dark = localStorage.getItem('darkMode') === 'true';
+            const style = localStorage.getItem('styleName');
+            const known = __userStyleList();
+            return {
+                darkMode: dark,
+                currentStyle: (style && known.includes(style)) ? style : null,
+            };
         }
-        let currentStyle = __resolveInitialStyle();
+        let { darkMode, currentStyle } = __resolveInitialState();
         function resetPreviewScrollToStart() {
             previewContainer.scrollTop = 0;
             // In `writing-mode: vertical-rl` (tategaki.css) the document's
@@ -1421,37 +1459,45 @@
             }
         }
 
-        function applyStyle(name) {
-            currentStyle = name;
-            localStorage.setItem('styleName', name);
-            document.body.classList.toggle('dark-mode', name === 'dark');
-            const existing = document.getElementById('user-style');
-            if (existing) existing.remove();
-            // Resolves when the new <link> has finished loading so callers
-            // that depend on the new writing-mode/layout (e.g. anchor scroll
-            // restore on M-cycle into tategaki.css) can await it.
-            let cssReady = Promise.resolve();
-            if (name !== 'light' && name !== 'dark') {
-                const link = document.createElement('link');
-                link.id = 'user-style';
-                link.rel = 'stylesheet';
-                link.href = name;
-                cssReady = new Promise((resolve) => {
-                    link.addEventListener('load', () => resolve(), { once: true });
-                    link.addEventListener('error', () => resolve(), { once: true });
-                });
-                document.head.appendChild(link);
-            }
+        // Binary dark/light toggle. Independent of the user-style <link>; user CSS
+        // files like tategaki.css are color-agnostic and compose with both modes.
+        function applyDarkMode(on) {
+            darkMode = !!on;
+            localStorage.setItem('darkMode', darkMode ? 'true' : 'false');
+            document.body.classList.toggle('dark-mode', darkMode);
             if (typeof mermaid !== 'undefined') {
                 mermaid.initialize({
                     startOnLoad: false,
-                    theme: name === 'dark' ? 'dark' : 'default',
+                    theme: darkMode ? 'dark' : 'default',
                     securityLevel: 'loose'
                 });
             }
+        }
+        // Swap the user stylesheet. `name === null` removes any active user style
+        // and leaves the document on the inline baseline (light or dark).
+        // Returns a Promise that resolves once the new <link> has loaded so callers
+        // that depend on the new writing-mode/layout (e.g. anchor scroll restore
+        // when switching into tategaki.css) can await it.
+        function applyUserStyle(name) {
+            currentStyle = name || null;
+            if (currentStyle) localStorage.setItem('styleName', currentStyle);
+            else localStorage.removeItem('styleName');
+            const existing = document.getElementById('user-style');
+            if (existing) existing.remove();
+            if (!currentStyle) return Promise.resolve();
+            const link = document.createElement('link');
+            link.id = 'user-style';
+            link.rel = 'stylesheet';
+            link.href = currentStyle;
+            const cssReady = new Promise((resolve) => {
+                link.addEventListener('load', () => resolve(), { once: true });
+                link.addEventListener('error', () => resolve(), { once: true });
+            });
+            document.head.appendChild(link);
             return cssReady;
         }
-        applyStyle(currentStyle);
+        applyDarkMode(darkMode);
+        applyUserStyle(currentStyle);
 
         let toastTimer = null;
         function showToast(msg) {
@@ -1612,7 +1658,7 @@
             showToast('Numbering: ' + (on ? 'on' : 'off'));
         });
 
-        // Style cycle (M key): light → dark → user1.css → user2.css → light
+        // Dark / Light toggle (M key). Orthogonal to the user-style picker (S).
         document.addEventListener('keydown', async (e) => {
             if (e.ctrlKey || e.metaKey || e.altKey) return;
             if (e.key !== 'm' && e.key !== 'M') return;
@@ -1622,20 +1668,88 @@
                 showToast('Theme is fixed by Marp directives');
                 return;
             }
-            const cycle = __availableStyles();
-            const idx = cycle.indexOf(currentStyle);
-            const next = cycle[(idx + 1) % cycle.length];
-            // Anchor by source-line BEFORE swapping — DOM is rebuilt by
-            // renderMarkdown() so element refs would be stale.
+            // Anchor by source-line BEFORE re-render — mermaid theme switch
+            // requires re-rendering, which rebuilds the DOM.
             const anchor = capturePreviewAnchor();
-            // applyStyle returns a Promise resolved on <link> load. Awaiting
-            // it ensures the new writing-mode (e.g. tategaki.css's vertical-rl)
-            // is active before we measure for scroll restore.
-            const cssReady = applyStyle(next);
-            showToast(next);
+            applyDarkMode(!darkMode);
+            showToast(darkMode ? 'Dark' : 'Light');
+            if (currentMarkdown) await renderMarkdown(currentMarkdown);
+            requestAnimationFrame(() => restorePreviewAnchor(anchor));
+        });
+
+        // Style picker (S key) — opens a modal table of available user styles.
+        function __styleModal() { return document.getElementById('style-modal'); }
+        function __renderStyleRows() {
+            const tbody = document.getElementById('style-modal-rows');
+            if (!tbody) return;
+            const entries = [{ name: null, label: 'Default' }]
+                .concat(__userStyleList().map(n => ({ name: n, label: n })));
+            tbody.innerHTML = '';
+            for (const entry of entries) {
+                const tr = document.createElement('tr');
+                tr.className = 'style-row';
+                if (entry.name) tr.dataset.style = entry.name;
+                const isActive = (entry.name || null) === (currentStyle || null);
+                if (isActive) tr.classList.add('active');
+                const mark = document.createElement('td');
+                mark.className = 'mark';
+                mark.textContent = isActive ? '✓' : '';
+                const label = document.createElement('td');
+                label.className = 'label';
+                label.textContent = entry.label;
+                tr.appendChild(mark);
+                tr.appendChild(label);
+                tbody.appendChild(tr);
+            }
+        }
+        function setStyleModalOpen(open) {
+            const m = __styleModal();
+            if (!m) return;
+            if (open) __renderStyleRows();
+            m.classList.toggle('visible', open);
+        }
+        document.addEventListener('keydown', (e) => {
+            if (e.ctrlKey || e.metaKey || e.altKey) return;
+            if (e.key !== 's' && e.key !== 'S') return;
+            const t = e.target;
+            if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+            const m = __styleModal();
+            if (!m) return;
+            if (document.body.classList.contains('marp')) {
+                showToast('Theme is fixed by Marp directives');
+                return;
+            }
+            e.preventDefault();
+            setStyleModalOpen(!m.classList.contains('visible'));
+        });
+        document.addEventListener('keydown', (e) => {
+            if (e.key !== 'Escape') return;
+            const m = __styleModal();
+            if (m && m.classList.contains('visible')) {
+                e.preventDefault();
+                setStyleModalOpen(false);
+            }
+        });
+        document.addEventListener('click', async (e) => {
+            const m = __styleModal();
+            if (!m || !m.classList.contains('visible')) return;
+            const target = e.target instanceof Element ? e.target : null;
+            if (!target) return;
+            // Backdrop click (the modal overlay itself) or close button.
+            if (e.target === m || target.closest('#style-modal .close')) {
+                setStyleModalOpen(false);
+                return;
+            }
+            const row = target.closest('#style-modal .style-row');
+            if (!row) return;
+            const next = row.dataset.style || null; // empty data-style → Default
+            setStyleModalOpen(false);
+            if ((next || null) === (currentStyle || null)) return;
+            const anchor = capturePreviewAnchor();
+            const cssReady = applyUserStyle(next);
+            showToast(next || 'Default');
             const renderDone = currentMarkdown ? renderMarkdown(currentMarkdown) : Promise.resolve();
             await Promise.all([cssReady, renderDone]);
-            // One more frame so layout has reflowed under the new CSS.
             requestAnimationFrame(() => restorePreviewAnchor(anchor));
         });
 
@@ -1833,11 +1947,11 @@
             const baseCss = baseStyleEl ? baseStyleEl.textContent : '';
 
             // Resolve active theme into inline CSS.
-            // For 'light' and 'dark' the rules already live in baseCss; we just need the `body.dark-mode` class
-            // applied or not. For a user CSS file, fetch its text and append.
+            // Baseline light/dark rules already live in baseCss; we just need the
+            // `body.dark-mode` class applied or not. For a user CSS file, fetch
+            // its text and append.
             let userCssText = '';
-            const isUserStyle = currentStyle !== 'light' && currentStyle !== 'dark';
-            if (isUserStyle) {
+            if (currentStyle) {
                 try {
                     const resp = await fetch(currentStyle);
                     if (resp.ok) userCssText = await resp.text();
@@ -1852,7 +1966,7 @@
             if (needsHljs) cdnLinks.push(`<link rel="stylesheet" href="${EXPORT_HLJS_CSS_CDN}">`);
 
             const bodyClasses = [];
-            if (currentStyle === 'dark') bodyClasses.push('dark-mode');
+            if (document.body.classList.contains('dark-mode')) bodyClasses.push('dark-mode');
             if (document.body.classList.contains('numbered')) bodyClasses.push('numbered');
             const bodyClass = bodyClasses.join(' ');
             // Title: prefer the source filename basename (without .md/.markdown) so browser tabs and
@@ -2077,7 +2191,7 @@ ${previewClone.outerHTML}
             // (populated by the Rust host at startup), delegate to its
             // exportStyle({currentMarkdown, currentFilePath, preview}). Falls
             // through to the general export when no entry exists.
-            const exporterFile = window.__styleExporters && window.__styleExporters[currentStyle];
+            const exporterFile = currentStyle && window.__styleExporters && window.__styleExporters[currentStyle];
             if (exporterFile) {
                 try {
                     const mod = await import('./' + exporterFile);
@@ -3757,7 +3871,8 @@ ${previewClone.outerHTML}
             <table>
                 <tbody>
                     <tr><td class="keys"><kbd>H</kbd></td><td>Show / hide this help</td></tr>
-                    <tr><td class="keys"><kbd>M</kbd></td><td>Cycle theme (Light → Dark → user CSS files)</td></tr>
+                    <tr><td class="keys"><kbd>M</kbd></td><td>Toggle Dark / Light mode</td></tr>
+                    <tr><td class="keys"><kbd>S</kbd></td><td>Select theme style (modal picker)</td></tr>
                     <tr><td class="keys"><kbd>N</kbd></td><td>Toggle auto section numbering</td></tr>
                     <tr><td class="keys"><kbd>L</kbd></td><td>Toggle line numbers</td></tr>
                     <tr><td class="keys"><kbd>E</kbd></td><td>Open editor window (Vim mode, math input assist, char counter)</td></tr>
@@ -3774,6 +3889,15 @@ ${previewClone.outerHTML}
                 <a href="#" id="show-licenses">Third-party licenses</a>
             </div>
             <pre id="licenses-pane" hidden></pre>
+        </div>
+    </div>
+    <div id="style-modal" role="dialog" aria-modal="true" aria-labelledby="style-modal-title">
+        <div class="panel">
+            <button class="close" type="button" aria-label="Close">&times;</button>
+            <h2 id="style-modal-title">Select Style</h2>
+            <table>
+                <tbody id="style-modal-rows"></tbody>
+            </table>
         </div>
     </div>
 </body>

@@ -12,7 +12,7 @@ A standalone desktop markdown previewer built with Rust for **Windows only**. Fe
 - Image base64 embedding, Obsidian-style `|WxH` sizing, relative-path resolution — see *Preview Pipeline*
 - Drag & drop file/folder support, `.md` file association, cross-file `.md` link navigation with back/forward history — see *Preview Pipeline*
 - **Companion editor window** (`E` key, CodeMirror 6 + Vim, live preview, autocomplete) — see *Companion Editor Window*
-- **User-defined styles** (`M` key cycle through `assets/*.css`), **auto section numbering** (`N` key), **per-style HTML exporters** — see *Styles & Theming*
+- **Dark / Light toggle** (`M` key), **user-defined styles** picker (`S` key, table modal over `assets/*.css`), **auto section numbering** (`N` key), **per-style HTML exporters** — see *Styles & Theming*
 - **Marp presentation slides** (`marp: true` YAML front-matter, 3 view modes via `P` key) — see *Marp Mode*
 - **Workspace (directory) mode** with file tree, `_toc.md` support, recursive watcher — see *Workspace Mode*
 - **Export to standalone HTML** (`X` key, single file or full workspace) — see *Export*
@@ -113,7 +113,9 @@ All three prefs persist via `localStorage` keys `editor:vim` (`on` / `off`), `ed
 
 ## Styles & Theming
 
-- **`M`-key style cycle** — drop any `.css` file into the `assets/` folder and it joins the cycle alongside the built-in Light and Dark themes. The Rust host scans `assets/*.css` once at startup and exposes the list to the webview as `window.__userStyles`; the active selection is persisted in `localStorage.styleName`. Switching styles surfaces a brief toast with the active style name.
+- **`M`-key dark/light toggle** — flips `body.dark-mode` and re-initializes mermaid with the matching theme (`dark` vs `default`). Persisted in `localStorage.darkMode` (`'true'` / `'false'`). Orthogonal to the user-style selection: e.g. `parchment.css` + dark mode compose freely.
+- **`S`-key style picker** — opens a modal table listing every `.css` in `assets/` (excluding `editor.css`) plus a `Default` row. Clicking a row applies it and persists the selection in `localStorage.styleName` (`Default` clears the key). User CSS files are loaded as `<link id="user-style">`; styles compose with dark mode (e.g. `tategaki.css`'s vertical layout stays put when `M` flips colors). The Rust host scans `assets/*.css` once at startup and exposes the filename list as `window.__userStyles`.
+- **Legacy localStorage migration** — the previous single-axis `styleName` schema (`'light'` / `'dark'` / `<filename>`) is migrated on startup: `'dark'` → `darkMode='true'` + clear `styleName`, `'light'` → `darkMode='false'` + clear `styleName`, filename → kept as-is.
 - **Bundled starter themes**:
   - `parchment.css` — warm cream / antique-paper theme.
   - `tategaki.css` — Japanese vertical-writing theme (`writing-mode: vertical-rl`, mincho fonts, kinsoku 禁則 / tate-chu-yoko 縦中横 / palt 約物詰め, with `pre` / `table` / `img` / math / mermaid / smartart kept as horizontal islands; intentionally color-agnostic so it composes with both Light and Dark).
@@ -135,7 +137,7 @@ When a markdown document begins with a YAML front-matter block containing `marp:
   - **Deck mode** (`body.deck-mode`) — one slide at a time, navigated by `←` / `→` / `PgUp` / `PgDn` / `Space` / `Home` / `End`, with a counter overlay in the bottom-right and `F` to toggle fullscreen.
   - **List mode** (`body.list-mode`) — every slide as a clickable 16:9 thumbnail in a responsive CSS grid; clicking a thumbnail jumps into deck mode focused on that slide.
 - **Persistence** — the active mode is persisted to `localStorage.marpView` (`'scroll' | 'deck' | 'list'`); the legacy `localStorage.deckMode` boolean is read once for back-compat.
-- **Constraints** — in Marp mode the TOC sidebar is hidden, section numbering and the `M`-key theme cycle are no-ops (Marp themes win — a toast explains), and editor-sync scroll is disabled because marp-core output carries no `data-line` attributes.
+- **Constraints** — in Marp mode the TOC sidebar is hidden, section numbering and the `M`-key dark toggle and `S`-key style picker are no-ops (Marp themes win — a toast explains), and editor-sync scroll is disabled because marp-core output carries no `data-line` attributes.
 
 ## Workspace (Directory) Mode
 
