@@ -1246,77 +1246,6 @@
         body.marp.numbered #preview h3::before,
         body.marp.numbered #preview h4::before { content: none; }
 
-        /* 図表センタリング — 文章 → 図表の順で並ぶスライドで、
-           最初の図表以降を .marp-figure-stage にまとめて残りスペースの中央へ寄せる。
-           split レイアウトは grid 配置のため対象外 (marp-has-figs を付与しない)。
-           Marp 標準テーマは section を flex column にしているため display を強制せず
-           justify-content だけ flex-start に固定し、stage 自体に flex:1 で残り空間を
-           取らせ、内部で justify-content:center により上下中央に揃える。 */
-        body.marp #preview section.marp-has-figs {
-            display: flex;
-            flex-direction: column;
-            justify-content: flex-start;
-        }
-        body.marp #preview section.marp-has-figs > .marp-figure-stage {
-            flex: 1 1 auto;
-            min-height: 0;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            gap: 16px;
-            /* horizontal centering handled per child (text-align for inline SVG,
-               margin:auto for block tables) — avoid align-items:center because it
-               collapses mermaid/smartart wrapper width and shrinks the inline SVG. */
-        }
-        body.marp #preview section.marp-has-figs > .marp-figure-stage > .mermaid,
-        body.marp #preview section.marp-has-figs > .marp-figure-stage > .smartart {
-            margin: 0;
-            text-align: center;
-        }
-        body.marp #preview section.marp-has-figs > .marp-figure-stage > .csv-table {
-            margin: 0 auto;
-        }
-        body.marp #preview section.marp-has-figs > .marp-figure-stage > table {
-            margin: 0 auto;
-        }
-        body.marp #preview section.marp-has-figs > .marp-figure-stage > p {
-            margin: 0;
-            text-align: center;
-        }
-
-        /* Split (multi-column) layout — activated by <!-- _class: split --> or
-           split-2 / split-3 / split-4. The renderMarp() post-pass wraps the
-           direct children of section.split* into <div class="split-col"> groups
-           separated by `+++` lines in the source. */
-        body.marp #preview section.split,
-        body.marp #preview section.split-2 {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 30px;
-            align-content: start;
-        }
-        body.marp #preview section.split-3 {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 24px;
-            align-content: start;
-        }
-        body.marp #preview section.split-4 {
-            display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            gap: 20px;
-            align-content: start;
-        }
-        body.marp #preview section[class*="split"] > .split-col { min-width: 0; align-self: start; }
-        body.marp #preview section[class*="split"] > .split-col > :first-child { margin-top: 0; }
-        /* Leading h1/h2 before the first +++ become a full-width header row
-           sitting above the columns, so all columns start at the same y. */
-        body.marp #preview section[class*="split"] > h1,
-        body.marp #preview section[class*="split"] > h2 {
-            grid-column: 1 / -1;
-            margin-top: 0;
-        }
-
         /* Deck (single-slide presentation) mode */
         body.marp.deck-mode #preview-container { background: #000; }
         body.marp.deck-mode #preview {
@@ -1647,112 +1576,6 @@
             return __marpThemesPromise;
         }
 
-        // Enumerate all Marp theme names selectable via the S-key modal.
-        // Combines marp-core's three built-ins with any user theme files
-        // discovered under assets/marp/*.css (theme name extracted from the
-        // mandatory `/* @theme <name> */` header). Built-ins come first; a
-        // user theme that re-declares one of the built-in names is dropped to
-        // keep the built-in row clickable.
-        function __marpThemeNames() {
-            const builtins = ['default', 'gaia', 'uncover'];
-            const seen = new Set(builtins);
-            const out = builtins.map(n => ({ name: n, label: n + ' (built-in)' }));
-            for (const [, css] of __marpThemeCache) {
-                const m = css.match(/\/\*\s*@theme\s+([A-Za-z0-9_-]+)\s*\*\//);
-                if (!m) continue;
-                const name = m[1];
-                if (seen.has(name)) continue;
-                seen.add(name);
-                out.push({ name, label: name });
-            }
-            return out;
-        }
-
-        // Read the current `theme:` value from a Marp document's YAML
-        // front-matter. Returns the bare name or null if no `theme:` line
-        // exists (= marp-core falls back to its built-in default).
-        function getMarpTheme(md) {
-            const m = md.match(/^---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*(\r?\n|$)/);
-            if (!m) return null;
-            const lines = m[1].split(/\r?\n/);
-            for (const line of lines) {
-                const tm = line.match(/^\s*theme\s*:\s*(\S+)\s*$/);
-                if (tm) return tm[1];
-            }
-            return null;
-        }
-
-        // Rewrite (or insert) the `theme:` line inside a Marp document's
-        // YAML front-matter. Returns the new markdown string. If a `theme:`
-        // line already exists, the value is replaced in place; otherwise a
-        // new line is inserted immediately after the `marp: true` line, or
-        // appended to the end of the front-matter body as a fallback. The
-        // source's line-ending style (LF vs CRLF) is preserved.
-        function setMarpTheme(md, name) {
-            const m = md.match(/^(---[ \t]*\r?\n)([\s\S]*?)(\r?\n---[ \t]*)(\r?\n|$)/);
-            if (!m) return md;
-            const head = m[1];
-            const fmBody = m[2];
-            const tail = m[3];
-            const trailing = m[4] || '';
-            const rest = md.slice(m[0].length);
-            // Detect newline style: prefer the front-matter open's own EOL.
-            const eol = /\r\n/.test(head) ? '\r\n' : '\n';
-            const lines = fmBody.split(/\r?\n/);
-            let replaced = false;
-            for (let i = 0; i < lines.length; i++) {
-                if (/^\s*theme\s*:/.test(lines[i])) {
-                    lines[i] = 'theme: ' + name;
-                    replaced = true;
-                    break;
-                }
-            }
-            if (!replaced) {
-                let inserted = false;
-                for (let i = 0; i < lines.length; i++) {
-                    if (/^\s*marp\s*:\s*true\s*$/.test(lines[i])) {
-                        lines.splice(i + 1, 0, 'theme: ' + name);
-                        inserted = true;
-                        break;
-                    }
-                }
-                if (!inserted) lines.push('theme: ' + name);
-            }
-            const newFm = lines.join(eol);
-            return head + newFm + tail + trailing + rest;
-        }
-
-        // Apply a Marp theme by rewriting the front-matter `theme:` line in
-        // currentMarkdown and pushing the new content through the host's
-        // `savefile:` IPC. The host writes to disk, suppresses the watcher,
-        // refreshes the paired editor (if any), then re-renders the preview
-        // via the existing EditorSavedContent → loadFileFromRust path.
-        function applyMarpTheme(name) {
-            if (!currentFilePath) {
-                showToast('No file to update');
-                return;
-            }
-            if (!isMarpDocument(currentMarkdown)) {
-                showToast('Not a Marp document');
-                return;
-            }
-            const next = setMarpTheme(currentMarkdown, name);
-            if (next === currentMarkdown) {
-                showToast('Marp theme: ' + name);
-                return;
-            }
-            try {
-                window.ipc.postMessage('savefile:' + JSON.stringify({
-                    path: currentFilePath,
-                    content: next,
-                }));
-                showToast('Marp theme: ' + name);
-            } catch (e) {
-                console.warn('applyMarpTheme: postMessage failed', e);
-                showToast('Failed to save theme');
-            }
-        }
-
         const splash = document.getElementById('splash');
         function hideSplash() {
             if (!splash || splash.classList.contains('hidden')) return;
@@ -1860,35 +1683,18 @@
         });
 
         // Style picker (S key) — opens a modal table of available user styles.
-        // In Marp mode the same modal lists Marp themes instead (built-in +
-        // assets/marp/*.css); selecting one rewrites the front-matter
-        // `theme:` line of the current file.
         function __styleModal() { return document.getElementById('style-modal'); }
-        function __renderStyleRows(isMarp) {
+        function __renderStyleRows() {
             const tbody = document.getElementById('style-modal-rows');
             if (!tbody) return;
-            const title = document.getElementById('style-modal-title');
-            if (title) title.textContent = isMarp ? 'Select Marp Theme' : 'Select Style';
-            let entries;
-            let activeKey;
-            if (isMarp) {
-                entries = __marpThemeNames();
-                activeKey = getMarpTheme(currentMarkdown) || 'default';
-            } else {
-                entries = [{ name: null, label: 'Default' }]
-                    .concat(__userStyleList().map(n => ({ name: n, label: n })));
-                activeKey = currentStyle || null;
-            }
+            const entries = [{ name: null, label: 'Default' }]
+                .concat(__userStyleList().map(n => ({ name: n, label: n })));
             tbody.innerHTML = '';
             for (const entry of entries) {
                 const tr = document.createElement('tr');
                 tr.className = 'style-row';
-                if (isMarp) {
-                    tr.dataset.marpTheme = entry.name;
-                } else if (entry.name) {
-                    tr.dataset.style = entry.name;
-                }
-                const isActive = (entry.name || null) === (activeKey || null);
+                if (entry.name) tr.dataset.style = entry.name;
+                const isActive = (entry.name || null) === (currentStyle || null);
                 if (isActive) tr.classList.add('active');
                 const mark = document.createElement('td');
                 mark.className = 'mark';
@@ -1904,7 +1710,7 @@
         function setStyleModalOpen(open) {
             const m = __styleModal();
             if (!m) return;
-            if (open) __renderStyleRows(document.body.classList.contains('marp'));
+            if (open) __renderStyleRows();
             m.classList.toggle('visible', open);
         }
         document.addEventListener('keydown', (e) => {
@@ -1914,6 +1720,10 @@
             if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
             const m = __styleModal();
             if (!m) return;
+            if (document.body.classList.contains('marp')) {
+                showToast('Theme is fixed by Marp directives');
+                return;
+            }
             e.preventDefault();
             setStyleModalOpen(!m.classList.contains('visible'));
         });
@@ -1937,15 +1747,6 @@
             }
             const row = target.closest('#style-modal .style-row');
             if (!row) return;
-            // Marp branch: row carries data-marp-theme; rewrite front-matter.
-            if (row.dataset.marpTheme) {
-                const themeName = row.dataset.marpTheme;
-                setStyleModalOpen(false);
-                const active = getMarpTheme(currentMarkdown) || 'default';
-                if (themeName === active) return;
-                applyMarpTheme(themeName);
-                return;
-            }
             const next = row.dataset.style || null; // empty data-style → Default
             setStyleModalOpen(false);
             if ((next || null) === (currentStyle || null)) return;
@@ -3199,64 +3000,6 @@ ${previewClone.outerHTML}
                 return FN_OPEN + id + ':' + occ + FN_CLOSE;
             });
 
-            // Split layout pre-pass — within slides that declare `<!-- _class: split -->`
-            // (or split-2/3/4), convert `+++` lines into a sentinel paragraph that
-            // survives marp.render. The post-render pass below uses the sentinel as
-            // a column boundary to wrap children into <div class="split-col">.
-            // Skips `+++` inside fenced code blocks so e.g. ```diff blocks stay intact.
-            const COL_SENTINEL = '⦃COL⦄';
-            {
-                const lines = markdown.split('\n');
-                const out = [];
-                let inFm = lines.length > 0 && /^---\s*$/.test(lines[0]);
-                let fmClosed = !inFm;
-                let inFence = false;
-                let fenceMarker = '';
-                let slideIsSplit = false;
-                for (let i = 0; i < lines.length; i++) {
-                    const ln = lines[i];
-                    if (inFm && !fmClosed) {
-                        out.push(ln);
-                        if (i > 0 && /^---\s*$/.test(ln)) fmClosed = true;
-                        continue;
-                    }
-                    // Track fenced code blocks (``` or ~~~ with matching marker).
-                    const fenceMatch = ln.match(/^(\s*)(```+|~~~+)(.*)$/);
-                    if (fenceMatch) {
-                        const marker = fenceMatch[2][0]; // ` or ~
-                        if (!inFence) { inFence = true; fenceMarker = marker; }
-                        else if (marker === fenceMarker) { inFence = false; fenceMarker = ''; }
-                        out.push(ln);
-                        continue;
-                    }
-                    if (!inFence) {
-                        // Slide separator resets the per-slide split flag.
-                        if (/^(---|\*\*\*|___)\s*$/.test(ln)) {
-                            slideIsSplit = false;
-                            out.push(ln);
-                            continue;
-                        }
-                        // Detect `<!-- _class: ... -->` directives on this slide.
-                        const classMatch = ln.match(/<!--\s*_class\s*:\s*(.+?)\s*-->/);
-                        if (classMatch) {
-                            const classes = classMatch[1].split(/\s+/);
-                            if (classes.some(c => c === 'split' || /^split-[234]$/.test(c))) {
-                                slideIsSplit = true;
-                            }
-                        }
-                        if (slideIsSplit && /^\s*\+\+\+\s*$/.test(ln)) {
-                            // Blank line padding ensures the sentinel becomes its own <p>.
-                            out.push('');
-                            out.push(COL_SENTINEL);
-                            out.push('');
-                            continue;
-                        }
-                    }
-                    out.push(ln);
-                }
-                markdown = out.join('\n');
-            }
-
             await ensureMarp();
             await ensureMarpThemes();
             const Marp = (window.MarpCore && window.MarpCore.Marp) || window.Marp;
@@ -3397,51 +3140,6 @@ ${previewClone.outerHTML}
                 });
             }
 
-            // Split layout post-pass — for each section.split / split-2/3/4, walk
-            // direct children and split them into <div class="split-col"> buckets
-            // at every <p>⦃COL⦄</p> sentinel. Runs after footnote restoration so
-            // <sup> nodes are preserved inside the column they belong to, and
-            // before mermaid/smartart replacement so those substitutions land
-            // inside the correct column wrapper.
-            preview.querySelectorAll('section.split, section.split-2, section.split-3, section.split-4').forEach(section => {
-                const buckets = [[]];
-                const children = Array.from(section.childNodes);
-                for (const node of children) {
-                    if (node.nodeType === 1 && node.tagName === 'P'
-                            && node.childNodes.length === 1
-                            && node.firstChild.nodeType === 3
-                            && node.firstChild.nodeValue.trim() === COL_SENTINEL) {
-                        buckets.push([]);
-                        continue;
-                    }
-                    buckets[buckets.length - 1].push(node);
-                }
-                if (buckets.length <= 1) return; // No sentinels found — leave as-is.
-                // Leading h1/h2 of the first bucket are pulled out as section-level
-                // headers so the columns below them align at the same y-position.
-                // CSS gives those headers `grid-column: 1 / -1` to span all columns.
-                const sectionHeader = [];
-                while (buckets[0].length > 0) {
-                    const first = buckets[0][0];
-                    if (first.nodeType === 1 && (first.tagName === 'H1' || first.tagName === 'H2')) {
-                        sectionHeader.push(buckets[0].shift());
-                    } else if (first.nodeType === 3 && !first.nodeValue.trim()) {
-                        buckets[0].shift();
-                    } else {
-                        break;
-                    }
-                }
-                // Remove existing children and re-append header + wrapped buckets.
-                while (section.firstChild) section.removeChild(section.firstChild);
-                sectionHeader.forEach(n => section.appendChild(n));
-                buckets.forEach(bucket => {
-                    const col = document.createElement('div');
-                    col.className = 'split-col';
-                    bucket.forEach(n => col.appendChild(n));
-                    section.appendChild(col);
-                });
-            });
-
             // Replace mermaid / smartart / csv / tsv code blocks inside each slide with
             // the same DOM produced by the normal pipeline so the existing renderers
             // (mermaid.render, SmartArt.renderAll, renderDataTable) just work.
@@ -3472,42 +3170,6 @@ ${previewClone.outerHTML}
                     tpl.innerHTML = tableHtml;
                     pre.replaceWith(tpl.content);
                 }
-            });
-
-            // Figure centering — for non-split slides containing a mermaid / smartart /
-            // csv-table / native <table> / image-only paragraph as a direct child, wrap
-            // that element and any following siblings into a .marp-figure-stage div, and
-            // tag the section with .marp-has-figs so CSS can flex-center the stage
-            // vertically. Images are wrapped in <p> by marked, so we detect a <p> whose
-            // only meaningful child is an <img>.
-            const isImageParagraph = (el) => {
-                if (!el || el.tagName !== 'P') return false;
-                const meaningful = Array.from(el.childNodes).filter(n =>
-                    !(n.nodeType === 3 && !n.textContent.trim())
-                );
-                return meaningful.length === 1 && meaningful[0].nodeType === 1 && meaningful[0].tagName === 'IMG';
-            };
-            const isFigureChild = (el) => {
-                if (el.nodeType !== 1) return false;
-                if (el.matches('.mermaid, .smartart, .csv-table, table')) return true;
-                if (isImageParagraph(el)) return true;
-                return false;
-            };
-            preview.querySelectorAll('svg[data-marpit-svg] section').forEach(section => {
-                if (Array.from(section.classList).some(c => c === 'split' || c.startsWith('split-'))) return;
-                const children = Array.from(section.children);
-                const firstFig = children.find(isFigureChild);
-                if (!firstFig) return;
-                const stage = document.createElement('div');
-                stage.className = 'marp-figure-stage';
-                let node = firstFig;
-                while (node) {
-                    const next = node.nextSibling;
-                    stage.appendChild(node);
-                    node = next;
-                }
-                section.appendChild(stage);
-                section.classList.add('marp-has-figs');
             });
 
             // Append footnotes as a final slide outside the marpit container so the
@@ -4225,7 +3887,7 @@ ${previewClone.outerHTML}
                 <tbody>
                     <tr><td class="keys"><kbd>H</kbd></td><td>Show / hide this help</td></tr>
                     <tr><td class="keys"><kbd>M</kbd></td><td>Toggle Dark / Light mode</td></tr>
-                    <tr><td class="keys"><kbd>S</kbd></td><td>Select theme style — or Marp theme in Marp mode (rewrites front-matter)</td></tr>
+                    <tr><td class="keys"><kbd>S</kbd></td><td>Select theme style (modal picker)</td></tr>
                     <tr><td class="keys"><kbd>N</kbd></td><td>Toggle auto section numbering</td></tr>
                     <tr><td class="keys"><kbd>L</kbd></td><td>Toggle line numbers</td></tr>
                     <tr><td class="keys"><kbd>E</kbd></td><td>Open editor window (Vim mode, math input assist, char counter)</td></tr>

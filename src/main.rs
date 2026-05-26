@@ -1170,40 +1170,6 @@ fn main() -> wry::Result<()> {
                 }
                 Err(e) => eprintln!("editor:save: bad payload: {}", e),
             }
-        } else if let Some(payload) = message.strip_prefix("savefile:") {
-            // Preview-initiated file write (currently used by the S-key Marp
-            // theme picker to rewrite the front-matter `theme:` line). Same
-            // disk write + watcher suppression as `editor:save:`, but also
-            // pushes the new content into the paired editor (if any) so its
-            // buffer doesn't drift from disk.
-            #[derive(Deserialize)]
-            struct SaveFilePayload { path: String, content: String }
-            match serde_json::from_str::<SaveFilePayload>(payload) {
-                Ok(p) => {
-                    let path = PathBuf::from(&p.path);
-                    {
-                        let mut s = ipc_suppressed_saves.lock().unwrap();
-                        s.insert(path.clone());
-                    }
-                    let suppressed = ipc_suppressed_saves.clone();
-                    let path_for_clear = path.clone();
-                    std::thread::spawn(move || {
-                        std::thread::sleep(Duration::from_millis(1500));
-                        suppressed.lock().unwrap().remove(&path_for_clear);
-                    });
-                    match std::fs::write(&path, p.content.as_bytes()) {
-                        Ok(()) => {
-                            ipc_editor_registry.push_file_to_editor(&path, &p.content);
-                            let _ = ipc_event_proxy.send_event(CustomEvent::EditorSavedContent {
-                                path,
-                                content: p.content,
-                            });
-                        }
-                        Err(e) => eprintln!("savefile: write failed: {}", e),
-                    }
-                }
-                Err(e) => eprintln!("savefile: bad payload: {}", e),
-            }
         } else if let Some(line_str) = message.strip_prefix("editor:cursor:") {
             if let Ok(line) = line_str.trim().parse::<u32>() {
                 let _ = ipc_event_proxy.send_event(CustomEvent::EditorCursorMoved { line });

@@ -133,10 +133,9 @@ section th, section td {
 }
 
 section th {
-  background: var(--rule-soft);
-  color: var(--ink);
+  background: var(--rule);
+  color: #fff;
   font-weight: 700;
-  border-bottom: 2px solid var(--rule);
 }
 
 section ul, section ol { margin: 0 0 14px 1.4em; }
