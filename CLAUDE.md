@@ -79,6 +79,7 @@ The Vim extension (`@replit/codemirror-vim`) is swapped in/out of a CodeMirror `
 - `\begin{env}`+Tab → matching `\end{env}`
 - in-math command stubs: `\frac` / `\sqrt` / `\sum` / …
 - `a.` / `b.` / `g.` → `\alpha` / `\beta` / `\gamma` greek shortcuts inside inline math
+- **`\left<delim>` 自動ペア挿入** — 数式コンテキスト内で `\left` の直後に区切り文字 (`(` `[` `\{` `\|` `|` `<` `/` `.` `\langle` `\lfloor` `\lceil` `\lgroup` `\lmoustache` `\backslash`) を入力すると、即座に対応する `\right<closer>` がカーソル後ろに自動挿入される（例: `\left(` → `\left(|\right)`、`\left\langle` → `\left\langle|\right\rangle`、`\left.` → `\left.|\right.`）。カーソルは開き直後にとどまる。Tab は不要。`mathInputAssist.js` の `leftRightAutoPair()`（`EditorState.transactionFilter`）で実装、`isUserEvent('input.type')` ガードで undo / paste / プログラム的編集ではトリガしない。直後に既に `\right` が続いている場合は二重挿入を抑止。コードフェンスや通常文中では発火しない（`isInsideMath` で判定）。
 
 ### Heading nav & section folding
 

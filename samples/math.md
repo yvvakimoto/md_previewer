@@ -73,3 +73,24 @@ $$F(\omega) = \int_{-\infty}^{\infty} f(t) e^{-i\omega t} dt$$
 ## Math and Code Block
 
 `$` a `$`,  `$E=mc^2$`
+
+## `\left ... \right` 自動ペア（エディター機能）
+
+エディター（`E` キー）で数式コンテキスト内に `\left` の直後に区切り文字を入力すると、対応する `\right<closer>` が自動挿入されます。
+
+$$
+\left( \frac{a}{b} \right)^2 + \left[ x + y \right] = \left\{ \alpha, \beta \right\}
+$$
+
+$$
+\left\langle \psi \middle| \phi \right\rangle, \quad
+\left| x \right|, \quad
+\left\lfloor x \right\rfloor, \quad
+\left\lceil x \right\rceil
+$$
+
+片側ヌル区切り (`\left.` / `\right.`)：
+
+$$
+\left. \frac{dy}{dx} \right|_{x=0}
+$$
