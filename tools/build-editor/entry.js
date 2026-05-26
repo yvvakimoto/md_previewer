@@ -29,6 +29,7 @@ import { vim, Vim, getCM } from '@replit/codemirror-vim';
 import { mathInputAssistKeymap, isInsideMath } from './mathInputAssist.js';
 import { charCount } from './charCount.js';
 import { texEnvCompletionSource } from './texEnvComplete.js';
+import { katexCommandCompletionSource } from './katexCommandComplete.js';
 import { pathCompletionSource } from './pathComplete.js';
 import { installJpWordMotion } from './jpWordMotion.js';
 
@@ -487,7 +488,7 @@ export function create(root, opts = {}) {
       markdown({ base: markdownLanguage }),
       search(),
       autocompletion({
-        override: [texEnvCompletionSource, pathCompletionSource(() => currentPath)],
+        override: [texEnvCompletionSource, katexCommandCompletionSource, pathCompletionSource(() => currentPath)],
         activateOnTyping: true,
         defaultKeymap: false,
       }),
