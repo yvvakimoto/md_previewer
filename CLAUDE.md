@@ -70,6 +70,8 @@ The Vim extension (`@replit/codemirror-vim`) is swapped in/out of a CodeMirror `
 
 **Tab / Shift+Tab** インデント／アンインデントは `@codemirror/commands` の `indentWithTab` を `mathInputAssistKeymap()` の直後（`searchKeymap`/`defaultKeymap` より前）に挿入することで実現している。これにより数式コンテキスト（`$`+Tab / `\begin{}`+Tab 等）は引き続き YaTeX 風展開が先勝ちし、未マッチ時のみ通常インデントへフォールスルーする。これが無いと WebView2 が未捕捉 Tab をフォーカス遷移として扱い、ステータスバーのトグル等へフォーカスが飛んでしまう。
 
+**数字付きリスト対応インデント** — `mathInputAssistKeymap()` と `indentWithTab` の間に `numberedListIndentKeymap()`（`tools/build-editor/numberedListIndent.js`）を挟み込み、カーソル上方に `^(\s*)(\d+)\.\s` の数字付きリスト祖先が存在するときは Tab / Shift+Tab のインデント単位をマーカーのテキスト幅（`<digits>.` + 半角スペース、例: `1. ` → 3 / `10. ` → 4）に切り替える。CommonMark / GFM が要求する「子要素はマーカー直後のカラムに揃える」規約に合わせるためで、これが無いとデフォルト `indentUnit = 2` のせいで `1. item1` 配下に `- subitem` を書いても `marked` / `pulldown-cmark` 双方で別段落扱いになりリストがネストしない。空白のみの行頭ではマーカー幅倍数のタブストップにスナップし、行頭が `^\s*(?:[-*+]|\d+\.)\s` でカーソルがマーカー内/直後にある場合は行全体を 1 段下げてサブリスト化する（`Enter` で生成された `2. ` を即 `Tab` でデモートする典型シナリオ）。祖先が見つからない通常段落や、行頭以外の位置の `Tab` は `false` を返して `indentWithTab` にフォールスルーするので従来挙動は維持される。フェンス内 (``` / ~~~) は数字付きマーカー探索の対象外。
+
 **日本語ワード境界対応** — `w` / `b` / `e` / `W` / `B` / `E` / `ge` / `gE` および INSERT モードの `<C-w>`、加えて `dw` / `cw` / `yw` / `daw` / `diw` / `vw` などのオペレータ保留形を、漢字 (CJK) / ひらがな / カタカナ / ASCII 単語 / 記号 の文字クラス境界で停止させる。`tools/build-editor/jpWordMotion.js` が upstream `@replit/codemirror-vim` の `findWord` / `moveToWord` を移植して `Vim.defineMotion('moveByWords', ...)` で丸ごと差し替える形で実装。`W` / `B` / `E` の big word は ASCII 単語と ASCII 記号を 1 クラスに潰しつつ日本語 3 クラスは独立、というハイブリッド。長音符 `ー` (U+30FC) はカタカナ固定（`ラーメン` は 1 単語）。Vim OFF 時の CodeMirror 標準 word motion には影響しない。
 
 ### Math input assist (YaTeX 風)

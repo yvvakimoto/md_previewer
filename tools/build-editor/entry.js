@@ -32,6 +32,7 @@ import { texEnvCompletionSource } from './texEnvComplete.js';
 import { katexCommandCompletionSource } from './katexCommandComplete.js';
 import { pathCompletionSource } from './pathComplete.js';
 import { installJpWordMotion } from './jpWordMotion.js';
+import { numberedListIndentKeymap } from './numberedListIndent.js';
 
 // ---------- ATX heading fold service ----------
 function headingLevel(line) {
@@ -498,6 +499,7 @@ export function create(root, opts = {}) {
         saveKey,
         ...completionKeymap,
         ...mathInputAssistKeymap(),
+        ...numberedListIndentKeymap(),
         indentWithTab,
         ...searchKeymap,
         ...defaultKeymap,
