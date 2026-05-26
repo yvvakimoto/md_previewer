@@ -365,7 +365,6 @@ export function create(root, opts = {}) {
   // Save command
   function doSave() {
     const content = view.state.doc.toString();
-    suppressEcho = true;
     if (liveTimer) { clearTimeout(liveTimer); liveTimer = 0; }
     ipcSend('editor:save:' + JSON.stringify({ path: currentPath, content }));
     savedDoc = content;
