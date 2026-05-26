@@ -262,6 +262,7 @@ export function create(root, opts = {}) {
   let currentPath = '';
   let savedDoc = '';
   let dirty = false;
+  let lastDirtyPushed = null; // last dirty value sent over `editor:dirty:` IPC (de-dupes title flips)
   let suppressEcho = false; // ignore the next __loadFile echo from Rust after our save
 
   // ---------- Persisted UI prefs ----------
@@ -350,6 +351,12 @@ export function create(root, opts = {}) {
     const base = currentPath.split(/[\\/]/).pop() || 'Untitled';
     document.title = `${dirty ? '• ' : ''}${base} — Editor`;
     statusFile.textContent = (dirty ? '• ' : '') + base;
+    // Push dirty flips to the Rust host so the OS window title (chrome / taskbar)
+    // can show the unsaved marker too — the auto-hiding status bar isn't enough.
+    if (dirty !== lastDirtyPushed) {
+      lastDirtyPushed = dirty;
+      try { ipcSend('editor:dirty:' + (dirty ? 'true' : 'false')); } catch (_) {}
+    }
   }
   function updateStatus() {
     if (!view) return;

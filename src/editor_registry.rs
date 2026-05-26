@@ -371,6 +371,21 @@ pub fn spawn_editor_window(
                 }
                 return;
             }
+            if let Some(flag) = message.strip_prefix("editor:dirty:") {
+                // JS reports a dirty-state transition. Reflect it on the OS
+                // window title (chrome + taskbar) so the unsaved marker is
+                // visible even when the auto-hiding status bar is collapsed.
+                let dirty = flag == "true";
+                if let Some(s) = registry_for_ipc.inner.lock().unwrap().as_mut() {
+                    s.dirty = dirty;
+                    let filename = s.file.file_name()
+                        .map(|n| n.to_string_lossy().to_string())
+                        .unwrap_or_else(|| "Untitled".into());
+                    let prefix = if dirty { "• " } else { "" };
+                    s.webview.window().set_title(&format!("{}{} — Editor", prefix, filename));
+                }
+                return;
+            }
             if message == "editor:ime:off" {
                 // JS posts this on Vim NORMAL-mode entry. Flip the OS IME
                 // back to direct-input (半角) so subsequent NORMAL-mode

@@ -62,6 +62,8 @@ Every `docChanged` update fires a debounced (~150 ms) `editor:change:` IPC carry
 
 When the editor window is closed while the buffer is dirty (Vim `:q!`, the window X button, etc.), the preview reverts to the on-disk version. Rust tracks a `dirty: bool` on the editor registry state — flipped to `true` in the `editor:change:` IPC branch and back to `false` on save / file-switch. Both close paths (`EditorCloseRequested` for Vim `:q`, `WindowEvent::CloseRequested` for the X button) call `EditorRegistry::close_take_dirty_path()`, which `take()`s the state and returns the paired path only when dirty; the main loop then calls `load_and_render` to re-render the preview from disk. Clean closes return `None` and skip the re-render to avoid flicker.
 
+The editor JS also pushes every dirty-flag transition over the `editor:dirty:<true|false>` IPC; the Rust handler calls `window().set_title("• <name> — Editor")` (or without the bullet when clean) so the OS window title bar and taskbar entry advertise the unsaved state — the auto-hiding status bar would otherwise be the only indicator while the cursor is in the editing area.
+
 ### Vim & default keybindings
 
 The Vim extension (`@replit/codemirror-vim`) is swapped in/out of a CodeMirror `Compartment` by the status-bar toggle (default **OFF** — pure CodeMirror 6 keybindings). When ON, NORMAL mode begins immediately and the `:w` / `:wq` / `:q` / `]]` / `[[` / `za` / `zA` / `C` mappings activate.
