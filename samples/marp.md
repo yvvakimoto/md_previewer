@@ -100,6 +100,37 @@ title: SWOT分析
 
 ---
 
+## Plotly チャート (外部CSV)
+
+```plotly
+file: data/sales.csv
+type: line
+x: month
+y: [revenue, cost]
+names: [Revenue, Cost]
+title: Monthly P&L
+layout:
+  height: 420
+  margin: { t: 48, r: 24, b: 48, l: 56 }
+  legend: { orientation: h, y: -0.2 }
+```
+
+---
+
+## Plotly: 3D サーフェス
+
+```plotly
+file: data/surface.csv
+type: surface
+title: z = x² + y²
+layout:
+  height: 480
+  margin: { t: 40, r: 0, b: 0, l: 0 }
+  scene: { camera: { eye: { x: 1.4, y: 1.4, z: 0.9 } } }
+```
+
+---
+
 ## シンタックスハイライト
 
 ```rust

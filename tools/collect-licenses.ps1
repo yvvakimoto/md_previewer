@@ -92,6 +92,14 @@ $direct = @(
     Upstream='(this repository)';
     Path='assets/libs/smartart.js';
     LicenseFile='tools/license-texts/smartart.LICENSE' }
+  [pscustomobject]@{ Name='Plotly.js (dist-min)'; Version='2.35.2'; Spdx='MIT';
+    Upstream='https://github.com/plotly/plotly.js';
+    Path='assets/libs/plotly/plotly.min.js';
+    LicenseFile='tools/license-texts/plotly.LICENSE' }
+  [pscustomobject]@{ Name='js-yaml';      Version='4.1.0'; Spdx='MIT';
+    Upstream='https://github.com/nodeca/js-yaml';
+    Path='assets/libs/js-yaml.min.js';
+    LicenseFile='tools/license-texts/js-yaml.LICENSE' }
 )
 
 foreach ($d in $direct) {

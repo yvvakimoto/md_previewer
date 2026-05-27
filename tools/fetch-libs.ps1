@@ -35,6 +35,8 @@ $MarkedVersion  = '11.1.1'
 $HljsVersion    = '11.9.0'
 $KatexVersion   = '0.16.11'
 $MermaidVersion = '10.9.0'
+$PlotlyVersion  = '2.35.2'
+$JsYamlVersion  = '4.1.0'
 
 # ---- KaTeX font list (mirrors what KaTeX 0.16.x ships in dist/fonts/) ---
 $KatexFonts = @(
@@ -96,6 +98,16 @@ foreach ($font in $KatexFonts) {
 $Downloads.Add(@{
   Url  = "https://cdn.jsdelivr.net/npm/mermaid@$MermaidVersion/dist/mermaid.min.js"
   Dest = 'mermaid.min.js'
+})
+
+$Downloads.Add(@{
+  Url  = "https://cdn.jsdelivr.net/npm/plotly.js-dist-min@$PlotlyVersion/plotly.min.js"
+  Dest = 'plotly/plotly.min.js'
+})
+
+$Downloads.Add(@{
+  Url  = "https://cdn.jsdelivr.net/npm/js-yaml@$JsYamlVersion/dist/js-yaml.min.js"
+  Dest = 'js-yaml.min.js'
 })
 
 # ---- Run ----------------------------------------------------------------

@@ -91,6 +91,12 @@ enum CustomEvent {
     // thread spawned alongside the editor; main loop pushes the bool down to
     // the editor JS (`window.__setImeOpen`) so it can tint the cursor.
     EditorImeStatus(bool),
+    // Preview JS reports an external CSV/TSV file referenced by a `plotly`
+    // block. Main loop adds it to the filesystem watcher so live-edits in
+    // the CSV trigger a re-render. CsvWatchReset is fired at the start of
+    // every render to flush the prior set.
+    CsvWatch(PathBuf),
+    CsvWatchReset,
 }
 
 const APP_NAME: &str = "Markdown Previewer";
@@ -170,6 +176,8 @@ pub(crate) fn get_mime_type(path: &PathBuf) -> &'static str {
         Some("xml") => "application/xml",
         Some("pdf") => "application/pdf",
         Some("txt") => "text/plain; charset=utf-8",
+        Some("csv") => "text/csv; charset=utf-8",
+        Some("tsv") => "text/tab-separated-values; charset=utf-8",
 
         // Default
         _ => "application/octet-stream",
@@ -972,6 +980,7 @@ fn main() -> wry::Result<()> {
                     }
                     Err(e) => {
                         eprintln!("Failed to read user file {:?}: {}", resolved_path, e);
+                        dbg_log!("userfile 404 uri={} resolved={:?} err={}", path, resolved_path, e);
                         Ok(Response::builder()
                             .status(404)
                             .body(format!("File not found: {:?}", resolved_path).into_bytes().into())
@@ -1176,6 +1185,24 @@ fn main() -> wry::Result<()> {
             }
         } else if message == "editor:close:" {
             let _ = ipc_event_proxy.send_event(CustomEvent::EditorCloseRequested);
+        } else if message == "csvwatchreset:" {
+            let _ = ipc_event_proxy.send_event(CustomEvent::CsvWatchReset);
+        } else if let Some(rel) = message.strip_prefix("csvwatch:") {
+            // Resolve the (probably-relative) path against the directory of the
+            // currently-loaded .md so the watcher can monitor it.
+            let raw = PathBuf::from(rel);
+            let abs = if raw.is_absolute() {
+                Some(raw)
+            } else {
+                ipc_current_file
+                    .lock()
+                    .unwrap()
+                    .as_ref()
+                    .and_then(|p| p.parent().map(|d| d.join(&raw)))
+            };
+            if let Some(p) = abs {
+                let _ = ipc_event_proxy.send_event(CustomEvent::CsvWatch(p));
+            }
         }
     });
 
@@ -1198,6 +1225,11 @@ fn main() -> wry::Result<()> {
     let watched_path: Arc<Mutex<Option<PathBuf>>> = Arc::new(Mutex::new(None));
     // Tracks whether the active watch is a directory (workspace mode) or a file.
     let watched_is_dir: Arc<Mutex<bool>> = Arc::new(Mutex::new(false));
+    // External CSV/TSV files referenced by ```plotly blocks in the current
+    // document. The preview JS re-populates this set every render via the
+    // CsvWatch / CsvWatchReset events. Used by the watcher thread to trigger
+    // a re-render of the active .md when any tracked CSV changes on disk.
+    let watched_csvs: Arc<Mutex<HashSet<PathBuf>>> = Arc::new(Mutex::new(HashSet::new()));
 
     // Initial watch: directory if workspace was provided, else the file.
     if let Some(ref dpath) = dir_path {
@@ -1228,6 +1260,7 @@ fn main() -> wry::Result<()> {
         let watched_is_dir_clone = watched_is_dir.clone();
         let current_file_clone = current_file.clone();
         let suppressed = suppressed_saves.clone();
+        let watched_csvs_clone = watched_csvs.clone();
         std::thread::spawn(move || {
             loop {
                 match watcher_rx.recv() {
@@ -1246,8 +1279,10 @@ fn main() -> wry::Result<()> {
                             let mut tree_dirty = false;
                             let mut active_dirty = false;
                             let cur = current_file_clone.lock().unwrap().clone();
+                            let csvs = watched_csvs_clone.lock().unwrap().clone();
                             for p in &paths {
                                 let is_md = is_markdown_ext(p);
+                                let is_tracked_csv = csvs.iter().any(|c| paths_equal(p, c));
                                 match &kind {
                                     notify::EventKind::Create(_) | notify::EventKind::Remove(_) => {
                                         if is_md || p.is_dir() { tree_dirty = true; }
@@ -1259,6 +1294,7 @@ fn main() -> wry::Result<()> {
                                         if let Some(c) = cur.as_ref() {
                                             if paths_equal(p, c) { active_dirty = true; }
                                         }
+                                        if is_tracked_csv { active_dirty = true; }
                                         // Any .md edit may change its heading list,
                                         // so refresh the sidebar tree too.
                                         if is_md { tree_dirty = true; }
@@ -1279,11 +1315,23 @@ fn main() -> wry::Result<()> {
                         } else {
                             match kind {
                                 notify::EventKind::Modify(_) | notify::EventKind::Create(_) => {
-                                    let path_opt = watched_path_clone.lock().unwrap().clone();
-                                    if let Some(p) = path_opt {
-                                        if let Err(e) = event_proxy_clone.send_event(CustomEvent::FileChanged(p)) {
-                                            eprintln!("Failed to send file change event: {}", e);
-                                            break;
+                                    // Event paths from notify may belong to the watched
+                                    // .md, a tracked CSV, or noise we don't care about.
+                                    // In all "fire a re-render" cases we re-render the
+                                    // active .md, since the CSV is consumed by its
+                                    // ```plotly blocks.
+                                    let active = watched_path_clone.lock().unwrap().clone();
+                                    let csvs = watched_csvs_clone.lock().unwrap().clone();
+                                    let should_fire = paths.iter().any(|p| {
+                                        active.as_ref().map_or(false, |a| paths_equal(p, a))
+                                            || csvs.iter().any(|c| paths_equal(p, c))
+                                    }) || paths.is_empty(); // empty path list → fall back to active
+                                    if should_fire {
+                                        if let Some(p) = active {
+                                            if let Err(e) = event_proxy_clone.send_event(CustomEvent::FileChanged(p)) {
+                                                eprintln!("Failed to send file change event: {}", e);
+                                                break;
+                                            }
                                         }
                                     }
                                     std::thread::sleep(Duration::from_millis(100));
@@ -1356,6 +1404,36 @@ fn main() -> wry::Result<()> {
             }
             Event::UserEvent(CustomEvent::FileChanged(path)) => {
                 load_and_render(&path, &webview, &current_dir, &current_file, &editor_registry);
+            }
+            Event::UserEvent(CustomEvent::CsvWatchReset) => {
+                // Flush all CSV watches. In workspace mode the root is watched
+                // recursively so unwatching individual files would error — just
+                // clear the membership set so the watcher thread stops triggering
+                // re-renders for the previous document's CSVs.
+                let prev: Vec<PathBuf> = {
+                    let mut set = watched_csvs.lock().unwrap();
+                    let v = set.iter().cloned().collect();
+                    set.clear();
+                    v
+                };
+                if !*watched_is_dir.lock().unwrap() {
+                    if let Some(w) = watcher.lock().unwrap().as_mut() {
+                        for p in &prev { let _ = w.unwatch(p); }
+                    }
+                }
+            }
+            Event::UserEvent(CustomEvent::CsvWatch(path)) => {
+                let already = {
+                    let mut set = watched_csvs.lock().unwrap();
+                    if set.contains(&path) { true } else { set.insert(path.clone()); false }
+                };
+                if !already && !*watched_is_dir.lock().unwrap() {
+                    if let Some(w) = watcher.lock().unwrap().as_mut() {
+                        if let Err(e) = w.watch(&path, RecursiveMode::NonRecursive) {
+                            eprintln!("Failed to watch CSV {:?}: {}", path, e);
+                        }
+                    }
+                }
             }
             Event::UserEvent(CustomEvent::OpenEditorWindow) => {
                 if editor_registry.is_open() {

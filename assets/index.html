@@ -332,6 +332,28 @@
             height: auto;
         }
 
+        /* Plotly chart styling (CSV-driven) */
+        .plotly-block {
+            margin: 16px 0;
+            min-height: 320px;
+        }
+        .plotly-error {
+            margin: 16px 0;
+            padding: 12px 16px;
+            border: 1px solid #d73a49;
+            border-radius: 4px;
+            background: #ffeef0;
+            color: #b31d28;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', monospace;
+            font-size: 0.9em;
+            white-space: pre-wrap;
+        }
+        body.dark-mode .plotly-error {
+            background: #2a0d10;
+            border-color: #f85149;
+            color: #ffa198;
+        }
+
         /* App container - flex layout for sidebar + content */
         #app-container {
             display: none;
@@ -1538,6 +1560,8 @@
         function ensureKatex() { return loadLib('libs/katex/katex.min.js'); }
         function ensureSmartArt() { return loadLib('libs/smartart.js'); }
         function ensureMarp() { return loadLib('libs/marp/marp.iife.js'); }
+        function ensureJsYaml() { return loadLib('libs/js-yaml.min.js'); }
+        function ensurePlotly() { return loadLib('libs/plotly/plotly.min.js'); }
         // User-defined Marp theme CSS files discovered by the Rust host in
         // assets/marp/*.css. Fetched once, cached, and registered with
         // marp.themeSet.add() on each render. Themes must begin with a
@@ -1599,6 +1623,7 @@
         const tocToggle = document.getElementById('toc-toggle');
         let mermaidCounter = 0;
         let smartartCounter = 0;
+        let plotlyCounter = 0;
         let currentMarkdown = '';
         let currentFilePath = '';
         let suppressHistoryPush = false;
@@ -1849,6 +1874,7 @@
         //   - inherits the TOC sidebar and a tiny inline script for the collapse toggle.
         const EXPORT_KATEX_CSS_CDN = 'https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css';
         const EXPORT_HLJS_CSS_CDN = 'https://cdn.jsdelivr.net/npm/highlight.js@11.10.0/styles/github.min.css';
+        const EXPORT_PLOTLY_JS_CDN = 'https://cdn.jsdelivr.net/npm/plotly.js-dist-min@2.35.2/plotly.min.js';
 
         // Build the export artifact HTML for whatever is currently rendered in the
         // preview DOM. If `pageRelPath` is provided (workspace export), file-tree
@@ -1947,6 +1973,26 @@
             const needsKatex = previewClone.querySelector('.katex') !== null;
             const needsHljs = previewClone.querySelector('pre code.hljs, code.hljs') !== null;
 
+            // Snapshot Plotly chart specs so the artifact can re-render charts via the
+            // CDN script. Each live `.plotly-block` carries `__plotlySpec` set by
+            // renderPlotlyBlock; copy it onto the matching clone as data-plotly-spec
+            // and clear the clone's child DOM so Plotly.newPlot starts fresh.
+            const needsPlotly = previewClone.querySelector('.plotly-block') !== null;
+            if (needsPlotly) {
+                const liveBlocks = Array.from(preview.querySelectorAll('.plotly-block'));
+                const cloneBlocks = Array.from(previewClone.querySelectorAll('.plotly-block'));
+                for (let i = 0; i < cloneBlocks.length && i < liveBlocks.length; i++) {
+                    const spec = liveBlocks[i].__plotlySpec;
+                    if (!spec) continue;
+                    try {
+                        cloneBlocks[i].setAttribute('data-plotly-spec', JSON.stringify(spec));
+                        cloneBlocks[i].innerHTML = '';
+                    } catch (e) {
+                        console.warn('export: failed to snapshot plotly spec', e);
+                    }
+                }
+            }
+
             // Gather all base CSS from the document's first <style> block — robust to future style changes.
             const baseStyleEl = document.querySelector('style');
             const baseCss = baseStyleEl ? baseStyleEl.textContent : '';
@@ -1969,6 +2015,7 @@
             const cdnLinks = [];
             if (needsKatex) cdnLinks.push(`<link rel="stylesheet" href="${EXPORT_KATEX_CSS_CDN}">`);
             if (needsHljs) cdnLinks.push(`<link rel="stylesheet" href="${EXPORT_HLJS_CSS_CDN}">`);
+            if (needsPlotly) cdnLinks.push(`<script defer src="${EXPORT_PLOTLY_JS_CDN}"><\/script>`);
 
             const bodyClasses = [];
             if (document.body.classList.contains('dark-mode')) bodyClasses.push('dark-mode');
@@ -2150,6 +2197,29 @@
       activeRef = null;
     });
   }
+
+  // --- Plotly charts: re-render from snapshotted specs ---
+  // The artifact's .plotly-block divs carry a data-plotly-spec JSON attribute
+  // populated by buildExportArtifact() at export time. Run Plotly.newPlot
+  // once the deferred CDN script has loaded the library.
+  function initPlotlyArtifact() {
+    var blocks = document.querySelectorAll('.plotly-block[data-plotly-spec]');
+    if (blocks.length === 0) return;
+    if (typeof Plotly === 'undefined') {
+      window.addEventListener('load', initPlotlyArtifact, { once: true });
+      return;
+    }
+    blocks.forEach(function (el) {
+      try {
+        var spec = JSON.parse(el.getAttribute('data-plotly-spec') || 'null');
+        if (!spec) return;
+        Plotly.newPlot(el, spec.traces || [], spec.layout || {}, spec.config || {});
+      } catch (e) {
+        el.textContent = 'Plotly init failed: ' + e.message;
+      }
+    });
+  }
+  initPlotlyArtifact();
 })();`;
 
             const html =
@@ -2233,7 +2303,10 @@ ${previewClone.outerHTML}
             for (const f of files) {
                 let md;
                 try {
-                    const url = 'app://localhost/userfile/' + encodeURI(f.absPath.replace(/\\/g, '/'));
+                    // WebView2 serves the page on a synthetic https://app.localhost
+                    // origin; use a same-origin relative URL so fetch can reach the
+                    // `app://` custom-protocol handler.
+                    const url = '/userfile/' + encodeURI(f.absPath.replace(/\\/g, '/'));
                     const resp = await fetch(url);
                     if (!resp.ok) continue;
                     md = await resp.text();
@@ -2936,6 +3009,223 @@ ${previewClone.outerHTML}
             return `<div class="csv-table"><table>${thead}${tbody}</table></div>`;
         }
 
+        // ===== Plotly chart pipeline ===================================================
+        // ```plotly fences embed an external CSV/TSV file plus a YAML chart spec.
+        // The CSV is fetched via the same app://localhost/userfile/... route as images,
+        // parsed with the existing parseCsv() / TSV split, then handed to Plotly.newPlot.
+        // Supported `type:` values: line, scatter, bar, histogram, box, heatmap, surface.
+        // Multi-trace use the optional `traces:` list form; otherwise type/x/y are used.
+
+        // Number coercion: '1,234.5' → 1234.5, blank → null. Keeps strings (e.g. category
+        // labels for x of a bar chart) intact when not numeric.
+        function __plotlyMaybeNumber(v) {
+            if (v == null) return null;
+            const s = String(v).trim();
+            if (s === '') return null;
+            const n = Number(s.replace(/,/g, ''));
+            return Number.isFinite(n) ? n : v;
+        }
+        // Build {colName: array} from a 2D row array; first row is the header.
+        function __plotlyColumns(rows) {
+            const header = rows[0] || [];
+            const body = rows.slice(1);
+            const cols = {};
+            for (let c = 0; c < header.length; c++) {
+                const name = String(header[c] ?? '').trim();
+                if (!name) continue;
+                cols[name] = body.map(r => __plotlyMaybeNumber(r[c]));
+            }
+            return { header, cols, body };
+        }
+        // Deep-merge `src` into `dst`. Arrays replace wholesale (no element-wise merge).
+        function __plotlyDeepMerge(dst, src) {
+            if (!src || typeof src !== 'object') return dst;
+            for (const k of Object.keys(src)) {
+                const v = src[k];
+                if (v && typeof v === 'object' && !Array.isArray(v)
+                    && dst[k] && typeof dst[k] === 'object' && !Array.isArray(dst[k])) {
+                    __plotlyDeepMerge(dst[k], v);
+                } else {
+                    dst[k] = v;
+                }
+            }
+            return dst;
+        }
+        function __plotlyResolveSeries(cols, key) {
+            if (key == null) return null;
+            const list = Array.isArray(key) ? key : [key];
+            return list.map(k => {
+                const name = String(k);
+                if (!(name in cols)) throw new Error('column not found: ' + name);
+                return { name, values: cols[name] };
+            });
+        }
+        // Show an error placeholder in-place. Other charts still render.
+        function __plotlyShowError(container, msg) {
+            const pre = document.createElement('pre');
+            pre.className = 'plotly-error';
+            pre.textContent = 'Plotly error: ' + msg;
+            container.replaceWith(pre);
+        }
+
+        async function renderPlotlyBlock(container, encodedSource) {
+            let spec;
+            try {
+                const text = decodeURIComponent(encodedSource);
+                spec = window.jsyaml ? jsyaml.load(text) : JSON.parse(text);
+                if (!spec || typeof spec !== 'object') throw new Error('empty spec');
+            } catch (e) {
+                __plotlyShowError(container, 'invalid YAML/JSON: ' + e.message);
+                return;
+            }
+            if (!spec.file || typeof spec.file !== 'string') {
+                __plotlyShowError(container, '`file:` is required (relative path to a .csv or .tsv)');
+                return;
+            }
+            const filePath = spec.file;
+            // Build a same-origin URL. WebView2 serves the page as
+            // https://app.localhost/... (synthetic origin for the `app://`
+            // custom protocol), so an absolute `app://` URL is cross-scheme
+            // and gets blocked by fetch. A relative `/userfile/...` URL
+            // resolves against the page origin and reaches the protocol
+            // handler which resolves it against the open markdown's dir.
+            const url = /^(https?:|app:|file:|data:)/i.test(filePath)
+                ? filePath
+                : '/userfile/' + encodeURI(filePath.replace(/\\/g, '/'));
+            let csvText;
+            try {
+                const resp = await fetch(url);
+                if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                csvText = await resp.text();
+            } catch (e) {
+                __plotlyShowError(container, 'failed to load `' + filePath + '`: ' + e.message);
+                return;
+            }
+            // Notify Rust so the file watcher tracks this CSV and re-renders on change.
+            try {
+                if (window.ipc && typeof window.ipc.postMessage === 'function') {
+                    window.ipc.postMessage('csvwatch:' + filePath);
+                }
+            } catch (e) {}
+
+            // Determine delimiter
+            const dlmHint = (spec.delimiter || '').toString();
+            const isTab = dlmHint === '\t' || dlmHint.toLowerCase() === 'tab'
+                || (dlmHint === '' && /\.tsv$/i.test(filePath));
+            const trimmed = csvText.replace(/\s+$/, '');
+            let rows;
+            try {
+                if (isTab) {
+                    rows = trimmed.split(/\r?\n/).map(line => line.split('\t'));
+                } else {
+                    rows = parseCsv(trimmed);
+                }
+                rows = rows.filter(r => !r.every(cell => cell === ''));
+                if (rows.length < 2) throw new Error('need at least one header row and one data row');
+            } catch (e) {
+                __plotlyShowError(container, 'failed to parse data: ' + e.message);
+                return;
+            }
+            const { header, cols, body } = __plotlyColumns(rows);
+
+            // Build traces.
+            let traces = [];
+            let layout = { autosize: true, margin: { t: 40, r: 24, b: 48, l: 56 } };
+            const config = { responsive: true, displaylogo: false };
+            if (spec.title) layout.title = { text: String(spec.title) };
+
+            try {
+                if (Array.isArray(spec.traces) && spec.traces.length > 0) {
+                    // Multi-trace mode.
+                    traces = spec.traces.map((t, i) => __plotlyBuildTrace(t, cols, header, body, i));
+                } else {
+                    // Single-spec mode.
+                    traces = __plotlyBuildSingleTrace(spec, cols, header, body);
+                }
+            } catch (e) {
+                __plotlyShowError(container, e.message);
+                return;
+            }
+
+            if (spec.layout) __plotlyDeepMerge(layout, spec.layout);
+            if (spec.config) __plotlyDeepMerge(config, spec.config);
+
+            try {
+                await ensurePlotly();
+                container.classList.add('plotly-block-ready');
+                container.__plotlySpec = { traces, layout, config };
+                await Plotly.newPlot(container, traces, layout, config);
+            } catch (e) {
+                __plotlyShowError(container, 'Plotly.newPlot failed: ' + e.message);
+            }
+        }
+
+        // Build a trace from the legacy single-spec form (type/x/y at top level).
+        function __plotlyBuildSingleTrace(spec, cols, header, body) {
+            const type = String(spec.type || 'scatter').toLowerCase();
+            if (type === 'heatmap' || type === 'surface') {
+                return [__plotlyMatrixTrace(type, cols, header, body, spec)];
+            }
+            if (type === 'histogram' || type === 'box') {
+                const ySeries = __plotlyResolveSeries(cols, spec.y || spec.x);
+                if (!ySeries) throw new Error('`x:` or `y:` is required for ' + type);
+                const names = Array.isArray(spec.names) ? spec.names : null;
+                return ySeries.map((s, i) => ({
+                    type, [type === 'histogram' ? 'x' : 'y']: s.values,
+                    name: (names && names[i]) || s.name
+                }));
+            }
+            if (!spec.x) throw new Error('`x:` is required for ' + type);
+            const xSeries = cols[String(spec.x)];
+            if (!xSeries) throw new Error('column not found: ' + spec.x);
+            const ySeries = __plotlyResolveSeries(cols, spec.y);
+            if (!ySeries) throw new Error('`y:` is required for ' + type);
+            const names = Array.isArray(spec.names) ? spec.names : null;
+            const mode = spec.mode || (type === 'line' ? 'lines' : (type === 'scatter' ? 'markers' : undefined));
+            return ySeries.map((s, i) => {
+                const tr = {
+                    type: (type === 'line') ? 'scatter' : type,
+                    x: xSeries,
+                    y: s.values,
+                    name: (names && names[i]) || s.name
+                };
+                if (mode && (tr.type === 'scatter')) tr.mode = mode;
+                return tr;
+            });
+        }
+        // Build a single trace inside the `traces:` list (Plotly-native form, but with
+        // `x:` / `y:` resolved as CSV column names instead of inline arrays).
+        function __plotlyBuildTrace(t, cols, header, body, idx) {
+            if (!t || typeof t !== 'object') throw new Error('traces[' + idx + ']: not an object');
+            const type = String(t.type || 'scatter').toLowerCase();
+            if (type === 'heatmap' || type === 'surface') {
+                return __plotlyMatrixTrace(type, cols, header, body, t);
+            }
+            const out = Object.assign({}, t);
+            out.type = (type === 'line') ? 'scatter' : type;
+            if (type === 'line' && !out.mode) out.mode = 'lines';
+            for (const axis of ['x', 'y', 'z']) {
+                const v = t[axis];
+                if (typeof v === 'string') {
+                    if (!(v in cols)) throw new Error('traces[' + idx + ']: column not found: ' + v);
+                    out[axis] = cols[v];
+                }
+            }
+            return out;
+        }
+        // 2D matrix interpretation for heatmap / surface:
+        //   first row = x labels (header[1..])
+        //   first column (col 0 of body) = y labels
+        //   remaining cells = z matrix
+        function __plotlyMatrixTrace(type, cols, header, body, spec) {
+            const xLabels = header.slice(1);
+            const yLabels = body.map(r => r[0]);
+            const z = body.map(r => r.slice(1).map(__plotlyMaybeNumber));
+            const out = { type, z, x: xLabels, y: yLabels };
+            if (spec.colorscale) out.colorscale = spec.colorscale;
+            return out;
+        }
+
         // ===== Marp slide pipeline =====================================================
         // Mode flag, slide cursor, and helpers shared between renderMarp() and the
         // keyboard handler. Selectors match the marpit + footnotes-slide structure
@@ -2961,6 +3251,11 @@ ${previewClone.outerHTML}
 
         async function renderMarp(markdown) {
             document.body.classList.add('marp');
+            try {
+                if (window.ipc && typeof window.ipc.postMessage === 'function') {
+                    window.ipc.postMessage('csvwatchreset:');
+                }
+            } catch (e) {}
             // Strip the user-style <link> so its rules don't cascade into Marp
             // slide content (foreignObject text inherits font-family etc. from
             // ancestor selectors like body / #preview). localStorage.styleName
@@ -3169,6 +3464,12 @@ ${previewClone.outerHTML}
                     const tpl = document.createElement('template');
                     tpl.innerHTML = tableHtml;
                     pre.replaceWith(tpl.content);
+                } else if (lang === 'plotly') {
+                    const div = document.createElement('div');
+                    div.className = 'plotly-block';
+                    div.id = 'marp-plotly-' + (plotlyCounter++);
+                    div.setAttribute('data-plotly-source', encodeURIComponent(code.textContent));
+                    pre.replaceWith(div);
                 }
             });
 
@@ -3214,6 +3515,16 @@ ${previewClone.outerHTML}
                 await ensureSmartArt();
                 await new Promise(r => requestAnimationFrame(() => r()));
                 SmartArt.renderAll(preview);
+            }
+
+            const marpPlotlyEls = preview.querySelectorAll('.plotly-block');
+            if (marpPlotlyEls.length > 0) {
+                await ensureJsYaml();
+                await ensurePlotly();
+                await new Promise(r => requestAnimationFrame(() => r()));
+                await Promise.all(Array.from(marpPlotlyEls).map(el =>
+                    renderPlotlyBlock(el, el.getAttribute('data-plotly-source'))
+                ));
             }
 
             __marpDeckIndex = 0;
@@ -3291,9 +3602,19 @@ ${previewClone.outerHTML}
             const needsMermaid = /```mermaid\b/.test(processedMarkdown);
             const needsSmartArt = /```smartart\b/.test(processedMarkdown);
             const needsKatex = mathBlocks.length > 0;
+            const needsPlotly = /```plotly\b/.test(processedMarkdown);
             const mermaidReady = needsMermaid ? ensureMermaid() : null;
             const smartartReady = needsSmartArt ? ensureSmartArt() : null;
             const katexReady = needsKatex ? ensureKatex() : null;
+            const plotlyReady = needsPlotly ? Promise.all([ensureJsYaml(), ensurePlotly()]) : null;
+
+            // Flush the prior render's tracked CSV files so the Rust watcher only
+            // monitors files referenced by the document we're about to render.
+            try {
+                if (window.ipc && typeof window.ipc.postMessage === 'function') {
+                    window.ipc.postMessage('csvwatchreset:');
+                }
+            } catch (e) {}
 
             // Compute source-line mapping from the original markdown (before math placeholder substitution
             // — math blocks remain on the same source lines, so line counts still match)
@@ -3325,6 +3646,13 @@ ${previewClone.outerHTML}
                 /<pre><code class="language-(csv|tsv)">([\s\S]*?)<\/code><\/pre>/g,
                 (match, lang, code) => renderDataTable(lang, code) || match
             );
+
+            // Replace plotly code blocks with placeholder divs; the async renderer
+            // runs after preview.innerHTML is assigned (it fetches the CSV file).
+            html = html.replace(/<pre><code class="language-plotly">([\s\S]*?)<\/code><\/pre>/g, (match, code) => {
+                const id = `plotly-${plotlyCounter++}`;
+                return `<div class="plotly-block" id="${id}" data-plotly-source="${encodeURIComponent(decodeEntities(code))}"></div>`;
+            });
 
             // Render math expressions (await katex if needed)
             if (katexReady) await katexReady;
@@ -3398,6 +3726,15 @@ ${previewClone.outerHTML}
             if (preview.querySelector('[data-smartart]')) {
                 if (smartartReady) await smartartReady;
                 SmartArt.renderAll(preview);
+            }
+
+            // Render all Plotly charts (await libraries; each fetches its CSV)
+            const plotlyEls = preview.querySelectorAll('.plotly-block');
+            if (plotlyEls.length > 0) {
+                if (plotlyReady) await plotlyReady;
+                await Promise.all(Array.from(plotlyEls).map(el =>
+                    renderPlotlyBlock(el, el.getAttribute('data-plotly-source'))
+                ));
             }
 
             // Generate table of contents
