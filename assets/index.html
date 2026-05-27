@@ -336,6 +336,24 @@
         .plotly-block {
             margin: 16px 0;
             min-height: 320px;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+        }
+        /* Plotly's inner chart div: when an explicit layout.width is given the
+           chart is fixed-width, so we still need margin auto for horizontal
+           centering inside flex; when autosize the chart spans the container. */
+        .plotly-block > .js-plotly-plot {
+            margin-left: auto;
+            margin-right: auto;
+        }
+        /* In Marp slides every section is a flex column; let the chart absorb
+           leftover vertical space so it lands centered in the remaining
+           area below the text content. */
+        body.marp .plotly-block {
+            margin-top: auto;
+            margin-bottom: auto;
+            align-items: center;
         }
         .plotly-error {
             margin: 16px 0;
