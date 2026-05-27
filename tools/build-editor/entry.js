@@ -158,7 +158,11 @@ export function create(root, opts = {}) {
   btnTheme.className = 'status-btn';
   btnTheme.type = 'button';
   btnTheme.title = 'Toggle editor theme (light / dark)';
-  statusCtrls.append(btnLn, btnVim, btnTheme);
+  const btnLive = document.createElement('button');
+  btnLive.className = 'status-btn';
+  btnLive.type = 'button';
+  btnLive.title = 'Toggle live preview (off = preview updates on save only)';
+  statusCtrls.append(btnLn, btnVim, btnTheme, btnLive);
   statusRight.append(statusInfo, statusCtrls);
   status.appendChild(statusFile);
   status.appendChild(statusRight);
@@ -270,6 +274,7 @@ export function create(root, opts = {}) {
   const LS_VIM = 'editor:vim';
   const LS_LN = 'editor:lineNumbers';
   const LS_THEME = 'editor:theme';
+  const LS_LIVE = 'editor:livePreview';
   function readPref(key, valid, fallback) {
     try {
       const v = localStorage.getItem(key);
@@ -280,6 +285,7 @@ export function create(root, opts = {}) {
   let vimState = readPref(LS_VIM, ['on', 'off'], 'off') === 'on';
   let lineNoState = readPref(LS_LN, ['absolute', 'relative', 'off'], 'absolute');
   let themeState = readPref(LS_THEME, ['light', 'dark'], 'light');
+  let liveState = readPref(LS_LIVE, ['on', 'off'], 'on') === 'on';
 
   const vimComp = new Compartment();
   const lineNoComp = new Compartment();
@@ -309,6 +315,8 @@ export function create(root, opts = {}) {
     btnLn.classList.toggle('active', lineNoState !== 'absolute');
     btnTheme.textContent = themeState === 'dark' ? 'Theme: Dark' : 'Theme: Light';
     btnTheme.classList.toggle('active', themeState === 'dark');
+    btnLive.textContent = liveState ? 'Live: ON' : 'Live: OFF';
+    btnLive.classList.toggle('active', liveState);
   }
   function setVim(on) {
     vimState = !!on;
@@ -344,9 +352,24 @@ export function create(root, opts = {}) {
     updateToolbar();
     setTimeout(() => view.focus(), 0);
   }
+  function setLive(on) {
+    liveState = !!on;
+    try { localStorage.setItem(LS_LIVE, liveState ? 'on' : 'off'); } catch (_) {}
+    if (liveState) {
+      // Flush the current buffer to the preview immediately so re-enabling
+      // doesn't leave a stale render until the next edit.
+      pushLiveNow();
+    } else if (liveTimer) {
+      clearTimeout(liveTimer);
+      liveTimer = 0;
+    }
+    updateToolbar();
+    setTimeout(() => view.focus(), 0);
+  }
   btnVim.addEventListener('click', () => setVim(!vimState));
   btnLn.addEventListener('click', cycleLineNo);
   btnTheme.addEventListener('click', () => setTheme(themeState === 'dark' ? 'light' : 'dark'));
+  btnLive.addEventListener('click', () => setLive(!liveState));
 
   function updateTitle() {
     const base = currentPath.split(/[\\/]/).pop() || 'Untitled';
@@ -382,15 +405,19 @@ export function create(root, opts = {}) {
 
   // Debounced live-content push to the preview (no disk write).
   let liveTimer = 0;
+  function pushLiveNow() {
+    if (!currentPath || suppressEcho) return;
+    const content = view.state.doc.toString();
+    const head = view.state.selection.main.head;
+    const line = view.state.doc.lineAt(head).number;
+    ipcSend('editor:change:' + JSON.stringify({ path: currentPath, content, line }));
+  }
   function schedulePushLive() {
+    if (!liveState) return;
     if (liveTimer) clearTimeout(liveTimer);
     liveTimer = setTimeout(() => {
       liveTimer = 0;
-      if (!currentPath || suppressEcho) return;
-      const content = view.state.doc.toString();
-      const head = view.state.selection.main.head;
-      const line = view.state.doc.lineAt(head).number;
-      ipcSend('editor:change:' + JSON.stringify({ path: currentPath, content, line }));
+      pushLiveNow();
     }, 150);
   }
   // Hook Vim :w / :wq to save.

@@ -58,6 +58,8 @@ Opened by pressing `E` in the preview. Paired editor window (`assets/editor.html
 
 Every `docChanged` update fires a debounced (~150 ms) `editor:change:` IPC carrying `{path, content, line}`. Rust routes it as `CustomEvent::EditorLiveContent`, which re-renders the preview from memory (no disk write, no `suppressed_saves`, no title change) and immediately calls `window.applyEditorScroll(line)` so the DOM rebuild stays anchored on the cursor. `dirty` / `savedDoc` are untouched by the live channel, so the title-bar dirty-dot and the file-switch dirty-confirm dialog still gate on actual saves. `doSave()` cancels any pending live debounce so a save is the canonical post-save render. `applyEditorScroll` in `assets/index.html` lands the cursor's `[data-line]` block ~1/4 from the top of the preview viewport (clamped to scroll-top 0) so the reader keeps upstream context above the active line.
 
+The live channel can be disabled via the **`Live: ON / Live: OFF`** status-bar toggle (persisted in `localStorage.editor:livePreview`, default ON) — useful for large documents where mermaid / SmartArt / KaTeX re-renders on every keystroke are too costly. When OFF, `schedulePushLive()` is a no-op and any pending debounce is cancelled, so the preview only refreshes on explicit save (`Ctrl+S` / `:w` / `:wq`). Flipping back to ON immediately flushes the current buffer once via `pushLiveNow()` so the preview re-syncs without waiting for the next edit.
+
 ### Dirty close handling
 
 When the editor window is closed while the buffer is dirty (Vim `:q!`, the window X button, etc.), the preview reverts to the on-disk version. Rust tracks a `dirty: bool` on the editor registry state — flipped to `true` in the `editor:change:` IPC branch and back to `false` on save / file-switch. Both close paths (`EditorCloseRequested` for Vim `:q`, `WindowEvent::CloseRequested` for the X button) call `EditorRegistry::close_take_dirty_path()`, which `take()`s the state and returns the paired path only when dirty; the main loop then calls `load_and_render` to re-render the preview from disk. Clean closes return `None` and skip the re-render to avoid flicker.
@@ -110,12 +112,13 @@ Provided by `@codemirror/autocomplete` via three custom sources in `tools/build-
 
 Sits as an `absolute` overlay at the top of `#root` (so the editing area fills the whole window) and **auto-hides**: slides in only when the mouse enters the top 8 px hot-zone (`.status-hotzone`), when the bar itself is hovered, while a Vim ex/search panel is open (`body.vim-panel-open`, set by a `MutationObserver` watching for `.cm-vim-panel`), or while the character-count modal is open (`body.status-pinned`).
 
-Three right-aligned toggle buttons:
+Four right-aligned toggle buttons:
 - **`Vim: ON / Vim: OFF`** — swaps the `vim()` extension in/out of a `Compartment`. Default OFF.
 - **`# Abs / # Rel / # Off`** — cycles the line-number gutter through absolute / relative / off via a second `Compartment`. In relative mode the gutter is forced to redraw on cursor-line change by a deferred `lineNoComp.reconfigure(...)` from the `EditorView.updateListener`, since CodeMirror doesn't re-invoke `formatNumber` on selection-only updates. The same modes are driven by Vim ex commands: `:set number` / `:set nu` → absolute, `:set nonumber` / `:set nonu` → off, `:set relativenumber` / `:set rnu` → relative, `:set norelativenumber` / `:set nornu` → absolute.
 - **`Theme: Light / Theme: Dark`** — toggles the editor's color scheme. When Dark, `@codemirror/theme-one-dark` is swapped in via a third `Compartment` (`themeComp`) and `document.body` gets a `theme-dark` class so `assets/editor.css`'s CSS-variable chrome (status bar, panels, char-count modal, vim ex-prompt) follows. Default is Light regardless of OS `prefers-color-scheme` (the previous OS-driven media query was replaced by the explicit toggle so the user choice always wins).
+- **`Live: ON / Live: OFF`** — gates the debounced `editor:change:` IPC. Default ON. See *Live preview channel* above for full behavior and the rationale (heavy documents).
 
-All three prefs persist via `localStorage` keys `editor:vim` (`on` / `off`), `editor:lineNumbers` (`absolute` / `relative` / `off`), and `editor:theme` (`light` / `dark`).
+All four prefs persist via `localStorage` keys `editor:vim` (`on` / `off`), `editor:lineNumbers` (`absolute` / `relative` / `off`), `editor:theme` (`light` / `dark`), and `editor:livePreview` (`on` / `off`).
 
 ### IME (Windows) integration
 
