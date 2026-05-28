@@ -1287,28 +1287,38 @@
         body.marp #toc-sidebar { display: flex; }
         body.marp:not(.workspace) #toc-sidebar { display: none; }
         body.marp #preview { max-width: none; padding: 0; background: #2a2a2a; }
-        body.marp #preview > div.marpit > svg[data-marpit-svg],
-        body.marp #preview > section.footnotes-slide {
+        body.marp #preview > div.marpit > svg[data-marpit-svg] {
             display: block;
             margin: 24px auto;
             background: white;
             box-shadow: 0 2px 18px rgba(0,0,0,0.35);
-        }
-        body.marp #preview > div.marpit > svg[data-marpit-svg] {
             width: min(1100px, calc(100% - 48px));
             height: auto;
             aspect-ratio: 16 / 9;
         }
-        body.marp #preview > section.footnotes-slide {
-            width: min(1100px, calc(100% - 48px));
-            padding: 32px 56px;
-            color: #24292e;
-            font-size: 15px;
-            line-height: 1.6;
-            box-sizing: border-box;
+        /* Per-slide footnotes — compact block pinned to the bottom of the slide
+           it is referenced on. Standard Marp themes lay sections out as flex
+           columns; margin-top:auto pushes the block down. The defensive
+           display:flex on .marp-has-footnotes keeps it bottom-aligned even on
+           custom themes that don't flex their sections. */
+        body.marp #preview section.marp-has-footnotes {
+            display: flex;
+            flex-direction: column;
         }
-        body.marp #preview > section.footnotes-slide ol { padding-left: 1.6em; }
-        body.marp #preview > section.footnotes-slide .footnote-item { margin-bottom: 8px; }
+        body.marp #preview section .marp-footnotes {
+            margin-top: auto;
+            border-top: 1px solid rgba(0,0,0,0.18);
+            padding-top: 0.4em;
+            font-size: 0.52em;
+            line-height: 1.45;
+            opacity: 0.78;
+        }
+        body.marp #preview section .marp-footnote-item { margin: 0.15em 0; }
+        body.marp #preview section .marp-footnote-item .marp-fn-num { margin-right: 0.2em; }
+        body.marp #preview section .marp-footnote-item .marp-fn-body { display: inline; }
+        body.marp #preview section .marp-footnote-item .marp-fn-body > :first-child { margin-top: 0; }
+        body.marp #preview section .marp-footnote-item .marp-fn-body > :last-child { margin-bottom: 0; }
+        body.marp #preview section[class*="split"] > .marp-footnotes { grid-column: 1 / -1; }
         body.marp.numbered #preview h2::before,
         body.marp.numbered #preview h3::before,
         body.marp.numbered #preview h4::before { content: none; }
@@ -1396,8 +1406,7 @@
             padding: 0;
         }
         body.marp.deck-mode #preview > div.marpit { display: contents; }
-        body.marp.deck-mode #preview > div.marpit > svg[data-marpit-svg],
-        body.marp.deck-mode #preview > section.footnotes-slide {
+        body.marp.deck-mode #preview > div.marpit > svg[data-marpit-svg] {
             display: none;
             margin: 0;
         }
@@ -1406,13 +1415,6 @@
             width: min(98vw, calc(98vh * 16 / 9));
             height: min(98vh, calc(98vw * 9 / 16));
             max-width: none;
-        }
-        body.marp.deck-mode #preview > section.footnotes-slide.active {
-            display: block;
-            width: min(98vw, calc(98vh * 16 / 9));
-            height: min(98vh, calc(98vw * 9 / 16));
-            max-width: none;
-            overflow: auto;
         }
         body.marp.deck-mode #slide-counter { display: block; }
 
@@ -1425,8 +1427,7 @@
             align-content: start;
         }
         body.marp.list-mode #preview > div.marpit { display: contents; }
-        body.marp.list-mode #preview > div.marpit > svg[data-marpit-svg],
-        body.marp.list-mode #preview > section.footnotes-slide {
+        body.marp.list-mode #preview > div.marpit > svg[data-marpit-svg] {
             display: block;
             margin: 0;
             width: 100%;
@@ -1439,14 +1440,7 @@
             overflow: hidden;
             box-sizing: border-box;
         }
-        body.marp.list-mode #preview > section.footnotes-slide {
-            padding: 16px 24px;
-            font-size: 11px;
-            line-height: 1.4;
-            color: #24292e;
-        }
-        body.marp.list-mode #preview > div.marpit > svg[data-marpit-svg]:hover,
-        body.marp.list-mode #preview > section.footnotes-slide:hover {
+        body.marp.list-mode #preview > div.marpit > svg[data-marpit-svg]:hover {
             transform: translateY(-2px);
             box-shadow: 0 6px 22px rgba(0,0,0,0.55);
         }
@@ -2985,6 +2979,33 @@ ${previewClone.outerHTML}
             return html;
         }
 
+        // Compact per-slide footnote block for Marp mode: renders only the given
+        // footnote ids (those referenced on one slide) at the bottom of that slide.
+        // Numbering is global (matches the in-text <sup>), no heading / back-links.
+        function renderMarpSlideFootnotes(ids) {
+            if (!ids || ids.length === 0) return '';
+            let html = '<div class="marp-footnotes">';
+            footnoteState.suspend = true;
+            try {
+                ids.forEach(id => {
+                    const sid = footnoteSafeId(id);
+                    const num = footnoteState.order.indexOf(id) + 1;
+                    const body = footnoteState.defs[id] || '';
+                    const rendered = /\n/.test(body)
+                        ? marked.parse(body)
+                        : marked.parseInline(body);
+                    html += '<div class="marp-footnote-item" id="fn-' + sid + '">'
+                        + '<sup class="marp-fn-num">' + num + '</sup> '
+                        + '<span class="marp-fn-body">' + rendered + '</span>'
+                        + '</div>';
+                });
+            } finally {
+                footnoteState.suspend = false;
+            }
+            html += '</div>';
+            return html;
+        }
+
 
 
         // Prevent default drag behaviors
@@ -3475,11 +3496,11 @@ ${previewClone.outerHTML}
 
         // ===== Marp slide pipeline =====================================================
         // Mode flag, slide cursor, and helpers shared between renderMarp() and the
-        // keyboard handler. Selectors match the marpit + footnotes-slide structure
+        // keyboard handler. Selectors match the marpit slide structure
         // documented in renderMarp() below.
         let __marpDeckIndex = 0;
         function __marpSlides() {
-            return preview.querySelectorAll('div.marpit > svg[data-marpit-svg], section.footnotes-slide');
+            return preview.querySelectorAll('div.marpit > svg[data-marpit-svg]');
         }
         function setMarpView(mode) {
             document.body.classList.toggle('deck-mode', mode === 'deck');
@@ -3866,17 +3887,27 @@ ${previewClone.outerHTML}
                 section.classList.add('marp-has-figs');
             });
 
-            // Append footnotes as a final slide outside the marpit container so the
-            // marp theme CSS (which targets `<section>` inside `data-marpit-svg`)
-            // doesn't fight our plain-page styling.
+            // Per-slide footnotes — render each referenced footnote's body at the
+            // bottom of the slide it appears on (global numbering, compact style).
+            // Runs after the figure-centering and split passes so the block lands
+            // as the section's last child (its true bottom) without being swept
+            // into .marp-figure-stage or a split column bucket.
             if (footnoteState.order.length > 0) {
-                const fnHtml = renderFootnotesSection();
-                if (fnHtml) {
-                    const fnSlide = document.createElement('section');
-                    fnSlide.className = 'footnotes-slide';
-                    fnSlide.innerHTML = '<h2>Footnotes</h2>' + fnHtml;
-                    preview.appendChild(fnSlide);
-                }
+                preview.querySelectorAll('svg[data-marpit-svg] section').forEach(section => {
+                    const refs = section.querySelectorAll('sup.footnote-ref a[data-footnote-id]');
+                    if (refs.length === 0) return;
+                    const ids = [];
+                    refs.forEach(a => {
+                        const id = a.getAttribute('data-footnote-id');
+                        if (id && !ids.includes(id)) ids.push(id);
+                    });
+                    const fnHtml = renderMarpSlideFootnotes(ids);
+                    if (!fnHtml) return;
+                    const tpl = document.createElement('template');
+                    tpl.innerHTML = fnHtml;
+                    section.appendChild(tpl.content);
+                    section.classList.add('marp-has-footnotes');
+                });
             }
 
             // Re-apply our highlight.js over marp-core's code blocks for consistent styling.
@@ -3938,7 +3969,7 @@ ${previewClone.outerHTML}
         function __marpListClickHandler(e) {
             if (!document.body.classList.contains('list-mode')) return;
             const slides = Array.from(__marpSlides());
-            const hit = e.target.closest('svg[data-marpit-svg], section.footnotes-slide');
+            const hit = e.target.closest('svg[data-marpit-svg]');
             const idx = slides.indexOf(hit);
             if (idx < 0) return;
             e.preventDefault();
@@ -4313,7 +4344,7 @@ ${previewClone.outerHTML}
             // nearest-block scroll below.
             if (document.body.classList.contains('marp')) {
                 if (document.body.classList.contains('deck-mode')) {
-                    const slides = preview.querySelectorAll('div.marpit > svg[data-marpit-svg], section.footnotes-slide');
+                    const slides = preview.querySelectorAll('div.marpit > svg[data-marpit-svg]');
                     let idx = -1;
                     for (let i = 0; i < slides.length; i++) {
                         const sl = parseInt(slides[i].getAttribute('data-line') || '', 10);
