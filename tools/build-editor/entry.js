@@ -424,7 +424,7 @@ export function create(root, opts = {}) {
   // Hook Vim :w / :wq to save.
   try {
     Vim.defineEx('write', 'w', doSave);
-    Vim.defineEx('wq', undefined, () => { doSave(); /* keep window — close via main */ });
+    Vim.defineEx('wq', undefined, () => { doSave(); ipcSend('editor:close:'); });
     Vim.defineEx('quit', 'q', () => ipcSend('editor:close:'));
     Vim.defineEx('set', undefined, (_cm, params) => {
       const arg = (params && params.args && params.args[0]) || '';
