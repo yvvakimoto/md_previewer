@@ -1,0 +1,12 @@
+Schemata (assets/libs/schemata.js) is part of the md-previewer project
+itself. It is an in-house renderer authored as part of this repository and
+is distributed under the same license as md-previewer.
+
+The name "Schemata" is the Greek plural of σχῆμα ("figure / form /
+template"), reflecting the family of structured-explanation diagrams the
+module renders (matrix, flow, cycle, BMC, mandara, fishbone). Earlier
+working titles (both withdrawn): "smartart" (collided with Microsoft's
+SmartArt trademark) and "zukai" (avoided for naming consistency with the
+sibling kataskeve module).
+
+See the top-level LICENSE file for the applicable terms.

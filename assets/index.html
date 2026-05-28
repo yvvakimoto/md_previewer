@@ -321,13 +321,13 @@
             font-size: 1.1em;
         }
 
-        /* Zukai diagram styling */
-        .zukai {
+        /* Schemata diagram styling */
+        .schemata {
             margin: 16px 0;
             text-align: center;
         }
 
-        .zukai svg {
+        .schemata svg {
             max-width: 100%;
             height: auto;
         }
@@ -372,16 +372,16 @@
             color: #ffa198;
         }
 
-        /* Sakuzu geometry diagrams (assets/libs/sakuzu.js) */
-        .sakuzu {
+        /* Kataskeve geometry diagrams (assets/libs/kataskeve.js) */
+        .kataskeve {
             margin: 16px 0;
             text-align: center;
         }
-        .sakuzu svg {
+        .kataskeve svg {
             max-width: 100%;
             height: auto;
         }
-        .sakuzu-error {
+        .kataskeve-error {
             margin: 16px 0;
             padding: 12px 16px;
             border: 1px solid #d73a49;
@@ -393,7 +393,7 @@
             white-space: pre-wrap;
             text-align: left;
         }
-        body.dark-mode .sakuzu-error {
+        body.dark-mode .kataskeve-error {
             background: #2a0d10;
             border-color: #f85149;
             color: #ffa198;
@@ -1028,13 +1028,13 @@
                 max-width: 100%;
             }
 
-            /* Also prevent breaks in mermaid diagrams, math expressions, Zukai, and Sakuzu */
-            .mermaid, .katex-display, .zukai, .sakuzu {
+            /* Also prevent breaks in mermaid diagrams, math expressions, Schemata, and Kataskeve */
+            .mermaid, .katex-display, .schemata, .kataskeve {
                 break-inside: avoid;
                 page-break-inside: avoid;
             }
 
-            .zukai svg {
+            .schemata svg {
                 -webkit-print-color-adjust: exact;
                 print-color-adjust: exact;
             }
@@ -1333,11 +1333,11 @@
             gap: 16px;
             /* horizontal centering handled per child (text-align for inline SVG,
                margin:auto for block tables) — avoid align-items:center because it
-               collapses mermaid/zukai wrapper width and shrinks the inline SVG. */
+               collapses mermaid/schemata wrapper width and shrinks the inline SVG. */
         }
         body.marp #preview section.marp-has-figs > .marp-figure-stage > .mermaid,
-        body.marp #preview section.marp-has-figs > .marp-figure-stage > .zukai,
-        body.marp #preview section.marp-has-figs > .marp-figure-stage > .sakuzu {
+        body.marp #preview section.marp-has-figs > .marp-figure-stage > .schemata,
+        body.marp #preview section.marp-has-figs > .marp-figure-stage > .kataskeve {
             margin: 0;
             text-align: center;
         }
@@ -1675,8 +1675,8 @@
             });
         }
         function ensureKatex() { return loadLib('libs/katex/katex.min.js'); }
-        function ensureZukai() { return loadLib('libs/zukai.js'); }
-        function ensureSakuzu() { return loadLib('libs/sakuzu.js'); }
+        function ensureSchemata() { return loadLib('libs/schemata.js'); }
+        function ensureKataskeve() { return loadLib('libs/kataskeve.js'); }
         function ensureMarp() { return loadLib('libs/marp/marp.iife.js'); }
         function ensureJsYaml() { return loadLib('libs/js-yaml.min.js'); }
         function ensurePlotly() { return loadLib('libs/plotly/plotly.min.js'); }
@@ -1846,9 +1846,9 @@
         const tocNav = document.getElementById('toc-nav');
         const tocToggle = document.getElementById('toc-toggle');
         let mermaidCounter = 0;
-        let zukaiCounter = 0;
+        let schemataCounter = 0;
         let plotlyCounter = 0;
-        let sakuzuCounter = 0;
+        let kataskeveCounter = 0;
         let currentMarkdown = '';
         let currentFilePath = '';
         let suppressHistoryPush = false;
@@ -2114,7 +2114,7 @@
 
         // Export current document as a self-contained .html artifact (E key).
         // The artifact:
-        //   - clones the live #preview DOM (mermaid/zukai/katex are already rendered to inline SVG / spans,
+        //   - clones the live #preview DOM (mermaid/schemata/katex are already rendered to inline SVG / spans,
         //     and images are already base64 via Rust upstream — so the file is fully standalone),
         //   - inlines the active stylesheet so it looks identical to the preview,
         //   - includes CDN <link>s for KaTeX / highlight.js CSS only when the document actually uses those,
@@ -3744,7 +3744,7 @@ ${previewClone.outerHTML}
             // direct children and split them into <div class="split-col"> buckets
             // at every <p>⦃COL⦄</p> sentinel. Runs after footnote restoration so
             // <sup> nodes are preserved inside the column they belong to, and
-            // before mermaid/zukai replacement so those substitutions land
+            // before mermaid/schemata replacement so those substitutions land
             // inside the correct column wrapper.
             preview.querySelectorAll('section.split, section.split-2, section.split-3, section.split-4').forEach(section => {
                 const buckets = [[]];
@@ -3785,9 +3785,9 @@ ${previewClone.outerHTML}
                 });
             });
 
-            // Replace mermaid / zukai / csv / tsv code blocks inside each slide with
+            // Replace mermaid / schemata / csv / tsv code blocks inside each slide with
             // the same DOM produced by the normal pipeline so the existing renderers
-            // (mermaid.render, Zukai.renderAll, renderDataTable) just work.
+            // (mermaid.render, Schemata.renderAll, renderDataTable) just work.
             let mCount = 0, sCount = 0;
             preview.querySelectorAll('code[class*="language-"]').forEach(code => {
                 const m = code.className.match(/language-([A-Za-z0-9_+-]+)/);
@@ -3801,12 +3801,12 @@ ${previewClone.outerHTML}
                     div.id = 'marp-mermaid-' + (mCount++);
                     div.textContent = code.textContent;
                     pre.replaceWith(div);
-                } else if (lang === 'zukai') {
+                } else if (lang === 'schemata') {
                     const div = document.createElement('div');
-                    div.className = 'zukai';
-                    div.id = 'marp-zukai-' + (sCount++);
-                    div.setAttribute('data-zukai', '1');
-                    div.setAttribute('data-zukai-source', encodeURIComponent(code.textContent));
+                    div.className = 'schemata';
+                    div.id = 'marp-schemata-' + (sCount++);
+                    div.setAttribute('data-schemata', '1');
+                    div.setAttribute('data-schemata-source', encodeURIComponent(code.textContent));
                     pre.replaceWith(div);
                 } else if (lang === 'csv' || lang === 'tsv') {
                     const tableHtml = renderDataTable(lang, escapeHtml(code.textContent));
@@ -3820,17 +3820,17 @@ ${previewClone.outerHTML}
                     div.id = 'marp-plotly-' + (plotlyCounter++);
                     div.setAttribute('data-plotly-source', encodeURIComponent(code.textContent));
                     pre.replaceWith(div);
-                } else if (lang === 'sakuzu') {
+                } else if (lang === 'kataskeve') {
                     const div = document.createElement('div');
-                    div.className = 'sakuzu';
-                    div.id = 'marp-sakuzu-' + (sakuzuCounter++);
-                    div.setAttribute('data-sakuzu', '1');
-                    div.setAttribute('data-sakuzu-source', encodeURIComponent(code.textContent));
+                    div.className = 'kataskeve';
+                    div.id = 'marp-kataskeve-' + (kataskeveCounter++);
+                    div.setAttribute('data-kataskeve', '1');
+                    div.setAttribute('data-kataskeve-source', encodeURIComponent(code.textContent));
                     pre.replaceWith(div);
                 }
             });
 
-            // Figure centering — for non-split slides containing a mermaid / zukai /
+            // Figure centering — for non-split slides containing a mermaid / schemata /
             // csv-table / native <table> / image-only paragraph as a direct child, wrap
             // that element and any following siblings into a .marp-figure-stage div, and
             // tag the section with .marp-has-figs so CSS can flex-center the stage
@@ -3845,7 +3845,7 @@ ${previewClone.outerHTML}
             };
             const isFigureChild = (el) => {
                 if (el.nodeType !== 1) return false;
-                if (el.matches('.mermaid, .zukai, .csv-table, table, .sakuzu')) return true;
+                if (el.matches('.mermaid, .schemata, .csv-table, table, .kataskeve')) return true;
                 if (isImageParagraph(el)) return true;
                 return false;
             };
@@ -3900,21 +3900,21 @@ ${previewClone.outerHTML}
                 }));
             }
 
-            // Render Zukai diagrams. Zukai sizes itself from clientWidth,
+            // Render Schemata diagrams. Schemata sizes itself from clientWidth,
             // which is 0 when the div has just been injected inside marp-core's
             // <foreignObject>. Yield to layout once before calling renderAll so
             // diagrams come out at the slide's real width.
-            if (preview.querySelector('[data-zukai]')) {
-                await ensureZukai();
+            if (preview.querySelector('[data-schemata]')) {
+                await ensureSchemata();
                 await new Promise(r => requestAnimationFrame(() => r()));
-                Zukai.renderAll(preview);
+                Schemata.renderAll(preview);
             }
 
-            // Render Sakuzu geometry diagrams in slides.
-            if (preview.querySelector('[data-sakuzu]')) {
-                await ensureSakuzu();
+            // Render Kataskeve geometry diagrams in slides.
+            if (preview.querySelector('[data-kataskeve]')) {
+                await ensureKataskeve();
                 await new Promise(r => requestAnimationFrame(() => r()));
-                Sakuzu.renderAll(preview);
+                Kataskeve.renderAll(preview);
             }
 
             const marpPlotlyEls = preview.querySelectorAll('.plotly-block');
@@ -3957,7 +3957,7 @@ ${previewClone.outerHTML}
 
         async function renderMarkdown(markdown) {
             mermaidCounter = 0;
-            zukaiCounter = 0;
+            schemataCounter = 0;
 
             // Normalize line endings: Windows files reach us as CRLF, and several
             // line-anchored regexes (notably the footnote-definition matcher) rely on
@@ -3965,7 +3965,7 @@ ${previewClone.outerHTML}
             markdown = markdown.replace(/\r\n?/g, '\n');
 
             // Marp branch: presentation slides. Handles a separate pipeline (marp-core
-            // produces its own HTML + theme CSS; we re-apply mermaid / zukai / csv /
+            // produces its own HTML + theme CSS; we re-apply mermaid / schemata / csv /
             // footnotes post-render so the tool's extensions still work inside slides).
             if (isMarpDocument(markdown)) {
                 await renderMarp(markdown);
@@ -4000,15 +4000,15 @@ ${previewClone.outerHTML}
             // Kick off lazy library loads in parallel as soon as we know they'll be needed.
             // We don't await here — we await individually right before each library is used.
             const needsMermaid = /```mermaid\b/.test(processedMarkdown);
-            const needsZukai = /```zukai\b/.test(processedMarkdown);
+            const needsSchemata = /```schemata\b/.test(processedMarkdown);
             const needsKatex = mathBlocks.length > 0;
             const needsPlotly = /```plotly\b/.test(processedMarkdown);
-            const needsSakuzu = /```sakuzu\b/.test(processedMarkdown);
+            const needsKataskeve = /```kataskeve\b/.test(processedMarkdown);
             const mermaidReady = needsMermaid ? ensureMermaid() : null;
-            const zukaiReady = needsZukai ? ensureZukai() : null;
+            const schemataReady = needsSchemata ? ensureSchemata() : null;
             const katexReady = needsKatex ? ensureKatex() : null;
             const plotlyReady = needsPlotly ? Promise.all([ensureJsYaml(), ensurePlotly()]) : null;
-            const sakuzuReady = needsSakuzu ? ensureSakuzu() : null;
+            const kataskeveReady = needsKataskeve ? ensureKataskeve() : null;
 
             // Flush the prior render's tracked CSV files so the Rust watcher only
             // monitors files referenced by the document we're about to render.
@@ -4034,22 +4034,22 @@ ${previewClone.outerHTML}
                 return `<div class="mermaid" id="${id}">${code}</div>`;
             });
 
-            // Replace zukai code blocks with zukai divs
-            html = html.replace(/<pre><code class="language-zukai">([\s\S]*?)<\/code><\/pre>/g, (match, code) => {
-                const id = `zukai-${zukaiCounter++}`;
+            // Replace schemata code blocks with schemata divs
+            html = html.replace(/<pre><code class="language-schemata">([\s\S]*?)<\/code><\/pre>/g, (match, code) => {
+                const id = `schemata-${schemataCounter++}`;
                 const textarea = document.createElement('textarea');
                 textarea.innerHTML = code;
                 const decoded = textarea.value;
-                return `<div class="zukai" id="${id}" data-zukai="1" data-zukai-source="${encodeURIComponent(decoded)}"></div>`;
+                return `<div class="schemata" id="${id}" data-schemata="1" data-schemata-source="${encodeURIComponent(decoded)}"></div>`;
             });
 
-            // Replace sakuzu code blocks with sakuzu divs
-            html = html.replace(/<pre><code class="language-sakuzu">([\s\S]*?)<\/code><\/pre>/g, (match, code) => {
-                const id = `sakuzu-${sakuzuCounter++}`;
+            // Replace kataskeve code blocks with kataskeve divs
+            html = html.replace(/<pre><code class="language-kataskeve">([\s\S]*?)<\/code><\/pre>/g, (match, code) => {
+                const id = `kataskeve-${kataskeveCounter++}`;
                 const textarea = document.createElement('textarea');
                 textarea.innerHTML = code;
                 const decoded = textarea.value;
-                return `<div class="sakuzu" id="${id}" data-sakuzu="1" data-sakuzu-source="${encodeURIComponent(decoded)}"></div>`;
+                return `<div class="kataskeve" id="${id}" data-kataskeve="1" data-kataskeve-source="${encodeURIComponent(decoded)}"></div>`;
             });
 
             // Replace csv / tsv code blocks with HTML tables
@@ -4133,16 +4133,16 @@ ${previewClone.outerHTML}
                 }));
             }
 
-            // Render all Zukai diagrams (await library if any are present)
-            if (preview.querySelector('[data-zukai]')) {
-                if (zukaiReady) await zukaiReady;
-                Zukai.renderAll(preview);
+            // Render all Schemata diagrams (await library if any are present)
+            if (preview.querySelector('[data-schemata]')) {
+                if (schemataReady) await schemataReady;
+                Schemata.renderAll(preview);
             }
 
-            // Render all Sakuzu geometry diagrams
-            if (preview.querySelector('[data-sakuzu]')) {
-                if (sakuzuReady) await sakuzuReady;
-                Sakuzu.renderAll(preview);
+            // Render all Kataskeve geometry diagrams
+            if (preview.querySelector('[data-kataskeve]')) {
+                if (kataskeveReady) await kataskeveReady;
+                Kataskeve.renderAll(preview);
             }
 
             // Render all Plotly charts (await libraries; each fetches its CSV)
@@ -4221,8 +4221,8 @@ ${previewClone.outerHTML}
             const codeBlocks = preview.querySelectorAll('pre');
 
             codeBlocks.forEach((pre) => {
-                // Skip if it's a mermaid diagram, zukai, or already has a wrapper
-                if (pre.querySelector('.mermaid') || pre.querySelector('.zukai') || pre.parentElement.classList.contains('code-block-wrapper')) {
+                // Skip if it's a mermaid diagram, schemata, or already has a wrapper
+                if (pre.querySelector('.mermaid') || pre.querySelector('.schemata') || pre.parentElement.classList.contains('code-block-wrapper')) {
                     return;
                 }
 

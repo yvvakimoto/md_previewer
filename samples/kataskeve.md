@@ -1,12 +1,12 @@
-# Sakuzu — 初等幾何作図ブロック
+# Kataskeve — 初等幾何作図ブロック
 
-`sakuzu` フェンスは平面初等幾何（点・線分・直線・円・多角形・派生点・変換・角マーク）を式志向 DSL で記述し、SVG を埋め込みます。「作図」という日本語名は、本機能がまさに初等幾何の作図問題を表現する DSL であることに由来します。
+`kataskeve` フェンスは平面初等幾何（点・線分・直線・円・多角形・派生点・変換・角マーク）を式志向 DSL で記述し、SVG を埋め込みます。「作図」という日本語名は、本機能がまさに初等幾何の作図問題を表現する DSL であることに由来します。
 
 3 次元は今回スコープ外（将来検討）。
 
 ## 1. 基本作図
 
-```sakuzu
+```kataskeve
 viewport: -1 -1 6 5
 A = point(0, 0)
 B = point(5, 0)
@@ -25,7 +25,7 @@ mark tick(segment(C, A)) count=3
 
 辺の長さ 3 つで「とりあえずの三角形」を 1 行で置けます。辺の対応は標準慣習 `a = |BC|`, `b = |CA|`, `c = |AB|`。
 
-```sakuzu
+```kataskeve
 viewport: -1 -1 7 5
 T = triangle(5, 4, 3)
 T
@@ -38,7 +38,7 @@ label C "C" pos=N
 
 引数なしの `triangle()` は決め打ちのスカレーン三角形（`triangle(5, 4, 6)` と同じ）：
 
-```sakuzu
+```kataskeve
 viewport: -1 -1 8 5
 T = triangle()
 T
@@ -50,7 +50,7 @@ T.A; T.B; T.C
 
 ## 3. 派生点（中点・交点・垂足）
 
-```sakuzu
+```kataskeve
 viewport: -1 -1 7 5
 A = point(0, 0); B = point(6, 0); C = point(1.5, 4)
 triangle(A, B, C)
@@ -69,7 +69,7 @@ segment(C, H) dashed thin
 
 ## 4. 円
 
-```sakuzu
+```kataskeve
 viewport: -3 -3 3 3
 O = point(0, 0)
 C = circle(O, 2)
@@ -87,7 +87,7 @@ triangle(P, Q, R)
 
 ## 5. 変換（回転・反射・平行移動）
 
-```sakuzu
+```kataskeve
 viewport: -4 -3 6 4
 A = point(0, 0); B = point(3, 0); C = point(1, 2)
 T = polygon(A, B, C)
@@ -107,7 +107,7 @@ label A "A" pos=SW
 
 ## 6. 角マーク
 
-```sakuzu
+```kataskeve
 viewport: -1 -1 5 4
 A = point(0, 0); B = point(4, 0); C = point(4, 3)
 triangle(A, B, C)
@@ -122,7 +122,7 @@ mark angle(B, C, A) arcs=2 radius=0.6
 
 ## 7. 設定（grid / axes）
 
-```sakuzu
+```kataskeve
 viewport: -3 -2 3 3
 grid: on
 axes: on
@@ -137,7 +137,7 @@ label P "P(2, 1.5)" pos=NE
 
 三角形の **3 辺の中点 / 3 垂線の足 / 3 オイラー点（垂心と各頂点の中点）** の 9 点が共有する単一の円が九点円です。`circle3(Ma, Mb, Mc)` で確定した円の上に、残り 6 点も乗っていることを目視で確認できます。
 
-```sakuzu
+```kataskeve
 viewport: -1 -1 7 6
 unit: 60
 
@@ -194,7 +194,7 @@ label H "H" pos=NE
 
 `circle3(Ha, Hb, Hc)` で別に求めた円が中点 3 点版と完全一致することを目視確認。
 
-```sakuzu
+```kataskeve
 viewport: -1 -1 7 6
 unit: 60
 
@@ -221,7 +221,7 @@ A; B; C
 
 角 B が鈍角となる配置でも 9 点はすべて九点円上にあります。
 
-```sakuzu
+```kataskeve
 viewport: -2 -3 8 5
 unit: 50
 
@@ -264,7 +264,7 @@ label H "H" pos=NE
 
 円周上に巡回順に並べた 6 点を辺で順に結ぶと凸六角形になります。対辺どうしは凸性ゆえに「ほぼ平行」となり、交点 X, Y, Z は円から離れた位置に大きく散ります。それでも 3 点は完全に共線で、パスカル線（赤）の上に乗ります。
 
-```sakuzu
+```kataskeve
 unit: 30
 
 O = point(0, 0)
@@ -323,7 +323,7 @@ line(X, Z) color=#c0392b thick
 
 同じ円周上の 6 点でも、ラベル順 P1..P6 が円を 2 周するように非巡回順で結ぶと、六角形は自己交差して「神秘の六角形 (mystic hexagram)」になります。対辺どうしの角度差が大きく、3 つの交点は円の内部または近傍にコンパクトに収まります。
 
-```sakuzu
+```kataskeve
 unit: 50
 
 O = point(0, 0)

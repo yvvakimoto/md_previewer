@@ -1,5 +1,5 @@
-// Quick smoke test of sakuzu.js outside the browser.
-// Run: node tools/test-sakuzu.js
+// Quick smoke test of kataskeve.js outside the browser.
+// Run: node tools/test-kataskeve.js
 
 const fs = require('fs');
 const path = require('path');
@@ -8,23 +8,23 @@ const path = require('path');
 global.window = {};
 global.document = { body: { classList: { contains: () => false } } };
 
-const src = fs.readFileSync(path.join(__dirname, '..', 'assets', 'libs', 'sakuzu.js'), 'utf8');
+const src = fs.readFileSync(path.join(__dirname, '..', 'assets', 'libs', 'kataskeve.js'), 'utf8');
 eval(src);
-const Sakuzu = global.window.Sakuzu;
+const Kataskeve = global.window.Kataskeve;
 
-const samples = fs.readFileSync(path.join(__dirname, '..', 'samples', 'sakuzu.md'), 'utf8');
-// Extract every ```sakuzu ... ``` block.
+const samples = fs.readFileSync(path.join(__dirname, '..', 'samples', 'kataskeve.md'), 'utf8');
+// Extract every ```kataskeve ... ``` block.
 const blocks = [];
-const re = /```sakuzu\n([\s\S]*?)```/g;
+const re = /```kataskeve\n([\s\S]*?)```/g;
 let m;
 while ((m = re.exec(samples)) !== null) blocks.push(m[1]);
 
-console.log('Found ' + blocks.length + ' sakuzu blocks in samples/sakuzu.md');
+console.log('Found ' + blocks.length + ' kataskeve blocks in samples/kataskeve.md');
 let failed = 0;
 blocks.forEach((b, i) => {
     try {
-        const svg = Sakuzu.render(b);
-        if (svg.includes('sakuzu-error')) {
+        const svg = Kataskeve.render(b);
+        if (svg.includes('kataskeve-error')) {
             console.error('--- Block #' + (i + 1) + ' rendered an error ---');
             console.error(svg);
             console.error('--- source ---');
@@ -47,7 +47,7 @@ blocks.forEach((b, i) => {
 // midpoint triangle, within numerical tolerance.
 console.log('\n=== Nine-point circle numerical check ===');
 function verifyNinePoint(A, B, C, label) {
-    // Reuse Sakuzu by feeding it source and reading back via parse.
+    // Reuse Kataskeve by feeding it source and reading back via parse.
     // Simpler: replicate the math directly here.
     function mid(p, q) { return { x: (p.x + q.x) / 2, y: (p.y + q.y) / 2 }; }
     function foot(p, a, b) {

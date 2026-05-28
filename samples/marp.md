@@ -66,9 +66,9 @@ graph LR
 
 ---
 
-## Zukai（図解）
+## Schemata（図解）
 
-```zukai
+```schemata
 matrix 2x2
 title: SWOT分析
 scale: 1.3
@@ -192,7 +192,7 @@ Marp 標準では生 HTML が必要な「左右分割」を、`<!-- _class: spli
 
 ### 柔軟
 
-各カラムには見出し、リスト、コード、画像、数式、脚注、mermaid、zukai（図解）まで配置できます。
+各カラムには見出し、リスト、コード、画像、数式、脚注、mermaid、schemata（図解）まで配置できます。
 
 +++
 

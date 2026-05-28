@@ -1,6 +1,7 @@
 /target
 /assets/libs/*
-!/assets/libs/zukai.js
+!/assets/libs/schemata.js
+!/assets/libs/kataskeve.js
 /assets/THIRD_PARTY_LICENSES.txt
 /dist
 
