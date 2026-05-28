@@ -1,0 +1,21 @@
+Kataskeve (assets/libs/kataskeve.js) is an in-house elementary Euclidean
+geometry diagram renderer authored as part of the md-previewer project. It
+is an ORIGINAL implementation and does NOT incorporate, derive from,
+translate, or copy any code from the GPL-licensed Eukleides tool
+(https://www.eukleides.org/) or from the unrelated npm package "euclid.js"
+(or any other geometry library).
+
+Mathematical constructions used internally (midpoint, foot of perpendicular,
+circle through three points, orthocenter, line/circle intersection, etc.)
+are textbook Euclidean geometry and are not subject to copyright. The
+implementation, source language design, parser, evaluator, and SVG renderer
+were developed independently for this project.
+
+The name "Kataskeve" is the Greek κατασκευή ("construction"), the term
+Euclid used in the Elements for the construction step of a proposition.
+Earlier working titles (both withdrawn): "euclid" (collided with the npm
+package euclid.js) and "sakuzu" (collided with the Microsoft Store UWP app
+"Sakuzu", a Windows diagram-creation tool in the same product category).
+
+It is distributed under the same license as md-previewer. See the top-level
+LICENSE file for the applicable terms.

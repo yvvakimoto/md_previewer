@@ -26,7 +26,15 @@ You can make text **bold**, *italic*, or ***both***. You can also use ~~striketh
 ### Ordered List
 1. First item
 2. Second item
+   - 子要素は 3 スペースでマーカー直後のカラムに揃える (CommonMark / GFM 規約)
+   - エディタ側の Tab はこの幅にスナップする
 3. Third item
+
+### Ordered List (2-digit markers)
+8. eighth
+9. ninth
+10. tenth
+    - 2 桁マーカー配下は 4 スペース字下げ
 
 ## Code
 
@@ -118,7 +126,7 @@ pie title Technologies
 
 - [Math](./math.md)
 - [Syntax highlighting](./syntax.md)
-- [SmartArt diagrams](./smartart.md)
+- [Schemata（図解）diagrams](./schemata.md)
 - [日本語ファイル名テスト](./日本語ファイル.md)
 
 ### Footnote

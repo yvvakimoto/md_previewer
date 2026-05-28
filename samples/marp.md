@@ -48,7 +48,7 @@ $$
 
 相対パスのローカル画像は Rust 側で base64 にインライン化されます。
 
-![テスト画像|1000](images/test.png)
+![テスト画像|600](images/test.png)
 
 ---
 
@@ -66,11 +66,12 @@ graph LR
 
 ---
 
-## SmartArt
+## Schemata（図解）
 
-```smartart
+```schemata
 matrix 2x2
 title: SWOT分析
+scale: 1.3
 
 - 強み / Strength #c-teal
   - 独自技術
@@ -100,6 +101,37 @@ title: SWOT分析
 
 ---
 
+## Plotly チャート (外部CSV)
+
+```plotly
+file: data/sales.csv
+type: line
+x: month
+y: [revenue, cost]
+names: [Revenue, Cost]
+title: Monthly P&L
+layout:
+  height: 420
+  margin: { t: 48, r: 24, b: 48, l: 56 }
+  legend: { orientation: h, y: -0.2 }
+```
+
+---
+
+## Plotly: 3D サーフェス
+
+```plotly
+file: data/surface.csv
+type: surface
+title: z = x² + y²
+layout:
+  height: 480
+  margin: { t: 40, r: 0, b: 0, l: 0 }
+  scene: { camera: { eye: { x: 1.4, y: 1.4, z: 0.9 } } }
+```
+
+---
+
 ## シンタックスハイライト
 
 ```rust
@@ -116,3 +148,54 @@ Marp 標準では脚注は未対応ですが、本ツールでは有効です[^i
 
 [^impl]: `[^id]` 構文を marp-core に渡す前にプレースホルダ化し、レンダリング後に `<sup>` に戻す方式です。
 [^export]: HTML エクスポートでもそのまま保持されます。
+
+---
+
+<!-- _class: split -->
+
+## 2カラムレイアウト
+
+### 基本記法
+
+Marp 標準では生 HTML が必要な「左右分割」を、`<!-- _class: split -->` ディレクティブと `+++` 区切りだけで実現できます。
+
+- 左側に説明文
+- 右側に箇条書きや画像
+- `+++` を行頭単独で書くと列が分かれる
+
++++
+
+### 使いどころ
+
+- ビフォー / アフターの比較
+- 図と説明を並べる
+- メリット / デメリット表
+
+コードフェンス内の `+++` は分割されません:
+
+```diff
++++ a/file.txt
+--- b/file.txt
+```
+
+---
+
+<!-- _class: split-3 -->
+
+## 3カラム特徴紹介
+
+### シンプル
+
+`+++` を 2 回書くだけで 3 カラムに展開されます。`split-4` で 4 カラムまで対応。
+
++++
+
+### 柔軟
+
+各カラムには見出し、リスト、コード、画像、数式、脚注、mermaid、schemata（図解）まで配置できます。
+
++++
+
+### 安全
+
+`html: false` を維持したまま実現しているため、Marp 標準のセキュリティモデルから逸脱しません。

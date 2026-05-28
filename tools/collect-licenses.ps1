@@ -13,7 +13,7 @@
 
   Sections:
     1. Directly bundled stand-alone libraries (marked, mermaid, katex,
-       highlight.js, smartart). The license body is read from a local
+       highlight.js, schemata). The license body is read from a local
        fallback file under tools/license-texts/ (kept in repo so the
        script has no network dependency).
     2. Transitive npm dependencies of the marp-core IIFE bundle
@@ -88,10 +88,22 @@ $direct = @(
     Upstream='https://github.com/mermaid-js/mermaid';
     Path='assets/libs/mermaid.min.js';
     LicenseFile='tools/license-texts/mermaid.LICENSE' }
-  [pscustomobject]@{ Name='SmartArt (in-house)'; Version='—'; Spdx='Proprietary (md-previewer)';
+  [pscustomobject]@{ Name='Schemata (in-house)'; Version='—'; Spdx='Proprietary (md-previewer)';
     Upstream='(this repository)';
-    Path='assets/libs/smartart.js';
-    LicenseFile='tools/license-texts/smartart.LICENSE' }
+    Path='assets/libs/schemata.js';
+    LicenseFile='tools/license-texts/schemata.LICENSE' }
+  [pscustomobject]@{ Name='Kataskeve (in-house)'; Version='—'; Spdx='Proprietary (md-previewer)';
+    Upstream='(this repository)';
+    Path='assets/libs/kataskeve.js';
+    LicenseFile='tools/license-texts/kataskeve.LICENSE' }
+  [pscustomobject]@{ Name='Plotly.js (dist-min)'; Version='2.35.2'; Spdx='MIT';
+    Upstream='https://github.com/plotly/plotly.js';
+    Path='assets/libs/plotly/plotly.min.js';
+    LicenseFile='tools/license-texts/plotly.LICENSE' }
+  [pscustomobject]@{ Name='js-yaml';      Version='4.1.0'; Spdx='MIT';
+    Upstream='https://github.com/nodeca/js-yaml';
+    Path='assets/libs/js-yaml.min.js';
+    LicenseFile='tools/license-texts/js-yaml.LICENSE' }
 )
 
 foreach ($d in $direct) {

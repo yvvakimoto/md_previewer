@@ -181,7 +181,9 @@
 #preview pre,
 #preview img,
 #preview .mermaid,
-#preview .smartart,
+#preview .schemata,
+#preview .kataskeve,
+#preview .plotly-block,
 #preview figure {
     writing-mode: horizontal-tb;
     text-orientation: mixed;
