@@ -1,15 +1,15 @@
 /**
- * SmartArt Renderer - SVG diagram generator for markdown code blocks
+ * Zukai Renderer - SVG diagram generator for markdown code blocks
  *
  * Usage:
- *   // Render all smartart elements on the page
- *   SmartArt.renderAll(containerElement);
+ *   // Render all zukai elements on the page
+ *   Zukai.renderAll(containerElement);
  *
  *   // Parse and render a single source string
- *   const svg = SmartArt.render(sourceText);
+ *   const svg = Zukai.render(sourceText);
  *
  *   // Parse source text into structured data
- *   const parsed = SmartArt.parse(sourceText);
+ *   const parsed = Zukai.parse(sourceText);
  *
  * Supported diagram types:
  *   - matrix NxM  (e.g., "matrix 2x2", "matrix 3x2")
@@ -20,7 +20,7 @@
  *   - fishbone    (Ishikawa/cause-and-effect diagram, options: "vertical")
  *
  * Notation:
- *   ```smartart
+ *   ```zukai
  *   matrix 2x2
  *   title: SWOT Analysis
  *
@@ -88,7 +88,7 @@
 
     function isDark() {
         // Follow the app theme (`body.dark-mode`, set by the M-key style cycle)
-        // rather than the OS `prefers-color-scheme`, so that the SmartArt palette
+        // rather than the OS `prefers-color-scheme`, so that the Zukai palette
         // matches the surrounding preview and stays in sync with Mermaid's
         // detection in assets/index.html.
         return !!(global.document && global.document.body && global.document.body.classList.contains('dark-mode'));
@@ -202,7 +202,7 @@
     // ===== Parser =====
 
     /**
-     * Parse smartart source text into a structured object.
+     * Parse zukai source text into a structured object.
      *
      * @param {string} source - Raw code block content
      * @returns {{ type: string, options: string, title: string, cells: Array }}
@@ -618,7 +618,7 @@
      * Parse mandara-specific 3-level structure from raw source.
      *
      * Syntax:
-     *   ```smartart
+     *   ```zukai
      *   mandara
      *   title: My Goal Chart
      *
@@ -836,7 +836,7 @@
      * Parse fishbone-specific 3-level structure from raw source.
      *
      * Syntax:
-     *   ```smartart
+     *   ```zukai
      *   fishbone
      *   title: Diagram Title
      *
@@ -1308,7 +1308,7 @@
     // ===== Public API =====
 
     /**
-     * Render a smartart source string into an SVG string.
+     * Render a zukai source string into an SVG string.
      *
      * @param {string} source - Raw code block content
      * @returns {string} SVG markup
@@ -1319,34 +1319,34 @@
         parsed.source = source;
         var renderer = RENDERERS[parsed.type];
         if (!renderer) {
-            throw new Error('Unsupported SmartArt type: ' + parsed.type);
+            throw new Error('Unsupported Zukai type: ' + parsed.type);
         }
         return applyScale(renderer(parsed), parsed.scale);
     }
 
     /**
-     * Find all elements with [data-smartart] attribute inside a container
+     * Find all elements with [data-zukai] attribute inside a container
      * and replace their content with rendered SVG.
      *
      * @param {Element} [container=document] - DOM element to search within
      */
     function renderAll(container) {
         container = container || document;
-        var elements = container.querySelectorAll('[data-smartart]');
+        var elements = container.querySelectorAll('[data-zukai]');
         for (var i = 0; i < elements.length; i++) {
             var el = elements[i];
             try {
-                var source = el.getAttribute('data-smartart-source');
+                var source = el.getAttribute('data-zukai-source');
                 if (!source) continue;
                 el.innerHTML = render(decodeURIComponent(source));
             } catch (error) {
-                el.innerHTML = '<pre style="color:red;">SmartArt Error: ' + escapeXml(error.message) + '</pre>';
+                el.innerHTML = '<pre style="color:red;">Zukai Error: ' + escapeXml(error.message) + '</pre>';
             }
         }
     }
 
     // Export
-    global.SmartArt = {
+    global.Zukai = {
         parse: parse,
         render: render,
         renderAll: renderAll,

@@ -1,6 +1,6 @@
 /target
 /assets/libs/*
-!/assets/libs/smartart.js
+!/assets/libs/zukai.js
 /assets/THIRD_PARTY_LICENSES.txt
 /dist
 

@@ -1,12 +1,12 @@
-# SmartArt
+# Zukai（図解）
 
-Bundled `smartart.js` renders several diagram types from fenced `smartart` blocks. Colors can be tagged with `#c-teal`, `#c-coral`, `#c-blue`, `#c-amber`, `#c-purple`, `#c-green`, `#c-pink`, `#c-gray`.
+Bundled `zukai.js` renders several diagram types from fenced `zukai` blocks. Colors can be tagged with `#c-teal`, `#c-coral`, `#c-blue`, `#c-amber`, `#c-purple`, `#c-green`, `#c-pink`, `#c-gray`.
 
 `title:` と同じ位置で `scale: <倍率>` を指定すると、図全体の表示倍率を変更できます（例: `scale: 0.7` で 70%、`scale: 1.5` で 150%）。1 より大きい値を指定した場合は `max-width:100%` 制限を外し、コンテナ幅を超えて表示します。
 
 ## Matrix (SWOT)
 
-```smartart
+```zukai
 matrix 2x2
 title: SWOT分析
 
@@ -29,7 +29,7 @@ title: SWOT分析
 
 ## Business Model Canvas
 
-```smartart
+```zukai
 bmc
 title: Business Model Canvas
 
@@ -72,7 +72,7 @@ title: Business Model Canvas
 
 ## Mandara Chart
 
-```smartart
+```zukai
 mandara
 title: 目標達成
 
@@ -153,7 +153,7 @@ title: 目標達成
 
 ## Fishbone (horizontal)
 
-```smartart
+```zukai
 fishbone
 title: 特性要因図
 
@@ -180,7 +180,7 @@ title: 特性要因図
 
 ## Fishbone (vertical)
 
-```smartart
+```zukai
 fishbone vertical
 title: 品質問題の分析
 
@@ -201,7 +201,7 @@ title: 品質問題の分析
 
 ## Flow
 
-```smartart
+```zukai
 flow
 title: リリースフロー
 
@@ -220,7 +220,7 @@ title: リリースフロー
 
 ## Scale (縮小表示)
 
-```smartart
+```zukai
 matrix 2x2
 title: SWOT分析 (70%表示)
 scale: 0.7
@@ -237,7 +237,7 @@ scale: 0.7
 
 ## Cycle
 
-```smartart
+```zukai
 cycle
 title: PDCA
 

@@ -126,7 +126,7 @@ pie title Technologies
 
 - [Math](./math.md)
 - [Syntax highlighting](./syntax.md)
-- [SmartArt diagrams](./smartart.md)
+- [Zukai（図解）diagrams](./zukai.md)
 - [日本語ファイル名テスト](./日本語ファイル.md)
 
 ### Footnote
