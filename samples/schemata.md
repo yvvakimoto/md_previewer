@@ -1,6 +1,6 @@
-# Schemata（図解）
+# Schemata
 
-Bundled `schemata.js` renders several diagram types from fenced `schemata` blocks. Colors can be tagged with `#c-teal`, `#c-coral`, `#c-blue`, `#c-amber`, `#c-purple`, `#c-green`, `#c-pink`, `#c-gray`.
+`schemata` フェンスは複数種類の図解（マトリクス / BMC / マンダラチャート / 特性要因図 / フロー / サイクル）を `schemata.js` でレンダリングします。色は `#c-teal` / `#c-coral` / `#c-blue` / `#c-amber` / `#c-purple` / `#c-green` / `#c-pink` / `#c-gray` のタグで指定できます。
 
 `title:` と同じ位置で `scale: <倍率>` を指定すると、図全体の表示倍率を変更できます（例: `scale: 0.7` で 70%、`scale: 1.5` で 150%）。1 より大きい値を指定した場合は `max-width:100%` 制限を外し、コンテナ幅を超えて表示します。
 
