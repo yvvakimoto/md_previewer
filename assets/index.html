@@ -289,6 +289,25 @@
             margin: 0 auto;
         }
 
+        /* Video / YouTube embeds (image-syntax) */
+        #preview .video-embed {
+            max-width: 100%;
+            display: block;
+            margin: 0 auto;
+        }
+        #preview video.video-embed {
+            height: auto;
+        }
+        /* Responsive 16:9 for YouTube iframes without an explicit size */
+        #preview iframe.youtube-embed {
+            border: 0;
+        }
+        #preview iframe.youtube-embed:not([width]) {
+            width: 100%;
+            aspect-ratio: 16 / 9;
+            height: auto;
+        }
+
         #preview a {
             color: #0366d6;
             text-decoration: none;
@@ -2234,6 +2253,56 @@
                 }
             }
 
+            // Collect local video files referenced by <video> embeds so the host can
+            // copy them next to the exported HTML (videos are served from disk, never
+            // inlined). YouTube iframes need no copying — their https URLs survive export.
+            // dest paths are relative to the export root; for a workspace page they are
+            // resolved up to the page's directory when rewriting the clone's src.
+            const mediaFiles = [];
+            {
+                const usedNames = new Set();
+                const byAbs = new Map(); // absPath(lower) -> rootDest ("media/<name>")
+                const fromParts = pageRelPath
+                    ? pageRelPath.replace(/\\/g, '/').split('/').filter(Boolean)
+                    : [];
+                if (pageRelPath) fromParts.pop(); // directory of the page being exported
+                const ups = fromParts.map(() => '..');
+                const cloneVids = Array.from(previewClone.querySelectorAll('video[data-video-file]'));
+                for (const cv of cloneVids) {
+                    const rawSrc = cv.getAttribute('data-video-file') || '';
+                    cv.removeAttribute('data-video-file');
+                    if (!rawSrc || /^(https?:|data:|app:|file:)/i.test(rawSrc)) continue;
+
+                    let absPath;
+                    if (/^[A-Za-z]:[\\/]/.test(rawSrc) || rawSrc.startsWith('/')) {
+                        absPath = rawSrc.replace(/\\/g, '/');
+                    } else {
+                        absPath = resolveRelativePath(rawSrc).replace(/^file:\/\/\//, '');
+                    }
+                    const lower = absPath.toLowerCase();
+                    let rootDest = byAbs.get(lower);
+                    if (!rootDest) {
+                        let name = (rawSrc.split(/[\\/]/).pop() || 'video').replace(/[?#].*$/, '') || 'video';
+                        if (usedNames.has(name.toLowerCase())) {
+                            const dot = name.lastIndexOf('.');
+                            const stem = dot > 0 ? name.slice(0, dot) : name;
+                            const ext = dot > 0 ? name.slice(dot) : '';
+                            let k = 1;
+                            while (usedNames.has((stem + '-' + k + ext).toLowerCase())) k++;
+                            name = stem + '-' + k + ext;
+                        }
+                        usedNames.add(name.toLowerCase());
+                        rootDest = 'media/' + name;
+                        byAbs.set(lower, rootDest);
+                        mediaFiles.push({ src: absPath, dest: rootDest });
+                    }
+                    const pageRel = pageRelPath ? ups.concat([rootDest]).join('/') : rootDest;
+                    const source = cv.querySelector('source');
+                    if (source) source.setAttribute('src', pageRel);
+                    else cv.setAttribute('src', pageRel);
+                }
+            }
+
             // Gather all base CSS from the document's first <style> block — robust to future style changes.
             const baseStyleEl = document.querySelector('style');
             const baseCss = baseStyleEl ? baseStyleEl.textContent : '';
@@ -2497,7 +2566,7 @@ ${previewClone.outerHTML}
                 suggestedName = base.replace(/\.(md|markdown)$/i, '') + '.html';
             }
 
-            return { html, suggestedName };
+            return { html, suggestedName, mediaFiles };
         }
 
         async function exportHtml() {
@@ -2518,9 +2587,9 @@ ${previewClone.outerHTML}
                     console.warn('style exporter failed, falling back to general export:', exporterFile, err);
                 }
             }
-            const { html, suggestedName } = await buildExportArtifact();
+            const { html, suggestedName, mediaFiles } = await buildExportArtifact();
             if (window.ipc && typeof window.ipc.postMessage === 'function') {
-                window.ipc.postMessage('exporthtml:' + JSON.stringify({ suggestedName, html }));
+                window.ipc.postMessage('exporthtml:' + JSON.stringify({ suggestedName, html, media: mediaFiles || [] }));
             }
         }
 
@@ -2541,6 +2610,8 @@ ${previewClone.outerHTML}
             const savedFilePath = currentFilePath;
 
             const pages = [];
+            const media = [];
+            const seenDest = new Set();
             for (const f of files) {
                 let md;
                 try {
@@ -2556,9 +2627,14 @@ ${previewClone.outerHTML}
                 currentMarkdown = md;
                 currentFilePath = f.absPath;
                 await renderMarkdown(md);
-                const { html } = await buildExportArtifact({ pageRelPath: f.relPath });
+                const { html, mediaFiles } = await buildExportArtifact({ pageRelPath: f.relPath });
                 const outRel = f.relPath.replace(/\.(md|markdown)$/i, '.html');
                 pages.push({ relPath: outRel, html });
+                for (const mf of (mediaFiles || [])) {
+                    if (seenDest.has(mf.dest)) continue;
+                    seenDest.add(mf.dest);
+                    media.push(mf);
+                }
             }
 
             // Restore the previously-viewed page.
@@ -2578,7 +2654,7 @@ ${previewClone.outerHTML}
                 : '';
 
             if (window.ipc && typeof window.ipc.postMessage === 'function') {
-                window.ipc.postMessage('exportdir:' + JSON.stringify({ pages, indexHtml, rootName: rootSeg }));
+                window.ipc.postMessage('exportdir:' + JSON.stringify({ pages, indexHtml, rootName: rootSeg, media }));
             }
         }
 
@@ -2681,6 +2757,119 @@ ${previewClone.outerHTML}
                     if (m[3]) img.setAttribute('height', m[3]);
                     img.setAttribute('alt', m[1]);
                 }
+            });
+        }
+
+        // Video / YouTube embedding reusing image syntax:
+        //   ![alt](clip.mov)            local video file → <video controls>
+        //   ![alt|640](clip.mp4)        with pixel sizing (|W or |WxH)
+        //   ![alt](https://youtu.be/ID) YouTube URL → responsive <iframe>
+        // Local videos are NOT base64-embedded by Rust (see embed_images_as_base64);
+        // they are served via the `/userfile/` route (with HTTP range support).
+        const VIDEO_EXT_RE = /\.(mov|mp4|m4v|webm|ogv|ogg)(?:[?#]|$)/i;
+
+        function videoMimeFor(src) {
+            const m = src.match(/\.([a-z0-9]+)(?:[?#]|$)/i);
+            switch (m && m[1].toLowerCase()) {
+                case 'mov': return 'video/quicktime';
+                case 'mp4': case 'm4v': return 'video/mp4';
+                case 'webm': return 'video/webm';
+                case 'ogv': case 'ogg': return 'video/ogg';
+                default: return '';
+            }
+        }
+
+        // Route a local path through the custom protocol so WebView2 can fetch it.
+        function toUserfileUrl(p) {
+            if (/^(https?:|app:|file:|data:)/i.test(p)) return p;
+            return '/userfile/' + encodeURI(p.replace(/\\/g, '/'));
+        }
+
+        function parseYoutubeStart(src) {
+            const m = src.match(/[?&#](?:t|start)=([0-9hms]+)/i);
+            if (!m) return 0;
+            const v = m[1];
+            if (/^\d+$/.test(v)) return parseInt(v, 10);
+            let s = 0;
+            const h = v.match(/(\d+)h/i); if (h) s += parseInt(h[1], 10) * 3600;
+            const mm = v.match(/(\d+)m/i); if (mm) s += parseInt(mm[1], 10) * 60;
+            const ss = v.match(/(\d+)s/i); if (ss) s += parseInt(ss[1], 10);
+            return s;
+        }
+
+        // Returns { id, start } for a YouTube URL, else null.
+        function youtubeEmbedInfo(src) {
+            const patterns = [
+                /^https?:\/\/(?:www\.)?youtu\.be\/([\w-]{6,})/i,
+                /^https?:\/\/(?:www\.)?youtube\.com\/watch\?[^#]*\bv=([\w-]{6,})/i,
+                /^https?:\/\/(?:www\.)?youtube(?:-nocookie)?\.com\/embed\/([\w-]{6,})/i,
+                /^https?:\/\/(?:www\.)?youtube\.com\/shorts\/([\w-]{6,})/i,
+            ];
+            for (const re of patterns) {
+                const m = src.match(re);
+                if (m) return { id: m[1], start: parseYoutubeStart(src) };
+            }
+            return null;
+        }
+
+        // Convert <img> elements whose target is a video file or YouTube URL into
+        // <video> / <iframe> embeds. Must run BEFORE applyImageSizing so the alt
+        // sizing suffix is consumed here for videos. Used by both the normal and
+        // Marp pipelines.
+        function applyVideoEmbeds(root) {
+            if (!root) return;
+            const pxRe = /^(.*)\|(\d+)?(?:x(\d+))?$/;
+            root.querySelectorAll('img').forEach(img => {
+                const rawSrc = img.getAttribute('src') || '';
+                if (!rawSrc) return;
+                const yt = youtubeEmbedInfo(rawSrc);
+                const isVideo = !yt && VIDEO_EXT_RE.test(rawSrc);
+                if (!yt && !isVideo) return;
+
+                // Pixel sizing from the alt suffix (|W or |WxH); @scale not supported for video.
+                let alt = img.getAttribute('alt') || '';
+                let width = null, height = null;
+                const m = alt.match(pxRe);
+                if (m && (m[2] || m[3])) {
+                    if (m[2]) width = m[2];
+                    if (m[3]) height = m[3];
+                    alt = m[1];
+                }
+
+                let el;
+                if (yt) {
+                    el = document.createElement('iframe');
+                    el.className = 'video-embed youtube-embed';
+                    let embed = 'https://www.youtube.com/embed/' + yt.id;
+                    if (yt.start > 0) embed += '?start=' + yt.start;
+                    el.setAttribute('src', embed);
+                    el.setAttribute('frameborder', '0');
+                    el.setAttribute('allow', 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share');
+                    el.setAttribute('allowfullscreen', '');
+                    if (alt) el.setAttribute('title', alt);
+                    if (width) {
+                        el.setAttribute('width', width);
+                        el.setAttribute('height', height || String(Math.round(parseInt(width, 10) * 9 / 16)));
+                    } else if (height) {
+                        el.setAttribute('height', height);
+                    }
+                } else {
+                    el = document.createElement('video');
+                    el.className = 'video-embed';
+                    el.setAttribute('controls', '');
+                    el.setAttribute('preload', 'metadata');
+                    if (alt) el.setAttribute('title', alt);
+                    // Original markdown path, for export-time file copying.
+                    el.setAttribute('data-video-file', rawSrc);
+                    const source = document.createElement('source');
+                    source.setAttribute('src', toUserfileUrl(rawSrc));
+                    const mime = videoMimeFor(rawSrc);
+                    if (mime) source.setAttribute('type', mime);
+                    el.appendChild(source);
+                    if (width) el.setAttribute('width', width);
+                    if (height) el.setAttribute('height', height);
+                }
+                img.replaceWith(el);
             });
         }
 
@@ -3499,6 +3688,7 @@ ${previewClone.outerHTML}
         // keyboard handler. Selectors match the marpit slide structure
         // documented in renderMarp() below.
         let __marpDeckIndex = 0;
+        let __marpLastRenderedPath = null;
         function __marpSlides() {
             return preview.querySelectorAll('div.marpit > svg[data-marpit-svg]');
         }
@@ -3519,6 +3709,10 @@ ${previewClone.outerHTML}
 
         async function renderMarp(markdown) {
             document.body.classList.add('marp');
+            // Keep the untouched source: slide → source-line mapping below must use
+            // the original line numbers, since the footnote / split pre-passes shift
+            // lines and the editor sends source-line numbers.
+            const __sourceMarkdown = markdown;
             try {
                 if (window.ipc && typeof window.ipc.postMessage === 'function') {
                     window.ipc.postMessage('csvwatchreset:');
@@ -3647,15 +3841,22 @@ ${previewClone.outerHTML}
             });
             __dbgLog('themeSet now: ' + JSON.stringify(Array.from(marp.themeSet.themes()).map(t => t.name)));
 
-            // Build a slide → source-line map by scanning the (post-footnote-pre-pass)
+            // Build a slide → source-line map by scanning the ORIGINAL (un-pre-passed)
             // markdown for thematic breaks. Marp's default slide separator is `---`
             // / `***` / `___` on its own line; the first `---` pair delimits YAML
-            // front-matter and must be skipped.
-            const __lines = markdown.split('\n');
+            // front-matter and must be skipped. Must use the original source: the
+            // footnote-extraction and split (`+++`) pre-passes above remove / insert
+            // lines, but they preserve the separators' count and order, so scanning
+            // the source yields correct source line numbers for each slide. Fenced
+            // code blocks are skipped so a `---` inside ``` doesn't become a phantom
+            // slide boundary (which marp-core would never split on).
+            const __lines = __sourceMarkdown.split('\n');
             const slideStartLines = [];
             let __fmOpen = __lines.length > 0 && /^---\s*$/.test(__lines[0]);
             let __fmClosed = !__fmOpen;
             let __curStart = __fmOpen ? null : 1;
+            let __inFence = false;
+            let __fenceMarker = '';
             for (let i = 0; i < __lines.length; i++) {
                 const ln = i + 1;
                 if (__fmOpen && !__fmClosed) {
@@ -3665,6 +3866,14 @@ ${previewClone.outerHTML}
                     }
                     continue;
                 }
+                const __fenceMatch = __lines[i].match(/^(\s*)(```+|~~~+)(.*)$/);
+                if (__fenceMatch) {
+                    const marker = __fenceMatch[2][0]; // ` or ~
+                    if (!__inFence) { __inFence = true; __fenceMarker = marker; }
+                    else if (marker === __fenceMarker) { __inFence = false; __fenceMarker = ''; }
+                    continue;
+                }
+                if (__inFence) continue;
                 if (/^(---|\*\*\*|___)\s*$/.test(__lines[i])) {
                     if (__curStart != null) slideStartLines.push(__curStart);
                     __curStart = ln + 1;
@@ -3721,6 +3930,9 @@ ${previewClone.outerHTML}
                 const transformed = transformImagePath(src);
                 if (transformed && transformed !== src) img.setAttribute('src', transformed);
             });
+
+            // Convert video / YouTube image-syntax embeds, then size remaining images.
+            applyVideoEmbeds(preview);
 
             // Apply Obsidian-style image sizing inside Marp slides too.
             applyImageSizing(preview);
@@ -3862,11 +4074,12 @@ ${previewClone.outerHTML}
                 const meaningful = Array.from(el.childNodes).filter(n =>
                     !(n.nodeType === 3 && !n.textContent.trim())
                 );
-                return meaningful.length === 1 && meaningful[0].nodeType === 1 && meaningful[0].tagName === 'IMG';
+                if (meaningful.length !== 1 || meaningful[0].nodeType !== 1) return false;
+                return ['IMG', 'VIDEO', 'IFRAME'].includes(meaningful[0].tagName);
             };
             const isFigureChild = (el) => {
                 if (el.nodeType !== 1) return false;
-                if (el.matches('.mermaid, .schemata, .csv-table, table, .kataskeve')) return true;
+                if (el.matches('.mermaid, .schemata, .csv-table, table, .kataskeve, video, iframe.video-embed, .video-embed')) return true;
                 if (isImageParagraph(el)) return true;
                 return false;
             };
@@ -3958,7 +4171,14 @@ ${previewClone.outerHTML}
                 ));
             }
 
-            __marpDeckIndex = 0;
+            // 同じファイルの再読込（保存後の再描画 / ライブプレビュー / テーマ変更）では
+            // 表示中のスライド位置を保持する。別ファイルへ切り替わったときだけ先頭へ。
+            // __marpUpdateDeck() が範囲外インデックスをクランプするので、スライド数が
+            // 減っても安全。
+            if (__marpLastRenderedPath !== currentFilePath) {
+                __marpDeckIndex = 0;
+            }
+            __marpLastRenderedPath = currentFilePath;
             __marpUpdateDeck();
 
             // List-mode click → jump into deck mode focused on that slide.
@@ -4132,6 +4352,9 @@ ${previewClone.outerHTML}
             });
 
             preview.innerHTML = html;
+
+            // Convert video / YouTube image-syntax embeds, then size remaining images.
+            applyVideoEmbeds(preview);
 
             // Apply Obsidian-style image sizing (`![alt|300x200](p)`, `![alt|@0.5](p)`, …)
             applyImageSizing(preview);

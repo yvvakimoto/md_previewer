@@ -147,7 +147,11 @@ pub(crate) fn paths_equal(a: &Path, b: &Path) -> bool {
 
 // Determine MIME type based on file extension
 pub(crate) fn get_mime_type(path: &PathBuf) -> &'static str {
-    match path.extension().and_then(|s| s.to_str()) {
+    let ext = path
+        .extension()
+        .and_then(|s| s.to_str())
+        .map(|s| s.to_ascii_lowercase());
+    match ext.as_deref() {
         // Web assets
         Some("html") | Some("htm") => "text/html",
         Some("css") => "text/css",
@@ -171,6 +175,12 @@ pub(crate) fn get_mime_type(path: &PathBuf) -> &'static str {
         Some("tiff") | Some("tif") => "image/tiff",
         Some("avif") => "image/avif",
 
+        // Video
+        Some("mov") => "video/quicktime",
+        Some("mp4") | Some("m4v") => "video/mp4",
+        Some("webm") => "video/webm",
+        Some("ogv") | Some("ogg") => "video/ogg",
+
         // Other common types
         Some("json") => "application/json",
         Some("xml") => "application/xml",
@@ -181,6 +191,65 @@ pub(crate) fn get_mime_type(path: &PathBuf) -> &'static str {
 
         // Default
         _ => "application/octet-stream",
+    }
+}
+
+/// Parse a single HTTP `Range` header value into an inclusive `(start, end)`
+/// byte range clamped to `total`. Supports `bytes=start-end`, `bytes=start-`,
+/// and the suffix form `bytes=-N` (last N bytes). Returns `None` for malformed
+/// or unsatisfiable ranges so the caller can fall back to a full 200 response.
+fn parse_byte_range(header: &str, total: u64) -> Option<(u64, u64)> {
+    if total == 0 {
+        return None;
+    }
+    let spec = header.trim().strip_prefix("bytes=")?;
+    let first = spec.split(',').next()?.trim();
+    let (s, e) = first.split_once('-')?;
+    let (start, end) = if s.is_empty() {
+        let n: u64 = e.trim().parse().ok()?;
+        if n == 0 {
+            return None;
+        }
+        let n = n.min(total);
+        (total - n, total - 1)
+    } else {
+        let start: u64 = s.trim().parse().ok()?;
+        let end = if e.trim().is_empty() {
+            total - 1
+        } else {
+            e.trim().parse::<u64>().ok()?.min(total - 1)
+        };
+        (start, end)
+    };
+    if start > end || start >= total {
+        return None;
+    }
+    Some((start, end))
+}
+
+/// A local file to copy alongside an exported HTML artifact. `src` is an
+/// absolute filesystem path; `dest` is the destination path relative to the
+/// export root (e.g. `media/clip.mp4`).
+#[derive(Deserialize)]
+struct MediaItem {
+    src: String,
+    dest: String,
+}
+
+/// Copy each media file into `base_dir`/`dest`, creating parent directories.
+/// Used by both the single-file and workspace HTML export handlers so local
+/// videos referenced by `<video>` embeds are bundled with the artifact.
+fn copy_export_media(base_dir: &Path, media: &[MediaItem]) {
+    for item in media {
+        let rel = item.dest.trim_start_matches(['/', '\\']);
+        let target = base_dir.join(rel.replace('/', std::path::MAIN_SEPARATOR_STR));
+        if let Some(parent) = target.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        let src = PathBuf::from(item.src.replace('/', std::path::MAIN_SEPARATOR_STR));
+        if let Err(e) = std::fs::copy(&src, &target) {
+            eprintln!("export: failed to copy media {} -> {}: {}", src.display(), target.display(), e);
+        }
     }
 }
 
@@ -198,6 +267,15 @@ fn embed_images_as_base64(markdown: &str, base_dir: &Path) -> String {
         // Skip URLs and data URIs - don't embed external resources
         if path_str.starts_with("http://") || path_str.starts_with("https://")
            || path_str.starts_with("data:") || path_str.starts_with("//") {
+            return caps[0].to_string();
+        }
+
+        // Skip video files — they are served lazily via the `/userfile/` route
+        // (with HTTP range support) instead of being inlined as huge data URIs.
+        let lower = path_str.to_ascii_lowercase();
+        let lower = lower.split(['?', '#']).next().unwrap_or(&lower);
+        if lower.ends_with(".mov") || lower.ends_with(".mp4") || lower.ends_with(".m4v")
+            || lower.ends_with(".webm") || lower.ends_with(".ogv") || lower.ends_with(".ogg") {
             return caps[0].to_string();
         }
 
@@ -968,18 +1046,70 @@ fn main() -> wry::Result<()> {
                     }
                 };
 
-                // Read and serve the user file
-                match fs::read(&resolved_path) {
-                    Ok(content) => {
+                // Read and serve the user file. Honor an HTTP `Range` request so
+                // WebView2 can seek/scrub videos (a full-body 200 makes the player
+                // re-download from byte 0 on every seek and breaks duration probing).
+                let range_header = request
+                    .headers()
+                    .get("Range")
+                    .and_then(|v| v.to_str().ok())
+                    .map(|s| s.to_string());
+
+                match fs::metadata(&resolved_path) {
+                    Ok(meta) => {
+                        let total = meta.len();
                         let mime_type = get_mime_type(&resolved_path);
-                        Ok(Response::builder()
-                            .header("Content-Type", mime_type)
-                            .header("Access-Control-Allow-Origin", "*")
-                            .body(content.into())
-                            .unwrap())
+
+                        match range_header.as_deref().and_then(|h| parse_byte_range(h, total)) {
+                            Some((start, end)) => {
+                                use std::io::{Read, Seek, SeekFrom};
+                                let len = end - start + 1;
+                                let body = (|| -> std::io::Result<Vec<u8>> {
+                                    let mut f = std::fs::File::open(&resolved_path)?;
+                                    f.seek(SeekFrom::Start(start))?;
+                                    let mut buf = vec![0u8; len as usize];
+                                    f.read_exact(&mut buf)?;
+                                    Ok(buf)
+                                })();
+                                match body {
+                                    Ok(buf) => Ok(Response::builder()
+                                        .status(206)
+                                        .header("Content-Type", mime_type)
+                                        .header("Access-Control-Allow-Origin", "*")
+                                        .header("Accept-Ranges", "bytes")
+                                        .header("Content-Range", format!("bytes {}-{}/{}", start, end, total))
+                                        .header("Content-Length", len.to_string())
+                                        .body(buf.into())
+                                        .unwrap()),
+                                    Err(e) => {
+                                        eprintln!("Failed to read range of {:?}: {}", resolved_path, e);
+                                        Ok(Response::builder()
+                                            .status(500)
+                                            .body(format!("Read error: {:?}", resolved_path).into_bytes().into())
+                                            .unwrap())
+                                    }
+                                }
+                            }
+                            None => match fs::read(&resolved_path) {
+                                Ok(content) => Ok(Response::builder()
+                                    .header("Content-Type", mime_type)
+                                    .header("Access-Control-Allow-Origin", "*")
+                                    .header("Accept-Ranges", "bytes")
+                                    .body(content.into())
+                                    .unwrap()),
+                                Err(e) => {
+                                    eprintln!("Failed to read user file {:?}: {}", resolved_path, e);
+                                    dbg_log!("userfile 404 uri={} resolved={:?} err={}", path, resolved_path, e);
+                                    Ok(Response::builder()
+                                        .status(404)
+                                        .body(format!("File not found: {:?}", resolved_path).into_bytes().into())
+                                        .unwrap())
+                                }
+                            },
+                        }
                     }
                     Err(e) => {
-                        eprintln!("Failed to read user file {:?}: {}", resolved_path, e);
+                        eprintln!("Failed to stat user file {:?}: {}", resolved_path, e);
                         dbg_log!("userfile 404 uri={} resolved={:?} err={}", path, resolved_path, e);
                         Ok(Response::builder()
                             .status(404)
@@ -1075,6 +1205,8 @@ fn main() -> wry::Result<()> {
                 index_html: String,
                 #[serde(rename = "rootName", default)]
                 root_name: String,
+                #[serde(default)]
+                media: Vec<MediaItem>,
             }
             match serde_json::from_str::<ExportDirPayload>(payload) {
                 Ok(p) => {
@@ -1092,6 +1224,7 @@ fn main() -> wry::Result<()> {
                                     eprintln!("exportdir: failed to write {}: {}", target.display(), e);
                                 }
                             }
+                            copy_export_media(&out_dir, &p.media);
                             if !p.index_html.is_empty() {
                                 let idx = out_dir.join("index.html");
                                 if let Err(e) = std::fs::write(&idx, p.index_html.as_bytes()) {
@@ -1107,7 +1240,12 @@ fn main() -> wry::Result<()> {
             // Webview asks the host to save an HTML artifact via a native Save-As dialog.
             // Payload is JSON: { "suggestedName": "...", "html": "..." }.
             #[derive(Deserialize)]
-            struct ExportPayload { #[serde(rename = "suggestedName")] suggested_name: String, html: String }
+            struct ExportPayload {
+                #[serde(rename = "suggestedName")] suggested_name: String,
+                html: String,
+                #[serde(default)]
+                media: Vec<MediaItem>,
+            }
             match serde_json::from_str::<ExportPayload>(payload) {
                 Ok(p) => {
                     let initial_dir = ipc_current_file
@@ -1128,6 +1266,9 @@ fn main() -> wry::Result<()> {
                         if let Some(path) = dialog.save_file() {
                             if let Err(e) = std::fs::write(&path, p.html.as_bytes()) {
                                 eprintln!("export: failed to write {}: {}", path.display(), e);
+                            }
+                            if let Some(base) = path.parent() {
+                                copy_export_media(base, &p.media);
                             }
                         }
                     });

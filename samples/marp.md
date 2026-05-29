@@ -52,6 +52,22 @@ $$
 
 ---
 
+## 動画 / YouTube
+
+画像記法 `![](…)` を流用して動画も埋め込めます。ローカル動画は `<video controls>`、YouTube URL はレスポンシブ `<iframe>` になります。
+
+![紹介動画|560](https://www.youtube.com/watch?v=dQw4w9WgXcQ)
+
+---
+
+## ローカル動画
+
+`![alt|幅](videos/sample.mp4)` でこのファイルからの相対パス動画を再生（シーク対応）。`X` エクスポート時は `media/` にコピーされます。
+
+![デモ動画|560](videos/sample.mp4)
+
+---
+
 ## Mermaid 図
 
 本ツールの拡張なので Marp 単体では描画されませんが、こちらは正しく SVG に展開されます。

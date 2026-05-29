@@ -152,6 +152,7 @@ md-previewer.exe path\to\folder
   - 相対パスは Markdown ファイルのあるフォルダを基準に解決
   - すべて Base64 化してインライン表示（再読み込み時にチラつかない）
   - **Obsidian 風サイズ指定**: `![alt|300](p)`（幅 300px）、`![alt|300x200](p)`（幅×高さ）、`![alt|x200](p)`（高さのみ）、`![alt|@0.5](p)`（元サイズの 0.5 倍）
+- **動画 / YouTube 埋め込み** — 画像記法を流用。`![alt](clip.mov)` でローカル動画（`.mov` / `.mp4` / `.m4v` / `.webm` / `.ogv` / `.ogg`）を `<video controls>` として、`![alt](https://youtu.be/ID)` で YouTube をレスポンシブ `<iframe>` として埋め込み。`|幅` / `|幅x高さ` のサイズ指定も使用可。一般文書・Marp スライド両対応。ローカル動画はシーク対応（HTTP Range）、HTML エクスポート時は `media/` にコピー配置。[動画のサンプル](samples/video.md) 参照
 - **目次（TOC）サイドバー** — 見出しから自動生成、現在位置をハイライト、クリックでスムーズスクロール
 - **自動セクション番号** — `N` キーで `1.` `1.1` `1.1.1` …の章番号を ON/OFF
 - **クロスファイル `.md` リンク** — `.md` 同士のリンクをクリックすると同じウィンドウで遷移
@@ -252,6 +253,7 @@ Marp 標準の `default` / `gaia` / `uncover` も追加設定なしで利用可�
 - Mermaid / Schemata は SVG として展開
 - KaTeX 数式はレンダリング済み HTML として埋め込み
 - 画像は Base64
+- ローカル動画は `media/` フォルダにコピーして相対パス参照（YouTube はそのまま）
 - 目次サイドバー（折りたたみ・スクロールスパイ・スムーズスクロール）
 - 脚注ポップアップ用のスクリプト
 
@@ -272,6 +274,7 @@ Marp 標準の `default` / `gaia` / `uncover` も追加設定なしで利用可�
 | `footnotes.md` | 脚注（参照、定義、ポップアップ） |
 | `csv-tsv.md` | CSV / TSV コードブロックの表変換 |
 | `plotly.md` | 外部 CSV を読み込んで Plotly でチャート化 |
+| `video.md` | ローカル動画 / YouTube 埋め込み（画像記法を流用） |
 | `kataskeve.md` | Kataskeve 初等幾何作図（九点円・パスカルの定理 ほか） |
 | `links.md` + `links-other.md` | クロスファイル `.md` リンクと履歴ナビ |
 | `marp.md` | Marp スライドモード |
