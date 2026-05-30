@@ -33,6 +33,10 @@ import { katexCommandCompletionSource } from './katexCommandComplete.js';
 import { pathCompletionSource } from './pathComplete.js';
 import { installJpWordMotion } from './jpWordMotion.js';
 import { numberedListIndentKeymap } from './numberedListIndent.js';
+import {
+  isMarpDocument, insertSlideAfter, copySlide, cutSlide,
+  marpSlideKeymap, SLIDE_CLASSES,
+} from './marpSlides.js';
 
 // ---------- ATX heading fold service ----------
 function headingLevel(line) {
@@ -163,7 +167,26 @@ export function create(root, opts = {}) {
   btnLive.className = 'status-btn';
   btnLive.type = 'button';
   btnLive.title = 'Toggle live preview (off = preview updates on save only)';
-  statusCtrls.append(btnLn, btnVim, btnTheme, btnLive);
+  // Marp slide helpers — only shown for Marp documents (see updateMarpButtons).
+  const btnSlideAdd = document.createElement('button');
+  btnSlideAdd.className = 'status-btn';
+  btnSlideAdd.type = 'button';
+  btnSlideAdd.title = 'Insert a new slide (pick a class)  ·  :slide / gsi / Ctrl+Alt+N';
+  btnSlideAdd.textContent = '+ Slide';
+  btnSlideAdd.style.display = 'none';
+  const btnSlideCopy = document.createElement('button');
+  btnSlideCopy.className = 'status-btn';
+  btnSlideCopy.type = 'button';
+  btnSlideCopy.title = 'Copy the current slide  ·  :slideyank / gsy / Ctrl+Alt+C';
+  btnSlideCopy.textContent = '⧉ Slide';
+  btnSlideCopy.style.display = 'none';
+  const btnSlideCut = document.createElement('button');
+  btnSlideCut.className = 'status-btn';
+  btnSlideCut.type = 'button';
+  btnSlideCut.title = 'Cut the current slide  ·  :slidecut / gsd / Ctrl+Alt+X';
+  btnSlideCut.textContent = '✂ Slide';
+  btnSlideCut.style.display = 'none';
+  statusCtrls.append(btnLn, btnVim, btnTheme, btnLive, btnSlideAdd, btnSlideCopy, btnSlideCut);
   statusRight.append(statusInfo, statusCtrls);
   status.appendChild(statusFile);
   status.appendChild(statusRight);
@@ -223,7 +246,53 @@ export function create(root, opts = {}) {
     modal.style.display = 'none';
     document.body.classList.remove('status-pinned');
   }
+
+  // Marp slide-class picker modal (mirrors the cc-modal pattern).
+  const slideModal = document.createElement('div');
+  slideModal.className = 'cc-modal';
+  slideModal.style.display = 'none';
+  slideModal.innerHTML = `
+    <div class="cc-panel" role="dialog" aria-modal="true">
+      <button class="cc-close" type="button" aria-label="Close">&times;</button>
+      <h2>Insert Slide</h2>
+      <div class="slide-class-grid"></div>
+      <div class="cc-hint">Pick a class · <kbd>Esc</kbd> to cancel</div>
+    </div>`;
+  document.body.appendChild(slideModal);
+  slideModal.querySelector('.cc-close').addEventListener('click', () => closeSlideModal());
+  slideModal.addEventListener('click', (e) => { if (e.target === slideModal) closeSlideModal(); });
+  {
+    const grid = slideModal.querySelector('.slide-class-grid');
+    SLIDE_CLASSES.forEach((name) => {
+      const b = document.createElement('button');
+      b.className = 'slide-class-btn';
+      b.type = 'button';
+      b.textContent = name === 'none' ? '(no class)' : name;
+      b.addEventListener('click', () => {
+        closeSlideModal();
+        insertSlideAfter(view, name === 'none' ? '' : name);
+      });
+      grid.appendChild(b);
+    });
+  }
+  function openSlideModal() {
+    document.body.classList.add('status-pinned');
+    slideModal.style.display = 'flex';
+    const first = slideModal.querySelector('.slide-class-btn');
+    if (first) setTimeout(() => first.focus(), 0);
+  }
+  function closeSlideModal() {
+    slideModal.style.display = 'none';
+    document.body.classList.remove('status-pinned');
+    setTimeout(() => view.focus(), 0);
+  }
+
   document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && slideModal.style.display === 'flex') {
+      e.preventDefault();
+      closeSlideModal();
+      return;
+    }
     if (e.key === 'Escape' && modal.style.display === 'flex') {
       e.preventDefault();
       closeModal();
@@ -371,6 +440,21 @@ export function create(root, opts = {}) {
   btnLn.addEventListener('click', cycleLineNo);
   btnTheme.addEventListener('click', () => setTheme(themeState === 'dark' ? 'light' : 'dark'));
   btnLive.addEventListener('click', () => setLive(!liveState));
+  btnSlideAdd.addEventListener('click', () => openSlideModal());
+  btnSlideCopy.addEventListener('click', () => copySlide(view));
+  btnSlideCut.addEventListener('click', () => cutSlide(view));
+
+  // Show the Marp slide buttons only for Marp documents.
+  let isMarpDoc = false;
+  function updateMarpButtons() {
+    let marp = false;
+    try { marp = isMarpDocument(view.state.doc.toString()); } catch (_) {}
+    isMarpDoc = marp;
+    const disp = marp ? '' : 'none';
+    btnSlideAdd.style.display = disp;
+    btnSlideCopy.style.display = disp;
+    btnSlideCut.style.display = disp;
+  }
 
   function updateTitle() {
     const base = currentPath.split(/[\\/]/).pop() || 'Untitled';
@@ -406,6 +490,7 @@ export function create(root, opts = {}) {
 
   // Debounced live-content push to the preview (no disk write).
   let liveTimer = 0;
+  let marpTimer = 0; // debounces Marp-button visibility re-checks on edit
   function pushLiveNow() {
     if (!currentPath || suppressEcho) return;
     const content = view.state.doc.toString();
@@ -436,6 +521,10 @@ export function create(root, opts = {}) {
         default: break;
       }
     });
+    // Marp slide helpers (ex-commands — guaranteed no conflict with normal keys).
+    Vim.defineEx('slide',     undefined, () => openSlideModal());
+    Vim.defineEx('slideyank', undefined, () => copySlide(view));
+    Vim.defineEx('slidecut',  undefined, () => cutSlide(view));
   } catch (_) {}
 
   // Heading navigation + section folding (NORMAL mode).
@@ -448,6 +537,19 @@ export function create(root, opts = {}) {
     Vim.mapCommand('[[', 'action', 'mdPrevHeading',       {}, { context: 'normal' });
     Vim.mapCommand('za', 'action', 'mdToggleSectionFold', {}, { context: 'normal' });
     Vim.mapCommand('zA', 'action', 'mdToggleAllFolds',    {}, { context: 'normal' });
+  } catch (_) {}
+
+  // Marp slide helpers — NORMAL-mode `gs` leader (gsi insert / gsy yank / gsd
+  // cut). `gs*` is unused by @replit/codemirror-vim's default keymap and by our
+  // own `]] [[ za zA`, and is not bracket-prefixed so it can't collide with the
+  // `]<char>` / `[<char>` catch-all motions.
+  try {
+    Vim.defineAction('marpSlideInsert', () => openSlideModal());
+    Vim.defineAction('marpSlideYank',   (cm) => copySlide(cm.cm6));
+    Vim.defineAction('marpSlideCut',    (cm) => cutSlide(cm.cm6));
+    Vim.mapCommand('gsi', 'action', 'marpSlideInsert', {}, { context: 'normal' });
+    Vim.mapCommand('gsy', 'action', 'marpSlideYank',   {}, { context: 'normal' });
+    Vim.mapCommand('gsd', 'action', 'marpSlideCut',    {}, { context: 'normal' });
   } catch (_) {}
 
   // Japanese-aware w/b/e/W/B/E (and dw/cw/yw/daw/...) — segment by
@@ -471,6 +573,8 @@ export function create(root, opts = {}) {
       const isDirty = cur !== savedDoc;
       if (isDirty !== dirty) { dirty = isDirty; updateTitle(); }
       schedulePushLive();
+      if (marpTimer) clearTimeout(marpTimer);
+      marpTimer = setTimeout(() => { marpTimer = 0; updateMarpButtons(); }, 300);
     }
     if (u.selectionSet || u.docChanged) {
       updateStatus();
@@ -527,6 +631,11 @@ export function create(root, opts = {}) {
         ...completionKeymap,
         ...mathInputAssistKeymap(),
         ...numberedListIndentKeymap(),
+        ...marpSlideKeymap({
+          onInsert: () => openSlideModal(),
+          onCopy: () => copySlide(view),
+          onCut: () => cutSlide(view),
+        }),
         indentWithTab,
         ...searchKeymap,
         ...defaultKeymap,
@@ -546,6 +655,7 @@ export function create(root, opts = {}) {
   });
   const view = new EditorView({ state, parent: editorHost });
   updateToolbar();
+  updateMarpButtons();
 
   // Track CodeMirror Vim mode via event hook (replit-codemirror-vim exposes it on CM).
   try {
@@ -619,6 +729,7 @@ export function create(root, opts = {}) {
     dirty = false;
     updateTitle();
     updateStatus();
+    updateMarpButtons();
   }
   window.__loadFile = loadFile;
 

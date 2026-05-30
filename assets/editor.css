@@ -235,3 +235,27 @@ body.theme-dark.ime-open .cm-editor.cm-focused .cm-fat-cursor {
     padding: 1px 5px;
     font-family: monospace;
 }
+
+/* Marp slide-class picker (reuses the .cc-modal / .cc-panel shell). */
+.slide-class-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+    margin: 4px 0;
+}
+.slide-class-btn {
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--status-bg);
+    color: var(--fg);
+    cursor: pointer;
+    font-size: 13px;
+    text-align: left;
+}
+.slide-class-btn:hover,
+.slide-class-btn:focus {
+    background: var(--panel-bg);
+    border-color: var(--fg);
+    outline: none;
+}
