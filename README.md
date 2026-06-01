@@ -145,6 +145,7 @@ md-previewer.exe path\to\folder
 - **Schemata 図解** — fishbone（特性要因図）、mandala chart、BMC（Business Model Canvas）、flow、cycle。コードブロック言語は ` ```schemata `（ギリシャ語 σχήματα「型・テンプレート」の複数形）。`title:` と同じ位置で `scale: <倍率>` を指定すると、図全体を縮小/拡大表示できます（例: `scale: 0.7` で 70%、`scale: 1.5` で 150%）
 - **KaTeX 数式** — インライン `$...$`、ブロック `$$...$$`
 - **脚注** — `[^id]` 参照と `[^id]: 本文` 定義。本文末尾に脚注一覧、参照部はマウスオーバーで Wikipedia 風ポップアップ表示
+- **テキスト配置（センタリング・右寄せ）** — `::: center` / `::: right` / `::: left` … `:::` で囲んだブロック（見出し・段落・「記」「以上」など）を中央寄せ・右寄せ・左寄せ。引用ブロック内で `> -- 著者名` のように `--`/`—`（em ダッシュ）で始まる行は出典として自動右寄せ。縦書きテーマ（tategaki）では行末＝列の下端に写像。[配置のサンプル](samples/alignment.md) 参照
 - **CSV / TSV コードブロック** — ` ```csv ` / ` ```tsv ` で囲むと表として描画
 - **Plotly 対話的チャート（外部CSV/TSVから）** — ` ```plotly ` フェンスブロックに `file: data.csv` と `type:` / `x:` / `y:` を YAML で書くだけで、Plotly.js による折れ線・散布・棒・ヒストグラム・箱ひげ・ヒートマップ・3Dサーフェスを描画。CSV ファイルを更新すると自動でグラフが追従。 [Plotly のサンプル](samples/plotly.md) 参照
 - **Kataskeve 初等幾何作図** — ` ```kataskeve ` フェンスに式志向 DSL（`A = point(0,0)` / `triangle(A,B,C)` / `circle3(P,Q,R)` / `midpoint` / `foot` / `orthocenter` / `intersection` / `point_on(circle, deg)` / `rotate` / `reflect` ほか）を書くと SVG として展開。Eukleides に着想を得た独自実装（GPL コードは流用していません）。九点円・パスカルの定理など補助線つきの構図を 1 ブロックで描けます。フェンス名 *Kataskeve* はエウクレイデスが『原論』で命題の作図ステップに用いた古典ギリシャ語 κατασκευή に由来します（npm パッケージ `euclid.js` および Microsoft Store の同名 UWP アプリ *Sakuzu* との衝突を避けるため、過去の作業名 *euclid* / *sakuzu* から差し替えています）。[Kataskeve のサンプル](samples/kataskeve.md) 参照
@@ -273,6 +274,7 @@ Marp 標準の `default` / `gaia` / `uncover` も追加設定なしで利用可�
 | `schemata.md` | Schemata 構造化図解（fishbone / mandala / BMC / flow / cycle） |
 | `syntax.md` | コードブロックのシンタックスハイライト |
 | `footnotes.md` | 脚注（参照、定義、ポップアップ） |
+| `alignment.md` | テキスト配置（`::: center` / `::: right` / 引用元の自動右寄せ / 記・以上） |
 | `csv-tsv.md` | CSV / TSV コードブロックの表変換 |
 | `plotly.md` | 外部 CSV を読み込んで Plotly でチャート化 |
 | `video.md` | ローカル動画 / YouTube 埋め込み（画像記法を流用） |

@@ -257,6 +257,22 @@
             margin-bottom: 16px;
         }
 
+        /* Text alignment (::: center / right / left fenced divs). The #preview
+           descendant selector also reaches Marp slide sections (inside the
+           foreignObject), like the existing footnote / split rules. Scoped to
+           #preview so it never touches marp-core's own `span.align-center`. */
+        #preview .align-center { text-align: center; }
+        #preview .align-right  { text-align: right; }
+        #preview .align-left   { text-align: left; }
+
+        /* Blockquote attribution (> -- Author) */
+        #preview blockquote > .bq-attribution {
+            text-align: right;
+            font-style: italic;
+            margin-top: 0.4em;
+            margin-bottom: 0;
+        }
+
         #preview ul, #preview ol {
             margin-bottom: 16px;
             padding-left: 2em;
@@ -2809,6 +2825,35 @@ ${previewClone.outerHTML}
             });
         }
 
+        // Blockquote attribution convention: inside a blockquote, a paragraph
+        // (or the last line of one, separated by <br>) that begins with `--` or
+        // an em dash `—` is treated as a citation source and right-aligned via
+        // the `.bq-attribution` class (the leading marker is normalized to `— `).
+        // e.g.  > The unexamined life is not worth living.
+        //       > -- Socrates
+        // Runs post-innerHTML in both renderMarkdown() and renderMarp().
+        function applyBlockquoteAttribution(root) {
+            if (!root) return;
+            const attrRe = /^\s*(?:--|—)\s*(.+\S)\s*$/;
+            root.querySelectorAll('blockquote > p').forEach(p => {
+                const parts = p.innerHTML.split(/<br\s*\/?>/i);
+                const last = parts[parts.length - 1].replace(/&mdash;/g, '—');
+                const m = attrRe.exec(last);
+                if (!m) return;
+                if (parts.length === 1) {
+                    p.classList.add('bq-attribution');
+                    p.innerHTML = '— ' + m[1];
+                } else {
+                    parts.pop();
+                    p.innerHTML = parts.join('<br>');
+                    const cite = document.createElement('p');
+                    cite.className = 'bq-attribution';
+                    cite.innerHTML = '— ' + m[1];
+                    p.after(cite);
+                }
+            });
+        }
+
         // Video / YouTube embedding reusing image syntax:
         //   ![alt](clip.mov)            local video file → <video controls>
         //   ![alt|640](clip.mp4)        with pixel sizing (|W or |WxH)
@@ -3181,6 +3226,37 @@ ${previewClone.outerHTML}
                         + '<a href="#fn-' + sid + '" id="fnref-' + sid + '-' + occ + '"'
                         + ' data-footnote-id="' + id.replace(/"/g, '&quot;') + '">'
                         + num + '</a></sup>';
+                }
+            }]
+        });
+
+        // Block-level marked extension for Pandoc-style alignment fences:
+        //   ::: center        ::: right         ::: left
+        //   ...content...     ...content...     ...content...
+        //   :::               :::               :::
+        // The body is recursively parsed as block markdown (heading, paragraph,
+        // list, the 記/以上 markers, …) and wrapped in <div class="align-…">.
+        // Marp gets the same feature via a sentinel pre/post pass in renderMarp().
+        marked.use({
+            extensions: [{
+                name: 'alignDiv',
+                level: 'block',
+                start(src) {
+                    const i = src.search(/^:::+[ \t]*(center|centre|right|left)[ \t]*$/im);
+                    return i < 0 ? undefined : i;
+                },
+                tokenizer(src) {
+                    const m = /^:::+[ \t]*(center|centre|right|left)[ \t]*\n([\s\S]*?)\n:::+[ \t]*(?:\n|$)/i.exec(src);
+                    if (!m) return;
+                    let align = m[1].toLowerCase();
+                    if (align === 'centre') align = 'center';
+                    const token = { type: 'alignDiv', raw: m[0], align, text: m[2], tokens: [] };
+                    this.lexer.blockTokens(token.text, token.tokens);
+                    return token;
+                },
+                renderer(token) {
+                    return '<div class="align-' + token.align + '">\n'
+                        + this.parser.parse(token.tokens) + '</div>\n';
                 }
             }]
         });
@@ -3994,6 +4070,56 @@ ${previewClone.outerHTML}
                 markdown = out.join('\n');
             }
 
+            // Text-alignment pre-pass — convert `::: center` / `::: right` /
+            // `::: left` … `:::` fences into sentinel paragraphs that survive
+            // marp.render; the post-render DOM walk below wraps the enclosed
+            // blocks into <div class="align-…">. Skips fences inside fenced code
+            // blocks and the YAML front-matter. The `⦃ALIGN:…⦄` / `⦃/ALIGN⦄`
+            // sentinels share the Unicode bracket family with the footnote /
+            // split sentinels but use a distinct prefix, so they never collide.
+            const ALIGN_OPEN = '⦃ALIGN:';
+            const ALIGN_CLOSE = '⦃/ALIGN⦄';
+            {
+                const lines = markdown.split('\n');
+                const out = [];
+                let inFm = lines.length > 0 && /^---\s*$/.test(lines[0]);
+                let fmClosed = !inFm;
+                let inFence = false;
+                let fenceMarker = '';
+                for (let i = 0; i < lines.length; i++) {
+                    const ln = lines[i];
+                    if (inFm && !fmClosed) {
+                        out.push(ln);
+                        if (i > 0 && /^---\s*$/.test(ln)) fmClosed = true;
+                        continue;
+                    }
+                    const fenceMatch = ln.match(/^(\s*)(```+|~~~+)(.*)$/);
+                    if (fenceMatch) {
+                        const marker = fenceMatch[2][0];
+                        if (!inFence) { inFence = true; fenceMarker = marker; }
+                        else if (marker === fenceMarker) { inFence = false; fenceMarker = ''; }
+                        out.push(ln);
+                        continue;
+                    }
+                    if (!inFence) {
+                        const open = ln.match(/^:::+[ \t]*(center|centre|right|left)[ \t]*$/i);
+                        if (open) {
+                            let a = open[1].toLowerCase();
+                            if (a === 'centre') a = 'center';
+                            // Blank line padding ensures the sentinel becomes its own <p>.
+                            out.push(''); out.push(ALIGN_OPEN + a + '⦄'); out.push('');
+                            continue;
+                        }
+                        if (/^:::+[ \t]*$/.test(ln)) {
+                            out.push(''); out.push(ALIGN_CLOSE); out.push('');
+                            continue;
+                        }
+                    }
+                    out.push(ln);
+                }
+                markdown = out.join('\n');
+            }
+
             const marp = await getMarp();
 
             // Build a slide → source-line map by scanning the ORIGINAL (un-pre-passed)
@@ -4093,6 +4219,9 @@ ${previewClone.outerHTML}
             // Apply Obsidian-style image sizing inside Marp slides too.
             applyImageSizing(preview);
 
+            // Right-align blockquote attribution lines (`> -- Author`) in slides.
+            applyBlockquoteAttribution(preview);
+
             // Restore footnote tokens to <sup> markup inside slides.
             if (footnoteState.order.length > 0) {
                 const fnRegex = new RegExp(FN_OPEN.replace(/[⦃]/g, '\\u2983') + '([^:]+):(\\d+)' + FN_CLOSE.replace(/[⦄]/g, '\\u2984'), 'g');
@@ -4172,6 +4301,32 @@ ${previewClone.outerHTML}
                     bucket.forEach(n => col.appendChild(n));
                     section.appendChild(col);
                 });
+            });
+
+            // Alignment post-pass — convert ⦃ALIGN:…⦄ / ⦃/ALIGN⦄ sentinel paragraphs
+            // into <div class="align-…"> wrappers around the enclosed blocks.
+            // Operating on each open sentinel's actual parent (rather than only
+            // direct <section> children) lets it work inside .split-col too. Runs
+            // after footnote restoration (so <sup> nodes are preserved) and the
+            // split post-pass, and before the mermaid/schemata substitution loop
+            // (so a centered diagram still gets substituted inside the wrapper).
+            Array.from(preview.querySelectorAll('section p')).forEach(p => {
+                const openM = /^⦃ALIGN:(center|right|left)⦄$/.exec(p.textContent.trim());
+                if (!openM) return;
+                const div = document.createElement('div');
+                div.className = 'align-' + openM[1];
+                p.parentNode.replaceChild(div, p);
+                let n = div.nextSibling;
+                while (n) {
+                    const next = n.nextSibling;
+                    if (n.nodeType === 1 && n.tagName === 'P'
+                            && n.textContent.trim() === '⦃/ALIGN⦄') {
+                        n.remove();
+                        break;
+                    }
+                    div.appendChild(n);
+                    n = next;
+                }
             });
 
             // Replace mermaid / schemata / csv / tsv code blocks inside each slide with
@@ -4511,6 +4666,9 @@ ${previewClone.outerHTML}
 
             // Apply Obsidian-style image sizing (`![alt|300x200](p)`, `![alt|@0.5](p)`, …)
             applyImageSizing(preview);
+
+            // Right-align blockquote attribution lines (`> -- Author`).
+            applyBlockquoteAttribution(preview);
 
             // Stamp data-line attributes on top-level blocks and list items
             stampLineNumbers(blockLineNumbers);
