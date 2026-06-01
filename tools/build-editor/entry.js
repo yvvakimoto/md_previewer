@@ -9,7 +9,7 @@
 //   window.ipc.postMessage('editor:cursor:' + line)
 //   window.ipc.postMessage('editor:close:')
 
-import { EditorState, Compartment, StateEffect, Transaction } from '@codemirror/state';
+import { EditorState, Compartment, StateEffect, Transaction, Prec } from '@codemirror/state';
 import {
   EditorView, keymap, lineNumbers, drawSelection, highlightActiveLine,
   highlightActiveLineGutter,
@@ -626,9 +626,13 @@ export function create(root, opts = {}) {
       }),
       leftRightAutoPair(),
       EditorView.lineWrapping,
+      // 補完ポップアップ表示中の Enter / 矢印キー等を、markdown の
+      // insertNewlineContinueMarkup (Prec.high) より優先させる。
+      // acceptCompletion 等はポップアップ非表示時 false を返すので、
+      // リスト継続・改行など通常挙動には干渉しない。
+      Prec.highest(keymap.of(completionKeymap)),
       keymap.of([
         saveKey,
-        ...completionKeymap,
         ...mathInputAssistKeymap(),
         ...numberedListIndentKeymap(),
         ...marpSlideKeymap({
