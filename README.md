@@ -150,7 +150,7 @@ md-previewer.exe path\to\folder
 - **Kataskeve 初等幾何作図** — ` ```kataskeve ` フェンスに式志向 DSL（`A = point(0,0)` / `triangle(A,B,C)` / `circle3(P,Q,R)` / `midpoint` / `foot` / `orthocenter` / `intersection` / `point_on(circle, deg)` / `rotate` / `reflect` ほか）を書くと SVG として展開。Eukleides に着想を得た独自実装（GPL コードは流用していません）。九点円・パスカルの定理など補助線つきの構図を 1 ブロックで描けます。フェンス名 *Kataskeve* はエウクレイデスが『原論』で命題の作図ステップに用いた古典ギリシャ語 κατασκευή に由来します（npm パッケージ `euclid.js` および Microsoft Store の同名 UWP アプリ *Sakuzu* との衝突を避けるため、過去の作業名 *euclid* / *sakuzu* から差し替えています）。[Kataskeve のサンプル](samples/kataskeve.md) 参照
 - **画像**
   - 相対パスは Markdown ファイルのあるフォルダを基準に解決
-  - すべて Base64 化してインライン表示（再読み込み時にチラつかない）
+  - 内部プロトコル（`/userfile/`）経由で配信し、ブラウザが並列・非同期に読み込み（画像を多く含む文書・スライドでも起動が高速）
   - **Obsidian 風サイズ指定**: `![alt|300](p)`（幅 300px）、`![alt|300x200](p)`（幅×高さ）、`![alt|x200](p)`（高さのみ）、`![alt|@0.5](p)`（元サイズの 0.5 倍）
 - **動画 / YouTube 埋め込み** — 画像記法を流用。`![alt](clip.mov)` でローカル動画（`.mov` / `.mp4` / `.m4v` / `.webm` / `.ogv` / `.ogg`）を `<video controls>` として、`![alt](https://youtu.be/ID)` で YouTube をレスポンシブ `<iframe>` として埋め込み。`|幅` / `|幅x高さ` のサイズ指定も使用可。一般文書・Marp スライド両対応。ローカル動画はシーク対応（HTTP Range）、HTML エクスポート時は `media/` にコピー配置。[動画のサンプル](samples/video.md) 参照
 - **目次（TOC）サイドバー** — 見出しから自動生成、現在位置をハイライト、クリックでスムーズスクロール
@@ -253,7 +253,7 @@ Marp 標準の `default` / `gaia` / `uncover` も追加設定なしで利用可�
 - 適用中のテーマ CSS
 - Mermaid / Schemata は SVG として展開
 - KaTeX 数式はレンダリング済み HTML として埋め込み
-- 画像は Base64
+- 画像は Base64（エクスポート時にインライン化して自己完結）
 - ローカル動画は `media/` フォルダにコピーして相対パス参照（YouTube はそのまま）
 - 目次サイドバー（折りたたみ・スクロールスパイ・スムーズスクロール）
 - 脚注ポップアップ用のスクリプト

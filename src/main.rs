@@ -31,7 +31,13 @@ pub(crate) type CurrentFile = Arc<Mutex<Option<PathBuf>>>;
 struct FileData {
     filename: String,
     filepath: String,
+    /// Display content with local images embedded as base64 data URIs
+    /// (WebView2 can't load dynamic relative-path local images).
     content: String,
+    /// The un-embedded source markdown (relative image paths intact). The
+    /// webview keeps this for any host-bound save (e.g. the Marp theme picker)
+    /// so base64 data URIs never leak back into the on-disk `.md`.
+    raw: String,
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -256,9 +262,26 @@ fn copy_export_media(base_dir: &Path, media: &[MediaItem]) {
 /// Embed local images as base64 data URIs in markdown content.
 /// This bypasses WebView2's limitation where dynamically-loaded images
 /// don't go through the custom protocol handler.
+// Compiled once. Recompiling this on every live-edit keystroke (this function
+// runs on every EditorLiveContent / EditorSavedContent) is pure waste.
+static IMG_RE: OnceLock<Regex> = OnceLock::new();
+fn img_re() -> &'static Regex {
+    IMG_RE.get_or_init(|| Regex::new(r"!\[([^\]]*)\]\(([^)]+)\)").unwrap())
+}
+
+// Cache of resolved-absolute-path -> (mtime, data-URI). Embedding images means
+// reading each file from disk and base64-encoding it; this re-ran in full on
+// every live-edit keystroke even when the images were unchanged. Keyed by mtime
+// so an externally edited image is correctly re-encoded on its next render.
+// Global static (one logical cache per process) mirrors the DBG_LOG pattern and
+// avoids threading an Arc<Mutex<…>> through both event-loop arms.
+static IMG_CACHE: OnceLock<Mutex<HashMap<String, (std::time::SystemTime, String)>>> = OnceLock::new();
+fn img_cache() -> &'static Mutex<HashMap<String, (std::time::SystemTime, String)>> {
+    IMG_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
 fn embed_images_as_base64(markdown: &str, base_dir: &Path) -> String {
-    // Regex to match markdown image syntax: ![alt](path)
-    let re = Regex::new(r"!\[([^\]]*)\]\(([^)]+)\)").unwrap();
+    let re = img_re();
 
     re.replace_all(markdown, |caps: &regex::Captures| {
         let alt = &caps[1];
@@ -270,12 +293,23 @@ fn embed_images_as_base64(markdown: &str, base_dir: &Path) -> String {
             return caps[0].to_string();
         }
 
-        // Skip video files — they are served lazily via the `/userfile/` route
-        // (with HTTP range support) instead of being inlined as huge data URIs.
+        // Skip local media — both videos AND images are served lazily via the
+        // `/userfile/` protocol route instead of being inlined as huge data URIs.
+        // Inlining images base64 made image-heavy decks (esp. Marp slides) slow to
+        // open: a ~40MB image set became a ~53MB string that had to be marshalled
+        // through `evaluate_script`, parsed as a JS source literal, and decoded
+        // synchronously on `innerHTML`. The webview now rewrites local image `src`s
+        // to `/userfile/...` URLs (see `transformImagePath` in assets/index.html),
+        // letting the browser fetch/decode them in parallel off the UI thread, and
+        // HTML export re-inlines them as base64 at export time to stay self-contained.
         let lower = path_str.to_ascii_lowercase();
         let lower = lower.split(['?', '#']).next().unwrap_or(&lower);
         if lower.ends_with(".mov") || lower.ends_with(".mp4") || lower.ends_with(".m4v")
-            || lower.ends_with(".webm") || lower.ends_with(".ogv") || lower.ends_with(".ogg") {
+            || lower.ends_with(".webm") || lower.ends_with(".ogv") || lower.ends_with(".ogg")
+            || lower.ends_with(".png") || lower.ends_with(".jpg") || lower.ends_with(".jpeg")
+            || lower.ends_with(".gif") || lower.ends_with(".webp") || lower.ends_with(".svg")
+            || lower.ends_with(".bmp") || lower.ends_with(".ico") || lower.ends_with(".avif")
+            || lower.ends_with(".tif") || lower.ends_with(".tiff") {
             return caps[0].to_string();
         }
 
@@ -286,12 +320,34 @@ fn embed_images_as_base64(markdown: &str, base_dir: &Path) -> String {
             base_dir.join(path_str)
         };
 
+        // Cache key: resolved absolute path. We validate freshness with the
+        // file's mtime, so an externally edited image is re-encoded on the next
+        // render rather than served stale. If mtime can't be read we fall back
+        // to read-every-time (the previous behavior).
+        let cache_key = img_path.to_string_lossy().to_string();
+        let mtime = fs::metadata(&img_path).and_then(|m| m.modified()).ok();
+        if let Some(mt) = mtime {
+            if let Ok(cache) = img_cache().lock() {
+                if let Some((cached_mt, data_uri)) = cache.get(&cache_key) {
+                    if *cached_mt == mt {
+                        return format!("![{}]({})", alt, data_uri);
+                    }
+                }
+            }
+        }
+
         // Read the image file and convert to base64
         match fs::read(&img_path) {
             Ok(data) => {
                 let mime = get_mime_type(&img_path);
                 let b64 = general_purpose::STANDARD.encode(&data);
-                format!("![{}](data:{};base64,{})", alt, mime, b64)
+                let data_uri = format!("data:{};base64,{}", mime, b64);
+                if let Some(mt) = mtime {
+                    if let Ok(mut cache) = img_cache().lock() {
+                        cache.insert(cache_key, (mt, data_uri.clone()));
+                    }
+                }
+                format!("![{}]({})", alt, data_uri)
             }
             Err(_) => {
                 // Keep original if file can't be read (might be broken link)
@@ -720,7 +776,7 @@ fn load_and_render(
                 content.clone()
             };
 
-            let file_data = FileData { filename, filepath: filepath.clone(), content: content_embedded };
+            let file_data = FileData { filename, filepath: filepath.clone(), content: content_embedded, raw: content.clone() };
             let json_data = serde_json::to_string(&file_data).unwrap();
             let script = format!(
                 "if (typeof window.loadFileFromRust === 'function') {{ window.loadFileFromRust({}); }}",
@@ -784,10 +840,10 @@ fn main() -> wry::Result<()> {
             let base_dir = abs_path.parent()?;
 
             match fs::read_to_string(&path) {
-                Ok(content) => {
+                Ok(raw) => {
                     // Embed local images as base64 data URIs
-                    let content = embed_images_as_base64(&content, base_dir);
-                    Some(FileData { filename, filepath, content })
+                    let content = embed_images_as_base64(&raw, base_dir);
+                    Some(FileData { filename, filepath, content, raw })
                 }
                 Err(e) => {
                     eprintln!("Error reading file: {}", e);
@@ -1671,6 +1727,7 @@ fn main() -> wry::Result<()> {
                     filename: filename.clone(),
                     filepath: path.to_string_lossy().to_string(),
                     content: content_embedded,
+                    raw: content.clone(),
                 };
                 let json = serde_json::to_string(&file_data).unwrap();
                 let script = format!(
@@ -1700,6 +1757,7 @@ fn main() -> wry::Result<()> {
                     filename,
                     filepath: path.to_string_lossy().to_string(),
                     content: content_embedded,
+                    raw: content.clone(),
                 };
                 let json = serde_json::to_string(&file_data).unwrap();
                 let script = format!(

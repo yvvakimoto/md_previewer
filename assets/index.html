@@ -1807,7 +1807,8 @@
         }
 
         // Apply a Marp theme by rewriting the front-matter `theme:` line in
-        // currentMarkdown and pushing the new content through the host's
+        // currentMarkdownRaw (the un-embedded source, so image links are not
+        // turned into base64 on disk) and pushing the new content through the host's
         // `savefile:` IPC. The host writes to disk, suppresses the watcher,
         // refreshes the paired editor (if any), then re-renders the preview
         // via the existing EditorSavedContent → loadFileFromRust path.
@@ -1816,12 +1817,12 @@
                 showToast('No file to update');
                 return;
             }
-            if (!isMarpDocument(currentMarkdown)) {
+            if (!isMarpDocument(currentMarkdownRaw)) {
                 showToast('Not a Marp document');
                 return;
             }
-            const next = setMarpTheme(currentMarkdown, name);
-            if (next === currentMarkdown) {
+            const next = setMarpTheme(currentMarkdownRaw, name);
+            if (next === currentMarkdownRaw) {
                 showToast('Marp theme: ' + name);
                 return;
             }
@@ -1863,6 +1864,10 @@
         let plotlyCounter = 0;
         let kataskeveCounter = 0;
         let currentMarkdown = '';
+        // Un-embedded source markdown (relative image paths intact). Mirrors
+        // `currentMarkdown` but without base64-embedded images, so host-bound
+        // saves (e.g. the Marp theme picker) never write data URIs to disk.
+        let currentMarkdownRaw = '';
         let currentFilePath = '';
         let suppressHistoryPush = false;
         let tocCollapsed = localStorage.getItem('tocCollapsed') === 'true';
@@ -2253,6 +2258,41 @@
                 }
             }
 
+            // Re-inline local images as base64 data URIs so the artifact stays
+            // self-contained. Live preview now serves images via the `/userfile/`
+            // protocol route (for fast startup) instead of base64-embedding them, so
+            // the clone's <img src> point at `/userfile/...`. Fetch each unique one
+            // (the route reads it off disk) and convert to a data URI. Export is a
+            // one-shot user action, so the fetch latency is acceptable; uniques run
+            // in parallel. Failures leave the original src (broken link in artifact,
+            // same as before for an unreadable file).
+            {
+                const isUserfile = (s) => /^\/userfile\//i.test(s) || /^app:\/\/[^/]*\/userfile\//i.test(s);
+                const cloneImgs = Array.from(previewClone.querySelectorAll('img'))
+                    .filter(img => isUserfile(img.getAttribute('src') || ''));
+                const bySrc = new Map(); // src -> dataURL
+                const uniques = [...new Set(cloneImgs.map(img => img.getAttribute('src')))];
+                const toDataUrl = (blob) => new Promise((resolve, reject) => {
+                    const fr = new FileReader();
+                    fr.onload = () => resolve(fr.result);
+                    fr.onerror = () => reject(fr.error);
+                    fr.readAsDataURL(blob);
+                });
+                await Promise.all(uniques.map(async (src) => {
+                    try {
+                        const resp = await fetch(src);
+                        if (!resp.ok) return;
+                        bySrc.set(src, await toDataUrl(await resp.blob()));
+                    } catch (e) {
+                        console.warn('export: failed to inline image', src, e);
+                    }
+                }));
+                cloneImgs.forEach(img => {
+                    const dataUrl = bySrc.get(img.getAttribute('src'));
+                    if (dataUrl) img.setAttribute('src', dataUrl);
+                });
+            }
+
             // Collect local video files referenced by <video> embeds so the host can
             // copy them next to the exported HTML (videos are served from disk, never
             // inlined). YouTube iframes need no copying — their https URLs survive export.
@@ -2607,6 +2647,7 @@ ${previewClone.outerHTML}
             if (files.length === 0) return;
 
             const savedMarkdown = currentMarkdown;
+            const savedMarkdownRaw = currentMarkdownRaw;
             const savedFilePath = currentFilePath;
 
             const pages = [];
@@ -2625,6 +2666,7 @@ ${previewClone.outerHTML}
                 } catch (e) { console.warn('export: fetch failed', f.absPath, e); continue; }
 
                 currentMarkdown = md;
+                currentMarkdownRaw = md;
                 currentFilePath = f.absPath;
                 await renderMarkdown(md);
                 const { html, mediaFiles } = await buildExportArtifact({ pageRelPath: f.relPath });
@@ -2640,6 +2682,7 @@ ${previewClone.outerHTML}
             // Restore the previously-viewed page.
             if (savedFilePath && savedMarkdown != null) {
                 currentMarkdown = savedMarkdown;
+                currentMarkdownRaw = savedMarkdownRaw;
                 currentFilePath = savedFilePath;
                 await renderMarkdown(savedMarkdown);
             }
@@ -2719,11 +2762,17 @@ ${previewClone.outerHTML}
             }
         }
 
-        // Transform image paths - local images are already embedded as base64 data URIs by Rust
-        // This function handles any remaining cases (HTTP URLs, data URIs, etc.)
+        // Transform image paths — local images are NO LONGER base64-embedded by Rust
+        // (that made image-heavy decks slow to open). Local image paths are routed
+        // through the `/userfile/` custom-protocol route so WebView2 fetches/decodes
+        // them in parallel off the UI thread. External URLs / data URIs pass through;
+        // video paths are left untouched so `applyVideoEmbeds()` can handle them (it
+        // builds its own `/userfile/` URL, so double-prefixing must be avoided).
         function transformImagePath(src) {
-            // Return src as-is - Rust has already embedded local images as base64 data URIs
-            return src || '';
+            if (!src) return '';
+            if (/^(data:|https?:|app:|file:|blob:)/i.test(src)) return src;
+            if (VIDEO_EXT_RE.test(src)) return src;   // leave for applyVideoEmbeds()
+            return toUserfileUrl(src);                // e.g. img/foo.png → /userfile/img/foo.png
         }
 
         // Obsidian-style image sizing via the alt-text suffix:
@@ -2781,7 +2830,8 @@ ${previewClone.outerHTML}
 
         // Route a local path through the custom protocol so WebView2 can fetch it.
         function toUserfileUrl(p) {
-            if (/^(https?:|app:|file:|data:)/i.test(p)) return p;
+            if (/^(https?:|app:|file:|data:|blob:)/i.test(p)) return p;
+            if (/^\/userfile\//i.test(p)) return p;   // already routed — don't double-prefix
             return '/userfile/' + encodeURI(p.replace(/\\/g, '/'));
         }
 
@@ -3296,6 +3346,7 @@ ${previewClone.outerHTML}
 
             // Render
             currentMarkdown = processedMarkdown;
+            currentMarkdownRaw = markdown;
             currentFilePath = '';
             await renderMarkdown(processedMarkdown);
             dropZone.style.display = 'none';
@@ -3308,6 +3359,7 @@ ${previewClone.outerHTML}
         async function handleImageFile(file) {
             const dataUrl = await readFileAsDataURL(file);
             currentMarkdown = '';
+            currentMarkdownRaw = '';
             currentFilePath = '';
             preview.innerHTML = `<p><img src="${dataUrl}" alt="${file.name.replace(/"/g, '&quot;')}" style="max-width: 100%; display: block; margin: 0 auto;"></p>`;
             dropZone.style.display = 'none';
@@ -3707,6 +3759,133 @@ ${previewClone.outerHTML}
             if (counter) counter.textContent = (__marpDeckIndex + 1) + ' / ' + slides.length;
         }
 
+        // ---- Diagram render memoization (shared by renderMarp + renderMarkdown) ----
+        // #preview is rebuilt via innerHTML on every render, so the previously
+        // rendered SVGs are discarded and the (expensive) mermaid / schemata /
+        // kataskeve renderers would re-run for every diagram on every live-edit
+        // keystroke even when a diagram's source is unchanged. Cache the rendered
+        // SVG/HTML keyed by (theme-salt + source) so an unchanged diagram just
+        // re-attaches its prior output. mermaid / schemata / kataskeve all vary
+        // their output with the app dark/light theme (body.dark-mode), so the
+        // key is salted with the current mode. A simple FIFO cap bounds memory
+        // across long sessions.
+        const __mermaidCache = new Map();
+        const __schemataCache = new Map();
+        const __kataskeveCache = new Map();
+        const __DIAGRAM_CACHE_MAX = 200;
+        function __diagKey(src) { return (darkMode ? 'd|' : 'l|') + src; }
+        function __diagCacheSet(cache, key, val) {
+            if (cache.size >= __DIAGRAM_CACHE_MAX) {
+                cache.delete(cache.keys().next().value);
+            }
+            cache.set(key, val);
+        }
+
+        // Render every .mermaid element under `root`, reusing cached SVG when the
+        // source (+ theme) is unchanged. mermaid.render needs a unique id, but
+        // that path only runs on a cache miss where el.id is already per-render
+        // unique. Errors are not cached so a transient typing-syntax error
+        // recovers on the next keystroke.
+        async function renderMermaidCached(root) {
+            const els = root.querySelectorAll('.mermaid');
+            if (els.length === 0) return;
+            await Promise.all(Array.from(els).map(async (el) => {
+                const src = el.textContent;
+                const key = __diagKey(src);
+                const cached = __mermaidCache.get(key);
+                if (cached !== undefined) { el.innerHTML = cached; return; }
+                try {
+                    const { svg } = await mermaid.render(el.id + '-svg', src);
+                    __diagCacheSet(__mermaidCache, key, svg);
+                    el.innerHTML = svg;
+                } catch (error) {
+                    el.innerHTML = '<pre style="color: red;">Mermaid Error: ' + error.message + '</pre>';
+                }
+            }));
+        }
+
+        // Render every [data-schemata] element under `root`, reusing cached SVG
+        // when unchanged. Mirrors Schemata.renderAll's decode + error handling
+        // but goes through the single-element Schemata.render(source) so each
+        // block can be individually memoized. Schemata.render is a pure function
+        // of (source, body.dark-mode), so the source+theme key is sound.
+        function renderSchemataCached(root) {
+            root.querySelectorAll('[data-schemata]').forEach((el) => {
+                let src;
+                try { src = decodeURIComponent(el.getAttribute('data-schemata-source') || ''); }
+                catch (e) { src = ''; }
+                if (!src) return;
+                const key = __diagKey(src);
+                const cached = __schemataCache.get(key);
+                if (cached !== undefined) { el.innerHTML = cached; return; }
+                try {
+                    const html = Schemata.render(src);
+                    __diagCacheSet(__schemataCache, key, html);
+                    el.innerHTML = html;
+                } catch (error) {
+                    el.innerHTML = '<pre style="color:red;">Schemata Error: ' + (error && error.message) + '</pre>';
+                }
+            });
+        }
+
+        // Render every [data-kataskeve] element under `root`, reusing cached
+        // SVG/HTML when unchanged. Kataskeve.render swallows its own errors into
+        // a .kataskeve-error block, so the returned string is always cacheable.
+        function renderKataskeveCached(root) {
+            root.querySelectorAll('[data-kataskeve]').forEach((el) => {
+                let src;
+                try { src = decodeURIComponent(el.getAttribute('data-kataskeve-source') || ''); }
+                catch (e) { src = el.textContent || ''; }
+                const key = __diagKey(src);
+                const cached = __kataskeveCache.get(key);
+                if (cached !== undefined) { el.innerHTML = cached; return; }
+                const html = Kataskeve.render(src);
+                __diagCacheSet(__kataskeveCache, key, html);
+                el.innerHTML = html;
+            });
+        }
+
+        // Marp instance reuse — `new Marp()` rebuilds a markdown-it parser and
+        // re-parses every cached theme CSS via themeSet.add() on every render.
+        // marp.render is effectively pure (it returns {html, css}; all of our
+        // footnote / split / column state lives in footnoteState + post-render
+        // DOM passes, not on the marp object), and themeSet.add is idempotent
+        // registration, so the instance is built once and reused across renders.
+        // Theme switching (S key) works by rewriting the front-matter `theme:`
+        // line — all candidate themes are already registered, so no rebuild is
+        // needed.
+        let __marpInstance = null;
+        async function getMarp() {
+            await ensureMarp();
+            await ensureMarpThemes();
+            if (__marpInstance) return __marpInstance;
+            const Marp = (window.MarpCore && window.MarpCore.Marp) || window.Marp;
+            // emoji.shortcode disabled: marp-core's twemoji turns `:x:` inside our
+            // footnote sentinel `⦃FN:id:occ⦄` into an emoji image, breaking the
+            // post-render token replacement.
+            const marp = new Marp({ script: false, html: false, emoji: { shortcode: false, unicode: false } });
+            // markdown-it's default validateLink rejects most data: URIs (only
+            // image/(gif|png|jpeg|webp) pass). Our Rust host embeds local images
+            // as data URIs of *any* MIME (svg+xml, bmp, …), so allow them all.
+            if (marp.markdown && typeof marp.markdown.validateLink === 'function') {
+                marp.markdown.validateLink = () => true;
+            }
+            console.log('[marp] registering themes:', Array.from(__marpThemeCache.keys()));
+            __dbgLog('themeSet.add starting, count=' + __marpThemeCache.size);
+            __marpThemeCache.forEach((css, name) => {
+                try {
+                    marp.themeSet.add(css);
+                    __dbgLog('themeSet.add ok ' + name);
+                } catch (e) {
+                    console.error('Marp theme failed to register:', name, e);
+                    __dbgLog('themeSet.add FAILED ' + name + ' err=' + (e && e.message));
+                }
+            });
+            __dbgLog('themeSet now: ' + JSON.stringify(Array.from(marp.themeSet.themes()).map(t => t.name)));
+            __marpInstance = marp;
+            return marp;
+        }
+
         async function renderMarp(markdown) {
             document.body.classList.add('marp');
             // Keep the untouched source: slide → source-line mapping below must use
@@ -3815,31 +3994,7 @@ ${previewClone.outerHTML}
                 markdown = out.join('\n');
             }
 
-            await ensureMarp();
-            await ensureMarpThemes();
-            const Marp = (window.MarpCore && window.MarpCore.Marp) || window.Marp;
-            // emoji.shortcode disabled: marp-core's twemoji turns `:x:` inside our
-            // footnote sentinel `⦃FN:id:occ⦄` into an emoji image, breaking the
-            // post-render token replacement.
-            const marp = new Marp({ script: false, html: false, emoji: { shortcode: false, unicode: false } });
-            // markdown-it's default validateLink rejects most data: URIs (only
-            // image/(gif|png|jpeg|webp) pass). Our Rust host embeds local images
-            // as data URIs of *any* MIME (svg+xml, bmp, …), so allow them all.
-            if (marp.markdown && typeof marp.markdown.validateLink === 'function') {
-                marp.markdown.validateLink = () => true;
-            }
-            console.log('[marp] registering themes:', Array.from(__marpThemeCache.keys()));
-            __dbgLog('themeSet.add starting, count=' + __marpThemeCache.size);
-            __marpThemeCache.forEach((css, name) => {
-                try {
-                    marp.themeSet.add(css);
-                    __dbgLog('themeSet.add ok ' + name);
-                } catch (e) {
-                    console.error('Marp theme failed to register:', name, e);
-                    __dbgLog('themeSet.add FAILED ' + name + ' err=' + (e && e.message));
-                }
-            });
-            __dbgLog('themeSet now: ' + JSON.stringify(Array.from(marp.themeSet.themes()).map(t => t.name)));
+            const marp = await getMarp();
 
             // Build a slide → source-line map by scanning the ORIGINAL (un-pre-passed)
             // markdown for thematic breaks. Marp's default slide separator is `---`
@@ -3924,6 +4079,7 @@ ${previewClone.outerHTML}
             // unmodified — e.g. if validateLink stripped them earlier, or if a
             // future tweak changes the embed step.)
             preview.querySelectorAll('img').forEach(img => {
+                img.setAttribute('decoding', 'async');
                 const src = img.getAttribute('src');
                 if (!src) return;
                 if (/^(data:|https?:|file:)/i.test(src)) return;
@@ -4130,35 +4286,28 @@ ${previewClone.outerHTML}
 
             setupFootnoteTooltips();
 
-            // Render mermaid diagrams.
-            const mermaidEls = preview.querySelectorAll('.mermaid');
-            if (mermaidEls.length > 0) {
+            // Render mermaid diagrams (memoized by source + theme).
+            if (preview.querySelector('.mermaid')) {
                 await ensureMermaid();
-                await Promise.all(Array.from(mermaidEls).map(async (el) => {
-                    try {
-                        const { svg } = await mermaid.render(el.id + '-svg', el.textContent);
-                        el.innerHTML = svg;
-                    } catch (err) {
-                        el.innerHTML = '<pre style="color:red;">Mermaid Error: ' + err.message + '</pre>';
-                    }
-                }));
+                await renderMermaidCached(preview);
             }
 
-            // Render Schemata diagrams. Schemata sizes itself from clientWidth,
-            // which is 0 when the div has just been injected inside marp-core's
-            // <foreignObject>. Yield to layout once before calling renderAll so
-            // diagrams come out at the slide's real width.
+            // Render Schemata diagrams (memoized by source + theme). Schemata
+            // sizes itself from clientWidth, which is 0 when the div has just
+            // been injected inside marp-core's <foreignObject>. Yield to layout
+            // once before rendering so diagrams come out at the slide's real
+            // width.
             if (preview.querySelector('[data-schemata]')) {
                 await ensureSchemata();
                 await new Promise(r => requestAnimationFrame(() => r()));
-                Schemata.renderAll(preview);
+                renderSchemataCached(preview);
             }
 
-            // Render Kataskeve geometry diagrams in slides.
+            // Render Kataskeve geometry diagrams in slides (memoized).
             if (preview.querySelector('[data-kataskeve]')) {
                 await ensureKataskeve();
                 await new Promise(r => requestAnimationFrame(() => r()));
-                Kataskeve.renderAll(preview);
+                renderKataskeveCached(preview);
             }
 
             const marpPlotlyEls = preview.querySelectorAll('.plotly-block');
@@ -4325,6 +4474,10 @@ ${previewClone.outerHTML}
             const srcRegex = /src=["']([^"']+)["']/i;
 
             html = html.replace(imgTagRegex, (match) => {
+                // Hint the browser to decode off the main thread (image-heavy docs).
+                if (!/\bdecoding=/i.test(match)) {
+                    match = match.replace(/^<img/i, '<img decoding="async"');
+                }
                 const srcMatch = match.match(srcRegex);
                 if (srcMatch && srcMatch[1]) {
                     const src = srcMatch[1];
@@ -4373,30 +4526,22 @@ ${previewClone.outerHTML}
             // Wire up Wikipedia-style hover tooltips for footnote references
             setupFootnoteTooltips();
 
-            // Render all mermaid diagrams (in parallel) once the library is loaded
-            const mermaidElements = preview.querySelectorAll('.mermaid');
-            if (mermaidElements.length > 0) {
+            // Render all mermaid diagrams (memoized by source + theme) once the library is loaded
+            if (preview.querySelector('.mermaid')) {
                 if (mermaidReady) await mermaidReady;
-                await Promise.all(Array.from(mermaidElements).map(async (element) => {
-                    try {
-                        const { svg } = await mermaid.render(element.id + '-svg', element.textContent);
-                        element.innerHTML = svg;
-                    } catch (error) {
-                        element.innerHTML = `<pre style="color: red;">Mermaid Error: ${error.message}</pre>`;
-                    }
-                }));
+                await renderMermaidCached(preview);
             }
 
-            // Render all Schemata diagrams (await library if any are present)
+            // Render all Schemata diagrams (memoized; await library if any are present)
             if (preview.querySelector('[data-schemata]')) {
                 if (schemataReady) await schemataReady;
-                Schemata.renderAll(preview);
+                renderSchemataCached(preview);
             }
 
-            // Render all Kataskeve geometry diagrams
+            // Render all Kataskeve geometry diagrams (memoized)
             if (preview.querySelector('[data-kataskeve]')) {
                 if (kataskeveReady) await kataskeveReady;
-                Kataskeve.renderAll(preview);
+                renderKataskeveCached(preview);
             }
 
             // Render all Plotly charts (await libraries; each fetches its CSV)
@@ -4845,6 +4990,7 @@ ${previewClone.outerHTML}
             const scrollPos = isReload ? previewContainer.scrollTop : 0;
 
             currentMarkdown = fileData.content;
+            currentMarkdownRaw = (fileData.raw != null) ? fileData.raw : fileData.content;
             currentFilePath = fileData.filepath;
             setWindowTitle(fileData.filename);
             await renderMarkdown(currentMarkdown);
