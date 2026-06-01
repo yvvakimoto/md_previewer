@@ -753,6 +753,12 @@ export function create(root, opts = {}) {
   // Initial file injection from Rust.
   if (window.__initialFile) {
     loadFile(window.__initialFile);
+    // Place the cursor where the preview was looking (E key passes the line).
+    // Deferred to next frame so the editor layout is settled before scrollIntoView.
+    const initLine = window.__initialFile.line | 0;
+    if (initLine > 0) {
+      requestAnimationFrame(() => window.__previewScrolledTo(initLine));
+    }
   }
 
   // Warn before closing if dirty.

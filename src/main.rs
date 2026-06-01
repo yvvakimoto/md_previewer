@@ -83,7 +83,7 @@ enum CustomEvent {
     DirectoryChanged,
     ToggleFullscreen,
     // Editor window lifecycle.
-    OpenEditorWindow,
+    OpenEditorWindow { line: u32 },
     EditorCloseRequested,
     // Editor → preview: cursor moved to line.
     EditorCursorMoved { line: u32 },
@@ -1335,8 +1335,9 @@ fn main() -> wry::Result<()> {
             if let Err(e) = ipc_event_proxy.send_event(CustomEvent::ToggleFullscreen) {
                 eprintln!("Failed to dispatch ToggleFullscreen: {}", e);
             }
-        } else if message == "openeditor:" {
-            if let Err(e) = ipc_event_proxy.send_event(CustomEvent::OpenEditorWindow) {
+        } else if let Some(line_str) = message.strip_prefix("openeditor:") {
+            let line = line_str.trim().parse::<u32>().unwrap_or(1);
+            if let Err(e) = ipc_event_proxy.send_event(CustomEvent::OpenEditorWindow { line }) {
                 eprintln!("Failed to dispatch OpenEditorWindow: {}", e);
             }
         } else if let Some(line_str) = message.strip_prefix("jumpto:") {
@@ -1666,9 +1667,14 @@ fn main() -> wry::Result<()> {
                     }
                 }
             }
-            Event::UserEvent(CustomEvent::OpenEditorWindow) => {
+            Event::UserEvent(CustomEvent::OpenEditorWindow { line }) => {
                 if editor_registry.is_open() {
                     editor_registry.focus();
+                    // Re-sync the already-open editor's cursor to the previewed line.
+                    let cur = current_file.lock().unwrap().clone();
+                    if let Some(path) = cur {
+                        editor_registry.push_jump_to_editor(&path, line);
+                    }
                     return;
                 }
                 let cur = current_file.lock().unwrap().clone();
@@ -1682,6 +1688,7 @@ fn main() -> wry::Result<()> {
                         editor_current_dir_for_spawn.clone(),
                         editor_suppressed_for_spawn.clone(),
                         &path,
+                        line,
                     ) {
                         eprintln!("Failed to spawn editor window: {}", e);
                     }

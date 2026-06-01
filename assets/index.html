@@ -2763,7 +2763,11 @@ ${previewClone.outerHTML}
             const t = e.target;
             if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
             if (window.ipc && typeof window.ipc.postMessage === 'function') {
-                window.ipc.postMessage('openeditor:');
+                let line = 1;
+                try {
+                    if (typeof window.currentPreviewLine === 'function') line = window.currentPreviewLine();
+                } catch (_) {}
+                window.ipc.postMessage('openeditor:' + line);
             }
         });
 
@@ -5059,6 +5063,45 @@ ${previewClone.outerHTML}
             // momentum nudges the cursor onto a different block.
             suppressJumpUntil = Date.now() + 200;
             previewContainer.scrollTo({ top: Math.max(0, offset - topMargin), behavior: 'auto' });
+        };
+
+        // Inverse of applyEditorScroll: report the source line currently shown at
+        // the top of the preview viewport, so a freshly-opened editor (E key) can
+        // place its cursor where the reader is looking. Uses the same 25% top
+        // margin as applyEditorScroll so an open→edit→reopen round-trip is stable.
+        window.currentPreviewLine = function() {
+            try {
+                if (document.body.classList.contains('marp')) {
+                    // Deck / list mode: target the active slide's boundary line.
+                    if (document.body.classList.contains('deck-mode') ||
+                        document.body.classList.contains('list-mode')) {
+                        const slides = preview.querySelectorAll('div.marpit > svg[data-marpit-svg]');
+                        if (slides.length) {
+                            const idx = Math.max(0, Math.min(slides.length - 1, __marpDeckIndex | 0));
+                            const sl = parseInt(slides[idx].getAttribute('data-line') || '', 10);
+                            if (Number.isFinite(sl)) return sl;
+                        }
+                        return 1;
+                    }
+                    // Scroll mode falls through to the generic nearest-block scan
+                    // below (slide SVGs carry data-line).
+                }
+                const blocks = preview.querySelectorAll('[data-line]');
+                if (!blocks.length) return 1;
+                const containerTop = previewContainer.getBoundingClientRect().top;
+                const threshold = previewContainer.clientHeight * 0.25;
+                let bestLine = 1;
+                for (const el of blocks) {
+                    const elLine = parseInt(el.getAttribute('data-line'), 10);
+                    if (!Number.isFinite(elLine)) continue;
+                    const top = el.getBoundingClientRect().top - containerTop;
+                    if (top <= threshold) bestLine = elLine;
+                    else break;
+                }
+                return bestLine;
+            } catch (_) {
+                return 1;
+            }
         };
 
         // Intercept clicks on .md / .markdown links and re-open them via the host app.
