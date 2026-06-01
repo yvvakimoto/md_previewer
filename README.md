@@ -149,6 +149,7 @@ md-previewer.exe path\to\folder
 - **CSV / TSV コードブロック** — ` ```csv ` / ` ```tsv ` で囲むと表として描画
 - **Plotly 対話的チャート（外部CSV/TSVから）** — ` ```plotly ` フェンスブロックに `file: data.csv` と `type:` / `x:` / `y:` を YAML で書くだけで、Plotly.js による折れ線・散布・棒・ヒストグラム・箱ひげ・ヒートマップ・3Dサーフェスを描画。CSV ファイルを更新すると自動でグラフが追従。 [Plotly のサンプル](samples/plotly.md) 参照
 - **Kataskeve 初等幾何作図** — ` ```kataskeve ` フェンスに式志向 DSL（`A = point(0,0)` / `triangle(A,B,C)` / `circle3(P,Q,R)` / `midpoint` / `foot` / `orthocenter` / `intersection` / `point_on(circle, deg)` / `rotate` / `reflect` ほか）を書くと SVG として展開。Eukleides に着想を得た独自実装（GPL コードは流用していません）。九点円・パスカルの定理など補助線つきの構図を 1 ブロックで描けます。フェンス名 *Kataskeve* はエウクレイデスが『原論』で命題の作図ステップに用いた古典ギリシャ語 κατασκευή に由来します（npm パッケージ `euclid.js` および Microsoft Store の同名 UWP アプリ *Sakuzu* との衝突を避けるため、過去の作業名 *euclid* / *sakuzu* から差し替えています）。[Kataskeve のサンプル](samples/kataskeve.md) 参照
+- **ABC 楽譜** — ` ```abc ` フェンスに [ABC 記譜法](https://abcnotation.com/) を書くと、[abcjs](https://github.com/paulrosen/abcjs)（MIT）によって五線譜 SVG として描画。調号・拍子・和音・スラー・タイ・歌詞（`w:`）などに対応（描画のみ。音声再生は非対応）。一般文書・Marp スライド両対応、HTML エクスポートにもインライン SVG として追従。[ABC のサンプル](samples/abcjs.md) 参照
 - **画像**
   - 相対パスは Markdown ファイルのあるフォルダを基準に解決
   - 内部プロトコル（`/userfile/`）経由で配信し、ブラウザが並列・非同期に読み込み（画像を多く含む文書・スライドでも起動が高速）
@@ -279,6 +280,7 @@ Marp 標準の `default` / `gaia` / `uncover` も追加設定なしで利用可�
 | `plotly.md` | 外部 CSV を読み込んで Plotly でチャート化 |
 | `video.md` | ローカル動画 / YouTube 埋め込み（画像記法を流用） |
 | `kataskeve.md` | Kataskeve 初等幾何作図（九点円・パスカルの定理 ほか） |
+| `abcjs.md` | ABC 記譜法の楽譜描画（旋律・調号・和音・歌詞 ほか） |
 | `links.md` + `links-other.md` | クロスファイル `.md` リンクと履歴ナビ |
 | `marp.md` | Marp スライドモード |
 | `長文技術ドキュメント.md` | 長文 + TOC + セクション番号 |
