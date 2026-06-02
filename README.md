@@ -140,6 +140,7 @@ md-previewer.exe path\to\folder
 ## 対応している記法・機能
 
 - **GitHub Flavored Markdown** — 表、タスクリスト、打ち消し線、自動リンクなど
+- **改行連結（ソフト改行の連続化）** — ソース上で 1 つの改行で折り返した文を、1 つの連続した文として表示。和文（CJK）どうしの改行はスペースを入れずに詰めて連結し、英文は半角スペースで連結。行末に半角スペース 2 つ（または `\`）を置いた明示的な改行はそのまま維持。[改行連結のサンプル](samples/softbreak.md) 参照
 - **シンタックスハイライト** — `highlight.js` による多言語対応、コードブロック右上にコピーボタン
 - **Mermaid 図** — フローチャート、シーケンス図、ガントチャート ほか
 - **Schemata 図解** — fishbone（特性要因図）、mandala chart、BMC（Business Model Canvas）、flow、cycle。コードブロック言語は ` ```schemata `（ギリシャ語 σχήματα「型・テンプレート」の複数形）。`title:` と同じ位置で `scale: <倍率>` を指定すると、図全体を縮小/拡大表示できます（例: `scale: 0.7` で 70%、`scale: 1.5` で 150%）
@@ -271,6 +272,7 @@ Marp 標準の `default` / `gaia` / `uncover` も追加設定なしで利用可�
 | ファイル | デモ内容 |
 | --- | --- |
 | `sample.md` | 主要機能の総合デモ |
+| `softbreak.md` | 改行連結（和文は詰めて、英文はスペースで連結／明示改行は維持） |
 | `math.md` | KaTeX 数式 |
 | `schemata.md` | Schemata 構造化図解（fishbone / mandala / BMC / flow / cycle） |
 | `syntax.md` | コードブロックのシンタックスハイライト |

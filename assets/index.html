@@ -2869,17 +2869,22 @@ ${previewClone.outerHTML}
         }
 
         // Blockquote attribution convention: inside a blockquote, a paragraph
-        // (or the last line of one, separated by <br>) that begins with `--` or
-        // an em dash `—` is treated as a citation source and right-aligned via
-        // the `.bq-attribution` class (the leading marker is normalized to `— `).
+        // (or the last line of one) that begins with `--` or an em dash `—` is
+        // treated as a citation source and right-aligned via the `.bq-attribution`
+        // class (the leading marker is normalized to `— `).
         // e.g.  > The unexamined life is not worth living.
         //       > -- Socrates
+        // The line separator inside a blockquote paragraph may be either a hard
+        // break (`<br>`, from an explicit `  `/`\` break) or a soft break (a literal
+        // `\n`, the common case now that `marked` runs with breaks:false), so we
+        // split on both. The remaining body is rejoined with `\n` to keep its soft-
+        // break (continuous-newline) semantics.
         // Runs post-innerHTML in both renderMarkdown() and renderMarp().
         function applyBlockquoteAttribution(root) {
             if (!root) return;
             const attrRe = /^\s*(?:--|—)\s*(.+\S)\s*$/;
             root.querySelectorAll('blockquote > p').forEach(p => {
-                const parts = p.innerHTML.split(/<br\s*\/?>/i);
+                const parts = p.innerHTML.split(/<br\s*\/?>|\n/i);
                 const last = parts[parts.length - 1].replace(/&mdash;/g, '—');
                 const m = attrRe.exec(last);
                 if (!m) return;
@@ -2888,12 +2893,51 @@ ${previewClone.outerHTML}
                     p.innerHTML = '— ' + m[1];
                 } else {
                     parts.pop();
-                    p.innerHTML = parts.join('<br>');
+                    p.innerHTML = parts.join('\n');
                     const cite = document.createElement('p');
                     cite.className = 'bq-attribution';
                     cite.innerHTML = '— ' + m[1];
                     p.after(cite);
                 }
+            });
+        }
+
+        // Continuous-newline (改行連結): a sentence the author wrapped across several
+        // source lines with a single plain newline should read as one continuous
+        // sentence. With marked/marp-core both running breaks:false a soft break is a
+        // literal `\n` in the text node — Latin gets its space for free (the browser
+        // collapses `\n` to a space, so words don't run together), but between two CJK
+        // characters that space is unwanted. This post-render pass walks text nodes and
+        // drops the soft break (plus any spaces hugging it) only when CJK sits on BOTH
+        // sides, matching GitHub's own East-Asian line-break rule. Mixed CJK↔Latin
+        // boundaries keep their space; explicit hard breaks (`<br>`) are untouched.
+        // Skips code / math / inline-SVG so their literal newlines survive. Runs in
+        // both renderMarkdown() and renderMarp(); operates on inline text only, so the
+        // block-level data-line attributes (editor sync) are never disturbed.
+        const CJK_RANGE = '\\u3041-\\u3096\\u3005\\u3006\\u30A1-\\u30FA\\u30FC' +
+                          '\\u3400-\\u4DBF\\u4E00-\\u9FFF\\uF900-\\uFAFF' +
+                          '\\u3000-\\u303F\\uFF01-\\uFF60\\uFFE0-\\uFFE6';
+        // Lookahead on the right-hand CJK char so consecutive runs
+        // (CJK \n CJK \n CJK) all collapse without half-missed boundaries.
+        const CJK_SOFTBREAK_RE = new RegExp(
+            '([' + CJK_RANGE + '])[ \\t]*\\n[ \\t]*(?=[' + CJK_RANGE + '])', 'gu');
+        function applyCjkSoftBreakJoin(root) {
+            if (!root) return;
+            const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+                acceptNode(node) {
+                    if (node.nodeValue.indexOf('\n') < 0) return NodeFilter.FILTER_REJECT;
+                    const el = node.parentElement;
+                    if (el && el.closest('pre, code, script, style, textarea, svg, .katex'))
+                        return NodeFilter.FILTER_REJECT;
+                    return NodeFilter.FILTER_ACCEPT;
+                }
+            });
+            const targets = [];
+            let node;
+            while ((node = walker.nextNode())) targets.push(node);
+            targets.forEach(n => {
+                const joined = n.nodeValue.replace(CJK_SOFTBREAK_RE, '$1');
+                if (joined !== n.nodeValue) n.nodeValue = joined;
             });
         }
 
@@ -3159,7 +3203,7 @@ ${previewClone.outerHTML}
 
         // Configure marked.js without custom image renderer (use regex post-processing instead)
         marked.use({
-            breaks: true,
+            breaks: false,
             gfm: true
         });
 
@@ -4330,6 +4374,9 @@ ${previewClone.outerHTML}
             // Right-align blockquote attribution lines (`> -- Author`) in slides.
             applyBlockquoteAttribution(preview);
 
+            // Join CJK sentences wrapped across a single newline (改行連結).
+            applyCjkSoftBreakJoin(preview);
+
             // Restore footnote tokens to <sup> markup inside slides.
             if (footnoteState.order.length > 0) {
                 const fnRegex = new RegExp(FN_OPEN.replace(/[⦃]/g, '\\u2983') + '([^:]+):(\\d+)' + FN_CLOSE.replace(/[⦄]/g, '\\u2984'), 'g');
@@ -4802,6 +4849,9 @@ ${previewClone.outerHTML}
 
             // Right-align blockquote attribution lines (`> -- Author`).
             applyBlockquoteAttribution(preview);
+
+            // Join CJK sentences wrapped across a single newline (改行連結).
+            applyCjkSoftBreakJoin(preview);
 
             // Stamp data-line attributes on top-level blocks and list items
             stampLineNumbers(blockLineNumbers);
