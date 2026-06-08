@@ -31,7 +31,13 @@ pub(crate) type CurrentFile = Arc<Mutex<Option<PathBuf>>>;
 struct FileData {
     filename: String,
     filepath: String,
+    /// Display content with local images embedded as base64 data URIs
+    /// (WebView2 can't load dynamic relative-path local images).
     content: String,
+    /// The un-embedded source markdown (relative image paths intact). The
+    /// webview keeps this for any host-bound save (e.g. the Marp theme picker)
+    /// so base64 data URIs never leak back into the on-disk `.md`.
+    raw: String,
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -74,10 +80,11 @@ enum CustomEvent {
     FileChanged(PathBuf),
     OpenFile(PathBuf),
     OpenDirectory(PathBuf),
+    OpenImage(PathBuf),
     DirectoryChanged,
     ToggleFullscreen,
     // Editor window lifecycle.
-    OpenEditorWindow,
+    OpenEditorWindow { line: u32 },
     EditorCloseRequested,
     // Editor → preview: cursor moved to line.
     EditorCursorMoved { line: u32 },
@@ -147,7 +154,11 @@ pub(crate) fn paths_equal(a: &Path, b: &Path) -> bool {
 
 // Determine MIME type based on file extension
 pub(crate) fn get_mime_type(path: &PathBuf) -> &'static str {
-    match path.extension().and_then(|s| s.to_str()) {
+    let ext = path
+        .extension()
+        .and_then(|s| s.to_str())
+        .map(|s| s.to_ascii_lowercase());
+    match ext.as_deref() {
         // Web assets
         Some("html") | Some("htm") => "text/html",
         Some("css") => "text/css",
@@ -171,6 +182,12 @@ pub(crate) fn get_mime_type(path: &PathBuf) -> &'static str {
         Some("tiff") | Some("tif") => "image/tiff",
         Some("avif") => "image/avif",
 
+        // Video
+        Some("mov") => "video/quicktime",
+        Some("mp4") | Some("m4v") => "video/mp4",
+        Some("webm") => "video/webm",
+        Some("ogv") | Some("ogg") => "video/ogg",
+
         // Other common types
         Some("json") => "application/json",
         Some("xml") => "application/xml",
@@ -184,12 +201,88 @@ pub(crate) fn get_mime_type(path: &PathBuf) -> &'static str {
     }
 }
 
+/// Parse a single HTTP `Range` header value into an inclusive `(start, end)`
+/// byte range clamped to `total`. Supports `bytes=start-end`, `bytes=start-`,
+/// and the suffix form `bytes=-N` (last N bytes). Returns `None` for malformed
+/// or unsatisfiable ranges so the caller can fall back to a full 200 response.
+fn parse_byte_range(header: &str, total: u64) -> Option<(u64, u64)> {
+    if total == 0 {
+        return None;
+    }
+    let spec = header.trim().strip_prefix("bytes=")?;
+    let first = spec.split(',').next()?.trim();
+    let (s, e) = first.split_once('-')?;
+    let (start, end) = if s.is_empty() {
+        let n: u64 = e.trim().parse().ok()?;
+        if n == 0 {
+            return None;
+        }
+        let n = n.min(total);
+        (total - n, total - 1)
+    } else {
+        let start: u64 = s.trim().parse().ok()?;
+        let end = if e.trim().is_empty() {
+            total - 1
+        } else {
+            e.trim().parse::<u64>().ok()?.min(total - 1)
+        };
+        (start, end)
+    };
+    if start > end || start >= total {
+        return None;
+    }
+    Some((start, end))
+}
+
+/// A local file to copy alongside an exported HTML artifact. `src` is an
+/// absolute filesystem path; `dest` is the destination path relative to the
+/// export root (e.g. `media/clip.mp4`).
+#[derive(Deserialize)]
+struct MediaItem {
+    src: String,
+    dest: String,
+}
+
+/// Copy each media file into `base_dir`/`dest`, creating parent directories.
+/// Used by both the single-file and workspace HTML export handlers so local
+/// videos referenced by `<video>` embeds are bundled with the artifact.
+fn copy_export_media(base_dir: &Path, media: &[MediaItem]) {
+    for item in media {
+        let rel = item.dest.trim_start_matches(['/', '\\']);
+        let target = base_dir.join(rel.replace('/', std::path::MAIN_SEPARATOR_STR));
+        if let Some(parent) = target.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        let src = PathBuf::from(item.src.replace('/', std::path::MAIN_SEPARATOR_STR));
+        if let Err(e) = std::fs::copy(&src, &target) {
+            eprintln!("export: failed to copy media {} -> {}: {}", src.display(), target.display(), e);
+        }
+    }
+}
+
 /// Embed local images as base64 data URIs in markdown content.
 /// This bypasses WebView2's limitation where dynamically-loaded images
 /// don't go through the custom protocol handler.
+// Compiled once. Recompiling this on every live-edit keystroke (this function
+// runs on every EditorLiveContent / EditorSavedContent) is pure waste.
+static IMG_RE: OnceLock<Regex> = OnceLock::new();
+fn img_re() -> &'static Regex {
+    IMG_RE.get_or_init(|| Regex::new(r"!\[([^\]]*)\]\(([^)]+)\)").unwrap())
+}
+
+// Cache of resolved-absolute-path -> (mtime, data-URI). Embedding images means
+// reading each file from disk and base64-encoding it; this re-ran in full on
+// every live-edit keystroke even when the images were unchanged. Keyed by mtime
+// so an externally edited image is correctly re-encoded on its next render.
+// Global static (one logical cache per process) mirrors the DBG_LOG pattern and
+// avoids threading an Arc<Mutex<…>> through both event-loop arms.
+static IMG_CACHE: OnceLock<Mutex<HashMap<String, (std::time::SystemTime, String)>>> = OnceLock::new();
+fn img_cache() -> &'static Mutex<HashMap<String, (std::time::SystemTime, String)>> {
+    IMG_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
 fn embed_images_as_base64(markdown: &str, base_dir: &Path) -> String {
-    // Regex to match markdown image syntax: ![alt](path)
-    let re = Regex::new(r"!\[([^\]]*)\]\(([^)]+)\)").unwrap();
+    let re = img_re();
 
     re.replace_all(markdown, |caps: &regex::Captures| {
         let alt = &caps[1];
@@ -201,6 +294,26 @@ fn embed_images_as_base64(markdown: &str, base_dir: &Path) -> String {
             return caps[0].to_string();
         }
 
+        // Skip local media — both videos AND images are served lazily via the
+        // `/userfile/` protocol route instead of being inlined as huge data URIs.
+        // Inlining images base64 made image-heavy decks (esp. Marp slides) slow to
+        // open: a ~40MB image set became a ~53MB string that had to be marshalled
+        // through `evaluate_script`, parsed as a JS source literal, and decoded
+        // synchronously on `innerHTML`. The webview now rewrites local image `src`s
+        // to `/userfile/...` URLs (see `transformImagePath` in assets/index.html),
+        // letting the browser fetch/decode them in parallel off the UI thread, and
+        // HTML export re-inlines them as base64 at export time to stay self-contained.
+        let lower = path_str.to_ascii_lowercase();
+        let lower = lower.split(['?', '#']).next().unwrap_or(&lower);
+        if lower.ends_with(".mov") || lower.ends_with(".mp4") || lower.ends_with(".m4v")
+            || lower.ends_with(".webm") || lower.ends_with(".ogv") || lower.ends_with(".ogg")
+            || lower.ends_with(".png") || lower.ends_with(".jpg") || lower.ends_with(".jpeg")
+            || lower.ends_with(".gif") || lower.ends_with(".webp") || lower.ends_with(".svg")
+            || lower.ends_with(".bmp") || lower.ends_with(".ico") || lower.ends_with(".avif")
+            || lower.ends_with(".tif") || lower.ends_with(".tiff") {
+            return caps[0].to_string();
+        }
+
         // Resolve the image path
         let img_path = if PathBuf::from(path_str).is_absolute() {
             PathBuf::from(path_str)
@@ -208,12 +321,34 @@ fn embed_images_as_base64(markdown: &str, base_dir: &Path) -> String {
             base_dir.join(path_str)
         };
 
+        // Cache key: resolved absolute path. We validate freshness with the
+        // file's mtime, so an externally edited image is re-encoded on the next
+        // render rather than served stale. If mtime can't be read we fall back
+        // to read-every-time (the previous behavior).
+        let cache_key = img_path.to_string_lossy().to_string();
+        let mtime = fs::metadata(&img_path).and_then(|m| m.modified()).ok();
+        if let Some(mt) = mtime {
+            if let Ok(cache) = img_cache().lock() {
+                if let Some((cached_mt, data_uri)) = cache.get(&cache_key) {
+                    if *cached_mt == mt {
+                        return format!("![{}]({})", alt, data_uri);
+                    }
+                }
+            }
+        }
+
         // Read the image file and convert to base64
         match fs::read(&img_path) {
             Ok(data) => {
                 let mime = get_mime_type(&img_path);
                 let b64 = general_purpose::STANDARD.encode(&data);
-                format!("![{}](data:{};base64,{})", alt, mime, b64)
+                let data_uri = format!("data:{};base64,{}", mime, b64);
+                if let Some(mt) = mtime {
+                    if let Ok(mut cache) = img_cache().lock() {
+                        cache.insert(cache_key, (mt, data_uri.clone()));
+                    }
+                }
+                format!("![{}]({})", alt, data_uri)
             }
             Err(_) => {
                 // Keep original if file can't be read (might be broken link)
@@ -236,6 +371,20 @@ fn is_markdown_ext(p: &Path) -> bool {
     p.extension()
         .and_then(|e| e.to_str())
         .map(|e| e.eq_ignore_ascii_case("md") || e.eq_ignore_ascii_case("markdown"))
+        .unwrap_or(false)
+}
+
+fn is_image_ext(p: &Path) -> bool {
+    p.extension()
+        .and_then(|e| e.to_str())
+        .map(|e| {
+            let e = e.to_ascii_lowercase();
+            matches!(
+                e.as_str(),
+                "png" | "jpg" | "jpeg" | "gif" | "webp" | "svg"
+                    | "bmp" | "ico" | "avif" | "tif" | "tiff"
+            )
+        })
         .unwrap_or(false)
 }
 
@@ -642,7 +791,7 @@ fn load_and_render(
                 content.clone()
             };
 
-            let file_data = FileData { filename, filepath: filepath.clone(), content: content_embedded };
+            let file_data = FileData { filename, filepath: filepath.clone(), content: content_embedded, raw: content.clone() };
             let json_data = serde_json::to_string(&file_data).unwrap();
             let script = format!(
                 "if (typeof window.loadFileFromRust === 'function') {{ window.loadFileFromRust({}); }}",
@@ -706,10 +855,10 @@ fn main() -> wry::Result<()> {
             let base_dir = abs_path.parent()?;
 
             match fs::read_to_string(&path) {
-                Ok(content) => {
+                Ok(raw) => {
                     // Embed local images as base64 data URIs
-                    let content = embed_images_as_base64(&content, base_dir);
-                    Some(FileData { filename, filepath, content })
+                    let content = embed_images_as_base64(&raw, base_dir);
+                    Some(FileData { filename, filepath, content, raw })
                 }
                 Err(e) => {
                     eprintln!("Error reading file: {}", e);
@@ -968,18 +1117,70 @@ fn main() -> wry::Result<()> {
                     }
                 };
 
-                // Read and serve the user file
-                match fs::read(&resolved_path) {
-                    Ok(content) => {
+                // Read and serve the user file. Honor an HTTP `Range` request so
+                // WebView2 can seek/scrub videos (a full-body 200 makes the player
+                // re-download from byte 0 on every seek and breaks duration probing).
+                let range_header = request
+                    .headers()
+                    .get("Range")
+                    .and_then(|v| v.to_str().ok())
+                    .map(|s| s.to_string());
+
+                match fs::metadata(&resolved_path) {
+                    Ok(meta) => {
+                        let total = meta.len();
                         let mime_type = get_mime_type(&resolved_path);
-                        Ok(Response::builder()
-                            .header("Content-Type", mime_type)
-                            .header("Access-Control-Allow-Origin", "*")
-                            .body(content.into())
-                            .unwrap())
+
+                        match range_header.as_deref().and_then(|h| parse_byte_range(h, total)) {
+                            Some((start, end)) => {
+                                use std::io::{Read, Seek, SeekFrom};
+                                let len = end - start + 1;
+                                let body = (|| -> std::io::Result<Vec<u8>> {
+                                    let mut f = std::fs::File::open(&resolved_path)?;
+                                    f.seek(SeekFrom::Start(start))?;
+                                    let mut buf = vec![0u8; len as usize];
+                                    f.read_exact(&mut buf)?;
+                                    Ok(buf)
+                                })();
+                                match body {
+                                    Ok(buf) => Ok(Response::builder()
+                                        .status(206)
+                                        .header("Content-Type", mime_type)
+                                        .header("Access-Control-Allow-Origin", "*")
+                                        .header("Accept-Ranges", "bytes")
+                                        .header("Content-Range", format!("bytes {}-{}/{}", start, end, total))
+                                        .header("Content-Length", len.to_string())
+                                        .body(buf.into())
+                                        .unwrap()),
+                                    Err(e) => {
+                                        eprintln!("Failed to read range of {:?}: {}", resolved_path, e);
+                                        Ok(Response::builder()
+                                            .status(500)
+                                            .body(format!("Read error: {:?}", resolved_path).into_bytes().into())
+                                            .unwrap())
+                                    }
+                                }
+                            }
+                            None => match fs::read(&resolved_path) {
+                                Ok(content) => Ok(Response::builder()
+                                    .header("Content-Type", mime_type)
+                                    .header("Access-Control-Allow-Origin", "*")
+                                    .header("Accept-Ranges", "bytes")
+                                    .body(content.into())
+                                    .unwrap()),
+                                Err(e) => {
+                                    eprintln!("Failed to read user file {:?}: {}", resolved_path, e);
+                                    dbg_log!("userfile 404 uri={} resolved={:?} err={}", path, resolved_path, e);
+                                    Ok(Response::builder()
+                                        .status(404)
+                                        .body(format!("File not found: {:?}", resolved_path).into_bytes().into())
+                                        .unwrap())
+                                }
+                            },
+                        }
                     }
                     Err(e) => {
-                        eprintln!("Failed to read user file {:?}: {}", resolved_path, e);
+                        eprintln!("Failed to stat user file {:?}: {}", resolved_path, e);
                         dbg_log!("userfile 404 uri={} resolved={:?} err={}", path, resolved_path, e);
                         Ok(Response::builder()
                             .status(404)
@@ -1075,6 +1276,8 @@ fn main() -> wry::Result<()> {
                 index_html: String,
                 #[serde(rename = "rootName", default)]
                 root_name: String,
+                #[serde(default)]
+                media: Vec<MediaItem>,
             }
             match serde_json::from_str::<ExportDirPayload>(payload) {
                 Ok(p) => {
@@ -1092,6 +1295,7 @@ fn main() -> wry::Result<()> {
                                     eprintln!("exportdir: failed to write {}: {}", target.display(), e);
                                 }
                             }
+                            copy_export_media(&out_dir, &p.media);
                             if !p.index_html.is_empty() {
                                 let idx = out_dir.join("index.html");
                                 if let Err(e) = std::fs::write(&idx, p.index_html.as_bytes()) {
@@ -1107,7 +1311,12 @@ fn main() -> wry::Result<()> {
             // Webview asks the host to save an HTML artifact via a native Save-As dialog.
             // Payload is JSON: { "suggestedName": "...", "html": "..." }.
             #[derive(Deserialize)]
-            struct ExportPayload { #[serde(rename = "suggestedName")] suggested_name: String, html: String }
+            struct ExportPayload {
+                #[serde(rename = "suggestedName")] suggested_name: String,
+                html: String,
+                #[serde(default)]
+                media: Vec<MediaItem>,
+            }
             match serde_json::from_str::<ExportPayload>(payload) {
                 Ok(p) => {
                     let initial_dir = ipc_current_file
@@ -1129,6 +1338,9 @@ fn main() -> wry::Result<()> {
                             if let Err(e) = std::fs::write(&path, p.html.as_bytes()) {
                                 eprintln!("export: failed to write {}: {}", path.display(), e);
                             }
+                            if let Some(base) = path.parent() {
+                                copy_export_media(base, &p.media);
+                            }
                         }
                     });
                 }
@@ -1138,8 +1350,9 @@ fn main() -> wry::Result<()> {
             if let Err(e) = ipc_event_proxy.send_event(CustomEvent::ToggleFullscreen) {
                 eprintln!("Failed to dispatch ToggleFullscreen: {}", e);
             }
-        } else if message == "openeditor:" {
-            if let Err(e) = ipc_event_proxy.send_event(CustomEvent::OpenEditorWindow) {
+        } else if let Some(line_str) = message.strip_prefix("openeditor:") {
+            let line = line_str.trim().parse::<u32>().unwrap_or(1);
+            if let Err(e) = ipc_event_proxy.send_event(CustomEvent::OpenEditorWindow { line }) {
                 eprintln!("Failed to dispatch OpenEditorWindow: {}", e);
             }
         } else if let Some(line_str) = message.strip_prefix("jumpto:") {
@@ -1238,6 +1451,35 @@ fn main() -> wry::Result<()> {
                 let _ = ipc_event_proxy.send_event(CustomEvent::CsvWatch(p));
             }
         }
+    });
+
+    // Drag-and-drop opening. On Windows, WebView2's own HTML5 drag-drop consumes
+    // file drops over the webview, so JS `drop` events never carry a file path
+    // (and only folders, which HTML5 can't accept, used to bubble up to tao's
+    // `WindowEvent::DroppedFile`). Registering a wry file-drop handler revokes
+    // WebView2's drop target and hands us the dropped items' real absolute paths —
+    // the only way to learn a dropped file's path. We route them through the same
+    // OpenDirectory / OpenFile / OpenImage pipelines as double-click / CLI /
+    // cross-file navigation, so `current_dir` / `current_file`, the file watcher,
+    // and the editor pairing are all set up identically (pressing `E` then opens
+    // the companion editor on a dropped file). Preference: directory > markdown >
+    // image; other files are ignored. NOTE: this disables the webview's HTML5
+    // drag-drop, so the JS `handleDrop` path in assets/index.html is now a
+    // no-op fallback only.
+    let file_drop_event_proxy = event_proxy.clone();
+    webview_builder = webview_builder.with_file_drop_handler(move |_window, event| {
+        if let wry::webview::FileDropEvent::Dropped(paths) = event {
+            if let Some(dir) = paths.iter().find(|p| p.is_dir()) {
+                let _ = file_drop_event_proxy.send_event(CustomEvent::OpenDirectory(dir.clone()));
+            } else if let Some(md) = paths.iter().find(|p| is_markdown_ext(p)) {
+                let _ = file_drop_event_proxy.send_event(CustomEvent::OpenFile(md.clone()));
+            } else if let Some(img) = paths.iter().find(|p| is_image_ext(p)) {
+                let _ = file_drop_event_proxy.send_event(CustomEvent::OpenImage(img.clone()));
+            }
+        }
+        // The return value is ignored by wry's Windows webview2 file-drop impl
+        // (the drop is always consumed since WebView2's HTML5 DnD was revoked).
+        false
     });
 
     // Add initialization script if we have a file to load
@@ -1419,8 +1661,11 @@ fn main() -> wry::Result<()> {
                 event: WindowEvent::DroppedFile(path),
                 ..
             } => {
-                // Folder drop opens a workspace. File drops fall through to the
-                // webview's own drag-drop handler (which supports md+images bundle).
+                // Drag-drop is normally handled by the wry file-drop handler
+                // registered on the webview (see `with_file_drop_handler` above),
+                // which has the real paths and routes folders / markdown / images.
+                // This tao-level event is a fallback for any drop that bypasses it;
+                // keep it folder-only as before.
                 if path.is_dir() {
                     let _ = event_proxy.send_event(CustomEvent::OpenDirectory(path));
                 }
@@ -1469,9 +1714,14 @@ fn main() -> wry::Result<()> {
                     }
                 }
             }
-            Event::UserEvent(CustomEvent::OpenEditorWindow) => {
+            Event::UserEvent(CustomEvent::OpenEditorWindow { line }) => {
                 if editor_registry.is_open() {
                     editor_registry.focus();
+                    // Re-sync the already-open editor's cursor to the previewed line.
+                    let cur = current_file.lock().unwrap().clone();
+                    if let Some(path) = cur {
+                        editor_registry.push_jump_to_editor(&path, line);
+                    }
                     return;
                 }
                 let cur = current_file.lock().unwrap().clone();
@@ -1485,6 +1735,7 @@ fn main() -> wry::Result<()> {
                         editor_current_dir_for_spawn.clone(),
                         editor_suppressed_for_spawn.clone(),
                         &path,
+                        line,
                     ) {
                         eprintln!("Failed to spawn editor window: {}", e);
                     }
@@ -1530,6 +1781,7 @@ fn main() -> wry::Result<()> {
                     filename: filename.clone(),
                     filepath: path.to_string_lossy().to_string(),
                     content: content_embedded,
+                    raw: content.clone(),
                 };
                 let json = serde_json::to_string(&file_data).unwrap();
                 let script = format!(
@@ -1559,6 +1811,7 @@ fn main() -> wry::Result<()> {
                     filename,
                     filepath: path.to_string_lossy().to_string(),
                     content: content_embedded,
+                    raw: content.clone(),
                 };
                 let json = serde_json::to_string(&file_data).unwrap();
                 let script = format!(
@@ -1615,6 +1868,34 @@ fn main() -> wry::Result<()> {
                     if let Ok(wv) = webview.lock() {
                         let _ = wv.evaluate_script(&script);
                     }
+                }
+            }
+            Event::UserEvent(CustomEvent::OpenImage(path)) => {
+                let abs_path = to_abs(&path);
+                if !abs_path.exists() || !abs_path.is_file() {
+                    eprintln!("OpenImage: not a file: {:?}", abs_path);
+                    return;
+                }
+                // Point current_dir at the image's folder so the `/userfile/` route
+                // resolves the bare filename, then ask the webview to display it.
+                if let Some(parent) = abs_path.parent() {
+                    *current_dir.lock().unwrap() = Some(parent.to_path_buf());
+                }
+                // A dropped image is not a markdown document: clear current_file so
+                // the editor has nothing to (incorrectly) pair with.
+                *current_file.lock().unwrap() = None;
+                let name = abs_path
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_default();
+                let name_json = serde_json::to_string(&name).unwrap_or_else(|_| "\"\"".into());
+                let script = format!(
+                    "if (typeof window.loadImageFromRust === 'function') {{ window.loadImageFromRust({}); }}",
+                    name_json
+                );
+                if let Ok(wv) = webview.lock() {
+                    wv.window().set_title(&format_title(Some(&name)));
+                    let _ = wv.evaluate_script(&script);
                 }
             }
             Event::UserEvent(CustomEvent::OpenDirectory(path)) => {

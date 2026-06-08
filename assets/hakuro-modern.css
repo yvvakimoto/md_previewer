@@ -632,8 +632,7 @@ body.numbered #toc-nav .toc-item[data-level="4"]::before {
 
 /* ---------- Marp slide mode ---------- */
 body.marp #preview { background: #18181b; }
-body.marp #preview > div.marpit > svg[data-marpit-svg],
-body.marp #preview > section.footnotes-slide {
+body.marp #preview > div.marpit > svg[data-marpit-svg] {
     box-shadow: var(--hk-shadow-lg);
     background: var(--hk-surface);
     border-radius: var(--hk-radius);

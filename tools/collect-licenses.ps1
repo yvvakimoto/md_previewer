@@ -104,6 +104,10 @@ $direct = @(
     Upstream='https://github.com/nodeca/js-yaml';
     Path='assets/libs/js-yaml.min.js';
     LicenseFile='tools/license-texts/js-yaml.LICENSE' }
+  [pscustomobject]@{ Name='abcjs';        Version='6.6.3'; Spdx='MIT';
+    Upstream='https://github.com/paulrosen/abcjs';
+    Path='assets/libs/abcjs/abcjs-basic-min.js';
+    LicenseFile='tools/license-texts/abcjs.LICENSE' }
 )
 
 foreach ($d in $direct) {

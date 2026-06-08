@@ -176,6 +176,7 @@ pub fn spawn_editor_window(
     _current_dir: CurrentDir,
     suppressed_saves: Arc<Mutex<HashSet<PathBuf>>>,
     initial_file: &Path,
+    initial_line: u32,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let filename = initial_file.file_name()
         .map(|n| n.to_string_lossy().to_string())
@@ -195,6 +196,7 @@ pub fn spawn_editor_window(
     let init_payload = serde_json::json!({
         "path": initial_file.to_string_lossy().to_string(),
         "content": initial_content,
+        "line": initial_line,
     });
     let init_script = format!(
         r#"window.__initialFile = {payload};"#,

@@ -140,18 +140,22 @@ md-previewer.exe path\to\folder
 ## 対応している記法・機能
 
 - **GitHub Flavored Markdown** — 表、タスクリスト、打ち消し線、自動リンクなど
+- **改行連結（ソフト改行の連続化）** — ソース上で 1 つの改行で折り返した文を、1 つの連続した文として表示。和文（CJK）どうしの改行はスペースを入れずに詰めて連結し、英文は半角スペースで連結。行末に半角スペース 2 つ（または `\`）を置いた明示的な改行はそのまま維持。[改行連結のサンプル](samples/softbreak.md) 参照
 - **シンタックスハイライト** — `highlight.js` による多言語対応、コードブロック右上にコピーボタン
 - **Mermaid 図** — フローチャート、シーケンス図、ガントチャート ほか
 - **Schemata 図解** — fishbone（特性要因図）、mandala chart、BMC（Business Model Canvas）、flow、cycle。コードブロック言語は ` ```schemata `（ギリシャ語 σχήματα「型・テンプレート」の複数形）。`title:` と同じ位置で `scale: <倍率>` を指定すると、図全体を縮小/拡大表示できます（例: `scale: 0.7` で 70%、`scale: 1.5` で 150%）
 - **KaTeX 数式** — インライン `$...$`、ブロック `$$...$$`
 - **脚注** — `[^id]` 参照と `[^id]: 本文` 定義。本文末尾に脚注一覧、参照部はマウスオーバーで Wikipedia 風ポップアップ表示
+- **テキスト配置（センタリング・右寄せ）** — `::: center` / `::: right` / `::: left` … `:::` で囲んだブロック（見出し・段落・「記」「以上」など）を中央寄せ・右寄せ・左寄せ。引用ブロック内で `> -- 著者名` のように `--`/`—`（em ダッシュ）で始まる行は出典として自動右寄せ。縦書きテーマ（tategaki）では行末＝列の下端に写像。[配置のサンプル](samples/alignment.md) 参照
 - **CSV / TSV コードブロック** — ` ```csv ` / ` ```tsv ` で囲むと表として描画
 - **Plotly 対話的チャート（外部CSV/TSVから）** — ` ```plotly ` フェンスブロックに `file: data.csv` と `type:` / `x:` / `y:` を YAML で書くだけで、Plotly.js による折れ線・散布・棒・ヒストグラム・箱ひげ・ヒートマップ・3Dサーフェスを描画。CSV ファイルを更新すると自動でグラフが追従。 [Plotly のサンプル](samples/plotly.md) 参照
 - **Kataskeve 初等幾何作図** — ` ```kataskeve ` フェンスに式志向 DSL（`A = point(0,0)` / `triangle(A,B,C)` / `circle3(P,Q,R)` / `midpoint` / `foot` / `orthocenter` / `intersection` / `point_on(circle, deg)` / `rotate` / `reflect` ほか）を書くと SVG として展開。Eukleides に着想を得た独自実装（GPL コードは流用していません）。九点円・パスカルの定理など補助線つきの構図を 1 ブロックで描けます。フェンス名 *Kataskeve* はエウクレイデスが『原論』で命題の作図ステップに用いた古典ギリシャ語 κατασκευή に由来します（npm パッケージ `euclid.js` および Microsoft Store の同名 UWP アプリ *Sakuzu* との衝突を避けるため、過去の作業名 *euclid* / *sakuzu* から差し替えています）。[Kataskeve のサンプル](samples/kataskeve.md) 参照
+- **ABC 楽譜** — ` ```abc ` フェンスに [ABC 記譜法](https://abcnotation.com/) を書くと、[abcjs](https://github.com/paulrosen/abcjs)（MIT）によって五線譜 SVG として描画。調号・拍子・和音・スラー・タイ・歌詞（`w:`）などに対応（描画のみ。音声再生は非対応）。一般文書・Marp スライド両対応、HTML エクスポートにもインライン SVG として追従。[ABC のサンプル](samples/abcjs.md) 参照
 - **画像**
   - 相対パスは Markdown ファイルのあるフォルダを基準に解決
-  - すべて Base64 化してインライン表示（再読み込み時にチラつかない）
+  - 内部プロトコル（`/userfile/`）経由で配信し、ブラウザが並列・非同期に読み込み（画像を多く含む文書・スライドでも起動が高速）
   - **Obsidian 風サイズ指定**: `![alt|300](p)`（幅 300px）、`![alt|300x200](p)`（幅×高さ）、`![alt|x200](p)`（高さのみ）、`![alt|@0.5](p)`（元サイズの 0.5 倍）
+- **動画 / YouTube 埋め込み** — 画像記法を流用。`![alt](clip.mov)` でローカル動画（`.mov` / `.mp4` / `.m4v` / `.webm` / `.ogv` / `.ogg`）を `<video controls>` として、`![alt](https://youtu.be/ID)` で YouTube をレスポンシブ `<iframe>` として埋め込み。`|幅` / `|幅x高さ` のサイズ指定も使用可。一般文書・Marp スライド両対応。ローカル動画はシーク対応（HTTP Range）、HTML エクスポート時は `media/` にコピー配置。[動画のサンプル](samples/video.md) 参照
 - **目次（TOC）サイドバー** — 見出しから自動生成、現在位置をハイライト、クリックでスムーズスクロール
 - **自動セクション番号** — `N` キーで `1.` `1.1` `1.1.1` …の章番号を ON/OFF
 - **クロスファイル `.md` リンク** — `.md` 同士のリンクをクリックすると同じウィンドウで遷移
@@ -236,6 +240,7 @@ Marp 標準の `default` / `gaia` / `uncover` も追加設定なしで利用可�
 - **見出しジャンプ** — Vim NORMAL で `]]` / `[[` で次／前の ATX 見出しへカーソル移動。
 - **YaTeX 相当の数式入力支援** — `$`+`Tab` → `$|$`、`$$`+`Tab` → 表示数式ブロック、`\begin{env}`+`Tab` → 対応する `\end{env}`、数式内で `\frac`/`\sqrt`/`\sum`/… の補完、インライン数式内で `a.` → `\alpha` のようなギリシャ文字略記。さらに **`\left<区切り>` の自動ペア挿入**: 数式内で `\left` の直後に `(` `[` `\{` `\|` `|` `<` `/` `.` `\langle` `\lfloor` `\lceil` `\lgroup` `\lmoustache` `\backslash` のいずれかを入力すると、Tab を介さず即座に対応する `\right<閉じ>` がカーソル後ろに挿入されます（例: `\left(` → `\left(|\right)`、`\left\langle` → `\left\langle|\right\rangle`、`\left.` → `\left.|\right.`）。カーソルは開きの直後にとどまります。すでに `\right` が続いている場合は二重挿入を抑止し、コードフェンスや本文中では発火しません。
 - **文字数カウントモーダル** — Vim NORMAL モードで `C` キーを押すとモーダル表示（総文字数・空白除外・本文のみ（YAML/コード/数式除外）・単語数・行数・段落数、選択範囲があれば内訳）。
+- **Marp スライド編集支援**（`marp: true` の文書でのみ有効）— **スライド挿入**: クラス（`none` / `title` / `section` / `lead` / `invert` / `split`）をモーダルから選ぶと、カーソルのあるスライドの直後に新しいスライド（`---` + `<!-- _class: … -->`）を挿入。**スライドの切り取り・コピー**: カーソルを含むスライド 1 枚分（先頭 `---` 込み）をシステムクリップボードへ。切り取りは区切りを二重に残さないよう 1 本分まで除去します。呼び出しは、ステータスバーのボタン（`+ Slide` / `⧉ Slide` / `✂ Slide`、Marp 文書時のみ表示）／ Vim の ex コマンド `:slide` `:slideyank` `:slidecut` ／ Vim NORMAL の `gsi`（挿入）`gsy`（コピー）`gsd`（切り取り）／ 非 Vim の `Ctrl+Alt+N` `Ctrl+Alt+C` `Ctrl+Alt+X`。いずれも既存の Vim コマンドと衝突しません。
 - **ステータスバー 3 トグル** — 上端ホバーで現れるバーから **Vim ON/OFF**・**行番号（絶対 / 相対 / OFF）**・**テーマ（Light / Dark）** を切替。設定は `localStorage` に永続化されます。
 - **プレビュー連動** — プレビュー側でファイルを切り替えるとエディタも追従。Rust 側で 1:1 ペアリングしているので、複数ペアを開いても混線しません。
 - **未保存で閉じた場合** — ダーティ状態のままエディタを閉じる（Vim `:q!` やウィンドウの × ボタン）と、プレビューはディスク上の内容に自動復帰します。
@@ -251,7 +256,8 @@ Marp 標準の `default` / `gaia` / `uncover` も追加設定なしで利用可�
 - 適用中のテーマ CSS
 - Mermaid / Schemata は SVG として展開
 - KaTeX 数式はレンダリング済み HTML として埋め込み
-- 画像は Base64
+- 画像は Base64（エクスポート時にインライン化して自己完結）
+- ローカル動画は `media/` フォルダにコピーして相対パス参照（YouTube はそのまま）
 - 目次サイドバー（折りたたみ・スクロールスパイ・スムーズスクロール）
 - 脚注ポップアップ用のスクリプト
 
@@ -266,13 +272,17 @@ Marp 標準の `default` / `gaia` / `uncover` も追加設定なしで利用可�
 | ファイル | デモ内容 |
 | --- | --- |
 | `sample.md` | 主要機能の総合デモ |
+| `softbreak.md` | 改行連結（和文は詰めて、英文はスペースで連結／明示改行は維持） |
 | `math.md` | KaTeX 数式 |
 | `schemata.md` | Schemata 構造化図解（fishbone / mandala / BMC / flow / cycle） |
 | `syntax.md` | コードブロックのシンタックスハイライト |
 | `footnotes.md` | 脚注（参照、定義、ポップアップ） |
+| `alignment.md` | テキスト配置（`::: center` / `::: right` / 引用元の自動右寄せ / 記・以上） |
 | `csv-tsv.md` | CSV / TSV コードブロックの表変換 |
 | `plotly.md` | 外部 CSV を読み込んで Plotly でチャート化 |
+| `video.md` | ローカル動画 / YouTube 埋め込み（画像記法を流用） |
 | `kataskeve.md` | Kataskeve 初等幾何作図（九点円・パスカルの定理 ほか） |
+| `abcjs.md` | ABC 記譜法の楽譜描画（旋律・調号・和音・歌詞 ほか） |
 | `links.md` + `links-other.md` | クロスファイル `.md` リンクと履歴ナビ |
 | `marp.md` | Marp スライドモード |
 | `長文技術ドキュメント.md` | 長文 + TOC + セクション番号 |

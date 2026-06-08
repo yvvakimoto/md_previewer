@@ -10,6 +10,7 @@ import { startCompletion } from '@codemirror/autocomplete';
 // where entries is [{name, isDir}], directories first, alphabetical.
 
 const IMAGE_EXT = /\.(png|jpe?g|gif|webp|svg|avif|bmp|ico)$/i;
+const VIDEO_EXT = /\.(mov|mp4|m4v|webm|ogv|ogg)$/i;
 const MD_EXT = /\.(md|markdown)$/i;
 
 let nextId = 1;
@@ -81,8 +82,9 @@ function parentDir(absPath) {
 
 function shouldKeep(entry, isImage) {
   if (entry.isDir) return true;
-  if (isImage) return IMAGE_EXT.test(entry.name);
-  return MD_EXT.test(entry.name) || IMAGE_EXT.test(entry.name);
+  // `![](…)` targets media (images + video); `[](…)` also allows .md links.
+  if (isImage) return IMAGE_EXT.test(entry.name) || VIDEO_EXT.test(entry.name);
+  return MD_EXT.test(entry.name) || IMAGE_EXT.test(entry.name) || VIDEO_EXT.test(entry.name);
 }
 
 // Build the completion source bound to a live `getFile()` accessor so the

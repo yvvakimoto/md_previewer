@@ -257,6 +257,22 @@
             margin-bottom: 16px;
         }
 
+        /* Text alignment (::: center / right / left fenced divs). The #preview
+           descendant selector also reaches Marp slide sections (inside the
+           foreignObject), like the existing footnote / split rules. Scoped to
+           #preview so it never touches marp-core's own `span.align-center`. */
+        #preview .align-center { text-align: center; }
+        #preview .align-right  { text-align: right; }
+        #preview .align-left   { text-align: left; }
+
+        /* Blockquote attribution (> -- Author) */
+        #preview blockquote > .bq-attribution {
+            text-align: right;
+            font-style: italic;
+            margin-top: 0.4em;
+            margin-bottom: 0;
+        }
+
         #preview ul, #preview ol {
             margin-bottom: 16px;
             padding-left: 2em;
@@ -287,6 +303,25 @@
             height: auto;
             display: block;
             margin: 0 auto;
+        }
+
+        /* Video / YouTube embeds (image-syntax) */
+        #preview .video-embed {
+            max-width: 100%;
+            display: block;
+            margin: 0 auto;
+        }
+        #preview video.video-embed {
+            height: auto;
+        }
+        /* Responsive 16:9 for YouTube iframes without an explicit size */
+        #preview iframe.youtube-embed {
+            border: 0;
+        }
+        #preview iframe.youtube-embed:not([width]) {
+            width: 100%;
+            aspect-ratio: 16 / 9;
+            height: auto;
         }
 
         #preview a {
@@ -394,6 +429,41 @@
             text-align: left;
         }
         body.dark-mode .kataskeve-error {
+            background: #2a0d10;
+            border-color: #f85149;
+            color: #ffa198;
+        }
+
+        /* ABC music notation (abcjs, assets/libs/abcjs/) */
+        .abc-notation {
+            margin: 16px 0;
+            text-align: center;
+        }
+        .abc-notation svg {
+            max-width: 100%;
+            height: auto;
+        }
+        /* abcjs emits monochrome (black) SVG; recolor for dark mode. */
+        body.dark-mode .abc-notation svg path,
+        body.dark-mode .abc-notation svg text,
+        body.dark-mode .abc-notation svg rect,
+        body.dark-mode .abc-notation svg line {
+            fill: #d0d0d0;
+            stroke: #d0d0d0;
+        }
+        .abc-error {
+            margin: 16px 0;
+            padding: 12px 16px;
+            border: 1px solid #d73a49;
+            border-radius: 4px;
+            background: #ffeef0;
+            color: #b31d28;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', monospace;
+            font-size: 0.9em;
+            white-space: pre-wrap;
+            text-align: left;
+        }
+        body.dark-mode .abc-error {
             background: #2a0d10;
             border-color: #f85149;
             color: #ffa198;
@@ -1287,28 +1357,38 @@
         body.marp #toc-sidebar { display: flex; }
         body.marp:not(.workspace) #toc-sidebar { display: none; }
         body.marp #preview { max-width: none; padding: 0; background: #2a2a2a; }
-        body.marp #preview > div.marpit > svg[data-marpit-svg],
-        body.marp #preview > section.footnotes-slide {
+        body.marp #preview > div.marpit > svg[data-marpit-svg] {
             display: block;
             margin: 24px auto;
             background: white;
             box-shadow: 0 2px 18px rgba(0,0,0,0.35);
-        }
-        body.marp #preview > div.marpit > svg[data-marpit-svg] {
             width: min(1100px, calc(100% - 48px));
             height: auto;
             aspect-ratio: 16 / 9;
         }
-        body.marp #preview > section.footnotes-slide {
-            width: min(1100px, calc(100% - 48px));
-            padding: 32px 56px;
-            color: #24292e;
-            font-size: 15px;
-            line-height: 1.6;
-            box-sizing: border-box;
+        /* Per-slide footnotes — compact block pinned to the bottom of the slide
+           it is referenced on. Standard Marp themes lay sections out as flex
+           columns; margin-top:auto pushes the block down. The defensive
+           display:flex on .marp-has-footnotes keeps it bottom-aligned even on
+           custom themes that don't flex their sections. */
+        body.marp #preview section.marp-has-footnotes {
+            display: flex;
+            flex-direction: column;
         }
-        body.marp #preview > section.footnotes-slide ol { padding-left: 1.6em; }
-        body.marp #preview > section.footnotes-slide .footnote-item { margin-bottom: 8px; }
+        body.marp #preview section .marp-footnotes {
+            margin-top: auto;
+            border-top: 1px solid rgba(0,0,0,0.18);
+            padding-top: 0.4em;
+            font-size: 0.52em;
+            line-height: 1.45;
+            opacity: 0.78;
+        }
+        body.marp #preview section .marp-footnote-item { margin: 0.15em 0; }
+        body.marp #preview section .marp-footnote-item .marp-fn-num { margin-right: 0.2em; }
+        body.marp #preview section .marp-footnote-item .marp-fn-body { display: inline; }
+        body.marp #preview section .marp-footnote-item .marp-fn-body > :first-child { margin-top: 0; }
+        body.marp #preview section .marp-footnote-item .marp-fn-body > :last-child { margin-bottom: 0; }
+        body.marp #preview section[class*="split"] > .marp-footnotes { grid-column: 1 / -1; }
         body.marp.numbered #preview h2::before,
         body.marp.numbered #preview h3::before,
         body.marp.numbered #preview h4::before { content: none; }
@@ -1396,8 +1476,7 @@
             padding: 0;
         }
         body.marp.deck-mode #preview > div.marpit { display: contents; }
-        body.marp.deck-mode #preview > div.marpit > svg[data-marpit-svg],
-        body.marp.deck-mode #preview > section.footnotes-slide {
+        body.marp.deck-mode #preview > div.marpit > svg[data-marpit-svg] {
             display: none;
             margin: 0;
         }
@@ -1406,13 +1485,6 @@
             width: min(98vw, calc(98vh * 16 / 9));
             height: min(98vh, calc(98vw * 9 / 16));
             max-width: none;
-        }
-        body.marp.deck-mode #preview > section.footnotes-slide.active {
-            display: block;
-            width: min(98vw, calc(98vh * 16 / 9));
-            height: min(98vh, calc(98vw * 9 / 16));
-            max-width: none;
-            overflow: auto;
         }
         body.marp.deck-mode #slide-counter { display: block; }
 
@@ -1425,8 +1497,7 @@
             align-content: start;
         }
         body.marp.list-mode #preview > div.marpit { display: contents; }
-        body.marp.list-mode #preview > div.marpit > svg[data-marpit-svg],
-        body.marp.list-mode #preview > section.footnotes-slide {
+        body.marp.list-mode #preview > div.marpit > svg[data-marpit-svg] {
             display: block;
             margin: 0;
             width: 100%;
@@ -1439,14 +1510,7 @@
             overflow: hidden;
             box-sizing: border-box;
         }
-        body.marp.list-mode #preview > section.footnotes-slide {
-            padding: 16px 24px;
-            font-size: 11px;
-            line-height: 1.4;
-            color: #24292e;
-        }
-        body.marp.list-mode #preview > div.marpit > svg[data-marpit-svg]:hover,
-        body.marp.list-mode #preview > section.footnotes-slide:hover {
+        body.marp.list-mode #preview > div.marpit > svg[data-marpit-svg]:hover {
             transform: translateY(-2px);
             box-shadow: 0 6px 22px rgba(0,0,0,0.55);
         }
@@ -1677,6 +1741,9 @@
         function ensureKatex() { return loadLib('libs/katex/katex.min.js'); }
         function ensureSchemata() { return loadLib('libs/schemata.js'); }
         function ensureKataskeve() { return loadLib('libs/kataskeve.js'); }
+        // abcjs ships only a browser-global IIFE (window.ABCJS); lazy-load it the
+        // first time an ```abc block is rendered.
+        function ensureAbcjs() { return loadLib('libs/abcjs/abcjs-basic-min.js'); }
         function ensureMarp() { return loadLib('libs/marp/marp.iife.js'); }
         function ensureJsYaml() { return loadLib('libs/js-yaml.min.js'); }
         function ensurePlotly() { return loadLib('libs/plotly/plotly.min.js'); }
@@ -1794,7 +1861,8 @@
         }
 
         // Apply a Marp theme by rewriting the front-matter `theme:` line in
-        // currentMarkdown and pushing the new content through the host's
+        // currentMarkdownRaw (the un-embedded source, so image links are not
+        // turned into base64 on disk) and pushing the new content through the host's
         // `savefile:` IPC. The host writes to disk, suppresses the watcher,
         // refreshes the paired editor (if any), then re-renders the preview
         // via the existing EditorSavedContent → loadFileFromRust path.
@@ -1803,12 +1871,12 @@
                 showToast('No file to update');
                 return;
             }
-            if (!isMarpDocument(currentMarkdown)) {
+            if (!isMarpDocument(currentMarkdownRaw)) {
                 showToast('Not a Marp document');
                 return;
             }
-            const next = setMarpTheme(currentMarkdown, name);
-            if (next === currentMarkdown) {
+            const next = setMarpTheme(currentMarkdownRaw, name);
+            if (next === currentMarkdownRaw) {
                 showToast('Marp theme: ' + name);
                 return;
             }
@@ -1849,7 +1917,12 @@
         let schemataCounter = 0;
         let plotlyCounter = 0;
         let kataskeveCounter = 0;
+        let abcCounter = 0;
         let currentMarkdown = '';
+        // Un-embedded source markdown (relative image paths intact). Mirrors
+        // `currentMarkdown` but without base64-embedded images, so host-bound
+        // saves (e.g. the Marp theme picker) never write data URIs to disk.
+        let currentMarkdownRaw = '';
         let currentFilePath = '';
         let suppressHistoryPush = false;
         let tocCollapsed = localStorage.getItem('tocCollapsed') === 'true';
@@ -2240,6 +2313,91 @@
                 }
             }
 
+            // Re-inline local images as base64 data URIs so the artifact stays
+            // self-contained. Live preview now serves images via the `/userfile/`
+            // protocol route (for fast startup) instead of base64-embedding them, so
+            // the clone's <img src> point at `/userfile/...`. Fetch each unique one
+            // (the route reads it off disk) and convert to a data URI. Export is a
+            // one-shot user action, so the fetch latency is acceptable; uniques run
+            // in parallel. Failures leave the original src (broken link in artifact,
+            // same as before for an unreadable file).
+            {
+                const isUserfile = (s) => /^\/userfile\//i.test(s) || /^app:\/\/[^/]*\/userfile\//i.test(s);
+                const cloneImgs = Array.from(previewClone.querySelectorAll('img'))
+                    .filter(img => isUserfile(img.getAttribute('src') || ''));
+                const bySrc = new Map(); // src -> dataURL
+                const uniques = [...new Set(cloneImgs.map(img => img.getAttribute('src')))];
+                const toDataUrl = (blob) => new Promise((resolve, reject) => {
+                    const fr = new FileReader();
+                    fr.onload = () => resolve(fr.result);
+                    fr.onerror = () => reject(fr.error);
+                    fr.readAsDataURL(blob);
+                });
+                await Promise.all(uniques.map(async (src) => {
+                    try {
+                        const resp = await fetch(src);
+                        if (!resp.ok) return;
+                        bySrc.set(src, await toDataUrl(await resp.blob()));
+                    } catch (e) {
+                        console.warn('export: failed to inline image', src, e);
+                    }
+                }));
+                cloneImgs.forEach(img => {
+                    const dataUrl = bySrc.get(img.getAttribute('src'));
+                    if (dataUrl) img.setAttribute('src', dataUrl);
+                });
+            }
+
+            // Collect local video files referenced by <video> embeds so the host can
+            // copy them next to the exported HTML (videos are served from disk, never
+            // inlined). YouTube iframes need no copying — their https URLs survive export.
+            // dest paths are relative to the export root; for a workspace page they are
+            // resolved up to the page's directory when rewriting the clone's src.
+            const mediaFiles = [];
+            {
+                const usedNames = new Set();
+                const byAbs = new Map(); // absPath(lower) -> rootDest ("media/<name>")
+                const fromParts = pageRelPath
+                    ? pageRelPath.replace(/\\/g, '/').split('/').filter(Boolean)
+                    : [];
+                if (pageRelPath) fromParts.pop(); // directory of the page being exported
+                const ups = fromParts.map(() => '..');
+                const cloneVids = Array.from(previewClone.querySelectorAll('video[data-video-file]'));
+                for (const cv of cloneVids) {
+                    const rawSrc = cv.getAttribute('data-video-file') || '';
+                    cv.removeAttribute('data-video-file');
+                    if (!rawSrc || /^(https?:|data:|app:|file:)/i.test(rawSrc)) continue;
+
+                    let absPath;
+                    if (/^[A-Za-z]:[\\/]/.test(rawSrc) || rawSrc.startsWith('/')) {
+                        absPath = rawSrc.replace(/\\/g, '/');
+                    } else {
+                        absPath = resolveRelativePath(rawSrc).replace(/^file:\/\/\//, '');
+                    }
+                    const lower = absPath.toLowerCase();
+                    let rootDest = byAbs.get(lower);
+                    if (!rootDest) {
+                        let name = (rawSrc.split(/[\\/]/).pop() || 'video').replace(/[?#].*$/, '') || 'video';
+                        if (usedNames.has(name.toLowerCase())) {
+                            const dot = name.lastIndexOf('.');
+                            const stem = dot > 0 ? name.slice(0, dot) : name;
+                            const ext = dot > 0 ? name.slice(dot) : '';
+                            let k = 1;
+                            while (usedNames.has((stem + '-' + k + ext).toLowerCase())) k++;
+                            name = stem + '-' + k + ext;
+                        }
+                        usedNames.add(name.toLowerCase());
+                        rootDest = 'media/' + name;
+                        byAbs.set(lower, rootDest);
+                        mediaFiles.push({ src: absPath, dest: rootDest });
+                    }
+                    const pageRel = pageRelPath ? ups.concat([rootDest]).join('/') : rootDest;
+                    const source = cv.querySelector('source');
+                    if (source) source.setAttribute('src', pageRel);
+                    else cv.setAttribute('src', pageRel);
+                }
+            }
+
             // Gather all base CSS from the document's first <style> block — robust to future style changes.
             const baseStyleEl = document.querySelector('style');
             const baseCss = baseStyleEl ? baseStyleEl.textContent : '';
@@ -2503,7 +2661,7 @@ ${previewClone.outerHTML}
                 suggestedName = base.replace(/\.(md|markdown)$/i, '') + '.html';
             }
 
-            return { html, suggestedName };
+            return { html, suggestedName, mediaFiles };
         }
 
         async function exportHtml() {
@@ -2524,9 +2682,9 @@ ${previewClone.outerHTML}
                     console.warn('style exporter failed, falling back to general export:', exporterFile, err);
                 }
             }
-            const { html, suggestedName } = await buildExportArtifact();
+            const { html, suggestedName, mediaFiles } = await buildExportArtifact();
             if (window.ipc && typeof window.ipc.postMessage === 'function') {
-                window.ipc.postMessage('exporthtml:' + JSON.stringify({ suggestedName, html }));
+                window.ipc.postMessage('exporthtml:' + JSON.stringify({ suggestedName, html, media: mediaFiles || [] }));
             }
         }
 
@@ -2544,9 +2702,12 @@ ${previewClone.outerHTML}
             if (files.length === 0) return;
 
             const savedMarkdown = currentMarkdown;
+            const savedMarkdownRaw = currentMarkdownRaw;
             const savedFilePath = currentFilePath;
 
             const pages = [];
+            const media = [];
+            const seenDest = new Set();
             for (const f of files) {
                 let md;
                 try {
@@ -2560,16 +2721,23 @@ ${previewClone.outerHTML}
                 } catch (e) { console.warn('export: fetch failed', f.absPath, e); continue; }
 
                 currentMarkdown = md;
+                currentMarkdownRaw = md;
                 currentFilePath = f.absPath;
                 await renderMarkdown(md);
-                const { html } = await buildExportArtifact({ pageRelPath: f.relPath });
+                const { html, mediaFiles } = await buildExportArtifact({ pageRelPath: f.relPath });
                 const outRel = f.relPath.replace(/\.(md|markdown)$/i, '.html');
                 pages.push({ relPath: outRel, html });
+                for (const mf of (mediaFiles || [])) {
+                    if (seenDest.has(mf.dest)) continue;
+                    seenDest.add(mf.dest);
+                    media.push(mf);
+                }
             }
 
             // Restore the previously-viewed page.
             if (savedFilePath && savedMarkdown != null) {
                 currentMarkdown = savedMarkdown;
+                currentMarkdownRaw = savedMarkdownRaw;
                 currentFilePath = savedFilePath;
                 await renderMarkdown(savedMarkdown);
             }
@@ -2584,7 +2752,7 @@ ${previewClone.outerHTML}
                 : '';
 
             if (window.ipc && typeof window.ipc.postMessage === 'function') {
-                window.ipc.postMessage('exportdir:' + JSON.stringify({ pages, indexHtml, rootName: rootSeg }));
+                window.ipc.postMessage('exportdir:' + JSON.stringify({ pages, indexHtml, rootName: rootSeg, media }));
             }
         }
 
@@ -2595,7 +2763,11 @@ ${previewClone.outerHTML}
             const t = e.target;
             if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
             if (window.ipc && typeof window.ipc.postMessage === 'function') {
-                window.ipc.postMessage('openeditor:');
+                let line = 1;
+                try {
+                    if (typeof window.currentPreviewLine === 'function') line = window.currentPreviewLine();
+                } catch (_) {}
+                window.ipc.postMessage('openeditor:' + line);
             }
         });
 
@@ -2649,11 +2821,17 @@ ${previewClone.outerHTML}
             }
         }
 
-        // Transform image paths - local images are already embedded as base64 data URIs by Rust
-        // This function handles any remaining cases (HTTP URLs, data URIs, etc.)
+        // Transform image paths — local images are NO LONGER base64-embedded by Rust
+        // (that made image-heavy decks slow to open). Local image paths are routed
+        // through the `/userfile/` custom-protocol route so WebView2 fetches/decodes
+        // them in parallel off the UI thread. External URLs / data URIs pass through;
+        // video paths are left untouched so `applyVideoEmbeds()` can handle them (it
+        // builds its own `/userfile/` URL, so double-prefixing must be avoided).
         function transformImagePath(src) {
-            // Return src as-is - Rust has already embedded local images as base64 data URIs
-            return src || '';
+            if (!src) return '';
+            if (/^(data:|https?:|app:|file:|blob:)/i.test(src)) return src;
+            if (VIDEO_EXT_RE.test(src)) return src;   // leave for applyVideoEmbeds()
+            return toUserfileUrl(src);                // e.g. img/foo.png → /userfile/img/foo.png
         }
 
         // Obsidian-style image sizing via the alt-text suffix:
@@ -2687,6 +2865,193 @@ ${previewClone.outerHTML}
                     if (m[3]) img.setAttribute('height', m[3]);
                     img.setAttribute('alt', m[1]);
                 }
+            });
+        }
+
+        // Blockquote attribution convention: inside a blockquote, a paragraph
+        // (or the last line of one) that begins with `--` or an em dash `—` is
+        // treated as a citation source and right-aligned via the `.bq-attribution`
+        // class (the leading marker is normalized to `— `).
+        // e.g.  > The unexamined life is not worth living.
+        //       > -- Socrates
+        // The line separator inside a blockquote paragraph may be either a hard
+        // break (`<br>`, from an explicit `  `/`\` break) or a soft break (a literal
+        // `\n`, the common case now that `marked` runs with breaks:false), so we
+        // split on both. The remaining body is rejoined with `\n` to keep its soft-
+        // break (continuous-newline) semantics.
+        // Runs post-innerHTML in both renderMarkdown() and renderMarp().
+        function applyBlockquoteAttribution(root) {
+            if (!root) return;
+            const attrRe = /^\s*(?:--|—)\s*(.+\S)\s*$/;
+            root.querySelectorAll('blockquote > p').forEach(p => {
+                const parts = p.innerHTML.split(/<br\s*\/?>|\n/i);
+                const last = parts[parts.length - 1].replace(/&mdash;/g, '—');
+                const m = attrRe.exec(last);
+                if (!m) return;
+                if (parts.length === 1) {
+                    p.classList.add('bq-attribution');
+                    p.innerHTML = '— ' + m[1];
+                } else {
+                    parts.pop();
+                    p.innerHTML = parts.join('\n');
+                    const cite = document.createElement('p');
+                    cite.className = 'bq-attribution';
+                    cite.innerHTML = '— ' + m[1];
+                    p.after(cite);
+                }
+            });
+        }
+
+        // Continuous-newline (改行連結): a sentence the author wrapped across several
+        // source lines with a single plain newline should read as one continuous
+        // sentence. With marked/marp-core both running breaks:false a soft break is a
+        // literal `\n` in the text node — Latin gets its space for free (the browser
+        // collapses `\n` to a space, so words don't run together), but between two CJK
+        // characters that space is unwanted. This post-render pass walks text nodes and
+        // drops the soft break (plus any spaces hugging it) only when CJK sits on BOTH
+        // sides, matching GitHub's own East-Asian line-break rule. Mixed CJK↔Latin
+        // boundaries keep their space; explicit hard breaks (`<br>`) are untouched.
+        // Skips code / math / inline-SVG so their literal newlines survive. Runs in
+        // both renderMarkdown() and renderMarp(); operates on inline text only, so the
+        // block-level data-line attributes (editor sync) are never disturbed.
+        const CJK_RANGE = '\\u3041-\\u3096\\u3005\\u3006\\u30A1-\\u30FA\\u30FC' +
+                          '\\u3400-\\u4DBF\\u4E00-\\u9FFF\\uF900-\\uFAFF' +
+                          '\\u3000-\\u303F\\uFF01-\\uFF60\\uFFE0-\\uFFE6';
+        // Lookahead on the right-hand CJK char so consecutive runs
+        // (CJK \n CJK \n CJK) all collapse without half-missed boundaries.
+        const CJK_SOFTBREAK_RE = new RegExp(
+            '([' + CJK_RANGE + '])[ \\t]*\\n[ \\t]*(?=[' + CJK_RANGE + '])', 'gu');
+        function applyCjkSoftBreakJoin(root) {
+            if (!root) return;
+            const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+                acceptNode(node) {
+                    if (node.nodeValue.indexOf('\n') < 0) return NodeFilter.FILTER_REJECT;
+                    const el = node.parentElement;
+                    if (el && el.closest('pre, code, script, style, textarea, svg, .katex'))
+                        return NodeFilter.FILTER_REJECT;
+                    return NodeFilter.FILTER_ACCEPT;
+                }
+            });
+            const targets = [];
+            let node;
+            while ((node = walker.nextNode())) targets.push(node);
+            targets.forEach(n => {
+                const joined = n.nodeValue.replace(CJK_SOFTBREAK_RE, '$1');
+                if (joined !== n.nodeValue) n.nodeValue = joined;
+            });
+        }
+
+        // Video / YouTube embedding reusing image syntax:
+        //   ![alt](clip.mov)            local video file → <video controls>
+        //   ![alt|640](clip.mp4)        with pixel sizing (|W or |WxH)
+        //   ![alt](https://youtu.be/ID) YouTube URL → responsive <iframe>
+        // Local videos are NOT base64-embedded by Rust (see embed_images_as_base64);
+        // they are served via the `/userfile/` route (with HTTP range support).
+        const VIDEO_EXT_RE = /\.(mov|mp4|m4v|webm|ogv|ogg)(?:[?#]|$)/i;
+
+        function videoMimeFor(src) {
+            const m = src.match(/\.([a-z0-9]+)(?:[?#]|$)/i);
+            switch (m && m[1].toLowerCase()) {
+                case 'mov': return 'video/quicktime';
+                case 'mp4': case 'm4v': return 'video/mp4';
+                case 'webm': return 'video/webm';
+                case 'ogv': case 'ogg': return 'video/ogg';
+                default: return '';
+            }
+        }
+
+        // Route a local path through the custom protocol so WebView2 can fetch it.
+        function toUserfileUrl(p) {
+            if (/^(https?:|app:|file:|data:|blob:)/i.test(p)) return p;
+            if (/^\/userfile\//i.test(p)) return p;   // already routed — don't double-prefix
+            return '/userfile/' + encodeURI(p.replace(/\\/g, '/'));
+        }
+
+        function parseYoutubeStart(src) {
+            const m = src.match(/[?&#](?:t|start)=([0-9hms]+)/i);
+            if (!m) return 0;
+            const v = m[1];
+            if (/^\d+$/.test(v)) return parseInt(v, 10);
+            let s = 0;
+            const h = v.match(/(\d+)h/i); if (h) s += parseInt(h[1], 10) * 3600;
+            const mm = v.match(/(\d+)m/i); if (mm) s += parseInt(mm[1], 10) * 60;
+            const ss = v.match(/(\d+)s/i); if (ss) s += parseInt(ss[1], 10);
+            return s;
+        }
+
+        // Returns { id, start } for a YouTube URL, else null.
+        function youtubeEmbedInfo(src) {
+            const patterns = [
+                /^https?:\/\/(?:www\.)?youtu\.be\/([\w-]{6,})/i,
+                /^https?:\/\/(?:www\.)?youtube\.com\/watch\?[^#]*\bv=([\w-]{6,})/i,
+                /^https?:\/\/(?:www\.)?youtube(?:-nocookie)?\.com\/embed\/([\w-]{6,})/i,
+                /^https?:\/\/(?:www\.)?youtube\.com\/shorts\/([\w-]{6,})/i,
+            ];
+            for (const re of patterns) {
+                const m = src.match(re);
+                if (m) return { id: m[1], start: parseYoutubeStart(src) };
+            }
+            return null;
+        }
+
+        // Convert <img> elements whose target is a video file or YouTube URL into
+        // <video> / <iframe> embeds. Must run BEFORE applyImageSizing so the alt
+        // sizing suffix is consumed here for videos. Used by both the normal and
+        // Marp pipelines.
+        function applyVideoEmbeds(root) {
+            if (!root) return;
+            const pxRe = /^(.*)\|(\d+)?(?:x(\d+))?$/;
+            root.querySelectorAll('img').forEach(img => {
+                const rawSrc = img.getAttribute('src') || '';
+                if (!rawSrc) return;
+                const yt = youtubeEmbedInfo(rawSrc);
+                const isVideo = !yt && VIDEO_EXT_RE.test(rawSrc);
+                if (!yt && !isVideo) return;
+
+                // Pixel sizing from the alt suffix (|W or |WxH); @scale not supported for video.
+                let alt = img.getAttribute('alt') || '';
+                let width = null, height = null;
+                const m = alt.match(pxRe);
+                if (m && (m[2] || m[3])) {
+                    if (m[2]) width = m[2];
+                    if (m[3]) height = m[3];
+                    alt = m[1];
+                }
+
+                let el;
+                if (yt) {
+                    el = document.createElement('iframe');
+                    el.className = 'video-embed youtube-embed';
+                    let embed = 'https://www.youtube.com/embed/' + yt.id;
+                    if (yt.start > 0) embed += '?start=' + yt.start;
+                    el.setAttribute('src', embed);
+                    el.setAttribute('frameborder', '0');
+                    el.setAttribute('allow', 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share');
+                    el.setAttribute('allowfullscreen', '');
+                    if (alt) el.setAttribute('title', alt);
+                    if (width) {
+                        el.setAttribute('width', width);
+                        el.setAttribute('height', height || String(Math.round(parseInt(width, 10) * 9 / 16)));
+                    } else if (height) {
+                        el.setAttribute('height', height);
+                    }
+                } else {
+                    el = document.createElement('video');
+                    el.className = 'video-embed';
+                    el.setAttribute('controls', '');
+                    el.setAttribute('preload', 'metadata');
+                    if (alt) el.setAttribute('title', alt);
+                    // Original markdown path, for export-time file copying.
+                    el.setAttribute('data-video-file', rawSrc);
+                    const source = document.createElement('source');
+                    source.setAttribute('src', toUserfileUrl(rawSrc));
+                    const mime = videoMimeFor(rawSrc);
+                    if (mime) source.setAttribute('type', mime);
+                    el.appendChild(source);
+                    if (width) el.setAttribute('width', width);
+                    if (height) el.setAttribute('height', height);
+                }
+                img.replaceWith(el);
             });
         }
 
@@ -2838,7 +3203,7 @@ ${previewClone.outerHTML}
 
         // Configure marked.js without custom image renderer (use regex post-processing instead)
         marked.use({
-            breaks: true,
+            breaks: false,
             gfm: true
         });
 
@@ -2952,6 +3317,37 @@ ${previewClone.outerHTML}
             }]
         });
 
+        // Block-level marked extension for Pandoc-style alignment fences:
+        //   ::: center        ::: right         ::: left
+        //   ...content...     ...content...     ...content...
+        //   :::               :::               :::
+        // The body is recursively parsed as block markdown (heading, paragraph,
+        // list, the 記/以上 markers, …) and wrapped in <div class="align-…">.
+        // Marp gets the same feature via a sentinel pre/post pass in renderMarp().
+        marked.use({
+            extensions: [{
+                name: 'alignDiv',
+                level: 'block',
+                start(src) {
+                    const i = src.search(/^:::+[ \t]*(center|centre|right|left)[ \t]*$/im);
+                    return i < 0 ? undefined : i;
+                },
+                tokenizer(src) {
+                    const m = /^:::+[ \t]*(center|centre|right|left)[ \t]*\n([\s\S]*?)\n:::+[ \t]*(?:\n|$)/i.exec(src);
+                    if (!m) return;
+                    let align = m[1].toLowerCase();
+                    if (align === 'centre') align = 'center';
+                    const token = { type: 'alignDiv', raw: m[0], align, text: m[2], tokens: [] };
+                    this.lexer.blockTokens(token.text, token.tokens);
+                    return token;
+                },
+                renderer(token) {
+                    return '<div class="align-' + token.align + '">\n'
+                        + this.parser.parse(token.tokens) + '</div>\n';
+                }
+            }]
+        });
+
         // Build the footnotes section HTML from the registry, after marked.parse() has run.
         function renderFootnotesSection() {
             if (footnoteState.order.length === 0) return '';
@@ -2982,6 +3378,33 @@ ${previewClone.outerHTML}
                 footnoteState.suspend = false;
             }
             html += '</ol></section>';
+            return html;
+        }
+
+        // Compact per-slide footnote block for Marp mode: renders only the given
+        // footnote ids (those referenced on one slide) at the bottom of that slide.
+        // Numbering is global (matches the in-text <sup>), no heading / back-links.
+        function renderMarpSlideFootnotes(ids) {
+            if (!ids || ids.length === 0) return '';
+            let html = '<div class="marp-footnotes">';
+            footnoteState.suspend = true;
+            try {
+                ids.forEach(id => {
+                    const sid = footnoteSafeId(id);
+                    const num = footnoteState.order.indexOf(id) + 1;
+                    const body = footnoteState.defs[id] || '';
+                    const rendered = /\n/.test(body)
+                        ? marked.parse(body)
+                        : marked.parseInline(body);
+                    html += '<div class="marp-footnote-item" id="fn-' + sid + '">'
+                        + '<sup class="marp-fn-num">' + num + '</sup> '
+                        + '<span class="marp-fn-body">' + rendered + '</span>'
+                        + '</div>';
+                });
+            } finally {
+                footnoteState.suspend = false;
+            }
+            html += '</div>';
             return html;
         }
 
@@ -3026,16 +3449,6 @@ ${previewClone.outerHTML}
             });
         }
 
-        // Helper function to read file as text
-        function readFileAsText(file) {
-            return new Promise((resolve, reject) => {
-                const reader = new FileReader();
-                reader.onload = (e) => resolve(e.target.result);
-                reader.onerror = reject;
-                reader.readAsText(file);
-            });
-        }
-
         function handleDrop(e) {
             const dt = e.dataTransfer;
             const files = Array.from(dt.files);
@@ -3045,7 +3458,12 @@ ${previewClone.outerHTML}
             const imageFiles = files.filter(f => f.name.match(/\.(png|jpe?g|gif|svg|webp|ico|bmp|tiff?|avif)$/i));
 
             if (mdFile) {
-                handleMarkdownWithImages(mdFile, imageFiles);
+                // Markdown drops are handled by the Rust host
+                // (WindowEvent::DroppedFile -> OpenFile), which sets up the
+                // watcher / current_file / editor pairing exactly like a
+                // double-click. Both tao and the WebView2 HTML5 drop fire for the
+                // same file, so do nothing here to avoid loading it twice.
+                return;
             } else if (imageFiles.length > 0) {
                 // Single image viewing
                 handleImageFile(imageFiles[0]);
@@ -3054,50 +3472,11 @@ ${previewClone.outerHTML}
             }
         }
 
-        // Handle markdown file with optional image files
-        async function handleMarkdownWithImages(mdFile, imageFiles) {
-            // Build image map from dropped images
-            const imageMap = {};
-            for (const imgFile of imageFiles) {
-                const dataUrl = await readFileAsDataURL(imgFile);
-                // Map by filename (e.g., "test.png" -> dataUrl)
-                imageMap[imgFile.name] = dataUrl;
-            }
-
-            // Read markdown
-            const markdown = await readFileAsText(mdFile);
-
-            // Replace image references with base64 data URLs
-            const processedMarkdown = markdown.replace(
-                /!\[([^\]]*)\]\(([^)]+)\)/g,
-                (match, alt, path) => {
-                    // Skip URLs and data URIs
-                    if (path.startsWith('http://') || path.startsWith('https://') || path.startsWith('data:')) {
-                        return match;
-                    }
-                    // Extract filename from path (e.g., "images/test.png" -> "test.png")
-                    const filename = path.split('/').pop().split('\\').pop();
-                    if (imageMap[filename]) {
-                        return `![${alt}](${imageMap[filename]})`;
-                    }
-                    return match; // Keep original if no matching image
-                }
-            );
-
-            // Render
-            currentMarkdown = processedMarkdown;
-            currentFilePath = '';
-            await renderMarkdown(processedMarkdown);
-            dropZone.style.display = 'none';
-            appContainer.style.display = 'flex';
-            hideSplash();
-            setWindowTitle(mdFile.name);
-        }
-
         // Handle single image file
         async function handleImageFile(file) {
             const dataUrl = await readFileAsDataURL(file);
             currentMarkdown = '';
+            currentMarkdownRaw = '';
             currentFilePath = '';
             preview.innerHTML = `<p><img src="${dataUrl}" alt="${file.name.replace(/"/g, '&quot;')}" style="max-width: 100%; display: block; margin: 0 auto;"></p>`;
             dropZone.style.display = 'none';
@@ -3107,6 +3486,24 @@ ${previewClone.outerHTML}
             // Generate TOC for image (will show "No headings found")
             generateTOC();
         }
+
+        // Display a dropped image. The Rust file-drop handler routes single-image
+        // drops here (it has already pointed `current_dir` at the image's folder,
+        // so the `/userfile/` route resolves the bare filename). This is the live
+        // path for image drops on Windows — `handleImageFile` above only runs if
+        // the webview's HTML5 drag-drop is ever active (fallback).
+        window.loadImageFromRust = function(name) {
+            const url = toUserfileUrl(name);
+            currentMarkdown = '';
+            currentMarkdownRaw = '';
+            currentFilePath = '';
+            preview.innerHTML = `<p><img src="${url}" alt="${name.replace(/"/g, '&quot;')}" style="max-width: 100%; display: block; margin: 0 auto;"></p>`;
+            dropZone.style.display = 'none';
+            appContainer.style.display = 'flex';
+            hideSplash();
+            setWindowTitle(name);
+            generateTOC();
+        };
 
         function setWindowTitle(name) {
             if (window.ipc && typeof window.ipc.postMessage === 'function') {
@@ -3120,9 +3517,14 @@ ${previewClone.outerHTML}
         function extractMathInto(text, mathBlocks, counterRef) {
             // Mask Markdown code regions first so `$` inside `code` / ```fences``` is not
             // treated as math. Fenced blocks first (line-delimited), then inline spans.
+            // The closing alternative for an unterminated fence must be true end-of-input
+            // `(?![\s\S])`, NOT `$`: with the /m flag `$` matches end-of-LINE, which would
+            // close the fence after its first body line, leak the rest of the block to the
+            // math/inline passes, and pad a spurious blank line into the code (fatal for
+            // formats like ABC where a blank line ends a tune).
             const codeMap = new Map();
             let codeCounter = 0;
-            text = text.replace(/^( {0,3})(`{3,}|~{3,})[^\n]*\n[\s\S]*?(?:\n\1\2`{0,}[ \t]*(?=\n|$)|$)/gm, (match) => {
+            text = text.replace(/^( {0,3})(`{3,}|~{3,})[^\n]*\n[\s\S]*?(?:\n\1\2`{0,}[ \t]*(?=\n|$)|(?![\s\S]))/gm, (match) => {
                 const placeholder = `MDFENCE${codeCounter}Z`;
                 codeCounter++;
                 codeMap.set(placeholder, match);
@@ -3475,11 +3877,12 @@ ${previewClone.outerHTML}
 
         // ===== Marp slide pipeline =====================================================
         // Mode flag, slide cursor, and helpers shared between renderMarp() and the
-        // keyboard handler. Selectors match the marpit + footnotes-slide structure
+        // keyboard handler. Selectors match the marpit slide structure
         // documented in renderMarp() below.
         let __marpDeckIndex = 0;
+        let __marpLastRenderedPath = null;
         function __marpSlides() {
-            return preview.querySelectorAll('div.marpit > svg[data-marpit-svg], section.footnotes-slide');
+            return preview.querySelectorAll('div.marpit > svg[data-marpit-svg]');
         }
         function setMarpView(mode) {
             document.body.classList.toggle('deck-mode', mode === 'deck');
@@ -3496,8 +3899,199 @@ ${previewClone.outerHTML}
             if (counter) counter.textContent = (__marpDeckIndex + 1) + ' / ' + slides.length;
         }
 
+        // ---- Diagram render memoization (shared by renderMarp + renderMarkdown) ----
+        // #preview is rebuilt via innerHTML on every render, so the previously
+        // rendered SVGs are discarded and the (expensive) mermaid / schemata /
+        // kataskeve renderers would re-run for every diagram on every live-edit
+        // keystroke even when a diagram's source is unchanged. Cache the rendered
+        // SVG/HTML keyed by (theme-salt + source) so an unchanged diagram just
+        // re-attaches its prior output. mermaid / schemata / kataskeve all vary
+        // their output with the app dark/light theme (body.dark-mode), so the
+        // key is salted with the current mode. A simple FIFO cap bounds memory
+        // across long sessions.
+        const __mermaidCache = new Map();
+        const __schemataCache = new Map();
+        const __kataskeveCache = new Map();
+        // abcjs output is monochrome (dark mode is handled by CSS recolor, not by
+        // varying the rendered bytes), so its cache is keyed by the raw source —
+        // no theme salt — to keep entries valid across the M-key toggle. The SVG is
+        // made responsive (viewBox added post-render in renderAbcCached) so it also
+        // fits any container width without depending on layout state at render time.
+        const __abcCache = new Map();
+        const __DIAGRAM_CACHE_MAX = 200;
+        function __diagKey(src) { return (darkMode ? 'd|' : 'l|') + src; }
+        function __diagCacheSet(cache, key, val) {
+            if (cache.size >= __DIAGRAM_CACHE_MAX) {
+                cache.delete(cache.keys().next().value);
+            }
+            cache.set(key, val);
+        }
+
+        // Render every .mermaid element under `root`, reusing cached SVG when the
+        // source (+ theme) is unchanged. mermaid.render needs a unique id, but
+        // that path only runs on a cache miss where el.id is already per-render
+        // unique. Errors are not cached so a transient typing-syntax error
+        // recovers on the next keystroke.
+        async function renderMermaidCached(root) {
+            const els = root.querySelectorAll('.mermaid');
+            if (els.length === 0) return;
+            await Promise.all(Array.from(els).map(async (el) => {
+                const src = el.textContent;
+                const key = __diagKey(src);
+                const cached = __mermaidCache.get(key);
+                if (cached !== undefined) { el.innerHTML = cached; return; }
+                try {
+                    const { svg } = await mermaid.render(el.id + '-svg', src);
+                    __diagCacheSet(__mermaidCache, key, svg);
+                    el.innerHTML = svg;
+                } catch (error) {
+                    el.innerHTML = '<pre style="color: red;">Mermaid Error: ' + error.message + '</pre>';
+                }
+            }));
+        }
+
+        // Render every [data-schemata] element under `root`, reusing cached SVG
+        // when unchanged. Mirrors Schemata.renderAll's decode + error handling
+        // but goes through the single-element Schemata.render(source) so each
+        // block can be individually memoized. Schemata.render is a pure function
+        // of (source, body.dark-mode), so the source+theme key is sound.
+        function renderSchemataCached(root) {
+            root.querySelectorAll('[data-schemata]').forEach((el) => {
+                let src;
+                try { src = decodeURIComponent(el.getAttribute('data-schemata-source') || ''); }
+                catch (e) { src = ''; }
+                if (!src) return;
+                const key = __diagKey(src);
+                const cached = __schemataCache.get(key);
+                if (cached !== undefined) { el.innerHTML = cached; return; }
+                try {
+                    const html = Schemata.render(src);
+                    __diagCacheSet(__schemataCache, key, html);
+                    el.innerHTML = html;
+                } catch (error) {
+                    el.innerHTML = '<pre style="color:red;">Schemata Error: ' + (error && error.message) + '</pre>';
+                }
+            });
+        }
+
+        // Render every [data-kataskeve] element under `root`, reusing cached
+        // SVG/HTML when unchanged. Kataskeve.render swallows its own errors into
+        // a .kataskeve-error block, so the returned string is always cacheable.
+        function renderKataskeveCached(root) {
+            root.querySelectorAll('[data-kataskeve]').forEach((el) => {
+                let src;
+                try { src = decodeURIComponent(el.getAttribute('data-kataskeve-source') || ''); }
+                catch (e) { src = el.textContent || ''; }
+                const key = __diagKey(src);
+                const cached = __kataskeveCache.get(key);
+                if (cached !== undefined) { el.innerHTML = cached; return; }
+                const html = Kataskeve.render(src);
+                __diagCacheSet(__kataskeveCache, key, html);
+                el.innerHTML = html;
+            });
+        }
+
+        // Render every [data-abc] element under `root` as an inline ABC-notation
+        // staff via abcjs. Unlike Schemata/Kataskeve (which return an HTML string),
+        // abcjs renders directly into the element, so we snapshot el.innerHTML after
+        // rendering to memoize it. Keyed by the raw source (theme-independent).
+        //
+        // abcjs emits an <svg> with fixed `width`/`height` attributes but NO viewBox,
+        // so `.abc-notation svg { max-width:100% }` shrinks the SVG *box* while its
+        // content stays drawn at absolute 0..width coordinates — i.e. the staff is
+        // CLIPPED (both axes), not scaled, inside a narrow container such as a Marp
+        // split column. We add the viewBox ourselves (preferred over abcjs's
+        // `responsive:'resize'`, which leaks a window listener lost on cached-
+        // innerHTML re-insert) so the SVG scales-to-fit any container width purely
+        // via CSS — no width measurement, and correct even when rendered while the
+        // slide is display:none (e.g. a non-active deck slide).
+        function renderAbcCached(root) {
+            root.querySelectorAll('[data-abc]').forEach((el) => {
+                let src;
+                try { src = decodeURIComponent(el.getAttribute('data-abc-source') || ''); }
+                catch (e) { src = el.textContent || ''; }
+                const cached = __abcCache.get(src);
+                if (cached !== undefined) { el.innerHTML = cached; return; }
+                try {
+                    el.innerHTML = '';
+                    window.ABCJS.renderAbc(el, src, {
+                        staffwidth: 740,
+                        scale: 1,
+                        paddingtop: 4,
+                        paddingbottom: 4,
+                        paddingleft: 0,
+                        paddingright: 0
+                    });
+                    // Make the staff responsive: give the SVG a viewBox matching its
+                    // intrinsic size and let width collapse to 100% so CSS max-width
+                    // scales (not clips) it down inside narrow containers. height is
+                    // dropped so the viewBox aspect ratio drives height:auto.
+                    const svg = el.querySelector('svg');
+                    if (svg && !svg.getAttribute('viewBox')) {
+                        const w = parseFloat(svg.getAttribute('width'));
+                        const h = parseFloat(svg.getAttribute('height'));
+                        if (w > 0 && h > 0) {
+                            svg.setAttribute('viewBox', '0 0 ' + w + ' ' + h);
+                            svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+                            svg.style.maxWidth = w + 'px'; // don't upscale beyond native
+                            svg.setAttribute('width', '100%');
+                            svg.removeAttribute('height');
+                        }
+                    }
+                    __diagCacheSet(__abcCache, src, el.innerHTML);
+                } catch (error) {
+                    el.innerHTML = '<div class="abc-error">ABC Error: ' + (error && error.message) + '</div>';
+                }
+            });
+        }
+
+        // Marp instance reuse — `new Marp()` rebuilds a markdown-it parser and
+        // re-parses every cached theme CSS via themeSet.add() on every render.
+        // marp.render is effectively pure (it returns {html, css}; all of our
+        // footnote / split / column state lives in footnoteState + post-render
+        // DOM passes, not on the marp object), and themeSet.add is idempotent
+        // registration, so the instance is built once and reused across renders.
+        // Theme switching (S key) works by rewriting the front-matter `theme:`
+        // line — all candidate themes are already registered, so no rebuild is
+        // needed.
+        let __marpInstance = null;
+        async function getMarp() {
+            await ensureMarp();
+            await ensureMarpThemes();
+            if (__marpInstance) return __marpInstance;
+            const Marp = (window.MarpCore && window.MarpCore.Marp) || window.Marp;
+            // emoji.shortcode disabled: marp-core's twemoji turns `:x:` inside our
+            // footnote sentinel `⦃FN:id:occ⦄` into an emoji image, breaking the
+            // post-render token replacement.
+            const marp = new Marp({ script: false, html: false, emoji: { shortcode: false, unicode: false } });
+            // markdown-it's default validateLink rejects most data: URIs (only
+            // image/(gif|png|jpeg|webp) pass). Our Rust host embeds local images
+            // as data URIs of *any* MIME (svg+xml, bmp, …), so allow them all.
+            if (marp.markdown && typeof marp.markdown.validateLink === 'function') {
+                marp.markdown.validateLink = () => true;
+            }
+            console.log('[marp] registering themes:', Array.from(__marpThemeCache.keys()));
+            __dbgLog('themeSet.add starting, count=' + __marpThemeCache.size);
+            __marpThemeCache.forEach((css, name) => {
+                try {
+                    marp.themeSet.add(css);
+                    __dbgLog('themeSet.add ok ' + name);
+                } catch (e) {
+                    console.error('Marp theme failed to register:', name, e);
+                    __dbgLog('themeSet.add FAILED ' + name + ' err=' + (e && e.message));
+                }
+            });
+            __dbgLog('themeSet now: ' + JSON.stringify(Array.from(marp.themeSet.themes()).map(t => t.name)));
+            __marpInstance = marp;
+            return marp;
+        }
+
         async function renderMarp(markdown) {
             document.body.classList.add('marp');
+            // Keep the untouched source: slide → source-line mapping below must use
+            // the original line numbers, since the footnote / split pre-passes shift
+            // lines and the editor sends source-line numbers.
+            const __sourceMarkdown = markdown;
             try {
                 if (window.ipc && typeof window.ipc.postMessage === 'function') {
                     window.ipc.postMessage('csvwatchreset:');
@@ -3600,41 +4194,74 @@ ${previewClone.outerHTML}
                 markdown = out.join('\n');
             }
 
-            await ensureMarp();
-            await ensureMarpThemes();
-            const Marp = (window.MarpCore && window.MarpCore.Marp) || window.Marp;
-            // emoji.shortcode disabled: marp-core's twemoji turns `:x:` inside our
-            // footnote sentinel `⦃FN:id:occ⦄` into an emoji image, breaking the
-            // post-render token replacement.
-            const marp = new Marp({ script: false, html: false, emoji: { shortcode: false, unicode: false } });
-            // markdown-it's default validateLink rejects most data: URIs (only
-            // image/(gif|png|jpeg|webp) pass). Our Rust host embeds local images
-            // as data URIs of *any* MIME (svg+xml, bmp, …), so allow them all.
-            if (marp.markdown && typeof marp.markdown.validateLink === 'function') {
-                marp.markdown.validateLink = () => true;
-            }
-            console.log('[marp] registering themes:', Array.from(__marpThemeCache.keys()));
-            __dbgLog('themeSet.add starting, count=' + __marpThemeCache.size);
-            __marpThemeCache.forEach((css, name) => {
-                try {
-                    marp.themeSet.add(css);
-                    __dbgLog('themeSet.add ok ' + name);
-                } catch (e) {
-                    console.error('Marp theme failed to register:', name, e);
-                    __dbgLog('themeSet.add FAILED ' + name + ' err=' + (e && e.message));
+            // Text-alignment pre-pass — convert `::: center` / `::: right` /
+            // `::: left` … `:::` fences into sentinel paragraphs that survive
+            // marp.render; the post-render DOM walk below wraps the enclosed
+            // blocks into <div class="align-…">. Skips fences inside fenced code
+            // blocks and the YAML front-matter. The `⦃ALIGN:…⦄` / `⦃/ALIGN⦄`
+            // sentinels share the Unicode bracket family with the footnote /
+            // split sentinels but use a distinct prefix, so they never collide.
+            const ALIGN_OPEN = '⦃ALIGN:';
+            const ALIGN_CLOSE = '⦃/ALIGN⦄';
+            {
+                const lines = markdown.split('\n');
+                const out = [];
+                let inFm = lines.length > 0 && /^---\s*$/.test(lines[0]);
+                let fmClosed = !inFm;
+                let inFence = false;
+                let fenceMarker = '';
+                for (let i = 0; i < lines.length; i++) {
+                    const ln = lines[i];
+                    if (inFm && !fmClosed) {
+                        out.push(ln);
+                        if (i > 0 && /^---\s*$/.test(ln)) fmClosed = true;
+                        continue;
+                    }
+                    const fenceMatch = ln.match(/^(\s*)(```+|~~~+)(.*)$/);
+                    if (fenceMatch) {
+                        const marker = fenceMatch[2][0];
+                        if (!inFence) { inFence = true; fenceMarker = marker; }
+                        else if (marker === fenceMarker) { inFence = false; fenceMarker = ''; }
+                        out.push(ln);
+                        continue;
+                    }
+                    if (!inFence) {
+                        const open = ln.match(/^:::+[ \t]*(center|centre|right|left)[ \t]*$/i);
+                        if (open) {
+                            let a = open[1].toLowerCase();
+                            if (a === 'centre') a = 'center';
+                            // Blank line padding ensures the sentinel becomes its own <p>.
+                            out.push(''); out.push(ALIGN_OPEN + a + '⦄'); out.push('');
+                            continue;
+                        }
+                        if (/^:::+[ \t]*$/.test(ln)) {
+                            out.push(''); out.push(ALIGN_CLOSE); out.push('');
+                            continue;
+                        }
+                    }
+                    out.push(ln);
                 }
-            });
-            __dbgLog('themeSet now: ' + JSON.stringify(Array.from(marp.themeSet.themes()).map(t => t.name)));
+                markdown = out.join('\n');
+            }
 
-            // Build a slide → source-line map by scanning the (post-footnote-pre-pass)
+            const marp = await getMarp();
+
+            // Build a slide → source-line map by scanning the ORIGINAL (un-pre-passed)
             // markdown for thematic breaks. Marp's default slide separator is `---`
             // / `***` / `___` on its own line; the first `---` pair delimits YAML
-            // front-matter and must be skipped.
-            const __lines = markdown.split('\n');
+            // front-matter and must be skipped. Must use the original source: the
+            // footnote-extraction and split (`+++`) pre-passes above remove / insert
+            // lines, but they preserve the separators' count and order, so scanning
+            // the source yields correct source line numbers for each slide. Fenced
+            // code blocks are skipped so a `---` inside ``` doesn't become a phantom
+            // slide boundary (which marp-core would never split on).
+            const __lines = __sourceMarkdown.split('\n');
             const slideStartLines = [];
             let __fmOpen = __lines.length > 0 && /^---\s*$/.test(__lines[0]);
             let __fmClosed = !__fmOpen;
             let __curStart = __fmOpen ? null : 1;
+            let __inFence = false;
+            let __fenceMarker = '';
             for (let i = 0; i < __lines.length; i++) {
                 const ln = i + 1;
                 if (__fmOpen && !__fmClosed) {
@@ -3644,6 +4271,14 @@ ${previewClone.outerHTML}
                     }
                     continue;
                 }
+                const __fenceMatch = __lines[i].match(/^(\s*)(```+|~~~+)(.*)$/);
+                if (__fenceMatch) {
+                    const marker = __fenceMatch[2][0]; // ` or ~
+                    if (!__inFence) { __inFence = true; __fenceMarker = marker; }
+                    else if (marker === __fenceMarker) { __inFence = false; __fenceMarker = ''; }
+                    continue;
+                }
+                if (__inFence) continue;
                 if (/^(---|\*\*\*|___)\s*$/.test(__lines[i])) {
                     if (__curStart != null) slideStartLines.push(__curStart);
                     __curStart = ln + 1;
@@ -3694,6 +4329,7 @@ ${previewClone.outerHTML}
             // unmodified — e.g. if validateLink stripped them earlier, or if a
             // future tweak changes the embed step.)
             preview.querySelectorAll('img').forEach(img => {
+                img.setAttribute('decoding', 'async');
                 const src = img.getAttribute('src');
                 if (!src) return;
                 if (/^(data:|https?:|file:)/i.test(src)) return;
@@ -3701,8 +4337,17 @@ ${previewClone.outerHTML}
                 if (transformed && transformed !== src) img.setAttribute('src', transformed);
             });
 
+            // Convert video / YouTube image-syntax embeds, then size remaining images.
+            applyVideoEmbeds(preview);
+
             // Apply Obsidian-style image sizing inside Marp slides too.
             applyImageSizing(preview);
+
+            // Right-align blockquote attribution lines (`> -- Author`) in slides.
+            applyBlockquoteAttribution(preview);
+
+            // Join CJK sentences wrapped across a single newline (改行連結).
+            applyCjkSoftBreakJoin(preview);
 
             // Restore footnote tokens to <sup> markup inside slides.
             if (footnoteState.order.length > 0) {
@@ -3785,6 +4430,32 @@ ${previewClone.outerHTML}
                 });
             });
 
+            // Alignment post-pass — convert ⦃ALIGN:…⦄ / ⦃/ALIGN⦄ sentinel paragraphs
+            // into <div class="align-…"> wrappers around the enclosed blocks.
+            // Operating on each open sentinel's actual parent (rather than only
+            // direct <section> children) lets it work inside .split-col too. Runs
+            // after footnote restoration (so <sup> nodes are preserved) and the
+            // split post-pass, and before the mermaid/schemata substitution loop
+            // (so a centered diagram still gets substituted inside the wrapper).
+            Array.from(preview.querySelectorAll('section p')).forEach(p => {
+                const openM = /^⦃ALIGN:(center|right|left)⦄$/.exec(p.textContent.trim());
+                if (!openM) return;
+                const div = document.createElement('div');
+                div.className = 'align-' + openM[1];
+                p.parentNode.replaceChild(div, p);
+                let n = div.nextSibling;
+                while (n) {
+                    const next = n.nextSibling;
+                    if (n.nodeType === 1 && n.tagName === 'P'
+                            && n.textContent.trim() === '⦃/ALIGN⦄') {
+                        n.remove();
+                        break;
+                    }
+                    div.appendChild(n);
+                    n = next;
+                }
+            });
+
             // Replace mermaid / schemata / csv / tsv code blocks inside each slide with
             // the same DOM produced by the normal pipeline so the existing renderers
             // (mermaid.render, Schemata.renderAll, renderDataTable) just work.
@@ -3827,6 +4498,13 @@ ${previewClone.outerHTML}
                     div.setAttribute('data-kataskeve', '1');
                     div.setAttribute('data-kataskeve-source', encodeURIComponent(code.textContent));
                     pre.replaceWith(div);
+                } else if (lang === 'abc') {
+                    const div = document.createElement('div');
+                    div.className = 'abc-notation';
+                    div.id = 'marp-abc-' + (abcCounter++);
+                    div.setAttribute('data-abc', '1');
+                    div.setAttribute('data-abc-source', encodeURIComponent(code.textContent));
+                    pre.replaceWith(div);
                 }
             });
 
@@ -3841,11 +4519,12 @@ ${previewClone.outerHTML}
                 const meaningful = Array.from(el.childNodes).filter(n =>
                     !(n.nodeType === 3 && !n.textContent.trim())
                 );
-                return meaningful.length === 1 && meaningful[0].nodeType === 1 && meaningful[0].tagName === 'IMG';
+                if (meaningful.length !== 1 || meaningful[0].nodeType !== 1) return false;
+                return ['IMG', 'VIDEO', 'IFRAME'].includes(meaningful[0].tagName);
             };
             const isFigureChild = (el) => {
                 if (el.nodeType !== 1) return false;
-                if (el.matches('.mermaid, .schemata, .csv-table, table, .kataskeve')) return true;
+                if (el.matches('.mermaid, .schemata, .csv-table, table, .kataskeve, .abc-notation, video, iframe.video-embed, .video-embed')) return true;
                 if (isImageParagraph(el)) return true;
                 return false;
             };
@@ -3866,17 +4545,27 @@ ${previewClone.outerHTML}
                 section.classList.add('marp-has-figs');
             });
 
-            // Append footnotes as a final slide outside the marpit container so the
-            // marp theme CSS (which targets `<section>` inside `data-marpit-svg`)
-            // doesn't fight our plain-page styling.
+            // Per-slide footnotes — render each referenced footnote's body at the
+            // bottom of the slide it appears on (global numbering, compact style).
+            // Runs after the figure-centering and split passes so the block lands
+            // as the section's last child (its true bottom) without being swept
+            // into .marp-figure-stage or a split column bucket.
             if (footnoteState.order.length > 0) {
-                const fnHtml = renderFootnotesSection();
-                if (fnHtml) {
-                    const fnSlide = document.createElement('section');
-                    fnSlide.className = 'footnotes-slide';
-                    fnSlide.innerHTML = '<h2>Footnotes</h2>' + fnHtml;
-                    preview.appendChild(fnSlide);
-                }
+                preview.querySelectorAll('svg[data-marpit-svg] section').forEach(section => {
+                    const refs = section.querySelectorAll('sup.footnote-ref a[data-footnote-id]');
+                    if (refs.length === 0) return;
+                    const ids = [];
+                    refs.forEach(a => {
+                        const id = a.getAttribute('data-footnote-id');
+                        if (id && !ids.includes(id)) ids.push(id);
+                    });
+                    const fnHtml = renderMarpSlideFootnotes(ids);
+                    if (!fnHtml) return;
+                    const tpl = document.createElement('template');
+                    tpl.innerHTML = fnHtml;
+                    section.appendChild(tpl.content);
+                    section.classList.add('marp-has-footnotes');
+                });
             }
 
             // Re-apply our highlight.js over marp-core's code blocks for consistent styling.
@@ -3886,35 +4575,35 @@ ${previewClone.outerHTML}
 
             setupFootnoteTooltips();
 
-            // Render mermaid diagrams.
-            const mermaidEls = preview.querySelectorAll('.mermaid');
-            if (mermaidEls.length > 0) {
+            // Render mermaid diagrams (memoized by source + theme).
+            if (preview.querySelector('.mermaid')) {
                 await ensureMermaid();
-                await Promise.all(Array.from(mermaidEls).map(async (el) => {
-                    try {
-                        const { svg } = await mermaid.render(el.id + '-svg', el.textContent);
-                        el.innerHTML = svg;
-                    } catch (err) {
-                        el.innerHTML = '<pre style="color:red;">Mermaid Error: ' + err.message + '</pre>';
-                    }
-                }));
+                await renderMermaidCached(preview);
             }
 
-            // Render Schemata diagrams. Schemata sizes itself from clientWidth,
-            // which is 0 when the div has just been injected inside marp-core's
-            // <foreignObject>. Yield to layout once before calling renderAll so
-            // diagrams come out at the slide's real width.
+            // Render Schemata diagrams (memoized by source + theme). Schemata
+            // sizes itself from clientWidth, which is 0 when the div has just
+            // been injected inside marp-core's <foreignObject>. Yield to layout
+            // once before rendering so diagrams come out at the slide's real
+            // width.
             if (preview.querySelector('[data-schemata]')) {
                 await ensureSchemata();
                 await new Promise(r => requestAnimationFrame(() => r()));
-                Schemata.renderAll(preview);
+                renderSchemataCached(preview);
             }
 
-            // Render Kataskeve geometry diagrams in slides.
+            // Render Kataskeve geometry diagrams in slides (memoized).
             if (preview.querySelector('[data-kataskeve]')) {
                 await ensureKataskeve();
                 await new Promise(r => requestAnimationFrame(() => r()));
-                Kataskeve.renderAll(preview);
+                renderKataskeveCached(preview);
+            }
+
+            // Render ABC music-notation staves in slides (memoized).
+            if (preview.querySelector('[data-abc]')) {
+                await ensureAbcjs();
+                await new Promise(r => requestAnimationFrame(() => r()));
+                renderAbcCached(preview);
             }
 
             const marpPlotlyEls = preview.querySelectorAll('.plotly-block');
@@ -3927,7 +4616,14 @@ ${previewClone.outerHTML}
                 ));
             }
 
-            __marpDeckIndex = 0;
+            // 同じファイルの再読込（保存後の再描画 / ライブプレビュー / テーマ変更）では
+            // 表示中のスライド位置を保持する。別ファイルへ切り替わったときだけ先頭へ。
+            // __marpUpdateDeck() が範囲外インデックスをクランプするので、スライド数が
+            // 減っても安全。
+            if (__marpLastRenderedPath !== currentFilePath) {
+                __marpDeckIndex = 0;
+            }
+            __marpLastRenderedPath = currentFilePath;
             __marpUpdateDeck();
 
             // List-mode click → jump into deck mode focused on that slide.
@@ -3938,7 +4634,7 @@ ${previewClone.outerHTML}
         function __marpListClickHandler(e) {
             if (!document.body.classList.contains('list-mode')) return;
             const slides = Array.from(__marpSlides());
-            const hit = e.target.closest('svg[data-marpit-svg], section.footnotes-slide');
+            const hit = e.target.closest('svg[data-marpit-svg]');
             const idx = slides.indexOf(hit);
             if (idx < 0) return;
             e.preventDefault();
@@ -4004,11 +4700,13 @@ ${previewClone.outerHTML}
             const needsKatex = mathBlocks.length > 0;
             const needsPlotly = /```plotly\b/.test(processedMarkdown);
             const needsKataskeve = /```kataskeve\b/.test(processedMarkdown);
+            const needsAbc = /```abc\b/.test(processedMarkdown);
             const mermaidReady = needsMermaid ? ensureMermaid() : null;
             const schemataReady = needsSchemata ? ensureSchemata() : null;
             const katexReady = needsKatex ? ensureKatex() : null;
             const plotlyReady = needsPlotly ? Promise.all([ensureJsYaml(), ensurePlotly()]) : null;
             const kataskeveReady = needsKataskeve ? ensureKataskeve() : null;
+            const abcReady = needsAbc ? ensureAbcjs() : null;
 
             // Flush the prior render's tracked CSV files so the Rust watcher only
             // monitors files referenced by the document we're about to render.
@@ -4052,6 +4750,15 @@ ${previewClone.outerHTML}
                 return `<div class="kataskeve" id="${id}" data-kataskeve="1" data-kataskeve-source="${encodeURIComponent(decoded)}"></div>`;
             });
 
+            // Replace abc code blocks with abc-notation divs (rendered via abcjs)
+            html = html.replace(/<pre><code class="language-abc">([\s\S]*?)<\/code><\/pre>/g, (match, code) => {
+                const id = `abc-${abcCounter++}`;
+                const textarea = document.createElement('textarea');
+                textarea.innerHTML = code;
+                const decoded = textarea.value;
+                return `<div class="abc-notation" id="${id}" data-abc="1" data-abc-source="${encodeURIComponent(decoded)}"></div>`;
+            });
+
             // Replace csv / tsv code blocks with HTML tables
             html = html.replace(
                 /<pre><code class="language-(csv|tsv)">([\s\S]*?)<\/code><\/pre>/g,
@@ -4074,6 +4781,10 @@ ${previewClone.outerHTML}
             const srcRegex = /src=["']([^"']+)["']/i;
 
             html = html.replace(imgTagRegex, (match) => {
+                // Hint the browser to decode off the main thread (image-heavy docs).
+                if (!/\bdecoding=/i.test(match)) {
+                    match = match.replace(/^<img/i, '<img decoding="async"');
+                }
                 const srcMatch = match.match(srcRegex);
                 if (srcMatch && srcMatch[1]) {
                     const src = srcMatch[1];
@@ -4102,8 +4813,17 @@ ${previewClone.outerHTML}
 
             preview.innerHTML = html;
 
+            // Convert video / YouTube image-syntax embeds, then size remaining images.
+            applyVideoEmbeds(preview);
+
             // Apply Obsidian-style image sizing (`![alt|300x200](p)`, `![alt|@0.5](p)`, …)
             applyImageSizing(preview);
+
+            // Right-align blockquote attribution lines (`> -- Author`).
+            applyBlockquoteAttribution(preview);
+
+            // Join CJK sentences wrapped across a single newline (改行連結).
+            applyCjkSoftBreakJoin(preview);
 
             // Stamp data-line attributes on top-level blocks and list items
             stampLineNumbers(blockLineNumbers);
@@ -4119,30 +4839,28 @@ ${previewClone.outerHTML}
             // Wire up Wikipedia-style hover tooltips for footnote references
             setupFootnoteTooltips();
 
-            // Render all mermaid diagrams (in parallel) once the library is loaded
-            const mermaidElements = preview.querySelectorAll('.mermaid');
-            if (mermaidElements.length > 0) {
+            // Render all mermaid diagrams (memoized by source + theme) once the library is loaded
+            if (preview.querySelector('.mermaid')) {
                 if (mermaidReady) await mermaidReady;
-                await Promise.all(Array.from(mermaidElements).map(async (element) => {
-                    try {
-                        const { svg } = await mermaid.render(element.id + '-svg', element.textContent);
-                        element.innerHTML = svg;
-                    } catch (error) {
-                        element.innerHTML = `<pre style="color: red;">Mermaid Error: ${error.message}</pre>`;
-                    }
-                }));
+                await renderMermaidCached(preview);
             }
 
-            // Render all Schemata diagrams (await library if any are present)
+            // Render all Schemata diagrams (memoized; await library if any are present)
             if (preview.querySelector('[data-schemata]')) {
                 if (schemataReady) await schemataReady;
-                Schemata.renderAll(preview);
+                renderSchemataCached(preview);
             }
 
-            // Render all Kataskeve geometry diagrams
+            // Render all Kataskeve geometry diagrams (memoized)
             if (preview.querySelector('[data-kataskeve]')) {
                 if (kataskeveReady) await kataskeveReady;
-                Kataskeve.renderAll(preview);
+                renderKataskeveCached(preview);
+            }
+
+            // Render all ABC music-notation staves (memoized)
+            if (preview.querySelector('[data-abc]')) {
+                if (abcReady) await abcReady;
+                renderAbcCached(preview);
             }
 
             // Render all Plotly charts (await libraries; each fetches its CSV)
@@ -4313,7 +5031,7 @@ ${previewClone.outerHTML}
             // nearest-block scroll below.
             if (document.body.classList.contains('marp')) {
                 if (document.body.classList.contains('deck-mode')) {
-                    const slides = preview.querySelectorAll('div.marpit > svg[data-marpit-svg], section.footnotes-slide');
+                    const slides = preview.querySelectorAll('div.marpit > svg[data-marpit-svg]');
                     let idx = -1;
                     for (let i = 0; i < slides.length; i++) {
                         const sl = parseInt(slides[i].getAttribute('data-line') || '', 10);
@@ -4367,6 +5085,45 @@ ${previewClone.outerHTML}
             // momentum nudges the cursor onto a different block.
             suppressJumpUntil = Date.now() + 200;
             previewContainer.scrollTo({ top: Math.max(0, offset - topMargin), behavior: 'auto' });
+        };
+
+        // Inverse of applyEditorScroll: report the source line currently shown at
+        // the top of the preview viewport, so a freshly-opened editor (E key) can
+        // place its cursor where the reader is looking. Uses the same 25% top
+        // margin as applyEditorScroll so an open→edit→reopen round-trip is stable.
+        window.currentPreviewLine = function() {
+            try {
+                if (document.body.classList.contains('marp')) {
+                    // Deck / list mode: target the active slide's boundary line.
+                    if (document.body.classList.contains('deck-mode') ||
+                        document.body.classList.contains('list-mode')) {
+                        const slides = preview.querySelectorAll('div.marpit > svg[data-marpit-svg]');
+                        if (slides.length) {
+                            const idx = Math.max(0, Math.min(slides.length - 1, __marpDeckIndex | 0));
+                            const sl = parseInt(slides[idx].getAttribute('data-line') || '', 10);
+                            if (Number.isFinite(sl)) return sl;
+                        }
+                        return 1;
+                    }
+                    // Scroll mode falls through to the generic nearest-block scan
+                    // below (slide SVGs carry data-line).
+                }
+                const blocks = preview.querySelectorAll('[data-line]');
+                if (!blocks.length) return 1;
+                const containerTop = previewContainer.getBoundingClientRect().top;
+                const threshold = previewContainer.clientHeight * 0.25;
+                let bestLine = 1;
+                for (const el of blocks) {
+                    const elLine = parseInt(el.getAttribute('data-line'), 10);
+                    if (!Number.isFinite(elLine)) continue;
+                    const top = el.getBoundingClientRect().top - containerTop;
+                    if (top <= threshold) bestLine = elLine;
+                    else break;
+                }
+                return bestLine;
+            } catch (_) {
+                return 1;
+            }
         };
 
         // Intercept clicks on .md / .markdown links and re-open them via the host app.
@@ -4591,6 +5348,7 @@ ${previewClone.outerHTML}
             const scrollPos = isReload ? previewContainer.scrollTop : 0;
 
             currentMarkdown = fileData.content;
+            currentMarkdownRaw = (fileData.raw != null) ? fileData.raw : fileData.content;
             currentFilePath = fileData.filepath;
             setWindowTitle(fileData.filename);
             await renderMarkdown(currentMarkdown);

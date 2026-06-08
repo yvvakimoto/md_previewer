@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "capserver",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["C:/Users/wakimoto.yuki/Documents/works/md_previewer/.claude/worktrees/cool-curie-cd3cb1/temp/capserver.py"],
+      "port": 8766
+    }
+  ]
+}

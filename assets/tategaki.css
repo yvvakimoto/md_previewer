@@ -343,3 +343,11 @@ body.numbered #preview h4::before {
 #toc-sidebar {
     writing-mode: horizontal-tb;
 }
+
+/* --- テキスト配置 (::: center / right / left) を縦書きの論理軸へ写像 ---
+   vertical-rl ではインライン軸が上→下なので、物理 right/left ではなく
+   論理 end/start を使い「右寄せ＝行末（列の下端、以上）」「左寄せ＝行頭
+   （列の上端）」という縦書きの直感に合わせる。center は行内中央。 */
+#preview .align-center { text-align: center; }
+#preview .align-right  { text-align: end; }
+#preview .align-left   { text-align: start; }

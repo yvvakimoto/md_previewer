@@ -1,7 +1,21 @@
 /target
-/assets/libs/*
-!/assets/libs/schemata.js
-!/assets/libs/kataskeve.js
+
+# Generated artifacts under assets/libs/ — list each one explicitly so that
+# in-house source (schemata.js / kataskeve.js and any future hand-written
+# files or adapters) is TRACKED BY DEFAULT and never silently dropped.
+# When adding a new fetched/built library, add its path here too.
+#   - fetched by tools/fetch-libs.ps1 (pinned CDN downloads):
+/assets/libs/marked.min.js
+/assets/libs/mermaid.min.js
+/assets/libs/js-yaml.min.js
+/assets/libs/highlight.js/
+/assets/libs/katex/
+/assets/libs/plotly/
+/assets/libs/abcjs/
+#   - esbuild bundles built by tools/build-marp & tools/build-editor:
+/assets/libs/marp/
+/assets/libs/editor/
+
 /assets/THIRD_PARTY_LICENSES.txt
 /dist
 
