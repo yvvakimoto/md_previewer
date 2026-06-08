@@ -3971,11 +3971,48 @@ ${previewClone.outerHTML}
             cache.set(key, val);
         }
 
+        // Optional leading `scale: <factor>` directive on a mermaid block (mirrors
+        // Schemata's `scale:`). Returns { scale, body }: leading blank lines and
+        // any `scale:` lines are consumed, and `body` starts at the first real
+        // content line (the mermaid diagram-type declaration). The scale line MUST
+        // be stripped before mermaid.render — mermaid keys off the first line for
+        // the diagram type, so leaving it in would error.
+        function parseMermaidScale(src) {
+            const lines = src.split('\n');
+            let scale = 1, i = 0;
+            while (i < lines.length) {
+                const t = lines[i].trim();
+                if (t === '') { i++; continue; }
+                const m = t.match(/^scale:\s*([\d.]+)\s*$/);
+                if (m) { const s = parseFloat(m[1]); if (!isNaN(s) && s > 0) scale = s; i++; continue; }
+                break;
+            }
+            return { scale, body: lines.slice(i).join('\n') };
+        }
+        // Scale a rendered mermaid SVG by post-processing its root <svg> tag, the
+        // mermaid analogue of Schemata's applyScale(). mermaid v10 (useMaxWidth:true)
+        // sizes via `style="max-width: Npx"` + `width="100%"`, so multiplying the
+        // max-width grows/shrinks the figure within its container; fall back to the
+        // width/height attributes if no max-width is present (useMaxWidth:false).
+        function applyMermaidScale(svg, scale) {
+            if (!scale || scale === 1) return svg;
+            return svg.replace(/^<svg[^>]*>/, function (tag) {
+                if (/max-width:\s*[\d.]+px/.test(tag)) {
+                    return tag.replace(/max-width:\s*([\d.]+)px/,
+                        function (_, w) { return 'max-width: ' + (parseFloat(w) * scale).toFixed(2) + 'px'; });
+                }
+                return tag
+                    .replace(/\swidth="([\d.]+)"/,  function (_, w) { return ' width="'  + (parseFloat(w) * scale).toFixed(2) + '"'; })
+                    .replace(/\sheight="([\d.]+)"/, function (_, h) { return ' height="' + (parseFloat(h) * scale).toFixed(2) + '"'; });
+            });
+        }
+
         // Render every .mermaid element under `root`, reusing cached SVG when the
         // source (+ theme) is unchanged. mermaid.render needs a unique id, but
         // that path only runs on a cache miss where el.id is already per-render
         // unique. Errors are not cached so a transient typing-syntax error
-        // recovers on the next keystroke.
+        // recovers on the next keystroke. The cache key is the full source
+        // (incl. any `scale:` line), so changing the factor re-renders.
         async function renderMermaidCached(root) {
             const els = root.querySelectorAll('.mermaid');
             if (els.length === 0) return;
@@ -3985,7 +4022,9 @@ ${previewClone.outerHTML}
                 const cached = __mermaidCache.get(key);
                 if (cached !== undefined) { el.innerHTML = cached; return; }
                 try {
-                    const { svg } = await mermaid.render(el.id + '-svg', src);
+                    const { scale, body } = parseMermaidScale(src);
+                    let { svg } = await mermaid.render(el.id + '-svg', body);
+                    svg = applyMermaidScale(svg, scale);
                     __diagCacheSet(__mermaidCache, key, svg);
                     el.innerHTML = svg;
                 } catch (error) {
