@@ -265,6 +265,30 @@
         #preview .align-right  { text-align: right; }
         #preview .align-left   { text-align: left; }
 
+        /* Emphasized centered message (::: message). Minimal frame — emphasis
+           comes from large bold centered text plus thin accent rules. accent /
+           bg / text color are received via --md-message-* custom properties so a
+           Marp theme or user style can override them by setting the variable on
+           `section` / `#preview` — variable inheritance sidesteps the high
+           `#preview` ID specificity. Scoped to #preview so it reaches Marp slide
+           sections inside the foreignObject and carries into HTML export. */
+        #preview .md-message {
+            text-align: center;
+            font-size: 1.6em;
+            font-weight: 700;
+            line-height: 1.5;
+            max-width: 90%;
+            margin: 1.2em auto;
+            padding: 0.5em 0.8em;
+            color: var(--md-message-color, inherit);
+            background: var(--md-message-bg, transparent);
+            border-top: 2px solid var(--md-message-accent, #0366d6);
+            border-bottom: 2px solid var(--md-message-accent, #0366d6);
+        }
+        #preview .md-message > :first-child { margin-top: 0; }
+        #preview .md-message > :last-child  { margin-bottom: 0; }
+        body.dark-mode #preview .md-message { --md-message-accent: #58a6ff; }
+
         /* Blockquote attribution (> -- Author) */
         #preview blockquote > .bq-attribution {
             text-align: right;
@@ -1464,6 +1488,23 @@
             grid-column: 1 / -1;
             margin-top: 0;
         }
+
+        /* Inline column region — ::: columns … +++ … ::: で、スライド途中だけを
+           カラム化する（前後は通常の全幅1カラムのまま）。split が section 全体を
+           grid 化するのに対し、こちらは section 内の1ブロックを grid 化する。
+           列の中身は split と同じ .split-col クラスを再利用。列数は内部の
+           +++ 数（または columns-N 指定）で 2〜4 列。 */
+        body.marp #preview .inline-cols {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 30px;
+            align-items: start;
+            margin: 0.6em 0;
+        }
+        body.marp #preview .inline-cols.inline-cols-3 { grid-template-columns: repeat(3, 1fr); gap: 24px; }
+        body.marp #preview .inline-cols.inline-cols-4 { grid-template-columns: repeat(4, 1fr); gap: 20px; }
+        body.marp #preview .inline-cols > .split-col { min-width: 0; }
+        body.marp #preview .inline-cols > .split-col > :first-child { margin-top: 0; }
 
         /* Deck (single-slide presentation) mode */
         body.marp.deck-mode #preview-container { background: #000; }
@@ -3329,11 +3370,11 @@ ${previewClone.outerHTML}
                 name: 'alignDiv',
                 level: 'block',
                 start(src) {
-                    const i = src.search(/^:::+[ \t]*(center|centre|right|left)[ \t]*$/im);
+                    const i = src.search(/^:::+[ \t]*(center|centre|right|left|message)[ \t]*$/im);
                     return i < 0 ? undefined : i;
                 },
                 tokenizer(src) {
-                    const m = /^:::+[ \t]*(center|centre|right|left)[ \t]*\n([\s\S]*?)\n:::+[ \t]*(?:\n|$)/i.exec(src);
+                    const m = /^:::+[ \t]*(center|centre|right|left|message)[ \t]*\n([\s\S]*?)\n:::+[ \t]*(?:\n|$)/i.exec(src);
                     if (!m) return;
                     let align = m[1].toLowerCase();
                     if (align === 'centre') align = 'center';
@@ -3342,7 +3383,9 @@ ${previewClone.outerHTML}
                     return token;
                 },
                 renderer(token) {
-                    return '<div class="align-' + token.align + '">\n'
+                    // `message` → emphasized centered message box; others → text-align.
+                    const cls = token.align === 'message' ? 'md-message' : 'align-' + token.align;
+                    return '<div class="' + cls + '">\n'
                         + this.parser.parse(token.tokens) + '</div>\n';
                 }
             }]
@@ -4194,15 +4237,25 @@ ${previewClone.outerHTML}
                 markdown = out.join('\n');
             }
 
-            // Text-alignment pre-pass — convert `::: center` / `::: right` /
-            // `::: left` … `:::` fences into sentinel paragraphs that survive
-            // marp.render; the post-render DOM walk below wraps the enclosed
-            // blocks into <div class="align-…">. Skips fences inside fenced code
-            // blocks and the YAML front-matter. The `⦃ALIGN:…⦄` / `⦃/ALIGN⦄`
-            // sentinels share the Unicode bracket family with the footnote /
-            // split sentinels but use a distinct prefix, so they never collide.
+            // Fenced-div pre-pass (alignment + inline columns) — convert the
+            // `:::` fence family into sentinel paragraphs that survive marp.render;
+            // the post-render DOM walks below wrap the enclosed blocks accordingly:
+            //   • `::: center` / `::: right` / `::: left` … `:::`  → <div class="align-…">
+            //   • `::: columns` / `::: columns-3` … `+++` … `:::`  → inline column region
+            // Skips fences inside fenced code blocks and the YAML front-matter. The
+            // `⦃ALIGN:…⦄` / `⦃/ALIGN⦄` and `⦃COLS…⦄` / `⦃/COLS⦄` sentinels share the
+            // Unicode bracket family with the footnote / split sentinels but use
+            // distinct prefixes, so they never collide. Because `:::` closes either
+            // an alignment block or a columns block, a stack tracks the innermost
+            // open block so each `:::` emits the correct close sentinel — this also
+            // lets `::: center` nest inside a column. Inside a `columns` region a
+            // lone `+++` becomes a `⦃COL⦄` column boundary (the same sentinel the
+            // split pre-pass emits), so the columns post-pass reuses the bucket
+            // logic. (The split `+++` pre-pass above is non-split-slide-inert here,
+            // so on a normal slide it leaves the region's `+++` for us to handle.)
             const ALIGN_OPEN = '⦃ALIGN:';
             const ALIGN_CLOSE = '⦃/ALIGN⦄';
+            const COLS_CLOSE = '⦃/COLS⦄';
             {
                 const lines = markdown.split('\n');
                 const out = [];
@@ -4210,6 +4263,7 @@ ${previewClone.outerHTML}
                 let fmClosed = !inFm;
                 let inFence = false;
                 let fenceMarker = '';
+                const fenceStack = []; // 'align' | 'cols', innermost last
                 for (let i = 0; i < lines.length; i++) {
                     const ln = lines[i];
                     if (inFm && !fmClosed) {
@@ -4226,16 +4280,31 @@ ${previewClone.outerHTML}
                         continue;
                     }
                     if (!inFence) {
-                        const open = ln.match(/^:::+[ \t]*(center|centre|right|left)[ \t]*$/i);
+                        const open = ln.match(/^:::+[ \t]*(center|centre|right|left|message)[ \t]*$/i);
                         if (open) {
                             let a = open[1].toLowerCase();
                             if (a === 'centre') a = 'center';
+                            fenceStack.push('align');
                             // Blank line padding ensures the sentinel becomes its own <p>.
                             out.push(''); out.push(ALIGN_OPEN + a + '⦄'); out.push('');
                             continue;
                         }
+                        const openCols = ln.match(/^:::+[ \t]*columns(?:-([234]))?[ \t]*$/i);
+                        if (openCols) {
+                            fenceStack.push('cols');
+                            const tok = openCols[1] ? '⦃COLS:' + openCols[1] + '⦄' : '⦃COLS⦄';
+                            out.push(''); out.push(tok); out.push('');
+                            continue;
+                        }
                         if (/^:::+[ \t]*$/.test(ln)) {
-                            out.push(''); out.push(ALIGN_CLOSE); out.push('');
+                            const kind = fenceStack.pop();
+                            out.push('');
+                            out.push(kind === 'cols' ? COLS_CLOSE : ALIGN_CLOSE);
+                            out.push('');
+                            continue;
+                        }
+                        if (fenceStack[fenceStack.length - 1] === 'cols' && /^\s*\+\+\+\s*$/.test(ln)) {
+                            out.push(''); out.push(COL_SENTINEL); out.push('');
                             continue;
                         }
                     }
@@ -4430,6 +4499,50 @@ ${previewClone.outerHTML}
                 });
             });
 
+            // Inline columns post-pass — convert ⦃COLS⦄ / ⦃COLS:N⦄ … ⦃COL⦄ … ⦃/COLS⦄
+            // sentinel paragraphs into a <div class="inline-cols"> grid whose
+            // children are <div class="split-col"> buckets, so a slide can switch
+            // to multi-column partway through and back to single-column at `:::`.
+            // Combines the alignment post-pass shape (operate on the open sentinel's
+            // actual parent, walk nextSibling to the close sentinel) with the split
+            // post-pass bucketing (split at every ⦃COL⦄). Column count is the
+            // explicit `columns-N` if given, else the bucket count (clamped 2..4).
+            // Runs after the split post-pass and before the alignment post-pass so a
+            // `::: center` inside a column is still wrapped, and before the mermaid /
+            // schemata / csv substitution loop so diagrams land inside the column.
+            Array.from(preview.querySelectorAll('section p')).forEach(p => {
+                const m = /^⦃COLS(?::([234]))?⦄$/.exec(p.textContent.trim());
+                if (!m) return;
+                const wrap = document.createElement('div');
+                wrap.className = 'inline-cols';
+                p.parentNode.replaceChild(wrap, p);
+                const buckets = [[]];
+                let n = wrap.nextSibling;
+                while (n) {
+                    const next = n.nextSibling;
+                    if (n.nodeType === 1 && n.tagName === 'P' && n.textContent.trim() === COLS_CLOSE) {
+                        n.remove();
+                        break;
+                    }
+                    if (n.nodeType === 1 && n.tagName === 'P' && n.textContent.trim() === COL_SENTINEL) {
+                        n.remove();
+                        buckets.push([]);
+                        n = next;
+                        continue;
+                    }
+                    buckets[buckets.length - 1].push(n);
+                    n = next;
+                }
+                const count = Math.min(4, Math.max(2, m[1] ? +m[1] : buckets.length));
+                if (count >= 3) wrap.classList.add('inline-cols-' + count);
+                buckets.forEach(bucket => {
+                    const col = document.createElement('div');
+                    col.className = 'split-col';
+                    bucket.forEach(node => col.appendChild(node));
+                    wrap.appendChild(col);
+                });
+            });
+
             // Alignment post-pass — convert ⦃ALIGN:…⦄ / ⦃/ALIGN⦄ sentinel paragraphs
             // into <div class="align-…"> wrappers around the enclosed blocks.
             // Operating on each open sentinel's actual parent (rather than only
@@ -4438,10 +4551,10 @@ ${previewClone.outerHTML}
             // split post-pass, and before the mermaid/schemata substitution loop
             // (so a centered diagram still gets substituted inside the wrapper).
             Array.from(preview.querySelectorAll('section p')).forEach(p => {
-                const openM = /^⦃ALIGN:(center|right|left)⦄$/.exec(p.textContent.trim());
+                const openM = /^⦃ALIGN:(center|right|left|message)⦄$/.exec(p.textContent.trim());
                 if (!openM) return;
                 const div = document.createElement('div');
-                div.className = 'align-' + openM[1];
+                div.className = openM[1] === 'message' ? 'md-message' : 'align-' + openM[1];
                 p.parentNode.replaceChild(div, p);
                 let n = div.nextSibling;
                 while (n) {
