@@ -3449,16 +3449,6 @@ ${previewClone.outerHTML}
             });
         }
 
-        // Helper function to read file as text
-        function readFileAsText(file) {
-            return new Promise((resolve, reject) => {
-                const reader = new FileReader();
-                reader.onload = (e) => resolve(e.target.result);
-                reader.onerror = reject;
-                reader.readAsText(file);
-            });
-        }
-
         function handleDrop(e) {
             const dt = e.dataTransfer;
             const files = Array.from(dt.files);
@@ -3468,54 +3458,18 @@ ${previewClone.outerHTML}
             const imageFiles = files.filter(f => f.name.match(/\.(png|jpe?g|gif|svg|webp|ico|bmp|tiff?|avif)$/i));
 
             if (mdFile) {
-                handleMarkdownWithImages(mdFile, imageFiles);
+                // Markdown drops are handled by the Rust host
+                // (WindowEvent::DroppedFile -> OpenFile), which sets up the
+                // watcher / current_file / editor pairing exactly like a
+                // double-click. Both tao and the WebView2 HTML5 drop fire for the
+                // same file, so do nothing here to avoid loading it twice.
+                return;
             } else if (imageFiles.length > 0) {
                 // Single image viewing
                 handleImageFile(imageFiles[0]);
             } else {
                 alert('Please drop a markdown file (.md, .markdown) or image files');
             }
-        }
-
-        // Handle markdown file with optional image files
-        async function handleMarkdownWithImages(mdFile, imageFiles) {
-            // Build image map from dropped images
-            const imageMap = {};
-            for (const imgFile of imageFiles) {
-                const dataUrl = await readFileAsDataURL(imgFile);
-                // Map by filename (e.g., "test.png" -> dataUrl)
-                imageMap[imgFile.name] = dataUrl;
-            }
-
-            // Read markdown
-            const markdown = await readFileAsText(mdFile);
-
-            // Replace image references with base64 data URLs
-            const processedMarkdown = markdown.replace(
-                /!\[([^\]]*)\]\(([^)]+)\)/g,
-                (match, alt, path) => {
-                    // Skip URLs and data URIs
-                    if (path.startsWith('http://') || path.startsWith('https://') || path.startsWith('data:')) {
-                        return match;
-                    }
-                    // Extract filename from path (e.g., "images/test.png" -> "test.png")
-                    const filename = path.split('/').pop().split('\\').pop();
-                    if (imageMap[filename]) {
-                        return `![${alt}](${imageMap[filename]})`;
-                    }
-                    return match; // Keep original if no matching image
-                }
-            );
-
-            // Render
-            currentMarkdown = processedMarkdown;
-            currentMarkdownRaw = markdown;
-            currentFilePath = '';
-            await renderMarkdown(processedMarkdown);
-            dropZone.style.display = 'none';
-            appContainer.style.display = 'flex';
-            hideSplash();
-            setWindowTitle(mdFile.name);
         }
 
         // Handle single image file
@@ -3532,6 +3486,24 @@ ${previewClone.outerHTML}
             // Generate TOC for image (will show "No headings found")
             generateTOC();
         }
+
+        // Display a dropped image. The Rust file-drop handler routes single-image
+        // drops here (it has already pointed `current_dir` at the image's folder,
+        // so the `/userfile/` route resolves the bare filename). This is the live
+        // path for image drops on Windows — `handleImageFile` above only runs if
+        // the webview's HTML5 drag-drop is ever active (fallback).
+        window.loadImageFromRust = function(name) {
+            const url = toUserfileUrl(name);
+            currentMarkdown = '';
+            currentMarkdownRaw = '';
+            currentFilePath = '';
+            preview.innerHTML = `<p><img src="${url}" alt="${name.replace(/"/g, '&quot;')}" style="max-width: 100%; display: block; margin: 0 auto;"></p>`;
+            dropZone.style.display = 'none';
+            appContainer.style.display = 'flex';
+            hideSplash();
+            setWindowTitle(name);
+            generateTOC();
+        };
 
         function setWindowTitle(name) {
             if (window.ipc && typeof window.ipc.postMessage === 'function') {

@@ -80,6 +80,7 @@ enum CustomEvent {
     FileChanged(PathBuf),
     OpenFile(PathBuf),
     OpenDirectory(PathBuf),
+    OpenImage(PathBuf),
     DirectoryChanged,
     ToggleFullscreen,
     // Editor window lifecycle.
@@ -370,6 +371,20 @@ fn is_markdown_ext(p: &Path) -> bool {
     p.extension()
         .and_then(|e| e.to_str())
         .map(|e| e.eq_ignore_ascii_case("md") || e.eq_ignore_ascii_case("markdown"))
+        .unwrap_or(false)
+}
+
+fn is_image_ext(p: &Path) -> bool {
+    p.extension()
+        .and_then(|e| e.to_str())
+        .map(|e| {
+            let e = e.to_ascii_lowercase();
+            matches!(
+                e.as_str(),
+                "png" | "jpg" | "jpeg" | "gif" | "webp" | "svg"
+                    | "bmp" | "ico" | "avif" | "tif" | "tiff"
+            )
+        })
         .unwrap_or(false)
 }
 
@@ -1438,6 +1453,35 @@ fn main() -> wry::Result<()> {
         }
     });
 
+    // Drag-and-drop opening. On Windows, WebView2's own HTML5 drag-drop consumes
+    // file drops over the webview, so JS `drop` events never carry a file path
+    // (and only folders, which HTML5 can't accept, used to bubble up to tao's
+    // `WindowEvent::DroppedFile`). Registering a wry file-drop handler revokes
+    // WebView2's drop target and hands us the dropped items' real absolute paths —
+    // the only way to learn a dropped file's path. We route them through the same
+    // OpenDirectory / OpenFile / OpenImage pipelines as double-click / CLI /
+    // cross-file navigation, so `current_dir` / `current_file`, the file watcher,
+    // and the editor pairing are all set up identically (pressing `E` then opens
+    // the companion editor on a dropped file). Preference: directory > markdown >
+    // image; other files are ignored. NOTE: this disables the webview's HTML5
+    // drag-drop, so the JS `handleDrop` path in assets/index.html is now a
+    // no-op fallback only.
+    let file_drop_event_proxy = event_proxy.clone();
+    webview_builder = webview_builder.with_file_drop_handler(move |_window, event| {
+        if let wry::webview::FileDropEvent::Dropped(paths) = event {
+            if let Some(dir) = paths.iter().find(|p| p.is_dir()) {
+                let _ = file_drop_event_proxy.send_event(CustomEvent::OpenDirectory(dir.clone()));
+            } else if let Some(md) = paths.iter().find(|p| is_markdown_ext(p)) {
+                let _ = file_drop_event_proxy.send_event(CustomEvent::OpenFile(md.clone()));
+            } else if let Some(img) = paths.iter().find(|p| is_image_ext(p)) {
+                let _ = file_drop_event_proxy.send_event(CustomEvent::OpenImage(img.clone()));
+            }
+        }
+        // The return value is ignored by wry's Windows webview2 file-drop impl
+        // (the drop is always consumed since WebView2's HTML5 DnD was revoked).
+        false
+    });
+
     // Add initialization script if we have a file to load
     if !init_script.is_empty() {
         webview_builder = webview_builder.with_initialization_script(&init_script);
@@ -1617,8 +1661,11 @@ fn main() -> wry::Result<()> {
                 event: WindowEvent::DroppedFile(path),
                 ..
             } => {
-                // Folder drop opens a workspace. File drops fall through to the
-                // webview's own drag-drop handler (which supports md+images bundle).
+                // Drag-drop is normally handled by the wry file-drop handler
+                // registered on the webview (see `with_file_drop_handler` above),
+                // which has the real paths and routes folders / markdown / images.
+                // This tao-level event is a fallback for any drop that bypasses it;
+                // keep it folder-only as before.
                 if path.is_dir() {
                     let _ = event_proxy.send_event(CustomEvent::OpenDirectory(path));
                 }
@@ -1821,6 +1868,34 @@ fn main() -> wry::Result<()> {
                     if let Ok(wv) = webview.lock() {
                         let _ = wv.evaluate_script(&script);
                     }
+                }
+            }
+            Event::UserEvent(CustomEvent::OpenImage(path)) => {
+                let abs_path = to_abs(&path);
+                if !abs_path.exists() || !abs_path.is_file() {
+                    eprintln!("OpenImage: not a file: {:?}", abs_path);
+                    return;
+                }
+                // Point current_dir at the image's folder so the `/userfile/` route
+                // resolves the bare filename, then ask the webview to display it.
+                if let Some(parent) = abs_path.parent() {
+                    *current_dir.lock().unwrap() = Some(parent.to_path_buf());
+                }
+                // A dropped image is not a markdown document: clear current_file so
+                // the editor has nothing to (incorrectly) pair with.
+                *current_file.lock().unwrap() = None;
+                let name = abs_path
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_default();
+                let name_json = serde_json::to_string(&name).unwrap_or_else(|_| "\"\"".into());
+                let script = format!(
+                    "if (typeof window.loadImageFromRust === 'function') {{ window.loadImageFromRust({}); }}",
+                    name_json
+                );
+                if let Ok(wv) = webview.lock() {
+                    wv.window().set_title(&format_title(Some(&name)));
+                    let _ = wv.evaluate_script(&script);
                 }
             }
             Event::UserEvent(CustomEvent::OpenDirectory(path)) => {
