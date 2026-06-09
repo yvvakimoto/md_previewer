@@ -1484,6 +1484,10 @@
             max-width: none;
         }
         body.marp.deck-mode #slide-counter { display: block; }
+        /* Cursor-anchored zoom (Ctrl+wheel) + drag-pan on the active slide. */
+        body.marp.deck-mode.deck-zoomed #preview { overflow: hidden; }
+        body.marp.deck-mode.deck-zoomed #preview > div.marpit > svg[data-marpit-svg].active { cursor: grab; }
+        body.marp.deck-mode.deck-panning #preview > div.marpit > svg[data-marpit-svg].active { cursor: grabbing; }
 
         /* List (grid overview) mode — every slide as a clickable 16:9 thumbnail. */
         body.marp.list-mode #preview {
@@ -1949,6 +1953,80 @@
             previewContainer.scrollLeft += delta * dir;
             e.preventDefault();
         }, { passive: false });
+
+        // Marp deck-mode: Ctrl+wheel zooms the active slide centered on the cursor.
+        // (Independent of the vertical-writing wheel handler above, which bails
+        // unless writing-mode is vertical.) We intercept and preventDefault so
+        // WebView2's built-in browser zoom (with_hotkeys_zoom) doesn't also fire;
+        // outside deck mode that browser zoom is left untouched.
+        previewContainer.addEventListener('wheel', (e) => {
+            if (!e.ctrlKey) return;
+            if (!document.body.classList.contains('marp')
+                || !document.body.classList.contains('deck-mode')) return;
+            const svg = __marpSlides()[__marpDeckIndex];
+            if (!svg) return;
+            e.preventDefault();
+            e.stopPropagation();
+            // Cache the identity-state geometry on the first zoom of a slide. It is only
+            // dropped by __resetMarpZoom (slide change / resize / mode exit), at which
+            // point scale is 1 and the transform is cleared, so getBoundingClientRect ==
+            // base. We then derive the rendered box logically from base + tx/ty/scale,
+            // which stays accurate even while a zoom animation is in flight (re-measuring
+            // mid-animation — e.g. zoom out to 1 then immediately back in — would read the
+            // still-transformed box and corrupt the base).
+            if (!__marpZoomBase) {
+                const r = svg.getBoundingClientRect();
+                __marpZoomBase = { left: r.left, top: r.top, w: r.width, h: r.height };
+            }
+            const b = __marpZoomBase;
+            const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+            const next = Math.min(__MARP_ZOOM_MAX, Math.max(__MARP_ZOOM_MIN, __marpZoom.scale * factor));
+            const f = next / __marpZoom.scale;          // effective ratio after clamping
+            // Keep the content point under the cursor fixed. With origin 0 0 and
+            // accumulated tx/ty, the rendered top-left is base + (tx, ty).
+            const fx = e.clientX - (b.left + __marpZoom.tx), fy = e.clientY - (b.top + __marpZoom.ty);
+            __marpZoom.tx -= fx * (f - 1);
+            __marpZoom.ty -= fy * (f - 1);
+            __marpZoom.scale = next;
+            if (next <= 1.0001) { __marpZoom.scale = 1; __marpZoom.tx = 0; __marpZoom.ty = 0; }
+            __clampMarpPan();
+            // Animate toward the target zoom level (CSS transition on transform).
+            svg.style.transition = __MARP_ZOOM_ANIM;
+            __applyMarpZoom();
+        }, { passive: false });
+
+        // Marp deck-mode: drag the zoomed slide to pan.
+        previewContainer.addEventListener('mousedown', (e) => {
+            if (e.button !== 0) return;
+            if (!document.body.classList.contains('marp')
+                || !document.body.classList.contains('deck-mode')) return;
+            if (__marpZoom.scale <= 1) return;
+            const svg = __marpSlides()[__marpDeckIndex];
+            if (!svg || !(e.target instanceof Node) || !svg.contains(e.target)) return;
+            __marpPan = { startX: e.clientX, startY: e.clientY, baseTx: __marpZoom.tx, baseTy: __marpZoom.ty };
+            svg.style.transition = 'none';   // drag must track the cursor with no easing lag
+            document.body.classList.add('deck-panning');
+            e.preventDefault();
+        });
+        window.addEventListener('mousemove', (e) => {
+            if (!__marpPan) return;
+            __marpZoom.tx = __marpPan.baseTx + (e.clientX - __marpPan.startX);
+            __marpZoom.ty = __marpPan.baseTy + (e.clientY - __marpPan.startY);
+            __clampMarpPan();
+            __applyMarpZoom();
+        });
+        function __endMarpPan() {
+            if (!__marpPan) return;
+            __marpPan = null;
+            document.body.classList.remove('deck-panning');
+        }
+        window.addEventListener('mouseup', __endMarpPan);
+        window.addEventListener('blur', __endMarpPan);
+        // A window resize invalidates the cached identity geometry (slide is re-laid
+        // out to fit the new viewport), so drop the zoom back to 1:1/centered.
+        window.addEventListener('resize', () => {
+            if (document.body.classList.contains('deck-zoomed')) __resetMarpZoom();
+        });
 
         // Line number toggle (L key)
         if (localStorage.getItem('showLineNumbers') === 'true') {
@@ -3876,15 +3954,27 @@ ${previewClone.outerHTML}
         // documented in renderMarp() below.
         let __marpDeckIndex = 0;
         let __marpLastRenderedPath = null;
+        // Deck-mode cursor-anchored zoom + drag-pan state. Applied as a CSS
+        // transform on the active slide <svg> (transform-origin 0 0). tx/ty are
+        // accumulated in screen px; see the Ctrl+wheel listener below.
+        let __marpZoom = { scale: 1, tx: 0, ty: 0 };
+        let __marpPan = null;            // while dragging: { startX, startY, baseTx, baseTy }
+        let __marpZoomBase = null;       // cached identity-state geometry { left, top, w, h }
+        const __MARP_ZOOM_MIN = 1, __MARP_ZOOM_MAX = 8;
+        const __MARP_ZOOM_ANIM = 'transform 0.16s ease-out';
         function __marpSlides() {
             return preview.querySelectorAll('div.marpit > svg[data-marpit-svg]');
         }
         function setMarpView(mode) {
+            if (mode !== 'deck') __resetMarpZoom();
             document.body.classList.toggle('deck-mode', mode === 'deck');
             document.body.classList.toggle('list-mode', mode === 'list');
             localStorage.setItem('marpView', mode);
         }
         function __marpUpdateDeck() {
+            // Slide change / deck entry / re-render all funnel through here, so
+            // resetting zoom here guarantees each slide starts at 1:1, centered.
+            __resetMarpZoom();
             const slides = __marpSlides();
             if (slides.length === 0) return;
             if (__marpDeckIndex < 0) __marpDeckIndex = 0;
@@ -3892,6 +3982,36 @@ ${previewClone.outerHTML}
             slides.forEach((s, i) => s.classList.toggle('active', i === __marpDeckIndex));
             const counter = document.getElementById('slide-counter');
             if (counter) counter.textContent = (__marpDeckIndex + 1) + ' / ' + slides.length;
+        }
+        // Apply the current __marpZoom transform to the active slide <svg>.
+        function __applyMarpZoom() {
+            const svg = __marpSlides()[__marpDeckIndex];
+            if (!svg) return;
+            const z = __marpZoom;
+            svg.style.transformOrigin = '0 0';
+            svg.style.transform = 'translate(' + z.tx + 'px,' + z.ty + 'px) scale(' + z.scale + ')';
+            document.body.classList.toggle('deck-zoomed', z.scale > 1.0001);
+        }
+        // Restore 1:1 / centered: clear every slide's inline transform/transition and drop flags.
+        function __resetMarpZoom() {
+            __marpZoom = { scale: 1, tx: 0, ty: 0 };
+            __marpPan = null;
+            __marpZoomBase = null;
+            __marpSlides().forEach(s => { s.style.transform = ''; s.style.transformOrigin = ''; s.style.transition = ''; });
+            document.body.classList.remove('deck-zoomed', 'deck-panning');
+        }
+        // Keep the slide overlapping the viewport: tx/ty may range over the extra
+        // size gained by zooming (base size × (scale-1)); at 1:1 they snap to 0.
+        // Uses the cached identity geometry so it stays correct mid-animation
+        // (a live getBoundingClientRect would return the in-flight transformed box).
+        function __clampMarpPan() {
+            const z = __marpZoom;
+            if (z.scale <= 1) { z.tx = 0; z.ty = 0; return; }
+            const b = __marpZoomBase;
+            if (!b) return;
+            const maxX = b.w * (z.scale - 1), maxY = b.h * (z.scale - 1);
+            z.tx = Math.min(0, Math.max(-maxX, z.tx));
+            z.ty = Math.min(0, Math.max(-maxY, z.ty));
         }
 
         // ---- Diagram render memoization (shared by renderMarp + renderMarkdown) ----
@@ -5403,6 +5523,7 @@ ${previewClone.outerHTML}
                     <tr><td class="keys"><kbd>P</kbd></td><td>Cycle Marp view: scroll → deck → list (click a thumbnail in list to open it in deck)</td></tr>
                     <tr><td class="keys"><kbd>F</kbd></td><td>Toggle fullscreen (Marp documents)</td></tr>
                     <tr><td class="keys"><kbd>←</kbd> / <kbd>→</kbd> / <kbd>PgUp</kbd> / <kbd>PgDn</kbd> / <kbd>Home</kbd> / <kbd>End</kbd></td><td>Navigate slides in Marp deck mode</td></tr>
+                    <tr><td class="keys"><kbd>Ctrl</kbd>+<kbd>Wheel</kbd> / Drag</td><td>Zoom at cursor / pan the slide (Marp deck mode)</td></tr>
                     <tr><td class="keys"><kbd>Esc</kbd></td><td>Close this dialog</td></tr>
                 </tbody>
             </table>
