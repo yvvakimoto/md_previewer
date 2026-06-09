@@ -13,7 +13,7 @@
 
   Sections:
     1. Directly bundled stand-alone libraries (marked, mermaid, katex,
-       highlight.js, schemata). The license body is read from a local
+       highlight.js). The license body is read from a local
        fallback file under tools/license-texts/ (kept in repo so the
        script has no network dependency).
     2. Transitive npm dependencies of the marp-core IIFE bundle
@@ -88,10 +88,6 @@ $direct = @(
     Upstream='https://github.com/mermaid-js/mermaid';
     Path='assets/libs/mermaid.min.js';
     LicenseFile='tools/license-texts/mermaid.LICENSE' }
-  [pscustomobject]@{ Name='Schemata (in-house)'; Version='—'; Spdx='Proprietary (md-previewer)';
-    Upstream='(this repository)';
-    Path='assets/libs/schemata.js';
-    LicenseFile='tools/license-texts/schemata.LICENSE' }
   [pscustomobject]@{ Name='Plotly.js (dist-min)'; Version='2.35.2'; Spdx='MIT';
     Upstream='https://github.com/plotly/plotly.js';
     Path='assets/libs/plotly/plotly.min.js';

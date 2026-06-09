@@ -83,32 +83,6 @@ graph LR
 
 ---
 
-## Schemata（図解）
-
-```schemata
-matrix 2x2
-title: SWOT分析
-scale: 1.3
-
-- 強み / Strength #c-teal
-  - 独自技術
-  - ブランド認知度
-
-- 弱み / Weakness #c-coral
-  - 人材不足
-  - 海外展開の経験が浅い
-
-- 機会 / Opportunity #c-blue
-  - 新興国市場
-  - デジタル化の加速
-
-- 脅威 / Threat #c-amber
-  - 競合の台頭
-  - 原材料コスト上昇
-```
-
----
-
 ## ABC 楽譜
 
 本ツールの拡張により、`abc` フェンスで [ABC 記譜法](https://abcnotation.com/) が五線譜として描画されます。図中央寄せの対象なので、スライド内で縦方向に整列します。
@@ -263,7 +237,7 @@ Marp 標準では生 HTML が必要な「左右分割」を、`<!-- _class: spli
 
 ### 柔軟
 
-各カラムには見出し、リスト、コード、画像、数式、脚注、mermaid、schemata（図解）まで配置できます。
+各カラムには見出し、リスト、コード、画像、数式、脚注、mermaid まで配置できます。
 
 +++
 
