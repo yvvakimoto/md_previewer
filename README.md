@@ -25,7 +25,7 @@ Windows 専用の、軽量なスタンドアロン Markdown プレビューア�
 | オフライン動作 | ◯（CDN 不使用、全アセット同梱） | ◯ | ◯ | ◯ |
 | **CSS テーマの追加方法** | **`assets/` に `.css` を 1 枚置くだけ**（`S` キーのモーダルで選択） | `settings.json` の `markdown.styles` に絶対パス／URL を列挙 | コミュニティテーマのインストール／`.obsidian/snippets/` に CSS 配置 | テーマフォルダに `.css` 配置（命名規約あり） |
 | ライセンス | OSS（無償） | OSS（無償） | 個人利用無償／商用有償 | **有償**（v1.0 以降ライセンス購入が必要） |
-| 拡張記法 | Mermaid / KaTeX / Marp スライド / Schemata 構造化図解 / CSV・TSV テーブル / **外部CSV→Plotly 対話的チャート** / **Kataskeve 初等幾何作図** / Footnote ツールチップ（標準同梱） | 多くは拡張機能の追加導入が必要 | コアおよびプラグインで対応 | Mermaid / KaTeX 等を内蔵（Marp 非対応） |
+| 拡張記法 | Mermaid / KaTeX / Marp スライド / Schemata 構造化図解 / CSV・TSV テーブル / **外部CSV→Plotly 対話的チャート** / Footnote ツールチップ（標準同梱） | 多くは拡張機能の追加導入が必要 | コアおよびプラグインで対応 | Mermaid / KaTeX 等を内蔵（Marp 非対応） |
 | 単独 HTML エクスポート | ◯（`X` キー、KaTeX・Mermaid 等をインライン化した自己完結 HTML） | △（拡張機能依存） | △（プラグイン依存） | ◯ |
 
 ### 補足
@@ -151,7 +151,6 @@ md-previewer.exe path\to\folder
 - **Marp スライド途中からのカラム** — Marp スライドで `::: columns` … `+++` … `:::` で囲むと、その範囲だけを複数カラムにできます（前後は全幅の1カラムのまま。`:::` で1カラムへ復帰）。列は内部の `+++` で区切り、`::: columns-3` のように列数の明示も可能（2〜4 列）。スライド全体を分割する `<!-- _class: split -->` と違い、途中の一部だけをカラム化したいときに使います。列内に `::: center` も入れ子にできます。[Marp のサンプル](samples/marp.md) 参照
 - **CSV / TSV コードブロック** — ` ```csv ` / ` ```tsv ` で囲むと表として描画
 - **Plotly 対話的チャート（外部CSV/TSVから）** — ` ```plotly ` フェンスブロックに `file: data.csv` と `type:` / `x:` / `y:` を YAML で書くだけで、Plotly.js による折れ線・散布・棒・ヒストグラム・箱ひげ・ヒートマップ・3Dサーフェスを描画。CSV ファイルを更新すると自動でグラフが追従。 [Plotly のサンプル](samples/plotly.md) 参照
-- **Kataskeve 初等幾何作図** — ` ```kataskeve ` フェンスに式志向 DSL（`A = point(0,0)` / `triangle(A,B,C)` / `circle3(P,Q,R)` / `midpoint` / `foot` / `orthocenter` / `intersection` / `point_on(circle, deg)` / `rotate` / `reflect` ほか）を書くと SVG として展開。Eukleides に着想を得た独自実装（GPL コードは流用していません）。九点円・パスカルの定理など補助線つきの構図を 1 ブロックで描けます。フェンス名 *Kataskeve* はエウクレイデスが『原論』で命題の作図ステップに用いた古典ギリシャ語 κατασκευή に由来します（npm パッケージ `euclid.js` および Microsoft Store の同名 UWP アプリ *Sakuzu* との衝突を避けるため、過去の作業名 *euclid* / *sakuzu* から差し替えています）。[Kataskeve のサンプル](samples/kataskeve.md) 参照
 - **ABC 楽譜** — ` ```abc ` フェンスに [ABC 記譜法](https://abcnotation.com/) を書くと、[abcjs](https://github.com/paulrosen/abcjs)（MIT）によって五線譜 SVG として描画。調号・拍子・和音・スラー・タイ・歌詞（`w:`）などに対応（描画のみ。音声再生は非対応）。一般文書・Marp スライド両対応、HTML エクスポートにもインライン SVG として追従。[ABC のサンプル](samples/abcjs.md) 参照
 - **画像**
   - 相対パスは Markdown ファイルのあるフォルダを基準に解決
@@ -283,7 +282,6 @@ Marp 標準の `default` / `gaia` / `uncover` も追加設定なしで利用可�
 | `csv-tsv.md` | CSV / TSV コードブロックの表変換 |
 | `plotly.md` | 外部 CSV を読み込んで Plotly でチャート化 |
 | `video.md` | ローカル動画 / YouTube 埋め込み（画像記法を流用） |
-| `kataskeve.md` | Kataskeve 初等幾何作図（九点円・パスカルの定理 ほか） |
 | `abcjs.md` | ABC 記譜法の楽譜描画（旋律・調号・和音・歌詞 ほか） |
 | `links.md` + `links-other.md` | クロスファイル `.md` リンクと履歴ナビ |
 | `marp.md` | Marp スライドモード |

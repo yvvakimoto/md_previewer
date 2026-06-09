@@ -1,7 +1,7 @@
 /target
 
 # Generated artifacts under assets/libs/ — list each one explicitly so that
-# in-house source (schemata.js / kataskeve.js and any future hand-written
+# in-house source (schemata.js and any future hand-written
 # files or adapters) is TRACKED BY DEFAULT and never silently dropped.
 # When adding a new fetched/built library, add its path here too.
 #   - fetched by tools/fetch-libs.ps1 (pinned CDN downloads):

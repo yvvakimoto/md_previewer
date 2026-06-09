@@ -432,33 +432,6 @@
             color: #ffa198;
         }
 
-        /* Kataskeve geometry diagrams (assets/libs/kataskeve.js) */
-        .kataskeve {
-            margin: 16px 0;
-            text-align: center;
-        }
-        .kataskeve svg {
-            max-width: 100%;
-            height: auto;
-        }
-        .kataskeve-error {
-            margin: 16px 0;
-            padding: 12px 16px;
-            border: 1px solid #d73a49;
-            border-radius: 4px;
-            background: #ffeef0;
-            color: #b31d28;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', monospace;
-            font-size: 0.9em;
-            white-space: pre-wrap;
-            text-align: left;
-        }
-        body.dark-mode .kataskeve-error {
-            background: #2a0d10;
-            border-color: #f85149;
-            color: #ffa198;
-        }
-
         /* ABC music notation (abcjs, assets/libs/abcjs/) */
         .abc-notation {
             margin: 16px 0;
@@ -1123,8 +1096,8 @@
                 max-width: 100%;
             }
 
-            /* Also prevent breaks in mermaid diagrams, math expressions, Schemata, and Kataskeve */
-            .mermaid, .katex-display, .schemata, .kataskeve {
+            /* Also prevent breaks in mermaid diagrams, math expressions, and Schemata */
+            .mermaid, .katex-display, .schemata {
                 break-inside: avoid;
                 page-break-inside: avoid;
             }
@@ -1441,8 +1414,7 @@
                collapses mermaid/schemata wrapper width and shrinks the inline SVG. */
         }
         body.marp #preview section.marp-has-figs > .marp-figure-stage > .mermaid,
-        body.marp #preview section.marp-has-figs > .marp-figure-stage > .schemata,
-        body.marp #preview section.marp-has-figs > .marp-figure-stage > .kataskeve {
+        body.marp #preview section.marp-has-figs > .marp-figure-stage > .schemata {
             margin: 0;
             text-align: center;
         }
@@ -1782,7 +1754,6 @@
         }
         function ensureKatex() { return loadLib('libs/katex/katex.min.js'); }
         function ensureSchemata() { return loadLib('libs/schemata.js'); }
-        function ensureKataskeve() { return loadLib('libs/kataskeve.js'); }
         // abcjs ships only a browser-global IIFE (window.ABCJS); lazy-load it the
         // first time an ```abc block is rendered.
         function ensureAbcjs() { return loadLib('libs/abcjs/abcjs-basic-min.js'); }
@@ -1958,7 +1929,6 @@
         let mermaidCounter = 0;
         let schemataCounter = 0;
         let plotlyCounter = 0;
-        let kataskeveCounter = 0;
         let abcCounter = 0;
         let currentMarkdown = '';
         // Un-embedded source markdown (relative image paths intact). Mirrors
@@ -3945,17 +3915,16 @@ ${previewClone.outerHTML}
 
         // ---- Diagram render memoization (shared by renderMarp + renderMarkdown) ----
         // #preview is rebuilt via innerHTML on every render, so the previously
-        // rendered SVGs are discarded and the (expensive) mermaid / schemata /
-        // kataskeve renderers would re-run for every diagram on every live-edit
+        // rendered SVGs are discarded and the (expensive) mermaid / schemata
+        // renderers would re-run for every diagram on every live-edit
         // keystroke even when a diagram's source is unchanged. Cache the rendered
         // SVG/HTML keyed by (theme-salt + source) so an unchanged diagram just
-        // re-attaches its prior output. mermaid / schemata / kataskeve all vary
+        // re-attaches its prior output. mermaid / schemata all vary
         // their output with the app dark/light theme (body.dark-mode), so the
         // key is salted with the current mode. A simple FIFO cap bounds memory
         // across long sessions.
         const __mermaidCache = new Map();
         const __schemataCache = new Map();
-        const __kataskeveCache = new Map();
         // abcjs output is monochrome (dark mode is handled by CSS recolor, not by
         // varying the rendered bytes), so its cache is keyed by the raw source —
         // no theme salt — to keep entries valid across the M-key toggle. The SVG is
@@ -4057,25 +4026,8 @@ ${previewClone.outerHTML}
             });
         }
 
-        // Render every [data-kataskeve] element under `root`, reusing cached
-        // SVG/HTML when unchanged. Kataskeve.render swallows its own errors into
-        // a .kataskeve-error block, so the returned string is always cacheable.
-        function renderKataskeveCached(root) {
-            root.querySelectorAll('[data-kataskeve]').forEach((el) => {
-                let src;
-                try { src = decodeURIComponent(el.getAttribute('data-kataskeve-source') || ''); }
-                catch (e) { src = el.textContent || ''; }
-                const key = __diagKey(src);
-                const cached = __kataskeveCache.get(key);
-                if (cached !== undefined) { el.innerHTML = cached; return; }
-                const html = Kataskeve.render(src);
-                __diagCacheSet(__kataskeveCache, key, html);
-                el.innerHTML = html;
-            });
-        }
-
         // Render every [data-abc] element under `root` as an inline ABC-notation
-        // staff via abcjs. Unlike Schemata/Kataskeve (which return an HTML string),
+        // staff via abcjs. Unlike Schemata (which returns an HTML string),
         // abcjs renders directly into the element, so we snapshot el.innerHTML after
         // rendering to memoize it. Keyed by the raw source (theme-independent).
         //
@@ -4644,13 +4596,6 @@ ${previewClone.outerHTML}
                     div.id = 'marp-plotly-' + (plotlyCounter++);
                     div.setAttribute('data-plotly-source', encodeURIComponent(code.textContent));
                     pre.replaceWith(div);
-                } else if (lang === 'kataskeve') {
-                    const div = document.createElement('div');
-                    div.className = 'kataskeve';
-                    div.id = 'marp-kataskeve-' + (kataskeveCounter++);
-                    div.setAttribute('data-kataskeve', '1');
-                    div.setAttribute('data-kataskeve-source', encodeURIComponent(code.textContent));
-                    pre.replaceWith(div);
                 } else if (lang === 'abc') {
                     const div = document.createElement('div');
                     div.className = 'abc-notation';
@@ -4677,7 +4622,7 @@ ${previewClone.outerHTML}
             };
             const isFigureChild = (el) => {
                 if (el.nodeType !== 1) return false;
-                if (el.matches('.mermaid, .schemata, .csv-table, table, .kataskeve, .abc-notation, video, iframe.video-embed, .video-embed')) return true;
+                if (el.matches('.mermaid, .schemata, .csv-table, table, .abc-notation, video, iframe.video-embed, .video-embed')) return true;
                 if (isImageParagraph(el)) return true;
                 return false;
             };
@@ -4743,13 +4688,6 @@ ${previewClone.outerHTML}
                 await ensureSchemata();
                 await new Promise(r => requestAnimationFrame(() => r()));
                 renderSchemataCached(preview);
-            }
-
-            // Render Kataskeve geometry diagrams in slides (memoized).
-            if (preview.querySelector('[data-kataskeve]')) {
-                await ensureKataskeve();
-                await new Promise(r => requestAnimationFrame(() => r()));
-                renderKataskeveCached(preview);
             }
 
             // Render ABC music-notation staves in slides (memoized).
@@ -4852,13 +4790,11 @@ ${previewClone.outerHTML}
             const needsSchemata = /```schemata\b/.test(processedMarkdown);
             const needsKatex = mathBlocks.length > 0;
             const needsPlotly = /```plotly\b/.test(processedMarkdown);
-            const needsKataskeve = /```kataskeve\b/.test(processedMarkdown);
             const needsAbc = /```abc\b/.test(processedMarkdown);
             const mermaidReady = needsMermaid ? ensureMermaid() : null;
             const schemataReady = needsSchemata ? ensureSchemata() : null;
             const katexReady = needsKatex ? ensureKatex() : null;
             const plotlyReady = needsPlotly ? Promise.all([ensureJsYaml(), ensurePlotly()]) : null;
-            const kataskeveReady = needsKataskeve ? ensureKataskeve() : null;
             const abcReady = needsAbc ? ensureAbcjs() : null;
 
             // Flush the prior render's tracked CSV files so the Rust watcher only
@@ -4892,15 +4828,6 @@ ${previewClone.outerHTML}
                 textarea.innerHTML = code;
                 const decoded = textarea.value;
                 return `<div class="schemata" id="${id}" data-schemata="1" data-schemata-source="${encodeURIComponent(decoded)}"></div>`;
-            });
-
-            // Replace kataskeve code blocks with kataskeve divs
-            html = html.replace(/<pre><code class="language-kataskeve">([\s\S]*?)<\/code><\/pre>/g, (match, code) => {
-                const id = `kataskeve-${kataskeveCounter++}`;
-                const textarea = document.createElement('textarea');
-                textarea.innerHTML = code;
-                const decoded = textarea.value;
-                return `<div class="kataskeve" id="${id}" data-kataskeve="1" data-kataskeve-source="${encodeURIComponent(decoded)}"></div>`;
             });
 
             // Replace abc code blocks with abc-notation divs (rendered via abcjs)
@@ -5002,12 +4929,6 @@ ${previewClone.outerHTML}
             if (preview.querySelector('[data-schemata]')) {
                 if (schemataReady) await schemataReady;
                 renderSchemataCached(preview);
-            }
-
-            // Render all Kataskeve geometry diagrams (memoized)
-            if (preview.querySelector('[data-kataskeve]')) {
-                if (kataskeveReady) await kataskeveReady;
-                renderKataskeveCached(preview);
             }
 
             // Render all ABC music-notation staves (memoized)

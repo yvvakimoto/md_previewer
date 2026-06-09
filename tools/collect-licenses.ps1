@@ -92,10 +92,6 @@ $direct = @(
     Upstream='(this repository)';
     Path='assets/libs/schemata.js';
     LicenseFile='tools/license-texts/schemata.LICENSE' }
-  [pscustomobject]@{ Name='Kataskeve (in-house)'; Version='—'; Spdx='Proprietary (md-previewer)';
-    Upstream='(this repository)';
-    Path='assets/libs/kataskeve.js';
-    LicenseFile='tools/license-texts/kataskeve.LICENSE' }
   [pscustomobject]@{ Name='Plotly.js (dist-min)'; Version='2.35.2'; Spdx='MIT';
     Upstream='https://github.com/plotly/plotly.js';
     Path='assets/libs/plotly/plotly.min.js';
