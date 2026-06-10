@@ -1564,6 +1564,26 @@
         body.marp.deck-mode.deck-zoomed #preview > div.marpit > svg[data-marpit-svg].active { cursor: grab; }
         body.marp.deck-mode.deck-panning #preview > div.marpit > svg[data-marpit-svg].active { cursor: grabbing; }
 
+        /* Laser pointer (Z key, deck mode). A viewport-fixed canvas overlay tracks
+           the physical cursor (clientX/clientY), so it is correct regardless of the
+           deck zoom/pan transform on the active slide. Color is CSS-specified via
+           --laser-color: a Marp theme can set it on `section`; this :root value is
+           the fallback used by the built-in themes that don't define it. */
+        :root { --laser-color: #ff2d2d; }
+        #laser-canvas {
+            display: none;
+            position: fixed;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 9500;
+        }
+        body.laser-on #laser-canvas { display: block; }
+        /* Hide the OS cursor over the slide while the laser is active. */
+        body.marp.deck-mode.laser-on #preview,
+        body.marp.deck-mode.laser-on #preview * { cursor: none; }
+
         /* List (grid overview) mode — every slide as a clickable 16:9 thumbnail. */
         body.marp.list-mode #preview {
             padding: 24px;
@@ -2101,6 +2121,7 @@
         // out to fit the new viewport), so drop the zoom back to 1:1/centered.
         window.addEventListener('resize', () => {
             if (document.body.classList.contains('deck-zoomed')) __resetMarpZoom();
+            if (__laserOn) __resizeLaserCanvas();
         });
 
         // Line number toggle (L key)
@@ -2273,6 +2294,12 @@
                 return;
             }
             if (!document.body.classList.contains('deck-mode')) return;
+            if (e.key === 'z' || e.key === 'Z') {
+                e.preventDefault();
+                setLaser(!__laserOn);
+                showToast('Laser: ' + (__laserOn ? 'on' : 'off'));
+                return;
+            }
             if (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === ' ') {
                 e.preventDefault(); __marpDeckIndex++; __marpUpdateDeck();
             } else if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
@@ -4055,7 +4082,7 @@ ${previewClone.outerHTML}
             return preview.querySelectorAll('div.marpit > svg[data-marpit-svg]');
         }
         function setMarpView(mode) {
-            if (mode !== 'deck') __resetMarpZoom();
+            if (mode !== 'deck') { __resetMarpZoom(); if (__laserOn) setLaser(false); }
             document.body.classList.toggle('deck-mode', mode === 'deck');
             document.body.classList.toggle('list-mode', mode === 'list');
             localStorage.setItem('marpView', mode);
@@ -4102,6 +4129,114 @@ ${previewClone.outerHTML}
             z.tx = Math.min(0, Math.max(-maxX, z.tx));
             z.ty = Math.min(0, Math.max(-maxY, z.ty));
         }
+
+        // ---- Laser pointer (Z key, deck mode) ----------------------------------
+        // A viewport-fixed <canvas> overlay (pointer-events:none) tracks the physical
+        // cursor and draws a glowing head dot + a short fading comet trail. Because it
+        // follows clientX/clientY it is correct regardless of the active slide's
+        // zoom/pan transform, and it never preventDefaults so Ctrl+wheel zoom / drag-pan
+        // keep working underneath. The RAF loop runs only while the laser is on.
+        let __laserOn = false;
+        let __laserPoints = [];          // [{x, y, t}] recent cursor samples (screen px)
+        let __laserRAF = null;
+        const __LASER_TRAIL_MS = 260;    // a sample fully fades out after this long (short tail)
+        const __LASER_HEAD_R = 7;        // head dot radius (px)
+        // Resolve the laser color: a Marp theme can set `section { --laser-color }`,
+        // so read it from the active slide's <section> first; fall back to the :root
+        // default in index.html, then a hard-coded red.
+        function __laserColor() {
+            const svg = __marpSlides()[__marpDeckIndex];
+            const section = svg && svg.querySelector('foreignObject section');
+            let c = '';
+            if (section) c = getComputedStyle(section).getPropertyValue('--laser-color').trim();
+            if (!c) c = getComputedStyle(document.documentElement).getPropertyValue('--laser-color').trim();
+            return c || '#ff2d2d';
+        }
+        function __laserCanvas() { return document.getElementById('laser-canvas'); }
+        // Size the backing store to device pixels and scale the context so the dot
+        // and trail stay crisp on HiDPI displays.
+        function __resizeLaserCanvas() {
+            const cv = __laserCanvas();
+            if (!cv) return;
+            const dpr = window.devicePixelRatio || 1;
+            cv.width = Math.round(window.innerWidth * dpr);
+            cv.height = Math.round(window.innerHeight * dpr);
+            const ctx = cv.getContext('2d');
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        }
+        function __laserLoop() {
+            __laserRAF = null;
+            const cv = __laserCanvas();
+            if (!cv || !__laserOn) return;
+            const ctx = cv.getContext('2d');
+            ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+            const now = performance.now();
+            // Drop fully-faded samples (keep a couple of stale ones for a smooth tail end).
+            while (__laserPoints.length > 1 && now - __laserPoints[0].t > __LASER_TRAIL_MS) {
+                __laserPoints.shift();
+            }
+            const pts = __laserPoints;
+            const color = __laserColor();
+            if (pts.length >= 2) {
+                // Comet trail: connect consecutive samples, tapering width + alpha from
+                // head (newest) to tail (oldest). Butt caps (not round) so the per-segment
+                // strokes read as one continuous tail rather than a string of beads/circles.
+                ctx.lineCap = 'butt';
+                ctx.lineJoin = 'round';
+                ctx.strokeStyle = color;
+                for (let i = 1; i < pts.length; i++) {
+                    const age = now - pts[i].t;
+                    const life = Math.max(0, 1 - age / __LASER_TRAIL_MS); // 1=fresh, 0=gone
+                    if (life <= 0) continue;
+                    ctx.globalAlpha = life * 0.55;
+                    ctx.lineWidth = 2 + life * (__LASER_HEAD_R - 1);
+                    ctx.beginPath();
+                    ctx.moveTo(pts[i - 1].x, pts[i - 1].y);
+                    ctx.lineTo(pts[i].x, pts[i].y);
+                    ctx.stroke();
+                }
+            }
+            // Glowing head dot at the most recent position.
+            const head = pts[pts.length - 1];
+            if (head) {
+                ctx.globalAlpha = 1;
+                ctx.shadowBlur = 18;
+                ctx.shadowColor = color;
+                ctx.fillStyle = color;
+                ctx.beginPath();
+                ctx.arc(head.x, head.y, __LASER_HEAD_R, 0, Math.PI * 2);
+                ctx.fill();
+                // Bright inner core for the "hot" laser look.
+                ctx.shadowBlur = 0;
+                ctx.globalAlpha = 0.9;
+                ctx.fillStyle = '#fff';
+                ctx.beginPath();
+                ctx.arc(head.x, head.y, __LASER_HEAD_R * 0.4, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            ctx.globalAlpha = 1;
+            ctx.shadowBlur = 0;
+            __laserRAF = requestAnimationFrame(__laserLoop);
+        }
+        function setLaser(on) {
+            __laserOn = !!on;
+            document.body.classList.toggle('laser-on', __laserOn);
+            const cv = __laserCanvas();
+            if (__laserOn) {
+                __resizeLaserCanvas();
+                if (!__laserRAF) __laserRAF = requestAnimationFrame(__laserLoop);
+            } else {
+                __laserPoints = [];
+                if (__laserRAF) { cancelAnimationFrame(__laserRAF); __laserRAF = null; }
+                if (cv) cv.getContext('2d').clearRect(0, 0, window.innerWidth, window.innerHeight);
+            }
+        }
+        // Track the cursor whenever the laser is on. Independent of the drag-pan
+        // mousemove handler; never preventDefaults so zoom/pan still work.
+        window.addEventListener('mousemove', (e) => {
+            if (!__laserOn) return;
+            __laserPoints.push({ x: e.clientX, y: e.clientY, t: performance.now() });
+        });
 
         // ---- Diagram render memoization (shared by renderMarp + renderMarkdown) ----
         // #preview is rebuilt via innerHTML on every render, so the previously
@@ -4907,6 +5042,7 @@ ${previewClone.outerHTML}
             // Leaving a previous Marp document: shed mode classes and slide-counter.
             const __wasMarp = document.body.classList.contains('marp');
             document.body.classList.remove('marp', 'deck-mode', 'list-mode');
+            if (__laserOn) setLaser(false);   // laser is deck-mode only
             // Restore the user-style <link> that renderMarp() stripped on entry.
             if (__wasMarp && currentStyle) applyUserStyle(currentStyle);
 
@@ -5759,6 +5895,7 @@ ${previewClone.outerHTML}
     </script>
     <div id="toast"></div>
     <div id="slide-counter"></div>
+    <canvas id="laser-canvas"></canvas>
     <div id="help-modal" role="dialog" aria-modal="true" aria-labelledby="help-modal-title">
         <div class="panel">
             <button class="close" type="button" aria-label="Close">&times;</button>
@@ -5778,6 +5915,7 @@ ${previewClone.outerHTML}
                     <tr><td class="keys"><kbd>F</kbd></td><td>Toggle fullscreen (Marp documents)</td></tr>
                     <tr><td class="keys"><kbd>←</kbd> / <kbd>→</kbd> / <kbd>PgUp</kbd> / <kbd>PgDn</kbd> / <kbd>Home</kbd> / <kbd>End</kbd></td><td>Navigate slides in Marp deck mode</td></tr>
                     <tr><td class="keys"><kbd>Ctrl</kbd>+<kbd>Wheel</kbd> / Drag</td><td>Zoom at cursor / pan the slide (Marp deck mode)</td></tr>
+                    <tr><td class="keys"><kbd>Z</kbd></td><td>Toggle laser pointer with trail (Marp deck mode)</td></tr>
                     <tr><td class="keys"><kbd>Esc</kbd></td><td>Close this dialog</td></tr>
                 </tbody>
             </table>
