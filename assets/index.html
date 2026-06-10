@@ -250,6 +250,47 @@
             border-color: #28a745;
         }
 
+        /* Right-click "Copy MathML / Copy LaTeX" menu for rendered KaTeX (see setupMathContextMenu). */
+        .math-context-menu {
+            position: fixed;
+            z-index: 10000;
+            min-width: 150px;
+            padding: 4px;
+            background: #ffffff;
+            border: 1px solid #d1d5da;
+            border-radius: 6px;
+            box-shadow: 0 4px 16px rgba(27, 31, 35, 0.18);
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            font-size: 13px;
+            color: #24292e;
+            user-select: none;
+        }
+
+        .math-context-menu .math-menu-item {
+            padding: 6px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+
+        .math-context-menu .math-menu-item:hover {
+            background: #f3f4f6;
+        }
+
+        .math-context-menu .math-menu-item.disabled {
+            color: #a0a4a8;
+            cursor: default;
+        }
+
+        .math-context-menu .math-menu-item.disabled:hover {
+            background: transparent;
+        }
+
+        .math-context-menu .math-menu-item.copied {
+            background: #28a745;
+            color: #ffffff;
+        }
+
         #preview blockquote {
             border-left: 4px solid #dfe2e5;
             padding-left: 16px;
@@ -842,6 +883,30 @@
         body.dark-mode .copy-button.copied {
             background: #238636;
             border-color: #238636;
+            color: #ffffff;
+        }
+
+        body.dark-mode .math-context-menu {
+            background: #21262d;
+            border-color: #30363d;
+            color: #c9d1d9;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+        }
+
+        body.dark-mode .math-context-menu .math-menu-item:hover {
+            background: #30363d;
+        }
+
+        body.dark-mode .math-context-menu .math-menu-item.disabled {
+            color: #6e7681;
+        }
+
+        body.dark-mode .math-context-menu .math-menu-item.disabled:hover {
+            background: transparent;
+        }
+
+        body.dark-mode .math-context-menu .math-menu-item.copied {
+            background: #238636;
             color: #ffffff;
         }
 
@@ -3644,7 +3709,11 @@ ${previewClone.outerHTML}
                     const rendered = katex.renderToString(formula, {
                         displayMode: type === 'display',
                         throwOnError: false,
-                        output: 'html'
+                        // 'htmlAndMathml' emits a hidden <span class="katex-mathml"><math>…</math></span>
+                        // (whose <semantics> carries an <annotation encoding="application/x-tex"> with the
+                        // original LaTeX) alongside the visual HTML layer — this is what powers the
+                        // right-click "Copy MathML / Copy LaTeX" menu (see setupMathContextMenu).
+                        output: 'htmlAndMathml'
                     });
                     html = html.replace(placeholder, rendered);
                 } catch (error) {
@@ -5049,6 +5118,28 @@ ${previewClone.outerHTML}
             });
         }
 
+        // Copy `text` to the clipboard using a hidden-textarea + execCommand('copy') fallback.
+        // navigator.clipboard is unreliable under WebView2's custom app:// scheme, so this path
+        // (proven by the code-block copy button) is used everywhere we copy. Returns true on success.
+        function copyTextViaTextarea(text) {
+            const textarea = document.createElement('textarea');
+            textarea.value = text;
+            textarea.style.position = 'fixed';
+            textarea.style.opacity = '0';
+            textarea.style.pointerEvents = 'none';
+            document.body.appendChild(textarea);
+            try {
+                textarea.select();
+                textarea.setSelectionRange(0, text.length);
+                return document.execCommand('copy');
+            } catch (err) {
+                console.error('Failed to copy:', err);
+                return false;
+            } finally {
+                document.body.removeChild(textarea);
+            }
+        }
+
         function addCopyButtons() {
             const codeBlocks = preview.querySelectorAll('pre');
 
@@ -5070,42 +5161,16 @@ ${previewClone.outerHTML}
                 // Add click handler
                 copyButton.addEventListener('click', () => {
                     const code = pre.querySelector('code')?.textContent || pre.textContent;
-
-                    // Use fallback method for WebView2 compatibility
-                    const textarea = document.createElement('textarea');
-                    textarea.value = code;
-                    textarea.style.position = 'fixed';
-                    textarea.style.opacity = '0';
-                    textarea.style.pointerEvents = 'none';
-                    document.body.appendChild(textarea);
-
-                    try {
-                        textarea.select();
-                        textarea.setSelectionRange(0, code.length);
-                        const successful = document.execCommand('copy');
-
-                        if (successful) {
-                            copyButton.textContent = 'Copied!';
-                            copyButton.classList.add('copied');
-
-                            setTimeout(() => {
-                                copyButton.textContent = 'Copy';
-                                copyButton.classList.remove('copied');
-                            }, 2000);
-                        } else {
-                            copyButton.textContent = 'Failed';
-                            setTimeout(() => {
-                                copyButton.textContent = 'Copy';
-                            }, 2000);
-                        }
-                    } catch (err) {
-                        console.error('Failed to copy:', err);
-                        copyButton.textContent = 'Failed';
+                    if (copyTextViaTextarea(code)) {
+                        copyButton.textContent = 'Copied!';
+                        copyButton.classList.add('copied');
                         setTimeout(() => {
                             copyButton.textContent = 'Copy';
+                            copyButton.classList.remove('copied');
                         }, 2000);
-                    } finally {
-                        document.body.removeChild(textarea);
+                    } else {
+                        copyButton.textContent = 'Failed';
+                        setTimeout(() => { copyButton.textContent = 'Copy'; }, 2000);
                     }
                 });
 
@@ -5115,6 +5180,79 @@ ${previewClone.outerHTML}
                 wrapper.appendChild(copyButton);
             });
         }
+
+        // Right-click menu on rendered KaTeX expressions → "Copy MathML" / "Copy LaTeX".
+        // Wired ONCE via event delegation on the stable #preview element so it survives the
+        // innerHTML rebuild every render performs (no per-element listeners, no re-wiring).
+        // Works for both the normal pipeline (output:'htmlAndMathml', see renderMathExpressions)
+        // and Marp slides (marp-core's KaTeX also emits MathML); a format with no source in the
+        // DOM (e.g. an html-only .katex) is shown disabled rather than copying empty text.
+        let __mathMenuWired = false;
+        function setupMathContextMenu() {
+            if (__mathMenuWired) return;
+            __mathMenuWired = true;
+
+            const menu = document.createElement('div');
+            menu.className = 'math-context-menu';
+            menu.style.display = 'none';
+            document.body.appendChild(menu);
+
+            const hideMenu = () => { menu.style.display = 'none'; menu.innerHTML = ''; };
+
+            // Add an item; `value` null/empty → rendered disabled. `onCopy` flashes "Copied!".
+            const addItem = (label, value) => {
+                const item = document.createElement('div');
+                item.className = 'math-menu-item' + (value ? '' : ' disabled');
+                item.textContent = label;
+                if (value) {
+                    item.addEventListener('click', (ev) => {
+                        ev.stopPropagation();
+                        if (copyTextViaTextarea(value)) {
+                            item.textContent = 'Copied!';
+                            item.classList.add('copied');
+                            setTimeout(hideMenu, 600);
+                        } else {
+                            item.textContent = 'Failed';
+                            setTimeout(hideMenu, 800);
+                        }
+                    });
+                }
+                menu.appendChild(item);
+            };
+
+            preview.addEventListener('contextmenu', (e) => {
+                const k = e.target.closest('.katex');
+                if (!k) { hideMenu(); return; } // let WebView2's native menu show elsewhere
+                e.preventDefault();
+
+                const mathEl = k.querySelector('.katex-mathml math');
+                const mathml = mathEl ? new XMLSerializer().serializeToString(mathEl) : '';
+                const latex = (k.querySelector('annotation[encoding="application/x-tex"]')?.textContent || '').trim();
+
+                menu.innerHTML = '';
+                addItem('Copy MathML', mathml);
+                addItem('Copy LaTeX', latex);
+
+                // Position at the cursor, clamped to the viewport.
+                menu.style.display = 'block';
+                const m = menu.getBoundingClientRect();
+                const margin = 4;
+                let left = e.clientX;
+                let top = e.clientY;
+                if (left + m.width > window.innerWidth - margin) left = window.innerWidth - m.width - margin;
+                if (top + m.height > window.innerHeight - margin) top = window.innerHeight - m.height - margin;
+                menu.style.left = Math.max(margin, left) + 'px';
+                menu.style.top = Math.max(margin, top) + 'px';
+            });
+
+            // Dismiss on outside click, Esc, or scroll.
+            document.addEventListener('click', (e) => {
+                if (menu.style.display !== 'none' && !menu.contains(e.target)) hideMenu();
+            });
+            document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hideMenu(); });
+            window.addEventListener('scroll', hideMenu, true);
+        }
+        setupMathContextMenu();
 
         // Editor sync — reverse jump: clicking on a rendered block emits a
         // jumpTo over the localhost WS so the editor can move its cursor.
