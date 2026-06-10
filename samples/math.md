@@ -1,5 +1,7 @@
 # Math Formula Test
 
+> **Tip:** Right-click any rendered formula below to **Copy MathML** or **Copy LaTeX**.
+
 ## Inline Math
 
 This is an inline formula: $E = mc^2$

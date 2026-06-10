@@ -401,6 +401,47 @@ pub fn spawn_editor_window(
                 }
                 return;
             }
+            // OS-clipboard bridge for Vim yank/paste. `navigator.clipboard` is
+            // unavailable on the insecure app:// scheme, so the editor JS
+            // routes copy/paste through these two channels (see
+            // tools/build-editor/clipboardSync.js).
+            //
+            // editor:clipboard:set:<text> — everything after the prefix is the
+            // raw clipboard text (NOT JSON; may contain newlines / quotes).
+            // Fire-and-forget; done on a worker thread so a transiently locked
+            // clipboard never blocks the IPC thread.
+            if let Some(text) = message.strip_prefix("editor:clipboard:set:") {
+                #[cfg(windows)]
+                {
+                    let owned = text.to_string();
+                    std::thread::spawn(move || {
+                        crate::clipboard_win::set_clipboard(&owned);
+                    });
+                }
+                return;
+            }
+            // editor:clipboard:get:<id> — read the OS clipboard and push it
+            // back to the editor via window.__clipboardResult(id, text),
+            // mirroring the editor:listdir: → __listDirResult round-trip.
+            if let Some(id_str) = message.strip_prefix("editor:clipboard:get:") {
+                if let Ok(id) = id_str.trim().parse::<u64>() {
+                    let text = {
+                        #[cfg(windows)]
+                        { crate::clipboard_win::get_clipboard().unwrap_or_default() }
+                        #[cfg(not(windows))]
+                        { String::new() }
+                    };
+                    let text_json = serde_json::Value::String(text);
+                    let script = format!(
+                        "if (typeof window.__clipboardResult === 'function') {{ window.__clipboardResult({}, {}); }}",
+                        id, text_json
+                    );
+                    if let Some(s) = registry_for_ipc.inner.lock().unwrap().as_ref() {
+                        let _ = s.webview.evaluate_script(&script);
+                    }
+                }
+                return;
+            }
             if message == "editor:close:" {
                 let _ = proxy_for_ipc.send_event(CustomEvent::EditorCloseRequested);
             }

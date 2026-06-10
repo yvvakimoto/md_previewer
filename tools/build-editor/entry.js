@@ -33,6 +33,7 @@ import { katexCommandCompletionSource } from './katexCommandComplete.js';
 import { pathCompletionSource } from './pathComplete.js';
 import { installJpWordMotion } from './jpWordMotion.js';
 import { numberedListIndentKeymap } from './numberedListIndent.js';
+import { installClipboardSync } from './clipboardSync.js';
 import {
   isMarpDocument, insertSlideAfter, copySlide, cutSlide,
   marpSlideKeymap, SLIDE_CLASSES,
@@ -555,6 +556,11 @@ export function create(root, opts = {}) {
   // Japanese-aware w/b/e/W/B/E (and dw/cw/yw/daw/...) — segment by
   // hiragana / katakana / han / ASCII-word / punctuation class boundaries.
   try { installJpWordMotion(Vim); } catch (_) {}
+
+  // OS-clipboard-backed yank/paste (unnamedplus): plain y/d/c/x mirror to the
+  // OS clipboard, and `p`/`P` paste it (synced in on window focus). Routed
+  // through Rust IPC since navigator.clipboard is unavailable on app://.
+  try { installClipboardSync({ Vim, ipcSend }); } catch (_) {}
 
   const saveKey = {
     key: 'Mod-s',

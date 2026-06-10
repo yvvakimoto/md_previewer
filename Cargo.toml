@@ -1,6 +1,6 @@
 [package]
 name = "md-previewer"
-version = "0.6.1"
+version = "0.6.2"
 edition = "2021"
 license = "MIT"
 
@@ -15,6 +15,9 @@ urlencoding = "2.1"
 base64 = "0.21"
 regex = "1"
 rfd = "0.14"
+
+[target.'cfg(windows)'.dependencies]
+clipboard-win = "5"
 
 [build-dependencies]
 embed-resource = "2"

@@ -19,6 +19,7 @@ use base64::{Engine as _, engine::general_purpose};
 use regex::Regex;
 use std::collections::{HashMap, HashSet};
 
+mod clipboard_win;
 mod editor_registry;
 mod ime_win;
 use editor_registry::EditorRegistry;

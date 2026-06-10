@@ -126,7 +126,6 @@ pie title Technologies
 
 - [Math](./math.md)
 - [Syntax highlighting](./syntax.md)
-- [Schemata（図解）diagrams](./schemata.md)
 - [日本語ファイル名テスト](./日本語ファイル.md)
 
 ### Footnote

@@ -25,14 +25,14 @@ Windows 専用の、軽量なスタンドアロン Markdown プレビューア�
 | オフライン動作 | ◯（CDN 不使用、全アセット同梱） | ◯ | ◯ | ◯ |
 | **CSS テーマの追加方法** | **`assets/` に `.css` を 1 枚置くだけ**（`S` キーのモーダルで選択） | `settings.json` の `markdown.styles` に絶対パス／URL を列挙 | コミュニティテーマのインストール／`.obsidian/snippets/` に CSS 配置 | テーマフォルダに `.css` 配置（命名規約あり） |
 | ライセンス | OSS（無償） | OSS（無償） | 個人利用無償／商用有償 | **有償**（v1.0 以降ライセンス購入が必要） |
-| 拡張記法 | Mermaid / KaTeX / Marp スライド / Schemata 構造化図解 / CSV・TSV テーブル / **外部CSV→Plotly 対話的チャート** / **Kataskeve 初等幾何作図** / Footnote ツールチップ（標準同梱） | 多くは拡張機能の追加導入が必要 | コアおよびプラグインで対応 | Mermaid / KaTeX 等を内蔵（Marp 非対応） |
+| 拡張記法 | Mermaid / KaTeX / Marp スライド / CSV・TSV テーブル / **外部CSV→Plotly 対話的チャート** / Footnote ツールチップ（標準同梱） | 多くは拡張機能の追加導入が必要 | コアおよびプラグインで対応 | Mermaid / KaTeX 等を内蔵（Marp 非対応） |
 | 単独 HTML エクスポート | ◯（`X` キー、KaTeX・Mermaid 等をインライン化した自己完結 HTML） | △（拡張機能依存） | △（プラグイン依存） | ◯ |
 
 ### 補足
 
 - **VS Code との違い**: VS Code はエンジニア向け統合開発環境であり、Markdown プレビューはあくまでサイドパネル機能です。CSS のカスタマイズは `settings.json` の `markdown.styles` 配列に絶対パスや URL を列挙する必要があり、非エンジニアには敷居が高めです。本ツールは exe をダブルクリックして開き、`assets/` フォルダに `.css` を置くだけでテーマ候補に加わります（詳細は後述の「テーマのカスタマイズ」を参照）。
 - **Obsidian との違い**: Obsidian は vault（フォルダ）を前提とした強力なノート編集アプリで、「もらった単一の `.md` をとりあえず見たい」という用途には機能過剰になりがちです。本ツールは単一ファイル / フォルダどちらにも対応しつつ、編集は外部エディタ または `E` キーの内蔵エディタ（保存検知で自動再読み込み）に委ね、閲覧体験に焦点を絞っています。
-- **Typora との違い**: Typora は WYSIWYG 編集を主目的とした有償ツールです。本ツールは OSS で無償、編集 UI を表に出さない代わりに、Marp スライド・Schemata 構造化図解・CSV テーブル・Footnote ツールチップ・自己完結 HTML エクスポートなど、**閲覧と配布のシナリオ** に最適化された機能を備えています（詳細は後述の「対応している記法・機能」を参照）。
+- **Typora との違い**: Typora は WYSIWYG 編集を主目的とした有償ツールです。本ツールは OSS で無償、編集 UI を表に出さない代わりに、Marp スライド・CSV テーブル・Footnote ツールチップ・自己完結 HTML エクスポートなど、**閲覧と配布のシナリオ** に最適化された機能を備えています（詳細は後述の「対応している記法・機能」を参照）。
 
 ### 本ツールが特に向くケース
 
@@ -143,13 +143,14 @@ md-previewer.exe path\to\folder
 - **改行連結（ソフト改行の連続化）** — ソース上で 1 つの改行で折り返した文を、1 つの連続した文として表示。和文（CJK）どうしの改行はスペースを入れずに詰めて連結し、英文は半角スペースで連結。行末に半角スペース 2 つ（または `\`）を置いた明示的な改行はそのまま維持。[改行連結のサンプル](samples/softbreak.md) 参照
 - **シンタックスハイライト** — `highlight.js` による多言語対応、コードブロック右上にコピーボタン
 - **Mermaid 図** — フローチャート、シーケンス図、ガントチャート ほか
-- **Schemata 図解** — fishbone（特性要因図）、mandala chart、BMC（Business Model Canvas）、flow、cycle。コードブロック言語は ` ```schemata `（ギリシャ語 σχήματα「型・テンプレート」の複数形）。`title:` と同じ位置で `scale: <倍率>` を指定すると、図全体を縮小/拡大表示できます（例: `scale: 0.7` で 70%、`scale: 1.5` で 150%）
 - **KaTeX 数式** — インライン `$...$`、ブロック `$$...$$`
 - **脚注** — `[^id]` 参照と `[^id]: 本文` 定義。本文末尾に脚注一覧、参照部はマウスオーバーで Wikipedia 風ポップアップ表示
 - **テキスト配置（センタリング・右寄せ）** — `::: center` / `::: right` / `::: left` … `:::` で囲んだブロック（見出し・段落・「記」「以上」など）を中央寄せ・右寄せ・左寄せ。引用ブロック内で `> -- 著者名` のように `--`/`—`（em ダッシュ）で始まる行は出典として自動右寄せ。縦書きテーマ（tategaki）では行末＝列の下端に写像。[配置のサンプル](samples/alignment.md) 参照
+- **中央揃え強調メッセージ** — `::: message` … `:::` で囲むと、中央寄せ＋大きな太字＋上下のアクセント罫でメッセージを強調表示。Marp スライドで結論やキーメッセージを読みやすく提示したいときに便利（配置だけの `::: center` と異なり視覚的に強調）。アクセント色は CSS 変数 `--md-message-*` で Marp テーマ／ユーザースタイル側から上書き可能。[配置のサンプル](samples/alignment.md) 参照
+- **Marp スライド途中からのカラム** — Marp スライドで `::: columns` … `+++` … `:::` で囲むと、その範囲だけを複数カラムにできます（前後は全幅の1カラムのまま。`:::` で1カラムへ復帰）。列は内部の `+++` で区切り、`::: columns-3` のように列数の明示も可能（2〜4 列）。スライド全体を分割する `<!-- _class: split -->` と違い、途中の一部だけをカラム化したいときに使います。列内に `::: center` も入れ子にできます。[Marp のサンプル](samples/marp.md) 参照
 - **CSV / TSV コードブロック** — ` ```csv ` / ` ```tsv ` で囲むと表として描画
+- **表を PowerPoint へコピー** — プレビュー内のすべての表（GFM のパイプ表・`csv` / `tsv` コードブロックの表の両方）にマウスを重ねると右上に **「Copy table」** ボタンが出ます。クリックすると表をリッチ HTML 形式でクリップボードへコピーするので、PowerPoint（や Word / Excel / Outlook）へ貼り付けると **そのまま編集できるネイティブの表** になります（テキストボックスや画像ではありません）。[CSV/TSV のサンプル](samples/csv-tsv.md) 参照
 - **Plotly 対話的チャート（外部CSV/TSVから）** — ` ```plotly ` フェンスブロックに `file: data.csv` と `type:` / `x:` / `y:` を YAML で書くだけで、Plotly.js による折れ線・散布・棒・ヒストグラム・箱ひげ・ヒートマップ・3Dサーフェスを描画。CSV ファイルを更新すると自動でグラフが追従。 [Plotly のサンプル](samples/plotly.md) 参照
-- **Kataskeve 初等幾何作図** — ` ```kataskeve ` フェンスに式志向 DSL（`A = point(0,0)` / `triangle(A,B,C)` / `circle3(P,Q,R)` / `midpoint` / `foot` / `orthocenter` / `intersection` / `point_on(circle, deg)` / `rotate` / `reflect` ほか）を書くと SVG として展開。Eukleides に着想を得た独自実装（GPL コードは流用していません）。九点円・パスカルの定理など補助線つきの構図を 1 ブロックで描けます。フェンス名 *Kataskeve* はエウクレイデスが『原論』で命題の作図ステップに用いた古典ギリシャ語 κατασκευή に由来します（npm パッケージ `euclid.js` および Microsoft Store の同名 UWP アプリ *Sakuzu* との衝突を避けるため、過去の作業名 *euclid* / *sakuzu* から差し替えています）。[Kataskeve のサンプル](samples/kataskeve.md) 参照
 - **ABC 楽譜** — ` ```abc ` フェンスに [ABC 記譜法](https://abcnotation.com/) を書くと、[abcjs](https://github.com/paulrosen/abcjs)（MIT）によって五線譜 SVG として描画。調号・拍子・和音・スラー・タイ・歌詞（`w:`）などに対応（描画のみ。音声再生は非対応）。一般文書・Marp スライド両対応、HTML エクスポートにもインライン SVG として追従。[ABC のサンプル](samples/abcjs.md) 参照
 - **画像**
   - 相対パスは Markdown ファイルのあるフォルダを基準に解決
@@ -192,8 +193,9 @@ md-previewer.exe path\to\folder
 | `←` / `→` / `PgUp` / `PgDn` / `Space` | 前 / 次のスライド（deck モード時） |
 | `Home` / `End` | 最初 / 最後のスライドへ（deck モード時） |
 | `F` | フルスクリーン切替（deck モード時） |
+| `Ctrl` + ホイール / ドラッグ | カーソル位置を中心に拡大・縮小 / 拡大中はドラッグで移動（deck モード時） |
 
-list モードのサムネイルをクリックすると、そのスライドの deck モードに飛びます。
+list モードのサムネイルをクリックすると、そのスライドの deck モードに飛びます。deck モードでは `Ctrl` + マウスホイールでカーソル位置を中心にスライドを拡大・縮小でき、拡大中はドラッグで表示位置を移動できます（スライド切替で等倍に戻ります）。
 
 ---
 
@@ -254,7 +256,7 @@ Marp 標準の `default` / `gaia` / `uncover` も追加設定なしで利用可�
 
 - レンダリング済みの本文 DOM
 - 適用中のテーマ CSS
-- Mermaid / Schemata は SVG として展開
+- Mermaid は SVG として展開
 - KaTeX 数式はレンダリング済み HTML として埋め込み
 - 画像は Base64（エクスポート時にインライン化して自己完結）
 - ローカル動画は `media/` フォルダにコピーして相対パス参照（YouTube はそのまま）
@@ -274,14 +276,12 @@ Marp 標準の `default` / `gaia` / `uncover` も追加設定なしで利用可�
 | `sample.md` | 主要機能の総合デモ |
 | `softbreak.md` | 改行連結（和文は詰めて、英文はスペースで連結／明示改行は維持） |
 | `math.md` | KaTeX 数式 |
-| `schemata.md` | Schemata 構造化図解（fishbone / mandala / BMC / flow / cycle） |
 | `syntax.md` | コードブロックのシンタックスハイライト |
 | `footnotes.md` | 脚注（参照、定義、ポップアップ） |
-| `alignment.md` | テキスト配置（`::: center` / `::: right` / 引用元の自動右寄せ / 記・以上） |
+| `alignment.md` | テキスト配置（`::: center` / `::: right` / 強調メッセージ `::: message` / 引用元の自動右寄せ / 記・以上） |
 | `csv-tsv.md` | CSV / TSV コードブロックの表変換 |
 | `plotly.md` | 外部 CSV を読み込んで Plotly でチャート化 |
 | `video.md` | ローカル動画 / YouTube 埋め込み（画像記法を流用） |
-| `kataskeve.md` | Kataskeve 初等幾何作図（九点円・パスカルの定理 ほか） |
 | `abcjs.md` | ABC 記譜法の楽譜描画（旋律・調号・和音・歌詞 ほか） |
 | `links.md` + `links-other.md` | クロスファイル `.md` リンクと履歴ナビ |
 | `marp.md` | Marp スライドモード |
@@ -372,7 +372,7 @@ Marp 標準の `default` / `gaia` / `uncover` も追加設定なしで利用可�
 
 ### 手動で段階的に実行する場合
 
-GitHub からクローンした直後の `assets/libs/` はほぼ空です（自社製の `schemata.js` のみ）。サードパーティ JS/CSS/フォントと、Marp / エディタ用の esbuild IIFE バンドルはコミットされていないため、最初に一度だけ次のコマンドで取得・ビルドしてください。
+GitHub からクローンした直後の `assets/libs/` は空です。サードパーティ JS/CSS/フォントと、Marp / エディタ用の esbuild IIFE バンドルはコミットされていないため、最初に一度だけ次のコマンドで取得・ビルドしてください。
 
 ```powershell
 pwsh -File tools\install-deps.ps1
