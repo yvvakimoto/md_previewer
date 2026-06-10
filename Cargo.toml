@@ -16,5 +16,8 @@ base64 = "0.21"
 regex = "1"
 rfd = "0.14"
 
+[target.'cfg(windows)'.dependencies]
+clipboard-win = "5"
+
 [build-dependencies]
 embed-resource = "2"
