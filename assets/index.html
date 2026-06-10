@@ -250,6 +250,16 @@
             border-color: #28a745;
         }
 
+        /* Per-table "Copy table" button (rich-HTML copy for PowerPoint; see addTableCopyButtons).
+           Reuses .copy-button base styling + dark-mode variants; only needs a positioning context. */
+        .table-block-wrapper {
+            position: relative;
+        }
+
+        .table-block-wrapper:hover .table-copy-button {
+            opacity: 1;
+        }
+
         /* Right-click "Copy MathML / Copy LaTeX" menu for rendered KaTeX (see setupMathContextMenu). */
         .math-context-menu {
             position: fixed;
@@ -2386,6 +2396,16 @@
             previewClone.querySelectorAll('.copy-button').forEach(el => el.remove());
             // Unwrap .code-block-wrapper (it only existed to host the copy button).
             previewClone.querySelectorAll('.code-block-wrapper').forEach(wrapper => {
+                while (wrapper.firstChild) wrapper.parentNode.insertBefore(wrapper.firstChild, wrapper);
+                wrapper.remove();
+            });
+            // Same for the "Copy table" wrappers. Pure wrappers (GFM tables) are unwrapped;
+            // .csv-table only had the marker class added, so just drop the class there.
+            previewClone.querySelectorAll('.table-block-wrapper').forEach(wrapper => {
+                if (wrapper.classList.contains('csv-table')) {
+                    wrapper.classList.remove('table-block-wrapper');
+                    return;
+                }
                 while (wrapper.firstChild) wrapper.parentNode.insertBefore(wrapper.firstChild, wrapper);
                 wrapper.remove();
             });
@@ -5031,6 +5051,9 @@ ${previewClone.outerHTML}
             // Add copy buttons to code blocks
             addCopyButtons();
 
+            // Add "Copy table" buttons (rich-HTML clipboard → native PowerPoint table)
+            addTableCopyButtons();
+
             // Wire up Wikipedia-style hover tooltips for footnote references
             setupFootnoteTooltips();
 
@@ -5138,6 +5161,99 @@ ${previewClone.outerHTML}
             } finally {
                 document.body.removeChild(textarea);
             }
+        }
+
+        // Rich-HTML copy counterpart to copyTextViaTextarea: select a real DOM node and
+        // execCommand('copy') so WebView2 serializes the selection to BOTH text/html (→ CF_HTML)
+        // and text/plain. CF_HTML is what PowerPoint / Word / Excel turn into a native table.
+        // Restores any pre-existing user selection afterwards. Returns true on success.
+        function copyHtmlViaSelection(node) {
+            const sel = window.getSelection();
+            const saved = [];
+            for (let i = 0; i < sel.rangeCount; i++) saved.push(sel.getRangeAt(i).cloneRange());
+            try {
+                const range = document.createRange();
+                range.selectNode(node);
+                sel.removeAllRanges();
+                sel.addRange(range);
+                return document.execCommand('copy');
+            } catch (err) {
+                console.error('Failed to copy table:', err);
+                return false;
+            } finally {
+                sel.removeAllRanges();
+                saved.forEach(r => sel.addRange(r));
+            }
+        }
+
+        // Clone `table` and inline the border / header styling (the #preview table CSS lives in a
+        // stylesheet, which the clipboard serializer may drop) so the pasted PowerPoint table keeps
+        // its grid lines and shaded header. The clone lives in an offscreen wrapper so it is
+        // selectable but invisible; the caller removes the returned wrapper after copying.
+        function buildStyledTableClone(table) {
+            const clone = table.cloneNode(true);
+            clone.style.borderCollapse = 'collapse';
+            clone.querySelectorAll('th, td').forEach(cell => {
+                cell.style.border = '1px solid #999999';
+                cell.style.padding = '6px 13px';
+            });
+            clone.querySelectorAll('th').forEach(th => {
+                th.style.background = '#f2f2f2';
+                th.style.fontWeight = 'bold';
+            });
+            const wrapper = document.createElement('div');
+            wrapper.style.position = 'fixed';
+            wrapper.style.left = '-9999px';
+            wrapper.style.top = '0';
+            wrapper.style.opacity = '0';
+            wrapper.appendChild(clone);
+            document.body.appendChild(wrapper);
+            return { clone, wrapper };
+        }
+
+        // Add a hover "Copy table" button to every table in the preview. Clicking copies a styled
+        // HTML clone to the clipboard so it pastes into PowerPoint as a native, editable table.
+        function addTableCopyButtons() {
+            preview.querySelectorAll('table').forEach((table) => {
+                // Idempotency guard — skip tables already wrapped (re-run safe, like addCopyButtons).
+                if (table.closest('.table-block-wrapper')) return;
+
+                // Use the existing .csv-table wrapper as the positioning context when present,
+                // otherwise wrap the bare GFM table in a new positioning div.
+                let wrapper;
+                if (table.parentElement && table.parentElement.classList.contains('csv-table')) {
+                    wrapper = table.parentElement;
+                    wrapper.classList.add('table-block-wrapper');
+                } else {
+                    wrapper = document.createElement('div');
+                    wrapper.className = 'table-block-wrapper';
+                    table.parentNode.insertBefore(wrapper, table);
+                    wrapper.appendChild(table);
+                }
+
+                const copyButton = document.createElement('button');
+                copyButton.className = 'copy-button table-copy-button';
+                copyButton.textContent = 'Copy table';
+
+                copyButton.addEventListener('click', () => {
+                    const { wrapper: cloneWrapper, clone } = buildStyledTableClone(table);
+                    const ok = copyHtmlViaSelection(clone);
+                    cloneWrapper.remove();
+                    if (ok) {
+                        copyButton.textContent = 'Copied!';
+                        copyButton.classList.add('copied');
+                        setTimeout(() => {
+                            copyButton.textContent = 'Copy table';
+                            copyButton.classList.remove('copied');
+                        }, 2000);
+                    } else {
+                        copyButton.textContent = 'Failed';
+                        setTimeout(() => { copyButton.textContent = 'Copy table'; }, 2000);
+                    }
+                });
+
+                wrapper.appendChild(copyButton);
+            });
         }
 
         function addCopyButtons() {

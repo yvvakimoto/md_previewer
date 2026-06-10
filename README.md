@@ -149,6 +149,7 @@ md-previewer.exe path\to\folder
 - **中央揃え強調メッセージ** — `::: message` … `:::` で囲むと、中央寄せ＋大きな太字＋上下のアクセント罫でメッセージを強調表示。Marp スライドで結論やキーメッセージを読みやすく提示したいときに便利（配置だけの `::: center` と異なり視覚的に強調）。アクセント色は CSS 変数 `--md-message-*` で Marp テーマ／ユーザースタイル側から上書き可能。[配置のサンプル](samples/alignment.md) 参照
 - **Marp スライド途中からのカラム** — Marp スライドで `::: columns` … `+++` … `:::` で囲むと、その範囲だけを複数カラムにできます（前後は全幅の1カラムのまま。`:::` で1カラムへ復帰）。列は内部の `+++` で区切り、`::: columns-3` のように列数の明示も可能（2〜4 列）。スライド全体を分割する `<!-- _class: split -->` と違い、途中の一部だけをカラム化したいときに使います。列内に `::: center` も入れ子にできます。[Marp のサンプル](samples/marp.md) 参照
 - **CSV / TSV コードブロック** — ` ```csv ` / ` ```tsv ` で囲むと表として描画
+- **表を PowerPoint へコピー** — プレビュー内のすべての表（GFM のパイプ表・`csv` / `tsv` コードブロックの表の両方）にマウスを重ねると右上に **「Copy table」** ボタンが出ます。クリックすると表をリッチ HTML 形式でクリップボードへコピーするので、PowerPoint（や Word / Excel / Outlook）へ貼り付けると **そのまま編集できるネイティブの表** になります（テキストボックスや画像ではありません）。[CSV/TSV のサンプル](samples/csv-tsv.md) 参照
 - **Plotly 対話的チャート（外部CSV/TSVから）** — ` ```plotly ` フェンスブロックに `file: data.csv` と `type:` / `x:` / `y:` を YAML で書くだけで、Plotly.js による折れ線・散布・棒・ヒストグラム・箱ひげ・ヒートマップ・3Dサーフェスを描画。CSV ファイルを更新すると自動でグラフが追従。 [Plotly のサンプル](samples/plotly.md) 参照
 - **ABC 楽譜** — ` ```abc ` フェンスに [ABC 記譜法](https://abcnotation.com/) を書くと、[abcjs](https://github.com/paulrosen/abcjs)（MIT）によって五線譜 SVG として描画。調号・拍子・和音・スラー・タイ・歌詞（`w:`）などに対応（描画のみ。音声再生は非対応）。一般文書・Marp スライド両対応、HTML エクスポートにもインライン SVG として追従。[ABC のサンプル](samples/abcjs.md) 参照
 - **画像**
