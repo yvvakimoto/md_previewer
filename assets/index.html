@@ -102,6 +102,14 @@
             padding: 40px 20px;
         }
 
+        /* Full-width layout toggle (W key). Placed before the marp rule so
+           body.marp #preview (same specificity, later in source) still wins
+           in Marp mode — i.e. this is a natural no-op for slides. */
+        body.wide #preview {
+            max-width: none;
+            padding: 40px 48px;   /* 視認性のための最低限の左右マージン */
+        }
+
 
         /* Markdown styling */
         #preview h1, #preview h2, #preview h3, #preview h4, #preview h5, #preview h6 {
@@ -2137,6 +2145,22 @@
             localStorage.setItem('showLineNumbers', document.body.classList.contains('show-line-numbers'));
         });
 
+        // Full-width layout toggle (W key). Same pattern as L/N; pure body-class
+        // toggle, persisted in localStorage. CSS scoped to body.wide #preview;
+        // no-op in Marp mode (the later body.marp #preview rule wins).
+        if (localStorage.getItem('wide') === 'true') {
+            document.body.classList.add('wide');
+        }
+        document.addEventListener('keydown', (e) => {
+            if (e.ctrlKey || e.metaKey || e.altKey) return;
+            if (e.key !== 'w' && e.key !== 'W') return;
+            const t = e.target;
+            if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+            const on = document.body.classList.toggle('wide');
+            localStorage.setItem('wide', on);
+            showToast('Full width: ' + (on ? 'on' : 'off'));
+        });
+
         // Section numbering toggle (N key). Baseline counter rules live in the inline <style>
         // above so numbering works on every theme by default; user themes may
         // override the ::before content/styling for their custom number presentation.
@@ -2608,6 +2632,7 @@
             const bodyClasses = [];
             if (document.body.classList.contains('dark-mode')) bodyClasses.push('dark-mode');
             if (document.body.classList.contains('numbered')) bodyClasses.push('numbered');
+            if (document.body.classList.contains('wide')) bodyClasses.push('wide');
             const bodyClass = bodyClasses.join(' ');
             // Title: prefer the source filename basename (without .md/.markdown) so browser tabs and
             // bookmarks identify the document. Falls back to document.title for files opened via
@@ -5907,6 +5932,7 @@ ${previewClone.outerHTML}
                     <tr><td class="keys"><kbd>S</kbd></td><td>Select theme style — or Marp theme in Marp mode (rewrites front-matter)</td></tr>
                     <tr><td class="keys"><kbd>N</kbd></td><td>Toggle auto section numbering</td></tr>
                     <tr><td class="keys"><kbd>L</kbd></td><td>Toggle line numbers</td></tr>
+                    <tr><td class="keys"><kbd>W</kbd></td><td>Toggle full-width layout</td></tr>
                     <tr><td class="keys"><kbd>E</kbd></td><td>Open editor window (Vim mode, math input assist, char counter)</td></tr>
                     <tr><td class="keys"><kbd>X</kbd></td><td>Export current document as standalone HTML</td></tr>
                     <tr><td class="keys"><kbd>Ctrl</kbd>+<kbd>+</kbd> / <kbd>Ctrl</kbd>+<kbd>-</kbd> / <kbd>Ctrl</kbd>+<kbd>0</kbd></td><td>Zoom in / out / reset</td></tr>
