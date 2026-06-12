@@ -309,6 +309,29 @@
             color: #ffffff;
         }
 
+        /* Right-click menu for the workspace file tree (see setupFileTreeContextMenu). */
+        .ft-context-menu {
+            position: fixed;
+            z-index: 10000;
+            min-width: 150px;
+            padding: 4px;
+            background: #ffffff;
+            border: 1px solid #d1d5da;
+            border-radius: 6px;
+            box-shadow: 0 4px 16px rgba(27, 31, 35, 0.18);
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            font-size: 13px;
+            color: #24292e;
+            user-select: none;
+        }
+        .ft-context-menu .ft-menu-item {
+            padding: 6px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+        .ft-context-menu .ft-menu-item:hover { background: #f3f4f6; }
+
         #preview blockquote {
             border-left: 4px solid #dfe2e5;
             padding-left: 16px;
@@ -929,6 +952,14 @@
             background: #238636;
             color: #ffffff;
         }
+
+        body.dark-mode .ft-context-menu {
+            background: #21262d;
+            border-color: #30363d;
+            color: #c9d1d9;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+        }
+        body.dark-mode .ft-context-menu .ft-menu-item:hover { background: #30363d; }
 
         body.dark-mode #toc-sidebar {
             background: #161b22;
@@ -5532,6 +5563,70 @@ ${previewClone.outerHTML}
             window.addEventListener('scroll', hideMenu, true);
         }
         setupMathContextMenu();
+
+        // Right-click menu on the workspace file tree: collapse / expand every
+        // folder & file sub-tree at once. Listener lives on the stable #file-tree
+        // container so it survives the per-render rebuild of #file-tree-root.
+        let __ftMenuWired = false;
+        function setupFileTreeContextMenu() {
+            if (__ftMenuWired) return;
+            const ftEl = document.getElementById('file-tree');
+            if (!ftEl) return;
+            __ftMenuWired = true;
+
+            const menu = document.createElement('div');
+            menu.className = 'ft-context-menu';
+            menu.style.display = 'none';
+            document.body.appendChild(menu);
+
+            const hideMenu = () => { menu.style.display = 'none'; menu.innerHTML = ''; };
+
+            const setAllDetails = (open) => {
+                // Setting .open fires each <details>'s persistDetails 'toggle' listener,
+                // so the collapsed/expanded state is persisted to localStorage too.
+                ftEl.querySelectorAll('details').forEach((d) => { d.open = open; });
+            };
+
+            const addItem = (label, onClick) => {
+                const item = document.createElement('div');
+                item.className = 'ft-menu-item';
+                item.textContent = label;
+                item.addEventListener('click', (ev) => {
+                    ev.stopPropagation();
+                    onClick();
+                    hideMenu();
+                });
+                menu.appendChild(item);
+            };
+
+            ftEl.addEventListener('contextmenu', (e) => {
+                // Only act when the tree actually has collapsible nodes.
+                if (!ftEl.querySelector('details')) { hideMenu(); return; }
+                e.preventDefault();
+
+                menu.innerHTML = '';
+                addItem('すべて閉じる', () => setAllDetails(false));
+                addItem('すべて開く', () => setAllDetails(true));
+
+                // Position at the cursor, clamped to the viewport.
+                menu.style.display = 'block';
+                const m = menu.getBoundingClientRect();
+                const margin = 4;
+                let left = e.clientX;
+                let top = e.clientY;
+                if (left + m.width > window.innerWidth - margin) left = window.innerWidth - m.width - margin;
+                if (top + m.height > window.innerHeight - margin) top = window.innerHeight - m.height - margin;
+                menu.style.left = Math.max(margin, left) + 'px';
+                menu.style.top = Math.max(margin, top) + 'px';
+            });
+
+            document.addEventListener('click', (e) => {
+                if (menu.style.display !== 'none' && !menu.contains(e.target)) hideMenu();
+            });
+            document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hideMenu(); });
+            window.addEventListener('scroll', hideMenu, true);
+        }
+        setupFileTreeContextMenu();
 
         // Editor sync — reverse jump: clicking on a rendered block emits a
         // jumpTo over the localhost WS so the editor can move its cursor.
