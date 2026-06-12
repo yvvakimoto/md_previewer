@@ -1566,17 +1566,19 @@
            grid 化するのに対し、こちらは section 内の1ブロックを grid 化する。
            列の中身は split と同じ .split-col クラスを再利用。列数は内部の
            +++ 数（または columns-N 指定）で 2〜4 列。 */
-        body.marp #preview .inline-cols {
+        /* Scoped to #preview (not body.marp) so the columnsDiv marked extension's
+           output renders multi-column in normal documents too, not just Marp. */
+        #preview .inline-cols {
             display: grid;
             grid-template-columns: repeat(2, 1fr);
             gap: 30px;
             align-items: start;
             margin: 0.6em 0;
         }
-        body.marp #preview .inline-cols.inline-cols-3 { grid-template-columns: repeat(3, 1fr); gap: 24px; }
-        body.marp #preview .inline-cols.inline-cols-4 { grid-template-columns: repeat(4, 1fr); gap: 20px; }
-        body.marp #preview .inline-cols > .split-col { min-width: 0; }
-        body.marp #preview .inline-cols > .split-col > :first-child { margin-top: 0; }
+        #preview .inline-cols.inline-cols-3 { grid-template-columns: repeat(3, 1fr); gap: 24px; }
+        #preview .inline-cols.inline-cols-4 { grid-template-columns: repeat(4, 1fr); gap: 20px; }
+        #preview .inline-cols > .split-col { min-width: 0; }
+        #preview .inline-cols > .split-col > :first-child { margin-top: 0; }
 
         /* Deck (single-slide presentation) mode */
         body.marp.deck-mode #preview-container { background: #000; }
@@ -3587,6 +3589,54 @@ ${previewClone.outerHTML}
                     const cls = token.align === 'message' ? 'md-message' : 'align-' + token.align;
                     return '<div class="' + cls + '">\n'
                         + this.parser.parse(token.tokens) + '</div>\n';
+                }
+            }]
+        });
+
+        // Block-level marked extension for Pandoc-style inline column regions in
+        // the *normal* (non-Marp) pipeline:
+        //   ::: columns        ::: columns-3
+        //   col 1 content      col 1
+        //   +++                +++
+        //   col 2 content      col 2
+        //   :::                +++
+        //                      col 3
+        //                      :::
+        // Each `+++`-separated bucket is recursively block-parsed and emitted as
+        // a <div class="split-col"> inside <div class="inline-cols [inline-cols-N]">,
+        // matching the DOM the Marp sentinel post-pass produces so the shared
+        // `#preview .inline-cols` grid CSS applies. Column count is the explicit
+        // `columns-N` if given, else the bucket count (clamped 2..4).
+        // Limitation (same as alignDiv): the non-greedy body match stops at the
+        // first `\n:::`, so a nested `::: center` inside a column is not supported
+        // in the normal pipeline — use Marp for nested fenced divs.
+        marked.use({
+            extensions: [{
+                name: 'columnsDiv',
+                level: 'block',
+                start(src) {
+                    const i = src.search(/^:::+[ \t]*columns(?:-[234])?[ \t]*$/im);
+                    return i < 0 ? undefined : i;
+                },
+                tokenizer(src) {
+                    const m = /^:::+[ \t]*columns(?:-([234]))?[ \t]*\n([\s\S]*?)\n:::+[ \t]*(?:\n|$)/i.exec(src);
+                    if (!m) return;
+                    const parts = m[2].split(/^[ \t]*\+\+\+[ \t]*$/m);
+                    const cols = parts.map(p => {
+                        const tokens = [];
+                        this.lexer.blockTokens(p.trim() + '\n', tokens);
+                        return tokens;
+                    });
+                    const count = Math.min(4, Math.max(2, m[1] ? +m[1] : cols.length));
+                    return { type: 'columnsDiv', raw: m[0], count, cols };
+                },
+                renderer(token) {
+                    const cls = 'inline-cols' + (token.count >= 3 ? ' inline-cols-' + token.count : '');
+                    let html = '<div class="' + cls + '">\n';
+                    token.cols.forEach(tokens => {
+                        html += '<div class="split-col">\n' + this.parser.parse(tokens) + '</div>\n';
+                    });
+                    return html + '</div>\n';
                 }
             }]
         });
