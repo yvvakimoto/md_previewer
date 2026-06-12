@@ -765,6 +765,8 @@
             border-left-color: #0366d6;
         }
         #file-tree details ul { padding-left: 0; }
+        /* フォルダ階層の深さに応じて子要素をインデント（ネストで自動累積） */
+        #file-tree details.ft-group > ul { padding-left: 12px; }
         #toc-sidebar.collapsed #file-tree { display: none; }
         /* Workspace mode: hide the legacy single-document heading ToC. */
         body.workspace #toc-content { display: none; }
