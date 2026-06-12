@@ -6,7 +6,7 @@
 ;   -> output: dist\MdPreviewer-Setup-<ver>.exe
 
 #define AppName        "MD Previewer"
-#define AppVersion     "0.6.2"
+#define AppVersion     "0.7.0"
 #define AppPublisher   "Yuki Wakimoto"
 #define AppExeName     "md-previewer.exe"
 #define ProgID         "MdPreviewer.md"

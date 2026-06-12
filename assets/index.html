@@ -102,6 +102,14 @@
             padding: 40px 20px;
         }
 
+        /* Full-width layout toggle (W key). Placed before the marp rule so
+           body.marp #preview (same specificity, later in source) still wins
+           in Marp mode — i.e. this is a natural no-op for slides. */
+        body.wide #preview {
+            max-width: none;
+            padding: 40px 48px;   /* 視認性のための最低限の左右マージン */
+        }
+
 
         /* Markdown styling */
         #preview h1, #preview h2, #preview h3, #preview h4, #preview h5, #preview h6 {
@@ -300,6 +308,29 @@
             background: #28a745;
             color: #ffffff;
         }
+
+        /* Right-click menu for the workspace file tree (see setupFileTreeContextMenu). */
+        .ft-context-menu {
+            position: fixed;
+            z-index: 10000;
+            min-width: 150px;
+            padding: 4px;
+            background: #ffffff;
+            border: 1px solid #d1d5da;
+            border-radius: 6px;
+            box-shadow: 0 4px 16px rgba(27, 31, 35, 0.18);
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            font-size: 13px;
+            color: #24292e;
+            user-select: none;
+        }
+        .ft-context-menu .ft-menu-item {
+            padding: 6px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+        .ft-context-menu .ft-menu-item:hover { background: #f3f4f6; }
 
         #preview blockquote {
             border-left: 4px solid #dfe2e5;
@@ -757,6 +788,8 @@
             border-left-color: #0366d6;
         }
         #file-tree details ul { padding-left: 0; }
+        /* フォルダ階層の深さに応じて子要素をインデント（ネストで自動累積） */
+        #file-tree details.ft-group > ul { padding-left: 12px; }
         #toc-sidebar.collapsed #file-tree { display: none; }
         /* Workspace mode: hide the legacy single-document heading ToC. */
         body.workspace #toc-content { display: none; }
@@ -919,6 +952,14 @@
             background: #238636;
             color: #ffffff;
         }
+
+        body.dark-mode .ft-context-menu {
+            background: #21262d;
+            border-color: #30363d;
+            color: #c9d1d9;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+        }
+        body.dark-mode .ft-context-menu .ft-menu-item:hover { background: #30363d; }
 
         body.dark-mode #toc-sidebar {
             background: #161b22;
@@ -2137,6 +2178,22 @@
             localStorage.setItem('showLineNumbers', document.body.classList.contains('show-line-numbers'));
         });
 
+        // Full-width layout toggle (W key). Same pattern as L/N; pure body-class
+        // toggle, persisted in localStorage. CSS scoped to body.wide #preview;
+        // no-op in Marp mode (the later body.marp #preview rule wins).
+        if (localStorage.getItem('wide') === 'true') {
+            document.body.classList.add('wide');
+        }
+        document.addEventListener('keydown', (e) => {
+            if (e.ctrlKey || e.metaKey || e.altKey) return;
+            if (e.key !== 'w' && e.key !== 'W') return;
+            const t = e.target;
+            if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+            const on = document.body.classList.toggle('wide');
+            localStorage.setItem('wide', on);
+            showToast('Full width: ' + (on ? 'on' : 'off'));
+        });
+
         // Section numbering toggle (N key). Baseline counter rules live in the inline <style>
         // above so numbering works on every theme by default; user themes may
         // override the ::before content/styling for their custom number presentation.
@@ -2608,6 +2665,7 @@
             const bodyClasses = [];
             if (document.body.classList.contains('dark-mode')) bodyClasses.push('dark-mode');
             if (document.body.classList.contains('numbered')) bodyClasses.push('numbered');
+            if (document.body.classList.contains('wide')) bodyClasses.push('wide');
             const bodyClass = bodyClasses.join(' ');
             // Title: prefer the source filename basename (without .md/.markdown) so browser tabs and
             // bookmarks identify the document. Falls back to document.title for files opened via
@@ -5506,6 +5564,70 @@ ${previewClone.outerHTML}
         }
         setupMathContextMenu();
 
+        // Right-click menu on the workspace file tree: collapse / expand every
+        // folder & file sub-tree at once. Listener lives on the stable #file-tree
+        // container so it survives the per-render rebuild of #file-tree-root.
+        let __ftMenuWired = false;
+        function setupFileTreeContextMenu() {
+            if (__ftMenuWired) return;
+            const ftEl = document.getElementById('file-tree');
+            if (!ftEl) return;
+            __ftMenuWired = true;
+
+            const menu = document.createElement('div');
+            menu.className = 'ft-context-menu';
+            menu.style.display = 'none';
+            document.body.appendChild(menu);
+
+            const hideMenu = () => { menu.style.display = 'none'; menu.innerHTML = ''; };
+
+            const setAllDetails = (open) => {
+                // Setting .open fires each <details>'s persistDetails 'toggle' listener,
+                // so the collapsed/expanded state is persisted to localStorage too.
+                ftEl.querySelectorAll('details').forEach((d) => { d.open = open; });
+            };
+
+            const addItem = (label, onClick) => {
+                const item = document.createElement('div');
+                item.className = 'ft-menu-item';
+                item.textContent = label;
+                item.addEventListener('click', (ev) => {
+                    ev.stopPropagation();
+                    onClick();
+                    hideMenu();
+                });
+                menu.appendChild(item);
+            };
+
+            ftEl.addEventListener('contextmenu', (e) => {
+                // Only act when the tree actually has collapsible nodes.
+                if (!ftEl.querySelector('details')) { hideMenu(); return; }
+                e.preventDefault();
+
+                menu.innerHTML = '';
+                addItem('すべて閉じる', () => setAllDetails(false));
+                addItem('すべて開く', () => setAllDetails(true));
+
+                // Position at the cursor, clamped to the viewport.
+                menu.style.display = 'block';
+                const m = menu.getBoundingClientRect();
+                const margin = 4;
+                let left = e.clientX;
+                let top = e.clientY;
+                if (left + m.width > window.innerWidth - margin) left = window.innerWidth - m.width - margin;
+                if (top + m.height > window.innerHeight - margin) top = window.innerHeight - m.height - margin;
+                menu.style.left = Math.max(margin, left) + 'px';
+                menu.style.top = Math.max(margin, top) + 'px';
+            });
+
+            document.addEventListener('click', (e) => {
+                if (menu.style.display !== 'none' && !menu.contains(e.target)) hideMenu();
+            });
+            document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hideMenu(); });
+            window.addEventListener('scroll', hideMenu, true);
+        }
+        setupFileTreeContextMenu();
+
         // Editor sync — reverse jump: clicking on a rendered block emits a
         // jumpTo over the localhost WS so the editor can move its cursor.
         // We piggy-back on the existing data-line stamping (see stampLineNumbers).
@@ -5907,6 +6029,7 @@ ${previewClone.outerHTML}
                     <tr><td class="keys"><kbd>S</kbd></td><td>Select theme style — or Marp theme in Marp mode (rewrites front-matter)</td></tr>
                     <tr><td class="keys"><kbd>N</kbd></td><td>Toggle auto section numbering</td></tr>
                     <tr><td class="keys"><kbd>L</kbd></td><td>Toggle line numbers</td></tr>
+                    <tr><td class="keys"><kbd>W</kbd></td><td>Toggle full-width layout</td></tr>
                     <tr><td class="keys"><kbd>E</kbd></td><td>Open editor window (Vim mode, math input assist, char counter)</td></tr>
                     <tr><td class="keys"><kbd>X</kbd></td><td>Export current document as standalone HTML</td></tr>
                     <tr><td class="keys"><kbd>Ctrl</kbd>+<kbd>+</kbd> / <kbd>Ctrl</kbd>+<kbd>-</kbd> / <kbd>Ctrl</kbd>+<kbd>0</kbd></td><td>Zoom in / out / reset</td></tr>
