@@ -225,6 +225,18 @@ Marp 標準では生 HTML が必要な「左右分割」を、`<!-- _class: spli
 
 ---
 
+## インラインスタイル
+
+文の一部だけ色・サイズ・書体を変えるには `[テキスト]{属性}` 記法を使います。
+
+- 売上は[前年比 +28%]{color=#e91e63 size=large weight=bold}で着地
+- 注記は[小さめのグレー]{color=gray size=small}で
+- [明朝体での引用]{font=serif}や[等幅コード風]{font=mono}も可
+
+スライドでも通常プレビューと同じ構文がそのまま効きます（`color`/`size`/`font`/`bg`/`weight`/`valign`）。
+
+---
+
 <!-- _class: split-3 -->
 
 ## 3カラム特徴紹介

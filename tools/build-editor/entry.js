@@ -32,6 +32,7 @@ import { texEnvCompletionSource } from './texEnvComplete.js';
 import { katexCommandCompletionSource } from './katexCommandComplete.js';
 import { pathCompletionSource } from './pathComplete.js';
 import { fencedDivCompletionSource } from './fencedDivComplete.js';
+import { spanStyleCompletionSource } from './spanStyleComplete.js';
 import { installJpWordMotion } from './jpWordMotion.js';
 import { numberedListIndentKeymap } from './numberedListIndent.js';
 import { installClipboardSync } from './clipboardSync.js';
@@ -627,7 +628,7 @@ export function create(root, opts = {}) {
       markdown({ base: markdownLanguage }),
       search(),
       autocompletion({
-        override: [fencedDivCompletionSource, texEnvCompletionSource, katexCommandCompletionSource, pathCompletionSource(() => currentPath)],
+        override: [fencedDivCompletionSource, spanStyleCompletionSource, texEnvCompletionSource, katexCommandCompletionSource, pathCompletionSource(() => currentPath)],
         activateOnTyping: true,
         defaultKeymap: false,
       }),
