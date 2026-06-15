@@ -2218,6 +2218,23 @@
             showToast('Full width: ' + (on ? 'on' : 'off'));
         });
 
+        // Auto-shrink Marp slides to fit (A key). When on (default), slides whose
+        // content overflows the 1280x720 box are scaled down uniformly to fit;
+        // when off, content is clipped by the foreignObject as before. Persisted
+        // in localStorage. No-op outside Marp mode (fitMarpSlides finds no sections).
+        document.addEventListener('keydown', (e) => {
+            if (e.ctrlKey || e.metaKey || e.altKey) return;
+            if (e.key !== 'a' && e.key !== 'A') return;
+            const t = e.target;
+            if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+            __marpAutofit = !__marpAutofit;
+            localStorage.setItem('marpAutofit', __marpAutofit);
+            fitMarpSlides();   // re-fit on / clear on off
+            if (document.body.classList.contains('marp')) {
+                showToast('Autofit slides: ' + (__marpAutofit ? 'on' : 'off'));
+            }
+        });
+
         // Section numbering toggle (N key). Baseline counter rules live in the inline <style>
         // above so numbering works on every theme by default; user themes may
         // override the ::before content/styling for their custom number presentation.
@@ -4309,6 +4326,9 @@ ${previewClone.outerHTML}
         // documented in renderMarp() below.
         let __marpDeckIndex = 0;
         let __marpLastRenderedPath = null;
+        // Auto-shrink overflowing slides to fit (default on; A-key toggle).
+        let __marpAutofit = localStorage.getItem('marpAutofit') !== 'false';
+        const __MARP_FIT_MIN = 0.5;      // floor on the shrink scale
         // Deck-mode cursor-anchored zoom + drag-pan state. Applied as a CSS
         // transform on the active slide <svg> (transform-origin 0 0). tx/ty are
         // accumulated in screen px; see the Ctrl+wheel listener below.
@@ -4337,6 +4357,43 @@ ${previewClone.outerHTML}
             slides.forEach((s, i) => s.classList.toggle('active', i === __marpDeckIndex));
             const counter = document.getElementById('slide-counter');
             if (counter) counter.textContent = (__marpDeckIndex + 1) + ' / ' + slides.length;
+            // Fit the now-visible slide (in deck mode the others are display:none
+            // and unmeasurable, so they get fitted when navigated to).
+            fitMarpSlides();
+        }
+        // Auto-shrink-to-fit: marp-core renders each slide as a fixed 1280x720
+        // logical box (svg viewBox / foreignObject); content taller than the
+        // slide height is clipped by the foreignObject. For each visible <section>
+        // whose content overflows, scale the whole section down uniformly so it
+        // fits. To keep the section background covering the full slide (a naive
+        // scale() would reveal a gap at the right/bottom), we first enlarge the
+        // box to 1/f in both dimensions, then scale by f — the rendered box snaps
+        // back to 1280x720 while the content shrinks uniformly. Logical-coordinate
+        // based, so the result is valid in scroll/deck/list regardless of the
+        // on-screen display size. Idempotent: always reset → measure → (re)apply.
+        function fitMarpSlides() {
+            const sections = preview.querySelectorAll('div.marpit > svg[data-marpit-svg] > foreignObject > section');
+            sections.forEach(section => {
+                // Reset any prior fit so we measure the natural content height.
+                section.style.transform = '';
+                section.style.transformOrigin = '';
+                section.style.width = '';
+                section.style.height = '';
+                if (!__marpAutofit) return;
+                const fo = section.closest('foreignObject');
+                if (!fo) return;
+                const H = parseFloat(fo.getAttribute('height')) || section.clientHeight || 720;
+                const contentH = section.scrollHeight;
+                // contentH === 0 ⇒ slide not laid out (display:none, e.g. an
+                // inactive deck slide); it gets fitted when activated via
+                // __marpUpdateDeck(). Otherwise apply only when it overflows.
+                if (contentH === 0 || contentH <= H + 1) return;
+                const f = Math.max(__MARP_FIT_MIN, H / contentH);
+                section.style.transformOrigin = 'top left';
+                section.style.width = (100 / f) + '%';
+                section.style.height = (100 / f) + '%';
+                section.style.transform = 'scale(' + f + ')';
+            });
         }
         // Apply the current __marpZoom transform to the active slide <svg>.
         function __applyMarpZoom() {
@@ -5422,6 +5479,9 @@ ${previewClone.outerHTML}
             }
             __marpLastRenderedPath = currentFilePath;
             __marpUpdateDeck();
+            // Re-fit after a layout flush so any async-rendered (mermaid / abc /
+            // plotly) figures' final heights are accounted for.
+            requestAnimationFrame(() => fitMarpSlides());
 
             // List-mode click → jump into deck mode focused on that slide.
             // Bind on #preview (delegated) so we only attach once per render.
@@ -6402,6 +6462,7 @@ ${previewClone.outerHTML}
                     <tr><td class="keys"><kbd>Alt</kbd>+<kbd>←</kbd> / <kbd>Alt</kbd>+<kbd>→</kbd></td><td>Navigate back / forward through opened files</td></tr>
                     <tr><td class="keys"><kbd>P</kbd></td><td>Cycle Marp view: scroll → deck → list (click a thumbnail in list to open it in deck)</td></tr>
                     <tr><td class="keys"><kbd>F</kbd></td><td>Toggle fullscreen (Marp documents)</td></tr>
+                    <tr><td class="keys"><kbd>A</kbd></td><td>Toggle auto-shrink slides to fit (Marp)</td></tr>
                     <tr><td class="keys"><kbd>←</kbd> / <kbd>→</kbd> / <kbd>PgUp</kbd> / <kbd>PgDn</kbd> / <kbd>Home</kbd> / <kbd>End</kbd></td><td>Navigate slides in Marp deck mode</td></tr>
                     <tr><td class="keys"><kbd>Ctrl</kbd>+<kbd>Wheel</kbd> / Drag</td><td>Zoom at cursor / pan the slide (Marp deck mode)</td></tr>
                     <tr><td class="keys"><kbd>Z</kbd></td><td>Toggle laser pointer with trail (Marp deck mode)</td></tr>
