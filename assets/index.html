@@ -1566,17 +1566,19 @@
            grid 化するのに対し、こちらは section 内の1ブロックを grid 化する。
            列の中身は split と同じ .split-col クラスを再利用。列数は内部の
            +++ 数（または columns-N 指定）で 2〜4 列。 */
-        body.marp #preview .inline-cols {
+        /* Scoped to #preview (not body.marp) so the columnsDiv marked extension's
+           output renders multi-column in normal documents too, not just Marp. */
+        #preview .inline-cols {
             display: grid;
             grid-template-columns: repeat(2, 1fr);
             gap: 30px;
             align-items: start;
             margin: 0.6em 0;
         }
-        body.marp #preview .inline-cols.inline-cols-3 { grid-template-columns: repeat(3, 1fr); gap: 24px; }
-        body.marp #preview .inline-cols.inline-cols-4 { grid-template-columns: repeat(4, 1fr); gap: 20px; }
-        body.marp #preview .inline-cols > .split-col { min-width: 0; }
-        body.marp #preview .inline-cols > .split-col > :first-child { margin-top: 0; }
+        #preview .inline-cols.inline-cols-3 { grid-template-columns: repeat(3, 1fr); gap: 24px; }
+        #preview .inline-cols.inline-cols-4 { grid-template-columns: repeat(4, 1fr); gap: 20px; }
+        #preview .inline-cols > .split-col { min-width: 0; }
+        #preview .inline-cols > .split-col > :first-child { margin-top: 0; }
 
         /* Deck (single-slide presentation) mode */
         body.marp.deck-mode #preview-container { background: #000; }
@@ -1624,6 +1626,28 @@
         /* Hide the OS cursor over the slide while the laser is active. */
         body.marp.deck-mode.laser-on #preview,
         body.marp.deck-mode.laser-on #preview * { cursor: none; }
+
+        /* Selection marker (highlighter, behind text, auto-fade) — selecting text
+           in #preview paints a highlighter band BEHIND the glyphs (text stays
+           crisp) via the CSS Custom Highlight API, instead of the native blue
+           selection, then auto-fades after ~2s. Because the highlight is range-
+           based, the browser paints and re-positions it natively — so it follows
+           the live selection smoothly as you drag and stays aligned under the
+           Marp deck-mode zoom/pan with no manual coordinates. The selection range
+           itself is kept so Ctrl+C still copies. The native selection color is
+           suppressed in #preview only when the API is available (body.marker-
+           supported), so unsupported engines keep their normal selection.
+           Marker color resolves from --marker-color (default highlighter yellow);
+           a Marp theme or user style can rebrand it by setting --marker-color on
+           section / #preview, just like --laser-color brands the laser pointer.
+           The actual `::highlight(marker)` background-color (with its animated fade
+           alpha) is written into a dedicated <style id="marker-style"> from JS,
+           because Chromium highlight pseudos do not inherit custom properties, so a
+           var() here would not resolve. */
+        :root { --marker-color: #ffd60a; }
+        /* Marp only — normal previews keep their native blue selection. */
+        body.marker-supported.marp #preview ::selection { background: transparent; }
+        body.marker-supported.marp #preview ::-moz-selection { background: transparent; }
 
         /* List (grid overview) mode — every slide as a clickable 16:9 thumbnail. */
         body.marp.list-mode #preview {
@@ -2192,6 +2216,23 @@
             const on = document.body.classList.toggle('wide');
             localStorage.setItem('wide', on);
             showToast('Full width: ' + (on ? 'on' : 'off'));
+        });
+
+        // Auto-shrink Marp slides to fit (A key). When on (default), slides whose
+        // content overflows the 1280x720 box are scaled down uniformly to fit;
+        // when off, content is clipped by the foreignObject as before. Persisted
+        // in localStorage. No-op outside Marp mode (fitMarpSlides finds no sections).
+        document.addEventListener('keydown', (e) => {
+            if (e.ctrlKey || e.metaKey || e.altKey) return;
+            if (e.key !== 'a' && e.key !== 'A') return;
+            const t = e.target;
+            if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+            __marpAutofit = !__marpAutofit;
+            localStorage.setItem('marpAutofit', __marpAutofit);
+            fitMarpSlides();   // re-fit on / clear on off
+            if (document.body.classList.contains('marp')) {
+                showToast('Autofit slides: ' + (__marpAutofit ? 'on' : 'off'));
+            }
         });
 
         // Section numbering toggle (N key). Baseline counter rules live in the inline <style>
@@ -3109,6 +3150,82 @@ ${previewClone.outerHTML}
             });
         }
 
+        // ===== Inline styled-span syntax: [text]{key=value …} =========================
+        // Shared CSS builder for the Pandoc-style inline styled span. Used by both the
+        // normal pipeline (the `styledSpan` marked inline extension) and the Marp
+        // pre-pass (which rewrites `[text]{…}` → `<span style>` before marp.render, now
+        // that getMarp() runs with html:true). Returns a sanitized declaration string
+        // built ONLY from recognized keys; returns '' when nothing is recognized so the
+        // caller can decline to emit a span (leaving links / refs / unrelated `{…}`
+        // untouched). Keys (case-insensitive, with short forms):
+        //   color/c  size/s  font/f  bg/background  weight/w  valign/v
+        const SPAN_SIZE_KW = { xs:'0.7em', sm:'0.85em', small:'0.85em', md:'1em', normal:'1em',
+            lg:'1.4em', large:'1.4em', xl:'1.8em', xxl:'2.4em', '2xl':'2.4em' };
+        const SPAN_WEIGHT_KW = { thin:'100', light:'300', normal:'400', medium:'500',
+            semibold:'600', bold:'700', black:'900' };
+        // Font names use single quotes (NOT double) so they don't close the
+        // double-quoted style="…" attribute these declarations land in.
+        const SPAN_FONT_STACK = {
+            serif: "Georgia, 'Times New Roman', 'Yu Mincho', YuMincho, 'Hiragino Mincho ProN', serif",
+            sans: "-apple-system, 'Segoe UI', 'Yu Gothic', YuGothic, 'Hiragino Kaku Gothic ProN', sans-serif",
+            mono: "Consolas, 'Courier New', 'Cascadia Mono', monospace"
+        };
+        const SPAN_VALIGN_KW = { center:'middle', middle:'middle', bottom:'bottom', top:'top',
+            baseline:'baseline', sub:'sub', super:'super' };
+        const SPAN_COLOR_RE = /^(#[0-9a-fA-F]{3,8}|[a-zA-Z]+|(?:rgb|rgba|hsl|hsla)\([0-9.,%\s\/]+\))$/;
+        const SPAN_LEN_RE = /^-?[0-9.]+(px|em|rem|%|pt|ex|ch|vw|vh)$/;
+        // Values land inside a double-quoted style="" attribute, and quoted font
+        // names are wrapped in single quotes; drop the quote chars (and < >) that
+        // could break out of either or inject markup.
+        function spanCssEscape(v) { return String(v).replace(/[<>"']/g, ''); }
+        function buildSpanStyle(attrStr) {
+            if (!attrStr) return '';
+            const re = /([a-zA-Z]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s}]+))/g;
+            const decls = [];
+            let m;
+            while ((m = re.exec(attrStr)) !== null) {
+                const key = m[1].toLowerCase();
+                const val = (m[2] !== undefined ? m[2] : m[3] !== undefined ? m[3] : m[4] || '').trim();
+                if (!val) continue;
+                switch (key) {
+                    case 'color': case 'c':
+                        if (SPAN_COLOR_RE.test(val)) decls.push('color:' + spanCssEscape(val));
+                        break;
+                    case 'bg': case 'background':
+                        if (SPAN_COLOR_RE.test(val)) decls.push('background-color:' + spanCssEscape(val));
+                        break;
+                    case 'size': case 's': {
+                        const kw = SPAN_SIZE_KW[val.toLowerCase()];
+                        if (kw) decls.push('font-size:' + kw);
+                        else if (SPAN_LEN_RE.test(val)) decls.push('font-size:' + val);
+                        break;
+                    }
+                    case 'font': case 'f': {
+                        const stack = SPAN_FONT_STACK[val.toLowerCase()];
+                        if (stack) decls.push('font-family:' + stack);
+                        else {
+                            const safe = spanCssEscape(val);
+                            decls.push('font-family:' + (/\s/.test(safe) ? "'" + safe + "'" : safe));
+                        }
+                        break;
+                    }
+                    case 'weight': case 'w': {
+                        const kw = SPAN_WEIGHT_KW[val.toLowerCase()];
+                        if (kw) decls.push('font-weight:' + kw);
+                        else if (/^(?:[1-9]00|normal|bold|bolder|lighter)$/i.test(val)) decls.push('font-weight:' + val.toLowerCase());
+                        break;
+                    }
+                    case 'valign': case 'v': {
+                        const kw = SPAN_VALIGN_KW[val.toLowerCase()];
+                        if (kw) decls.push('vertical-align:' + kw);
+                        else if (SPAN_LEN_RE.test(val)) decls.push('vertical-align:' + val);
+                        break;
+                    }
+                }
+            }
+            return decls.join(';');
+        }
+
         // Blockquote attribution convention: inside a blockquote, a paragraph
         // (or the last line of one) that begins with `--` or an em dash `—` is
         // treated as a citation source and right-aligned via the `.bq-attribution`
@@ -3587,6 +3704,87 @@ ${previewClone.outerHTML}
                     const cls = token.align === 'message' ? 'md-message' : 'align-' + token.align;
                     return '<div class="' + cls + '">\n'
                         + this.parser.parse(token.tokens) + '</div>\n';
+                }
+            }]
+        });
+
+        // Block-level marked extension for Pandoc-style inline column regions in
+        // the *normal* (non-Marp) pipeline:
+        //   ::: columns        ::: columns-3
+        //   col 1 content      col 1
+        //   +++                +++
+        //   col 2 content      col 2
+        //   :::                +++
+        //                      col 3
+        //                      :::
+        // Each `+++`-separated bucket is recursively block-parsed and emitted as
+        // a <div class="split-col"> inside <div class="inline-cols [inline-cols-N]">,
+        // matching the DOM the Marp sentinel post-pass produces so the shared
+        // `#preview .inline-cols` grid CSS applies. Column count is the explicit
+        // `columns-N` if given, else the bucket count (clamped 2..4).
+        // Limitation (same as alignDiv): the non-greedy body match stops at the
+        // first `\n:::`, so a nested `::: center` inside a column is not supported
+        // in the normal pipeline — use Marp for nested fenced divs.
+        marked.use({
+            extensions: [{
+                name: 'columnsDiv',
+                level: 'block',
+                start(src) {
+                    const i = src.search(/^:::+[ \t]*columns(?:-[234])?[ \t]*$/im);
+                    return i < 0 ? undefined : i;
+                },
+                tokenizer(src) {
+                    const m = /^:::+[ \t]*columns(?:-([234]))?[ \t]*\n([\s\S]*?)\n:::+[ \t]*(?:\n|$)/i.exec(src);
+                    if (!m) return;
+                    const parts = m[2].split(/^[ \t]*\+\+\+[ \t]*$/m);
+                    const cols = parts.map(p => {
+                        const tokens = [];
+                        this.lexer.blockTokens(p.trim() + '\n', tokens);
+                        return tokens;
+                    });
+                    const count = Math.min(4, Math.max(2, m[1] ? +m[1] : cols.length));
+                    return { type: 'columnsDiv', raw: m[0], count, cols };
+                },
+                renderer(token) {
+                    const cls = 'inline-cols' + (token.count >= 3 ? ' inline-cols-' + token.count : '');
+                    let html = '<div class="' + cls + '">\n';
+                    token.cols.forEach(tokens => {
+                        html += '<div class="split-col">\n' + this.parser.parse(tokens) + '</div>\n';
+                    });
+                    return html + '</div>\n';
+                }
+            }]
+        });
+
+        // Inline-level marked extension for the Pandoc-style styled span:
+        //   [テキスト]{color=red size=large font=serif}
+        // The label is recursively inline-parsed (so nested **bold** / *italic* / `code`
+        // work), and wrapped in <span style="…"> built by the shared buildSpanStyle().
+        // Only fires when the brace yields ≥1 recognized property — otherwise the token
+        // is not produced, so `[label](url)`, `[ref][id]`, and unrelated `[x]{…}` are
+        // left to marked's built-in rules. Code spans/blocks are immune automatically
+        // (marked never invokes inline tokenizers inside them). Marp gets the same
+        // feature via a pre-pass in renderMarp() (see there).
+        marked.use({
+            extensions: [{
+                name: 'styledSpan',
+                level: 'inline',
+                start(src) {
+                    const m = /\[[^\]\n]+\]\{/.exec(src);
+                    return m ? m.index : undefined;
+                },
+                tokenizer(src) {
+                    const m = /^\[([^\]\n]+)\]\{([^}\n]*)\}/.exec(src);
+                    if (!m) return;
+                    const style = buildSpanStyle(m[2]);
+                    if (!style) return;
+                    const token = { type: 'styledSpan', raw: m[0], text: m[1], style, tokens: [] };
+                    this.lexer.inlineTokens(token.text, token.tokens);
+                    return token;
+                },
+                renderer(token) {
+                    return '<span style="' + token.style + '">'
+                        + this.parser.parseInline(token.tokens) + '</span>';
                 }
             }]
         });
@@ -4128,6 +4326,9 @@ ${previewClone.outerHTML}
         // documented in renderMarp() below.
         let __marpDeckIndex = 0;
         let __marpLastRenderedPath = null;
+        // Auto-shrink overflowing slides to fit (default on; A-key toggle).
+        let __marpAutofit = localStorage.getItem('marpAutofit') !== 'false';
+        const __MARP_FIT_MIN = 0.5;      // floor on the shrink scale
         // Deck-mode cursor-anchored zoom + drag-pan state. Applied as a CSS
         // transform on the active slide <svg> (transform-origin 0 0). tx/ty are
         // accumulated in screen px; see the Ctrl+wheel listener below.
@@ -4156,6 +4357,43 @@ ${previewClone.outerHTML}
             slides.forEach((s, i) => s.classList.toggle('active', i === __marpDeckIndex));
             const counter = document.getElementById('slide-counter');
             if (counter) counter.textContent = (__marpDeckIndex + 1) + ' / ' + slides.length;
+            // Fit the now-visible slide (in deck mode the others are display:none
+            // and unmeasurable, so they get fitted when navigated to).
+            fitMarpSlides();
+        }
+        // Auto-shrink-to-fit: marp-core renders each slide as a fixed 1280x720
+        // logical box (svg viewBox / foreignObject); content taller than the
+        // slide height is clipped by the foreignObject. For each visible <section>
+        // whose content overflows, scale the whole section down uniformly so it
+        // fits. To keep the section background covering the full slide (a naive
+        // scale() would reveal a gap at the right/bottom), we first enlarge the
+        // box to 1/f in both dimensions, then scale by f — the rendered box snaps
+        // back to 1280x720 while the content shrinks uniformly. Logical-coordinate
+        // based, so the result is valid in scroll/deck/list regardless of the
+        // on-screen display size. Idempotent: always reset → measure → (re)apply.
+        function fitMarpSlides() {
+            const sections = preview.querySelectorAll('div.marpit > svg[data-marpit-svg] > foreignObject > section');
+            sections.forEach(section => {
+                // Reset any prior fit so we measure the natural content height.
+                section.style.transform = '';
+                section.style.transformOrigin = '';
+                section.style.width = '';
+                section.style.height = '';
+                if (!__marpAutofit) return;
+                const fo = section.closest('foreignObject');
+                if (!fo) return;
+                const H = parseFloat(fo.getAttribute('height')) || section.clientHeight || 720;
+                const contentH = section.scrollHeight;
+                // contentH === 0 ⇒ slide not laid out (display:none, e.g. an
+                // inactive deck slide); it gets fitted when activated via
+                // __marpUpdateDeck(). Otherwise apply only when it overflows.
+                if (contentH === 0 || contentH <= H + 1) return;
+                const f = Math.max(__MARP_FIT_MIN, H / contentH);
+                section.style.transformOrigin = 'top left';
+                section.style.width = (100 / f) + '%';
+                section.style.height = (100 / f) + '%';
+                section.style.transform = 'scale(' + f + ')';
+            });
         }
         // Apply the current __marpZoom transform to the active slide <svg>.
         function __applyMarpZoom() {
@@ -4295,6 +4533,146 @@ ${previewClone.outerHTML}
             if (!__laserOn) return;
             __laserPoints.push({ x: e.clientX, y: e.clientY, t: performance.now() });
         });
+
+        // ---- Selection marker (highlighter behind text, auto-fade) — Marp only ----
+        // In Marp mode (body.marp), selecting text in a slide paints a highlighter
+        // band BEHIND the glyphs instead of the native blue selection, then fades it
+        // out after ~2s. Normal (non-Marp) previews keep the native selection:
+        // drawMarker() bails when body.marp is absent and the ::selection-suppress
+        // CSS is scoped to body.marker-supported.marp. Built on the CSS Custom
+        // Highlight API: a single Highlight holds a clone of the selection range
+        // and the browser paints `::highlight(marker)` as the text's background —
+        // so the text stays crisp on top, the band is visible on any (incl. dark)
+        // background, the stroke follows the live selection smoothly as you drag,
+        // and it stays aligned under the Marp deck-mode zoom/pan automatically (no
+        // manual coordinates). The selection range is left intact so Ctrl+C still
+        // copies. Falls back to native selection where the API is unavailable.
+        const __highlightSupported = (typeof Highlight !== 'undefined'
+            && typeof CSS !== 'undefined' && CSS.highlights);
+        let __markerHighlight = null;
+        let __markerTimer = null;        // pending fade-start timer
+        let __markerFadeRAF = null;      // pending fade animation frame
+        let __markerFadeSafety = null;   // guaranteed-clear timer (in case rAF is throttled)
+        let __markerMouseDown = false;   // true while a mouse button is held (drag-select in progress)
+        let __markerRGB = [255, 214, 10];// resolved fill rgb, cached for the fade
+        let __markerStyle = null;        // <style> carrying the ::highlight(marker) rule
+        const __MARKER_LIFE_MS = 2000;   // visible for ~2s before fading
+        const __MARKER_FADE_MS = 500;    // fade-out duration
+        const __MARKER_ALPHA = 0.55;     // resting fill opacity (translucent highlighter)
+        if (__highlightSupported) {
+            __markerHighlight = new Highlight();
+            CSS.highlights.set('marker', __markerHighlight);
+            __markerStyle = document.createElement('style');
+            __markerStyle.id = 'marker-style';
+            document.head.appendChild(__markerStyle);
+            if (document.body) document.body.classList.add('marker-supported');
+        }
+        const __preview = () => document.getElementById('preview');
+        function __selectionInPreview(sel) {
+            const pv = __preview();
+            if (!pv || !sel) return false;
+            const a = sel.anchorNode, f = sel.focusNode;
+            return !!(a && pv.contains(a)) && !!(f && pv.contains(f));
+        }
+        // Resolve the marker fill rgb from --marker-color: read it from the element
+        // containing the selection first (so a Marp theme's section value wins),
+        // fall back to :root, then highlighter yellow; normalize to [r,g,b] via a
+        // throwaway probe so any CSS color form works and the fade can vary alpha.
+        function __resolveMarkerRGB(node) {
+            const el = node && (node.nodeType === 1 ? node : node.parentElement);
+            let c = '';
+            if (el) c = getComputedStyle(el).getPropertyValue('--marker-color').trim();
+            if (!c) c = getComputedStyle(document.documentElement).getPropertyValue('--marker-color').trim();
+            if (!c) c = '#ffd60a';
+            const probe = document.createElement('span');
+            probe.style.cssText = 'display:none;color:' + c;
+            document.body.appendChild(probe);
+            const m = getComputedStyle(probe).color.match(/\d+(\.\d+)?/g);
+            probe.remove();
+            return (m && m.length >= 3) ? [+m[0], +m[1], +m[2]] : [255, 214, 10];
+        }
+        function __setMarkerFill(alpha) {
+            if (!__markerStyle) return;
+            const [r, g, b] = __markerRGB;
+            __markerStyle.textContent = '::highlight(marker){background-color:rgba('
+                + r + ',' + g + ',' + b + ',' + alpha + ');}';
+        }
+        // dropSelection: also clear the text selection (used on the auto-disappear
+        // path so the band fading out takes the blue/native selection with it).
+        // Guarded to a still-in-#preview selection so we never wipe a selection the
+        // user has since made elsewhere.
+        function clearMarker(dropSelection) {
+            if (__markerTimer) { clearTimeout(__markerTimer); __markerTimer = null; }
+            if (__markerFadeRAF) { cancelAnimationFrame(__markerFadeRAF); __markerFadeRAF = null; }
+            if (__markerFadeSafety) { clearTimeout(__markerFadeSafety); __markerFadeSafety = null; }
+            if (__markerHighlight) __markerHighlight.clear();
+            if (__markerStyle) __markerStyle.textContent = '';
+            document.body.classList.remove('marker-active');
+            if (dropSelection) {
+                const sel = window.getSelection();
+                if (sel && !sel.isCollapsed && __selectionInPreview(sel)) sel.removeAllRanges();
+            }
+        }
+        function drawMarker() {
+            if (!__highlightSupported) return;
+            // Marp only — normal previews keep the browser's native selection.
+            if (!document.body.classList.contains('marp')) { clearMarker(); return; }
+            const sel = window.getSelection();
+            if (!sel || sel.isCollapsed || sel.rangeCount === 0 || !__selectionInPreview(sel)) {
+                clearMarker();
+                return;
+            }
+            // Cancel any in-flight fade and re-assert the solid fill.
+            if (__markerTimer) { clearTimeout(__markerTimer); __markerTimer = null; }
+            if (__markerFadeRAF) { cancelAnimationFrame(__markerFadeRAF); __markerFadeRAF = null; }
+            if (__markerFadeSafety) { clearTimeout(__markerFadeSafety); __markerFadeSafety = null; }
+            const range = sel.getRangeAt(0).cloneRange();
+            __markerRGB = __resolveMarkerRGB(range.commonAncestorContainer);
+            __markerHighlight.clear();
+            __markerHighlight.add(range);
+            __setMarkerFill(__MARKER_ALPHA);
+            document.body.classList.add('marker-active');
+            // Arm the fade only when the selection has settled — i.e. the mouse
+            // button is up. During a drag-select (__markerMouseDown) the marker
+            // grows smoothly with the selection and (re)arms on mouseup. Keyboard /
+            // programmatic selection changes happen with the button up, so they arm
+            // here and each change restarts the ~2s countdown.
+            if (!__markerMouseDown) armMarkerFade();
+        }
+        // Start the ~2s visible period, then animate the fill alpha to 0 and clear.
+        function armMarkerFade() {
+            if (!document.body.classList.contains('marker-active')) return;
+            if (__markerTimer) clearTimeout(__markerTimer);
+            __markerTimer = setTimeout(() => {
+                __markerTimer = null;
+                const t0 = performance.now();
+                const step = (now) => {
+                    const k = Math.min(1, (now - t0) / __MARKER_FADE_MS);
+                    __setMarkerFill(__MARKER_ALPHA * (1 - k));
+                    if (k < 1) { __markerFadeRAF = requestAnimationFrame(step); }
+                    else { __markerFadeRAF = null; clearMarker(true); }
+                };
+                __markerFadeRAF = requestAnimationFrame(step);
+                // Guaranteed clear even if rAF is throttled (window occluded mid-fade).
+                __markerFadeSafety = setTimeout(() => clearMarker(true), __MARKER_FADE_MS + 150);
+            }, __MARKER_LIFE_MS);
+        }
+        if (__highlightSupported) {
+            document.addEventListener('selectionchange', drawMarker);
+            document.addEventListener('mousedown', () => {
+                __markerMouseDown = true;
+                // Hold the marker solid while a new selection gesture starts.
+                if (__markerTimer) { clearTimeout(__markerTimer); __markerTimer = null; }
+                if (__markerFadeRAF) { cancelAnimationFrame(__markerFadeRAF); __markerFadeRAF = null; }
+                if (__markerFadeSafety) { clearTimeout(__markerFadeSafety); __markerFadeSafety = null; }
+                if (document.body.classList.contains('marker-active')) __setMarkerFill(__MARKER_ALPHA);
+            });
+            document.addEventListener('mouseup', () => {
+                __markerMouseDown = false;
+                // No selectionchange fires after mouseup, so arm the fade here for drags.
+                if (document.body.classList.contains('marker-active')) armMarkerFade();
+            });
+        }
 
         // ---- Diagram render memoization (shared by renderMarp + renderMarkdown) ----
         // #preview is rebuilt via innerHTML on every render, so the previously
@@ -4456,7 +4834,11 @@ ${previewClone.outerHTML}
             // emoji.shortcode disabled: marp-core's twemoji turns `:x:` inside our
             // footnote sentinel `⦃FN:id:occ⦄` into an emoji image, breaking the
             // post-render token replacement.
-            const marp = new Marp({ script: false, html: false, emoji: { shortcode: false, unicode: false } });
+            // html:true so the inline styled-span pre-pass (renderMarp(): [text]{…} →
+            // <span style>) passes through; scripts stay disabled (script:false). The
+            // footnote / split / column sentinels are plain `⦃…⦄` text + `+++`/`:::`,
+            // none of which markdown-it treats as HTML, so html:true leaves them intact.
+            const marp = new Marp({ script: false, html: true, emoji: { shortcode: false, unicode: false } });
             // markdown-it's default validateLink rejects most data: URIs (only
             // image/(gif|png|jpeg|webp) pass). Our Rust host embeds local images
             // as data URIs of *any* MIME (svg+xml, bmp, …), so allow them all.
@@ -4528,6 +4910,47 @@ ${previewClone.outerHTML}
                 const occ = (footnoteState.refCounts[id] = (footnoteState.refCounts[id] || 0) + 1);
                 return FN_OPEN + id + ':' + occ + FN_CLOSE;
             });
+
+            // Inline styled-span pre-pass — rewrite [text]{key=value …} into raw
+            // <span style="…"> so marp-core (html:true) renders it, mirroring the normal
+            // pipeline's `styledSpan` marked extension via the shared buildSpanStyle().
+            // Line-aware so the YAML front-matter and fenced code blocks are skipped;
+            // only braces yielding ≥1 recognized property are converted, so links / refs
+            // / unrelated `{…}` are left verbatim. The inner text stays as Markdown
+            // (marp renders **bold** etc. inside the injected span).
+            {
+                const lines = markdown.split('\n');
+                const out = [];
+                let inFm = lines.length > 0 && /^---\s*$/.test(lines[0]);
+                let fmClosed = !inFm;
+                let inFence = false;
+                let fenceMarker = '';
+                const spanRe = /\[([^\]\n]+)\]\{([^}\n]*)\}/g;
+                for (let i = 0; i < lines.length; i++) {
+                    let ln = lines[i];
+                    if (inFm && !fmClosed) {
+                        out.push(ln);
+                        if (i > 0 && /^---\s*$/.test(ln)) fmClosed = true;
+                        continue;
+                    }
+                    const fenceMatch = ln.match(/^(\s*)(```+|~~~+)(.*)$/);
+                    if (fenceMatch) {
+                        const marker = fenceMatch[2][0];
+                        if (!inFence) { inFence = true; fenceMarker = marker; }
+                        else if (marker === fenceMarker) { inFence = false; fenceMarker = ''; }
+                        out.push(ln);
+                        continue;
+                    }
+                    if (!inFence) {
+                        ln = ln.replace(spanRe, (full, text, attr) => {
+                            const style = buildSpanStyle(attr);
+                            return style ? '<span style="' + style + '">' + text + '</span>' : full;
+                        });
+                    }
+                    out.push(ln);
+                }
+                markdown = out.join('\n');
+            }
 
             // Split layout pre-pass — within slides that declare `<!-- _class: split -->`
             // (or split-2/3/4), convert `+++` lines into a sentinel paragraph that
@@ -5056,6 +5479,9 @@ ${previewClone.outerHTML}
             }
             __marpLastRenderedPath = currentFilePath;
             __marpUpdateDeck();
+            // Re-fit after a layout flush so any async-rendered (mermaid / abc /
+            // plotly) figures' final heights are accounted for.
+            requestAnimationFrame(() => fitMarpSlides());
 
             // List-mode click → jump into deck mode focused on that slide.
             // Bind on #preview (delegated) so we only attach once per render.
@@ -6036,6 +6462,7 @@ ${previewClone.outerHTML}
                     <tr><td class="keys"><kbd>Alt</kbd>+<kbd>←</kbd> / <kbd>Alt</kbd>+<kbd>→</kbd></td><td>Navigate back / forward through opened files</td></tr>
                     <tr><td class="keys"><kbd>P</kbd></td><td>Cycle Marp view: scroll → deck → list (click a thumbnail in list to open it in deck)</td></tr>
                     <tr><td class="keys"><kbd>F</kbd></td><td>Toggle fullscreen (Marp documents)</td></tr>
+                    <tr><td class="keys"><kbd>A</kbd></td><td>Toggle auto-shrink slides to fit (Marp)</td></tr>
                     <tr><td class="keys"><kbd>←</kbd> / <kbd>→</kbd> / <kbd>PgUp</kbd> / <kbd>PgDn</kbd> / <kbd>Home</kbd> / <kbd>End</kbd></td><td>Navigate slides in Marp deck mode</td></tr>
                     <tr><td class="keys"><kbd>Ctrl</kbd>+<kbd>Wheel</kbd> / Drag</td><td>Zoom at cursor / pan the slide (Marp deck mode)</td></tr>
                     <tr><td class="keys"><kbd>Z</kbd></td><td>Toggle laser pointer with trail (Marp deck mode)</td></tr>
