@@ -1627,6 +1627,28 @@
         body.marp.deck-mode.laser-on #preview,
         body.marp.deck-mode.laser-on #preview * { cursor: none; }
 
+        /* Selection marker (highlighter, behind text, auto-fade) — selecting text
+           in #preview paints a highlighter band BEHIND the glyphs (text stays
+           crisp) via the CSS Custom Highlight API, instead of the native blue
+           selection, then auto-fades after ~2s. Because the highlight is range-
+           based, the browser paints and re-positions it natively — so it follows
+           the live selection smoothly as you drag and stays aligned under the
+           Marp deck-mode zoom/pan with no manual coordinates. The selection range
+           itself is kept so Ctrl+C still copies. The native selection color is
+           suppressed in #preview only when the API is available (body.marker-
+           supported), so unsupported engines keep their normal selection.
+           Marker color resolves from --marker-color (default highlighter yellow);
+           a Marp theme or user style can rebrand it by setting --marker-color on
+           section / #preview, just like --laser-color brands the laser pointer.
+           The actual `::highlight(marker)` background-color (with its animated fade
+           alpha) is written into a dedicated <style id="marker-style"> from JS,
+           because Chromium highlight pseudos do not inherit custom properties, so a
+           var() here would not resolve. */
+        :root { --marker-color: #ffd60a; }
+        /* Marp only — normal previews keep their native blue selection. */
+        body.marker-supported.marp #preview ::selection { background: transparent; }
+        body.marker-supported.marp #preview ::-moz-selection { background: transparent; }
+
         /* List (grid overview) mode — every slide as a clickable 16:9 thumbnail. */
         body.marp.list-mode #preview {
             padding: 24px;
@@ -4454,6 +4476,146 @@ ${previewClone.outerHTML}
             if (!__laserOn) return;
             __laserPoints.push({ x: e.clientX, y: e.clientY, t: performance.now() });
         });
+
+        // ---- Selection marker (highlighter behind text, auto-fade) — Marp only ----
+        // In Marp mode (body.marp), selecting text in a slide paints a highlighter
+        // band BEHIND the glyphs instead of the native blue selection, then fades it
+        // out after ~2s. Normal (non-Marp) previews keep the native selection:
+        // drawMarker() bails when body.marp is absent and the ::selection-suppress
+        // CSS is scoped to body.marker-supported.marp. Built on the CSS Custom
+        // Highlight API: a single Highlight holds a clone of the selection range
+        // and the browser paints `::highlight(marker)` as the text's background —
+        // so the text stays crisp on top, the band is visible on any (incl. dark)
+        // background, the stroke follows the live selection smoothly as you drag,
+        // and it stays aligned under the Marp deck-mode zoom/pan automatically (no
+        // manual coordinates). The selection range is left intact so Ctrl+C still
+        // copies. Falls back to native selection where the API is unavailable.
+        const __highlightSupported = (typeof Highlight !== 'undefined'
+            && typeof CSS !== 'undefined' && CSS.highlights);
+        let __markerHighlight = null;
+        let __markerTimer = null;        // pending fade-start timer
+        let __markerFadeRAF = null;      // pending fade animation frame
+        let __markerFadeSafety = null;   // guaranteed-clear timer (in case rAF is throttled)
+        let __markerMouseDown = false;   // true while a mouse button is held (drag-select in progress)
+        let __markerRGB = [255, 214, 10];// resolved fill rgb, cached for the fade
+        let __markerStyle = null;        // <style> carrying the ::highlight(marker) rule
+        const __MARKER_LIFE_MS = 2000;   // visible for ~2s before fading
+        const __MARKER_FADE_MS = 500;    // fade-out duration
+        const __MARKER_ALPHA = 0.55;     // resting fill opacity (translucent highlighter)
+        if (__highlightSupported) {
+            __markerHighlight = new Highlight();
+            CSS.highlights.set('marker', __markerHighlight);
+            __markerStyle = document.createElement('style');
+            __markerStyle.id = 'marker-style';
+            document.head.appendChild(__markerStyle);
+            if (document.body) document.body.classList.add('marker-supported');
+        }
+        const __preview = () => document.getElementById('preview');
+        function __selectionInPreview(sel) {
+            const pv = __preview();
+            if (!pv || !sel) return false;
+            const a = sel.anchorNode, f = sel.focusNode;
+            return !!(a && pv.contains(a)) && !!(f && pv.contains(f));
+        }
+        // Resolve the marker fill rgb from --marker-color: read it from the element
+        // containing the selection first (so a Marp theme's section value wins),
+        // fall back to :root, then highlighter yellow; normalize to [r,g,b] via a
+        // throwaway probe so any CSS color form works and the fade can vary alpha.
+        function __resolveMarkerRGB(node) {
+            const el = node && (node.nodeType === 1 ? node : node.parentElement);
+            let c = '';
+            if (el) c = getComputedStyle(el).getPropertyValue('--marker-color').trim();
+            if (!c) c = getComputedStyle(document.documentElement).getPropertyValue('--marker-color').trim();
+            if (!c) c = '#ffd60a';
+            const probe = document.createElement('span');
+            probe.style.cssText = 'display:none;color:' + c;
+            document.body.appendChild(probe);
+            const m = getComputedStyle(probe).color.match(/\d+(\.\d+)?/g);
+            probe.remove();
+            return (m && m.length >= 3) ? [+m[0], +m[1], +m[2]] : [255, 214, 10];
+        }
+        function __setMarkerFill(alpha) {
+            if (!__markerStyle) return;
+            const [r, g, b] = __markerRGB;
+            __markerStyle.textContent = '::highlight(marker){background-color:rgba('
+                + r + ',' + g + ',' + b + ',' + alpha + ');}';
+        }
+        // dropSelection: also clear the text selection (used on the auto-disappear
+        // path so the band fading out takes the blue/native selection with it).
+        // Guarded to a still-in-#preview selection so we never wipe a selection the
+        // user has since made elsewhere.
+        function clearMarker(dropSelection) {
+            if (__markerTimer) { clearTimeout(__markerTimer); __markerTimer = null; }
+            if (__markerFadeRAF) { cancelAnimationFrame(__markerFadeRAF); __markerFadeRAF = null; }
+            if (__markerFadeSafety) { clearTimeout(__markerFadeSafety); __markerFadeSafety = null; }
+            if (__markerHighlight) __markerHighlight.clear();
+            if (__markerStyle) __markerStyle.textContent = '';
+            document.body.classList.remove('marker-active');
+            if (dropSelection) {
+                const sel = window.getSelection();
+                if (sel && !sel.isCollapsed && __selectionInPreview(sel)) sel.removeAllRanges();
+            }
+        }
+        function drawMarker() {
+            if (!__highlightSupported) return;
+            // Marp only — normal previews keep the browser's native selection.
+            if (!document.body.classList.contains('marp')) { clearMarker(); return; }
+            const sel = window.getSelection();
+            if (!sel || sel.isCollapsed || sel.rangeCount === 0 || !__selectionInPreview(sel)) {
+                clearMarker();
+                return;
+            }
+            // Cancel any in-flight fade and re-assert the solid fill.
+            if (__markerTimer) { clearTimeout(__markerTimer); __markerTimer = null; }
+            if (__markerFadeRAF) { cancelAnimationFrame(__markerFadeRAF); __markerFadeRAF = null; }
+            if (__markerFadeSafety) { clearTimeout(__markerFadeSafety); __markerFadeSafety = null; }
+            const range = sel.getRangeAt(0).cloneRange();
+            __markerRGB = __resolveMarkerRGB(range.commonAncestorContainer);
+            __markerHighlight.clear();
+            __markerHighlight.add(range);
+            __setMarkerFill(__MARKER_ALPHA);
+            document.body.classList.add('marker-active');
+            // Arm the fade only when the selection has settled — i.e. the mouse
+            // button is up. During a drag-select (__markerMouseDown) the marker
+            // grows smoothly with the selection and (re)arms on mouseup. Keyboard /
+            // programmatic selection changes happen with the button up, so they arm
+            // here and each change restarts the ~2s countdown.
+            if (!__markerMouseDown) armMarkerFade();
+        }
+        // Start the ~2s visible period, then animate the fill alpha to 0 and clear.
+        function armMarkerFade() {
+            if (!document.body.classList.contains('marker-active')) return;
+            if (__markerTimer) clearTimeout(__markerTimer);
+            __markerTimer = setTimeout(() => {
+                __markerTimer = null;
+                const t0 = performance.now();
+                const step = (now) => {
+                    const k = Math.min(1, (now - t0) / __MARKER_FADE_MS);
+                    __setMarkerFill(__MARKER_ALPHA * (1 - k));
+                    if (k < 1) { __markerFadeRAF = requestAnimationFrame(step); }
+                    else { __markerFadeRAF = null; clearMarker(true); }
+                };
+                __markerFadeRAF = requestAnimationFrame(step);
+                // Guaranteed clear even if rAF is throttled (window occluded mid-fade).
+                __markerFadeSafety = setTimeout(() => clearMarker(true), __MARKER_FADE_MS + 150);
+            }, __MARKER_LIFE_MS);
+        }
+        if (__highlightSupported) {
+            document.addEventListener('selectionchange', drawMarker);
+            document.addEventListener('mousedown', () => {
+                __markerMouseDown = true;
+                // Hold the marker solid while a new selection gesture starts.
+                if (__markerTimer) { clearTimeout(__markerTimer); __markerTimer = null; }
+                if (__markerFadeRAF) { cancelAnimationFrame(__markerFadeRAF); __markerFadeRAF = null; }
+                if (__markerFadeSafety) { clearTimeout(__markerFadeSafety); __markerFadeSafety = null; }
+                if (document.body.classList.contains('marker-active')) __setMarkerFill(__MARKER_ALPHA);
+            });
+            document.addEventListener('mouseup', () => {
+                __markerMouseDown = false;
+                // No selectionchange fires after mouseup, so arm the fade here for drags.
+                if (document.body.classList.contains('marker-active')) armMarkerFade();
+            });
+        }
 
         // ---- Diagram render memoization (shared by renderMarp + renderMarkdown) ----
         // #preview is rebuilt via innerHTML on every render, so the previously
