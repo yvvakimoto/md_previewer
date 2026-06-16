@@ -463,28 +463,23 @@
             font-size: 1.1em;
         }
 
-        /* Plotly chart styling (CSV-driven) */
+        /* Plotly chart styling (CSV-driven). The block stays a normal block-level
+           box (NOT flex): Plotly renders into this element directly, so it must give
+           Plotly's autosize/responsive the full container width to measure and let the
+           chart anchor at the left edge. A flex container with justify-content:center
+           here made the chart center-overflow — spilling off the LEFT — whenever its
+           rendered width exceeded the container (chart measured at 0/narrow width
+           before layout settled, or an explicit layout.width wider than the column). */
         .plotly-block {
             margin: 16px 0;
             min-height: 320px;
-            display: flex;
-            justify-content: center;
-            align-items: flex-start;
         }
-        /* Plotly's inner chart div: when an explicit layout.width is given the
-           chart is fixed-width, so we still need margin auto for horizontal
-           centering inside flex; when autosize the chart spans the container. */
-        .plotly-block > .js-plotly-plot {
-            margin-left: auto;
-            margin-right: auto;
-        }
-        /* In Marp slides every section is a flex column; let the chart absorb
-           leftover vertical space so it lands centered in the remaining
-           area below the text content. */
+        /* In Marp slides every section is a flex column; margin auto lets the chart
+           (a flex item) absorb leftover vertical space and sit centered in the
+           remaining area below the text content. */
         body.marp .plotly-block {
             margin-top: auto;
             margin-bottom: auto;
-            align-items: center;
         }
         .plotly-error {
             margin: 16px 0;
@@ -2490,8 +2485,32 @@
         // anchors are rewritten to point to the per-page .html siblings, computed
         // as paths relative to `pageRelPath`.
         async function buildExportArtifact({ pageRelPath = null } = {}) {
+            // Marp: the export reflects scroll-mode layout. If we're viewing in deck/list
+            // mode, the inactive slides are display:none (scrollHeight === 0) so
+            // fitMarpSlides() can't measure/shrink them. Temporarily drop deck/list so
+            // every slide is display:block & measurable, reset any deck zoom, fit them all
+            // (scrollHeight read forces a synchronous reflow), snapshot, then restore. Doing
+            // this before cloneNode means the clone captures the correct inline fit
+            // transforms; the async image work below runs on the detached clone, so the
+            // live view is restored immediately with no visible flash.
+            let __restoreMarpExportView = null;
+            if (document.body.classList.contains('marp')
+                    && (document.body.classList.contains('deck-mode')
+                        || document.body.classList.contains('list-mode'))) {
+                const wasDeck = document.body.classList.contains('deck-mode');
+                const wasList = document.body.classList.contains('list-mode');
+                __resetMarpZoom();
+                document.body.classList.remove('deck-mode', 'list-mode');
+                fitMarpSlides();
+                __restoreMarpExportView = () => {
+                    document.body.classList.toggle('deck-mode', wasDeck);
+                    document.body.classList.toggle('list-mode', wasList);
+                    fitMarpSlides();
+                };
+            }
             // Snapshot live DOM. Cloning preserves rendered SVGs, KaTeX spans, and hljs token markup.
             const previewClone = preview.cloneNode(true);
+            if (__restoreMarpExportView) __restoreMarpExportView();
             const tocClone = tocSidebar.cloneNode(true);
 
             // Rewrite workspace-ToC anchors so they navigate the exported site.
@@ -2722,6 +2741,12 @@
             if (needsPlotly) cdnLinks.push(`<script defer src="${EXPORT_PLOTLY_JS_CDN}"><\/script>`);
 
             const bodyClasses = [];
+            // body.marp gates every `body.marp #preview ...` CSS rule (slide SVG sizing,
+            // figure centering, split/inline columns, footnote placement). Without it the
+            // exported deck loses all Marp layout. deck-mode/list-mode are intentionally
+            // omitted: they need JS navigation machinery not present in the artifact, so
+            // the export is always the static-friendly scroll mode.
+            if (document.body.classList.contains('marp')) bodyClasses.push('marp');
             if (document.body.classList.contains('dark-mode')) bodyClasses.push('dark-mode');
             if (document.body.classList.contains('numbered')) bodyClasses.push('numbered');
             if (document.body.classList.contains('wide')) bodyClasses.push('wide');
@@ -4486,6 +4511,17 @@ ${previewClone.outerHTML}
                 section.style.height = (100 / f) + '%';
                 section.style.transform = 'scale(' + f + ')';
             });
+            // Plotly charts are sized to their container at render time and don't
+            // auto-track a CSS-driven width change. The fit pass above enlarges an
+            // overflowing section's logical width by 1/f (and resets it back when it
+            // no longer overflows), so an autosize chart rendered before the fit stays
+            // at its stale width and no longer fills the slide — it looks off-center.
+            // Re-fit every initialized plotly chart to the current container width.
+            if (window.Plotly && Plotly.Plots && typeof Plotly.Plots.resize === 'function') {
+                preview.querySelectorAll('.plotly-block.js-plotly-plot').forEach(el => {
+                    try { Plotly.Plots.resize(el); } catch (e) {}
+                });
+            }
         }
         // Apply the current __marpZoom transform to the active slide <svg>.
         function __applyMarpZoom() {

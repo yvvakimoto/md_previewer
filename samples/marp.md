@@ -119,6 +119,7 @@ names: [Revenue, Cost]
 title: Monthly P&L
 layout:
   height: 420
+  width: 600
   margin: { t: 48, r: 24, b: 48, l: 56 }
   legend: { orientation: h, y: -0.2 }
 ```
@@ -133,6 +134,7 @@ type: surface
 title: z = x² + y²
 layout:
   height: 480
+  width: 700
   margin: { t: 40, r: 0, b: 0, l: 0 }
   scene: { camera: { eye: { x: 1.4, y: 1.4, z: 0.9 } } }
 ```
