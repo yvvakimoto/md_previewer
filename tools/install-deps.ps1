@@ -68,6 +68,10 @@ $fetchArgs = @{ RepoRoot = $RepoRoot }
 if ($Force) { $fetchArgs['Force'] = $true }
 & (Join-Path $ScriptDir 'fetch-libs.ps1') @fetchArgs
 
+# ---- enable tracked git hooks (release-on-main) ------------------------
+Write-Header 'enable git hooks (core.hooksPath -> tools/hooks)'
+& (Join-Path $ScriptDir 'install-hooks.ps1')
+
 # ---- npm-based steps ---------------------------------------------------
 if ($SkipNode) {
   Write-Host ''

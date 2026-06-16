@@ -1,0 +1,17 @@
+#!/bin/sh
+# main ブランチへのマージ完了時に自動リリースを実行する。
+# 実体は tools/release-on-main.ps1 (PowerShell)。Git for Windows はフックを
+# 同梱の sh で実行するため、ここでは pwsh を起動するだけのシムにしている。
+#
+# 有効化: tools/install-hooks.ps1 が core.hooksPath を tools/hooks に設定する。
+
+# 再入防止: リリース処理中のビルドから誤って呼ばれた場合は何もしない。
+if [ "$MDP_IN_RELEASE" = "1" ]; then
+    exit 0
+fi
+
+# リポジトリのトップに移動してから PowerShell スクリプトを呼ぶ。
+repo_root=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
+
+pwsh -NoProfile -File "$repo_root/tools/release-on-main.ps1"
+exit 0

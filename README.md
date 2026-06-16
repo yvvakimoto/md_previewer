@@ -380,6 +380,23 @@ Marp 標準の `default` / `gaia` / `uncover` も追加設定なしで利用可�
 
 `ISCC.exe` は PATH から検索し、見つからなければユーザー単位インストール (`%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe`) → マシン単位インストール (`Program Files (x86)\Inno Setup 6\ISCC.exe`) の順に試します。出力は `dist\MdPreviewer-Setup-<AppVersion>.exe`（AppVersion は `installer\md-previewer.iss` から読み出し）。前提として **Inno Setup 6**（[公式サイト](https://jrsoftware.org/isdl.php)）のインストールが必要です。
 
+### リリースの自動化（main ブランチ更新時）
+
+`main` ブランチがマージ（`git merge` / `git pull`）で更新されると、追跡された git フックが自動でリリース処理を行います。
+
+1. 前回リリースタグ (`v*`) 以降のコミットメッセージからバージョン種別を判定（破壊的→major / 機能追加系→minor / それ以外→patch）し、新バージョンを採番。
+2. `Cargo.toml` / `installer\md-previewer.iss` / `HISTORY.md` の 3 箇所を更新（`HISTORY.md` 先頭にコミット件名を箇条書きで追記）。
+3. `build-installer.ps1` でインストーラをビルド。
+4. **ビルド成功時のみ** 変更をコミットしてタグ `v<X.Y.Z>` を付与（push は既定で行いません）。
+
+フックは `core.hooksPath`（ローカル設定）で有効化されるため、**clone 毎に 1 回**有効化が必要です。`tools\install-deps.ps1` が自動で設定しますが、手動なら次を実行します:
+
+```powershell
+pwsh -File tools\install-hooks.ps1
+```
+
+生成される `HISTORY.md` の箇条書きは生のコミット件名なので、**push 前に手直し**してください（`git commit --amend` でリリースコミットを編集し、必要ならタグを貼り直す）。公開は `git push origin main; git push origin v<X.Y.Z>`（`MDP_RELEASE_PUSH=1` を設定すると自動 push）。手動実行・動作確認は `tools\release-on-main.ps1` を直接呼べます（`-DryRun` で更新内容のプレビュー、`-Bump` でバンプ強制、`-Force` で main 以外でも実行）。
+
 ### 手動で段階的に実行する場合
 
 GitHub からクローンした直後の `assets/libs/` は空です。サードパーティ JS/CSS/フォントと、Marp / エディタ用の esbuild IIFE バンドルはコミットされていないため、最初に一度だけ次のコマンドで取得・ビルドしてください。
