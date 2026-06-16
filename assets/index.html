@@ -476,8 +476,19 @@
         }
         /* In Marp slides every section is a flex column; margin auto lets the chart
            (a flex item) absorb leftover vertical space and sit centered in the
-           remaining area below the text content. */
+           remaining area below the text content. The block itself is a flex COLUMN
+           with justify-content:center so the chart is vertically centered within the
+           block's min-height box too (restores the centering the old flex-row layout
+           gave via align-items:center). flex-direction:column keeps justify-content on
+           the VERTICAL axis only — no horizontal centering — so it never reintroduces
+           the off-the-left overflow a row-wise justify-content:center caused; the
+           default cross-axis stretch keeps the chart full-width so Plotly still
+           autosizes to the container. Scoped to body.marp, so it also governs the
+           exported Marp artifact (whose <body> now carries the marp class). */
         body.marp .plotly-block {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
             margin-top: auto;
             margin-bottom: auto;
         }
@@ -1531,6 +1542,16 @@
         body.marp #preview section.marp-has-figs > .marp-figure-stage > p {
             margin: 0;
             text-align: center;
+        }
+        /* Plotly: drop the standalone auto margins (vertical centering is the
+           stage's job via justify-content:center + gap) and pin full width so
+           an autosize chart fills the slide. align-items:center centers the
+           inner Plotly container horizontally for charts with an explicit
+           layout.width narrower than the slide (no-op for full-width ones). */
+        body.marp #preview section.marp-has-figs > .marp-figure-stage > .plotly-block {
+            margin: 0;
+            width: 100%;
+            align-items: center;
         }
 
         /* Split (multi-column) layout — activated by <!-- _class: split --> or
@@ -5524,7 +5545,7 @@ ${previewClone.outerHTML}
             };
             const isFigureChild = (el) => {
                 if (el.nodeType !== 1) return false;
-                if (el.matches('.mermaid, .csv-table, table, .abc-notation, video, iframe.video-embed, .video-embed')) return true;
+                if (el.matches('.mermaid, .csv-table, table, .abc-notation, .plotly-block, video, iframe.video-embed, .video-embed')) return true;
                 if (isImageParagraph(el)) return true;
                 return false;
             };
