@@ -1421,15 +1421,23 @@
             padding-top: 10px;
             border-top: 1px solid #e1e4e8;
             font-size: 12px;
-            text-align: right;
+            display: flex;
+            align-items: baseline;
+            justify-content: space-between;
+            gap: 12px;
         }
         #help-modal .help-footer a {
             color: #586069;
             text-decoration: none;
         }
         #help-modal .help-footer a:hover { text-decoration: underline; }
+        #help-modal .help-footer .app-version {
+            color: #959da5;
+            font-variant-numeric: tabular-nums;
+        }
         body.dark-mode #help-modal .help-footer { border-top-color: #30363d; }
         body.dark-mode #help-modal .help-footer a { color: #8b949e; }
+        body.dark-mode #help-modal .help-footer .app-version { color: #6e7681; }
         #licenses-pane {
             margin-top: 12px;
             padding: 12px;
@@ -2415,7 +2423,15 @@
         function __helpModal() { return document.getElementById('help-modal'); }
         function setHelpOpen(open) {
             const m = __helpModal();
-            if (m) m.classList.toggle('visible', open);
+            if (!m) return;
+            if (open) {
+                const v = m.querySelector('#app-version');
+                if (v && !v.textContent) {
+                    const ver = window.__appVersion || '';
+                    v.textContent = ver ? ('v' + ver) : '';
+                }
+            }
+            m.classList.toggle('visible', open);
         }
         document.addEventListener('keydown', (e) => {
             if (e.ctrlKey || e.metaKey || e.altKey) return;
@@ -6471,6 +6487,7 @@ ${previewClone.outerHTML}
             </table>
             <div class="help-footer">
                 <a href="#" id="show-licenses">Third-party licenses</a>
+                <span id="app-version" class="app-version"></span>
             </div>
             <pre id="licenses-pane" hidden></pre>
         </div>

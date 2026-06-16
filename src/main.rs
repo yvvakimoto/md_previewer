@@ -1039,9 +1039,11 @@ fn main() -> wry::Result<()> {
     let marp_themes_json = serde_json::to_string(&marp_themes).unwrap_or_else(|_| "[]".into());
     dbg_log!("marp_themes  = {}", marp_themes_json);
 
+    let app_version_json =
+        serde_json::to_string(env!("CARGO_PKG_VERSION")).unwrap_or_else(|_| "\"\"".into());
     let init_script = format!(
-        "window.__userStyles = {};\nwindow.__marpThemes = {};\nwindow.__styleExporters = {};\n{}",
-        user_styles_json, marp_themes_json, style_exporters_json, init_script
+        "window.__appVersion = {};\nwindow.__userStyles = {};\nwindow.__marpThemes = {};\nwindow.__styleExporters = {};\n{}",
+        app_version_json, user_styles_json, marp_themes_json, style_exporters_json, init_script
     );
 
     // Clone current_dir for use in the protocol handler closure
