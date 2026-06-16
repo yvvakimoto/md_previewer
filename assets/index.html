@@ -1461,7 +1461,9 @@
 
         /* ---- Marp slide mode ---- */
         body.marp #toc-sidebar { display: flex; }
-        body.marp:not(.workspace) #toc-sidebar { display: none; }
+        /* Non-workspace Marp shows a slide TOC in scroll / list modes; deck mode
+           hides the whole sidebar so the slide stays immersive. */
+        body.marp:not(.workspace).deck-mode #toc-sidebar { display: none; }
         body.marp #preview { max-width: none; padding: 0; background: #2a2a2a; }
         body.marp #preview > div.marpit > svg[data-marpit-svg] {
             display: block;
@@ -3575,6 +3577,80 @@ ${previewClone.outerHTML}
             });
         }
 
+        // Build the TOC for Marp documents. Mirrors generateTOC() but the scroll /
+        // highlight unit is the slide <svg> (slides live inside foreignObject, so we
+        // avoid relying on scrollIntoView of inner heading elements — same model as
+        // applyEditorScroll's Marp branch). Each heading becomes a TOC item; clicking
+        // it scrolls (scroll mode) or jumps into the deck (list mode) to that slide.
+        // Shown only in scroll / list modes (deck hides the sidebar via CSS).
+        function generateMarpTOC() {
+            tocNav.innerHTML = '';
+            if (scrollSpyObserver) {
+                scrollSpyObserver.disconnect();
+                scrollSpyObserver = null;
+            }
+
+            const slides = Array.from(preview.querySelectorAll('div.marpit > svg[data-marpit-svg]'));
+            const existingIds = new Set();
+            let count = 0;
+
+            slides.forEach((svg, slideIdx) => {
+                svg.querySelectorAll('section h1, section h2, section h3, section h4, section h5, section h6').forEach(heading => {
+                    const text = heading.textContent.trim();
+                    if (!text) return;
+                    const level = parseInt(heading.tagName.charAt(1));
+                    const id = generateHeadingId(text, existingIds);
+                    heading.id = id;
+
+                    const tocItem = document.createElement('a');
+                    tocItem.className = 'toc-item';
+                    tocItem.setAttribute('data-level', level);
+                    tocItem.setAttribute('data-target', id);            // export / a11y
+                    tocItem.setAttribute('data-marp-slide', slideIdx);  // live navigation
+                    tocItem.href = '#' + id;
+                    tocItem.textContent = text;
+                    tocItem.title = text;
+
+                    tocItem.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        if (document.body.classList.contains('list-mode')) {
+                            __marpDeckIndex = slideIdx;
+                            setMarpView('deck');
+                            __marpUpdateDeck();
+                            showToast('Slides: deck');
+                        } else {
+                            // scroll mode (deck hides the sidebar, so no deck click path)
+                            svg.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                        }
+                        tocNav.querySelectorAll('.toc-item').forEach(it => it.classList.remove('active'));
+                        tocItem.classList.add('active');
+                    });
+
+                    tocNav.appendChild(tocItem);
+                    count++;
+                });
+            });
+
+            if (count === 0) {
+                tocNav.innerHTML = '<div class="toc-empty">No headings found</div>';
+                return;
+            }
+
+            // Scroll spy: observe each slide <svg>; highlight that slide's headings
+            // when it scrolls near the top of the preview. Mirrors setupScrollSpy().
+            scrollSpyObserver = new IntersectionObserver((entries) => {
+                entries.forEach((entry) => {
+                    if (!entry.isIntersecting) return;
+                    const idx = slides.indexOf(entry.target);
+                    if (idx < 0) return;
+                    tocNav.querySelectorAll('.toc-item').forEach(it => {
+                        it.classList.toggle('active', it.getAttribute('data-marp-slide') === String(idx));
+                    });
+                });
+            }, { root: previewContainer, rootMargin: '-10% 0px -80% 0px', threshold: 0 });
+            slides.forEach(svg => scrollSpyObserver.observe(svg));
+        }
+
         // Configure marked.js without custom image renderer (use regex post-processing instead)
         marked.use({
             breaks: false,
@@ -5495,6 +5571,8 @@ ${previewClone.outerHTML}
             }
             __marpLastRenderedPath = currentFilePath;
             __marpUpdateDeck();
+            // Build the slide TOC (shown in scroll / list modes; deck hides the sidebar).
+            generateMarpTOC();
             // Re-fit after a layout flush so any async-rendered (mermaid / abc /
             // plotly) figures' final heights are accounted for.
             requestAnimationFrame(() => fitMarpSlides());
