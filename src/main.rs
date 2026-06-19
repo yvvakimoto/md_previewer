@@ -1443,6 +1443,48 @@ fn main() -> wry::Result<()> {
             if let Err(e) = ipc_event_proxy.send_event(CustomEvent::ToggleFullscreen) {
                 eprintln!("Failed to dispatch ToggleFullscreen: {}", e);
             }
+        } else if message == "newfile:" {
+            // New document (Ctrl+N) — pick a save location via a native dialog,
+            // create a blank `.md`, then open it through the normal OpenFile flow.
+            let initial_dir = ipc_current_file
+                .lock()
+                .unwrap()
+                .as_ref()
+                .and_then(|p| p.parent().map(|d| d.to_path_buf()));
+            let proxy = ipc_event_proxy.clone();
+            // rfd's save_file() blocks; run it off the IPC thread (same pattern as
+            // the `exporthtml:` / `exportdir:` handlers).
+            std::thread::spawn(move || {
+                let mut dialog = rfd::FileDialog::new()
+                    .add_filter("Markdown", &["md", "markdown"])
+                    .set_file_name("untitled.md");
+                if let Some(dir) = initial_dir {
+                    dialog = dialog.set_directory(dir);
+                }
+                if let Some(mut path) = dialog.save_file() {
+                    // Ensure a markdown extension so the OpenFile handler accepts it.
+                    let ok_ext = path
+                        .extension()
+                        .and_then(|e| e.to_str())
+                        .map(|e| {
+                            let e = e.to_ascii_lowercase();
+                            e == "md" || e == "markdown"
+                        })
+                        .unwrap_or(false);
+                    if !ok_ext {
+                        path.set_extension("md");
+                    }
+                    // Create an empty file only for a new path. If the chosen path
+                    // already exists, open it as-is (never truncate existing content).
+                    if !path.exists() {
+                        if let Err(e) = std::fs::write(&path, b"") {
+                            eprintln!("newfile: failed to create {}: {}", path.display(), e);
+                            return;
+                        }
+                    }
+                    let _ = proxy.send_event(CustomEvent::OpenFile(path));
+                }
+            });
         } else if let Some(line_str) = message.strip_prefix("openeditor:") {
             let line = line_str.trim().parse::<u32>().unwrap_or(1);
             if let Err(e) = ipc_event_proxy.send_event(CustomEvent::OpenEditorWindow { line }) {

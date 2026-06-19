@@ -3102,6 +3102,18 @@ ${previewClone.outerHTML}
             }
         }
 
+        // New document (Ctrl+N) — create a blank .md via a native Save dialog, then open it.
+        document.addEventListener('keydown', (e) => {
+            if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return;
+            if (e.key !== 'n' && e.key !== 'N') return;
+            const t = e.target;
+            if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+            e.preventDefault();   // suppress any WebView2 "new window" default
+            if (window.ipc && typeof window.ipc.postMessage === 'function') {
+                window.ipc.postMessage('newfile:');
+            }
+        });
+
         // Editor window (E key) — opens the dedicated editor for the current file.
         document.addEventListener('keydown', (e) => {
             if (e.ctrlKey || e.metaKey || e.altKey) return;
@@ -6608,6 +6620,7 @@ ${previewClone.outerHTML}
                     <tr><td class="keys"><kbd>L</kbd></td><td>Toggle line numbers</td></tr>
                     <tr><td class="keys"><kbd>W</kbd></td><td>Toggle full-width layout</td></tr>
                     <tr><td class="keys"><kbd>E</kbd></td><td>Open editor window (Vim mode, math input assist, char counter)</td></tr>
+                    <tr><td class="keys"><kbd>Ctrl</kbd>+<kbd>N</kbd></td><td>Create a new blank Markdown file</td></tr>
                     <tr><td class="keys"><kbd>X</kbd></td><td>Export current document as standalone HTML</td></tr>
                     <tr><td class="keys"><kbd>Ctrl</kbd>+<kbd>+</kbd> / <kbd>Ctrl</kbd>+<kbd>-</kbd> / <kbd>Ctrl</kbd>+<kbd>0</kbd></td><td>Zoom in / out / reset</td></tr>
                     <tr><td class="keys"><kbd>Alt</kbd>+<kbd>←</kbd> / <kbd>Alt</kbd>+<kbd>→</kbd></td><td>Navigate back / forward through opened files</td></tr>
