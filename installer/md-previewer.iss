@@ -48,7 +48,7 @@ Source: "..\HISTORY.md"; DestDir: "{app}"; Flags: ignoreversion
 [Icons]
 Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExeName}"; IconFilename: "{app}\{#AppExeName}"
 Name: "{group}\Sample Documents"; Filename: "{app}\samples"; IconFilename: "{app}\{#AppExeName}"; Comment: "機能デモ用 Markdown サンプル / Sample markdown files demonstrating features"
-Name: "{group}\更新履歴 / Release Notes"; Filename: "{app}\{#AppExeName}"; Parameters: """{app}\HISTORY.md"""; IconFilename: "{app}\{#AppExeName}"; Comment: "バージョンごとの更新内容 / What's new in each version"
+Name: "{group}\更新履歴 (Release Notes)"; Filename: "{app}\{#AppExeName}"; Parameters: """{app}\HISTORY.md"""; IconFilename: "{app}\{#AppExeName}"; Comment: "バージョンごとの更新内容 / What's new in each version"
 Name: "{group}\Third-party Licenses"; Filename: "{app}\assets\THIRD_PARTY_LICENSES.txt"; Comment: "Open-source licenses for bundled libraries (marked / mermaid / KaTeX / highlight.js / Marp / CodeMirror, etc.)"
 Name: "{group}\Uninstall {#AppName}"; Filename: "{uninstallexe}"
 Name: "{userdesktop}\{#AppName}"; Filename: "{app}\{#AppExeName}"; IconFilename: "{app}\{#AppExeName}"; Tasks: desktopicon
