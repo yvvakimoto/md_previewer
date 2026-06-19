@@ -31,6 +31,11 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+# git は UTF-8 で出力するため、ネイティブコマンドの stdout を UTF-8 として解釈させる。
+# これが無いと日本語ロケール (CP932) で git log の出力が文字化けし、HISTORY.md に
+# 化けた文字列が書き込まれてしまう。
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+
 $RepoRoot   = Split-Path -Parent $PSScriptRoot
 $CargoToml  = Join-Path $RepoRoot 'Cargo.toml'
 $IssScript  = Join-Path $RepoRoot 'installer\md-previewer.iss'
