@@ -463,28 +463,34 @@
             font-size: 1.1em;
         }
 
-        /* Plotly chart styling (CSV-driven) */
+        /* Plotly chart styling (CSV-driven). The block stays a normal block-level
+           box (NOT flex): Plotly renders into this element directly, so it must give
+           Plotly's autosize/responsive the full container width to measure and let the
+           chart anchor at the left edge. A flex container with justify-content:center
+           here made the chart center-overflow — spilling off the LEFT — whenever its
+           rendered width exceeded the container (chart measured at 0/narrow width
+           before layout settled, or an explicit layout.width wider than the column). */
         .plotly-block {
             margin: 16px 0;
             min-height: 320px;
-            display: flex;
-            justify-content: center;
-            align-items: flex-start;
         }
-        /* Plotly's inner chart div: when an explicit layout.width is given the
-           chart is fixed-width, so we still need margin auto for horizontal
-           centering inside flex; when autosize the chart spans the container. */
-        .plotly-block > .js-plotly-plot {
-            margin-left: auto;
-            margin-right: auto;
-        }
-        /* In Marp slides every section is a flex column; let the chart absorb
-           leftover vertical space so it lands centered in the remaining
-           area below the text content. */
+        /* In Marp slides every section is a flex column; margin auto lets the chart
+           (a flex item) absorb leftover vertical space and sit centered in the
+           remaining area below the text content. The block itself is a flex COLUMN
+           with justify-content:center so the chart is vertically centered within the
+           block's min-height box too (restores the centering the old flex-row layout
+           gave via align-items:center). flex-direction:column keeps justify-content on
+           the VERTICAL axis only — no horizontal centering — so it never reintroduces
+           the off-the-left overflow a row-wise justify-content:center caused; the
+           default cross-axis stretch keeps the chart full-width so Plotly still
+           autosizes to the container. Scoped to body.marp, so it also governs the
+           exported Marp artifact (whose <body> now carries the marp class). */
         body.marp .plotly-block {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
             margin-top: auto;
             margin-bottom: auto;
-            align-items: center;
         }
         .plotly-error {
             margin: 16px 0;
@@ -1421,15 +1427,23 @@
             padding-top: 10px;
             border-top: 1px solid #e1e4e8;
             font-size: 12px;
-            text-align: right;
+            display: flex;
+            align-items: baseline;
+            justify-content: space-between;
+            gap: 12px;
         }
         #help-modal .help-footer a {
             color: #586069;
             text-decoration: none;
         }
         #help-modal .help-footer a:hover { text-decoration: underline; }
+        #help-modal .help-footer .app-version {
+            color: #959da5;
+            font-variant-numeric: tabular-nums;
+        }
         body.dark-mode #help-modal .help-footer { border-top-color: #30363d; }
         body.dark-mode #help-modal .help-footer a { color: #8b949e; }
+        body.dark-mode #help-modal .help-footer .app-version { color: #6e7681; }
         #licenses-pane {
             margin-top: 12px;
             padding: 12px;
@@ -1453,7 +1467,9 @@
 
         /* ---- Marp slide mode ---- */
         body.marp #toc-sidebar { display: flex; }
-        body.marp:not(.workspace) #toc-sidebar { display: none; }
+        /* Non-workspace Marp shows a slide TOC in scroll / list modes; deck mode
+           hides the whole sidebar so the slide stays immersive. */
+        body.marp:not(.workspace).deck-mode #toc-sidebar { display: none; }
         body.marp #preview { max-width: none; padding: 0; background: #2a2a2a; }
         body.marp #preview > div.marpit > svg[data-marpit-svg] {
             display: block;
@@ -1526,6 +1542,16 @@
         body.marp #preview section.marp-has-figs > .marp-figure-stage > p {
             margin: 0;
             text-align: center;
+        }
+        /* Plotly: drop the standalone auto margins (vertical centering is the
+           stage's job via justify-content:center + gap) and pin full width so
+           an autosize chart fills the slide. align-items:center centers the
+           inner Plotly container horizontally for charts with an explicit
+           layout.width narrower than the slide (no-op for full-width ones). */
+        body.marp #preview section.marp-has-figs > .marp-figure-stage > .plotly-block {
+            margin: 0;
+            width: 100%;
+            align-items: center;
         }
 
         /* Split (multi-column) layout — activated by <!-- _class: split --> or
@@ -2415,7 +2441,15 @@
         function __helpModal() { return document.getElementById('help-modal'); }
         function setHelpOpen(open) {
             const m = __helpModal();
-            if (m) m.classList.toggle('visible', open);
+            if (!m) return;
+            if (open) {
+                const v = m.querySelector('#app-version');
+                if (v && !v.textContent) {
+                    const ver = window.__appVersion || '';
+                    v.textContent = ver ? ('v' + ver) : '';
+                }
+            }
+            m.classList.toggle('visible', open);
         }
         document.addEventListener('keydown', (e) => {
             if (e.ctrlKey || e.metaKey || e.altKey) return;
@@ -2472,8 +2506,32 @@
         // anchors are rewritten to point to the per-page .html siblings, computed
         // as paths relative to `pageRelPath`.
         async function buildExportArtifact({ pageRelPath = null } = {}) {
+            // Marp: the export reflects scroll-mode layout. If we're viewing in deck/list
+            // mode, the inactive slides are display:none (scrollHeight === 0) so
+            // fitMarpSlides() can't measure/shrink them. Temporarily drop deck/list so
+            // every slide is display:block & measurable, reset any deck zoom, fit them all
+            // (scrollHeight read forces a synchronous reflow), snapshot, then restore. Doing
+            // this before cloneNode means the clone captures the correct inline fit
+            // transforms; the async image work below runs on the detached clone, so the
+            // live view is restored immediately with no visible flash.
+            let __restoreMarpExportView = null;
+            if (document.body.classList.contains('marp')
+                    && (document.body.classList.contains('deck-mode')
+                        || document.body.classList.contains('list-mode'))) {
+                const wasDeck = document.body.classList.contains('deck-mode');
+                const wasList = document.body.classList.contains('list-mode');
+                __resetMarpZoom();
+                document.body.classList.remove('deck-mode', 'list-mode');
+                fitMarpSlides();
+                __restoreMarpExportView = () => {
+                    document.body.classList.toggle('deck-mode', wasDeck);
+                    document.body.classList.toggle('list-mode', wasList);
+                    fitMarpSlides();
+                };
+            }
             // Snapshot live DOM. Cloning preserves rendered SVGs, KaTeX spans, and hljs token markup.
             const previewClone = preview.cloneNode(true);
+            if (__restoreMarpExportView) __restoreMarpExportView();
             const tocClone = tocSidebar.cloneNode(true);
 
             // Rewrite workspace-ToC anchors so they navigate the exported site.
@@ -2704,6 +2762,12 @@
             if (needsPlotly) cdnLinks.push(`<script defer src="${EXPORT_PLOTLY_JS_CDN}"><\/script>`);
 
             const bodyClasses = [];
+            // body.marp gates every `body.marp #preview ...` CSS rule (slide SVG sizing,
+            // figure centering, split/inline columns, footnote placement). Without it the
+            // exported deck loses all Marp layout. deck-mode/list-mode are intentionally
+            // omitted: they need JS navigation machinery not present in the artifact, so
+            // the export is always the static-friendly scroll mode.
+            if (document.body.classList.contains('marp')) bodyClasses.push('marp');
             if (document.body.classList.contains('dark-mode')) bodyClasses.push('dark-mode');
             if (document.body.classList.contains('numbered')) bodyClasses.push('numbered');
             if (document.body.classList.contains('wide')) bodyClasses.push('wide');
@@ -3037,6 +3101,18 @@ ${previewClone.outerHTML}
                 window.ipc.postMessage('exportdir:' + JSON.stringify({ pages, indexHtml, rootName: rootSeg, media }));
             }
         }
+
+        // New document (Ctrl+N) — create a blank .md via a native Save dialog, then open it.
+        document.addEventListener('keydown', (e) => {
+            if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return;
+            if (e.key !== 'n' && e.key !== 'N') return;
+            const t = e.target;
+            if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+            e.preventDefault();   // suppress any WebView2 "new window" default
+            if (window.ipc && typeof window.ipc.postMessage === 'function') {
+                window.ipc.postMessage('newfile:');
+            }
+        });
 
         // Editor window (E key) — opens the dedicated editor for the current file.
         document.addEventListener('keydown', (e) => {
@@ -3557,6 +3633,80 @@ ${previewClone.outerHTML}
                     scrollSpyObserver.observe(heading);
                 }
             });
+        }
+
+        // Build the TOC for Marp documents. Mirrors generateTOC() but the scroll /
+        // highlight unit is the slide <svg> (slides live inside foreignObject, so we
+        // avoid relying on scrollIntoView of inner heading elements — same model as
+        // applyEditorScroll's Marp branch). Each heading becomes a TOC item; clicking
+        // it scrolls (scroll mode) or jumps into the deck (list mode) to that slide.
+        // Shown only in scroll / list modes (deck hides the sidebar via CSS).
+        function generateMarpTOC() {
+            tocNav.innerHTML = '';
+            if (scrollSpyObserver) {
+                scrollSpyObserver.disconnect();
+                scrollSpyObserver = null;
+            }
+
+            const slides = Array.from(preview.querySelectorAll('div.marpit > svg[data-marpit-svg]'));
+            const existingIds = new Set();
+            let count = 0;
+
+            slides.forEach((svg, slideIdx) => {
+                svg.querySelectorAll('section h1, section h2, section h3, section h4, section h5, section h6').forEach(heading => {
+                    const text = heading.textContent.trim();
+                    if (!text) return;
+                    const level = parseInt(heading.tagName.charAt(1));
+                    const id = generateHeadingId(text, existingIds);
+                    heading.id = id;
+
+                    const tocItem = document.createElement('a');
+                    tocItem.className = 'toc-item';
+                    tocItem.setAttribute('data-level', level);
+                    tocItem.setAttribute('data-target', id);            // export / a11y
+                    tocItem.setAttribute('data-marp-slide', slideIdx);  // live navigation
+                    tocItem.href = '#' + id;
+                    tocItem.textContent = text;
+                    tocItem.title = text;
+
+                    tocItem.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        if (document.body.classList.contains('list-mode')) {
+                            __marpDeckIndex = slideIdx;
+                            setMarpView('deck');
+                            __marpUpdateDeck();
+                            showToast('Slides: deck');
+                        } else {
+                            // scroll mode (deck hides the sidebar, so no deck click path)
+                            svg.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                        }
+                        tocNav.querySelectorAll('.toc-item').forEach(it => it.classList.remove('active'));
+                        tocItem.classList.add('active');
+                    });
+
+                    tocNav.appendChild(tocItem);
+                    count++;
+                });
+            });
+
+            if (count === 0) {
+                tocNav.innerHTML = '<div class="toc-empty">No headings found</div>';
+                return;
+            }
+
+            // Scroll spy: observe each slide <svg>; highlight that slide's headings
+            // when it scrolls near the top of the preview. Mirrors setupScrollSpy().
+            scrollSpyObserver = new IntersectionObserver((entries) => {
+                entries.forEach((entry) => {
+                    if (!entry.isIntersecting) return;
+                    const idx = slides.indexOf(entry.target);
+                    if (idx < 0) return;
+                    tocNav.querySelectorAll('.toc-item').forEach(it => {
+                        it.classList.toggle('active', it.getAttribute('data-marp-slide') === String(idx));
+                    });
+                });
+            }, { root: previewContainer, rootMargin: '-10% 0px -80% 0px', threshold: 0 });
+            slides.forEach(svg => scrollSpyObserver.observe(svg));
         }
 
         // Configure marked.js without custom image renderer (use regex post-processing instead)
@@ -4394,6 +4544,17 @@ ${previewClone.outerHTML}
                 section.style.height = (100 / f) + '%';
                 section.style.transform = 'scale(' + f + ')';
             });
+            // Plotly charts are sized to their container at render time and don't
+            // auto-track a CSS-driven width change. The fit pass above enlarges an
+            // overflowing section's logical width by 1/f (and resets it back when it
+            // no longer overflows), so an autosize chart rendered before the fit stays
+            // at its stale width and no longer fills the slide — it looks off-center.
+            // Re-fit every initialized plotly chart to the current container width.
+            if (window.Plotly && Plotly.Plots && typeof Plotly.Plots.resize === 'function') {
+                preview.querySelectorAll('.plotly-block.js-plotly-plot').forEach(el => {
+                    try { Plotly.Plots.resize(el); } catch (e) {}
+                });
+            }
         }
         // Apply the current __marpZoom transform to the active slide <svg>.
         function __applyMarpZoom() {
@@ -5396,7 +5557,7 @@ ${previewClone.outerHTML}
             };
             const isFigureChild = (el) => {
                 if (el.nodeType !== 1) return false;
-                if (el.matches('.mermaid, .csv-table, table, .abc-notation, video, iframe.video-embed, .video-embed')) return true;
+                if (el.matches('.mermaid, .csv-table, table, .abc-notation, .plotly-block, video, iframe.video-embed, .video-embed')) return true;
                 if (isImageParagraph(el)) return true;
                 return false;
             };
@@ -5479,6 +5640,8 @@ ${previewClone.outerHTML}
             }
             __marpLastRenderedPath = currentFilePath;
             __marpUpdateDeck();
+            // Build the slide TOC (shown in scroll / list modes; deck hides the sidebar).
+            generateMarpTOC();
             // Re-fit after a layout flush so any async-rendered (mermaid / abc /
             // plotly) figures' final heights are accounted for.
             requestAnimationFrame(() => fitMarpSlides());
@@ -6457,6 +6620,7 @@ ${previewClone.outerHTML}
                     <tr><td class="keys"><kbd>L</kbd></td><td>Toggle line numbers</td></tr>
                     <tr><td class="keys"><kbd>W</kbd></td><td>Toggle full-width layout</td></tr>
                     <tr><td class="keys"><kbd>E</kbd></td><td>Open editor window (Vim mode, math input assist, char counter)</td></tr>
+                    <tr><td class="keys"><kbd>Ctrl</kbd>+<kbd>N</kbd></td><td>Create a new blank Markdown file</td></tr>
                     <tr><td class="keys"><kbd>X</kbd></td><td>Export current document as standalone HTML</td></tr>
                     <tr><td class="keys"><kbd>Ctrl</kbd>+<kbd>+</kbd> / <kbd>Ctrl</kbd>+<kbd>-</kbd> / <kbd>Ctrl</kbd>+<kbd>0</kbd></td><td>Zoom in / out / reset</td></tr>
                     <tr><td class="keys"><kbd>Alt</kbd>+<kbd>←</kbd> / <kbd>Alt</kbd>+<kbd>→</kbd></td><td>Navigate back / forward through opened files</td></tr>
@@ -6471,6 +6635,7 @@ ${previewClone.outerHTML}
             </table>
             <div class="help-footer">
                 <a href="#" id="show-licenses">Third-party licenses</a>
+                <span id="app-version" class="app-version"></span>
             </div>
             <pre id="licenses-pane" hidden></pre>
         </div>

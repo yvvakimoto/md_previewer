@@ -10,6 +10,7 @@
 #define AppPublisher   "Yuki Wakimoto"
 #define AppExeName     "md-previewer.exe"
 #define ProgID         "MdPreviewer.md"
+#define ProgIDmdx      "MdPreviewer.mdx"
 
 [Setup]
 ; Keep this AppId stable across versions so upgrades replace the old install.
@@ -42,19 +43,21 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Source: "..\target\release\{#AppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\assets\*"; DestDir: "{app}\assets"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\samples\*"; DestDir: "{app}\samples"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\HISTORY.md"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExeName}"; IconFilename: "{app}\{#AppExeName}"
 Name: "{group}\Sample Documents"; Filename: "{app}\samples"; IconFilename: "{app}\{#AppExeName}"; Comment: "機能デモ用 Markdown サンプル / Sample markdown files demonstrating features"
+Name: "{group}\更新履歴 / Release Notes"; Filename: "{app}\{#AppExeName}"; Parameters: """{app}\HISTORY.md"""; IconFilename: "{app}\{#AppExeName}"; Comment: "バージョンごとの更新内容 / What's new in each version"
 Name: "{group}\Third-party Licenses"; Filename: "{app}\assets\THIRD_PARTY_LICENSES.txt"; Comment: "Open-source licenses for bundled libraries (marked / mermaid / KaTeX / highlight.js / Marp / CodeMirror, etc.)"
 Name: "{group}\Uninstall {#AppName}"; Filename: "{uninstallexe}"
 Name: "{userdesktop}\{#AppName}"; Filename: "{app}\{#AppExeName}"; IconFilename: "{app}\{#AppExeName}"; Tasks: desktopicon
 
 [Tasks]
 Name: "desktopicon"; Description: "デスクトップにショートカットを作成 / Create desktop shortcut"; Flags: unchecked
-Name: "assoc_md";    Description: ".md / .markdown を {#AppName} に関連付ける / Associate .md & .markdown files"
+Name: "assoc_md";    Description: ".md / .markdown / .mdx を {#AppName} に関連付ける / Associate .md, .markdown & .mdx files"
 Name: "ctx_folder";  Description: "フォルダ右クリックメニューに追加 / Add to folder context menu"
-Name: "ctx_file";    Description: ".md ファイル右クリックメニューに追加 / Add to .md file context menu"
+Name: "ctx_file";    Description: ".md / .mdx ファイル右クリックメニューに追加 / Add to .md & .mdx file context menu"
 
 [Registry]
 ; ---- ProgID + DefaultIcon + open command ----
@@ -71,6 +74,13 @@ Root: HKCU; Subkey: "Software\Classes\.md\OpenWithProgids";       ValueType: str
 Root: HKCU; Subkey: "Software\Classes\.markdown";                 ValueType: string; ValueData: "{#ProgID}";                                    Flags: uninsdeletevalue; Tasks: assoc_md
 Root: HKCU; Subkey: "Software\Classes\.markdown\OpenWithProgids"; ValueType: string; ValueName: "{#ProgID}"; ValueData: "";                     Flags: uninsdeletevalue; Tasks: assoc_md
 
+; ---- .mdx bundle ProgID + association (Markdown + bundled resources in a ZIP) ----
+Root: HKCU; Subkey: "Software\Classes\{#ProgIDmdx}";                  ValueType: string; ValueData: "Markdown Bundle";                            Flags: uninsdeletekey; Tasks: assoc_md
+Root: HKCU; Subkey: "Software\Classes\{#ProgIDmdx}\DefaultIcon";      ValueType: string; ValueData: "{app}\{#AppExeName},0";                       Tasks: assoc_md
+Root: HKCU; Subkey: "Software\Classes\{#ProgIDmdx}\shell\open\command"; ValueType: string; ValueData: """{app}\{#AppExeName}"" ""%1""";            Tasks: assoc_md
+Root: HKCU; Subkey: "Software\Classes\.mdx";                       ValueType: string; ValueData: "{#ProgIDmdx}";                                 Flags: uninsdeletevalue; Tasks: assoc_md
+Root: HKCU; Subkey: "Software\Classes\.mdx\OpenWithProgids";       ValueType: string; ValueName: "{#ProgIDmdx}"; ValueData: "";                  Flags: uninsdeletevalue; Tasks: assoc_md
+
 ; ---- Folder context menu (folder itself + folder background) ----
 Root: HKCU; Subkey: "Software\Classes\Directory\shell\MdPreviewer";                              ValueType: string; ValueData: "Open with MD Previewer";  Flags: uninsdeletekey; Tasks: ctx_folder
 Root: HKCU; Subkey: "Software\Classes\Directory\shell\MdPreviewer";                              ValueType: string; ValueName: "Icon"; ValueData: """{app}\{#AppExeName}""";                Tasks: ctx_folder
@@ -86,8 +96,11 @@ Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.md\shell\MdPreview
 Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.markdown\shell\MdPreviewer";       ValueType: string; ValueData: "Open with MD Previewer";  Flags: uninsdeletekey; Tasks: ctx_file
 Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.markdown\shell\MdPreviewer";       ValueType: string; ValueName: "Icon"; ValueData: """{app}\{#AppExeName}""";                Tasks: ctx_file
 Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.markdown\shell\MdPreviewer\command"; ValueType: string; ValueData: """{app}\{#AppExeName}"" ""%1""";                            Tasks: ctx_file
+Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.mdx\shell\MdPreviewer";              ValueType: string; ValueData: "Open with MD Previewer";  Flags: uninsdeletekey; Tasks: ctx_file
+Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.mdx\shell\MdPreviewer";              ValueType: string; ValueName: "Icon"; ValueData: """{app}\{#AppExeName}""";                Tasks: ctx_file
+Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.mdx\shell\MdPreviewer\command";      ValueType: string; ValueData: """{app}\{#AppExeName}"" ""%1""";                              Tasks: ctx_file
 
 [Run]
-Filename: "{app}\{#AppExeName}"; Description: "{#AppName} を起動 / Launch {#AppName}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\{#AppExeName}"; Parameters: """{app}\HISTORY.md"""; Description: "{#AppName} を起動し更新内容を表示 / Launch {#AppName} (show what's new)"; Flags: nowait postinstall skipifsilent
 Filename: "{win}\explorer.exe"; Parameters: """{app}"""; Description: "インストール先フォルダを開く / Open install folder"; Flags: nowait postinstall skipifsilent unchecked shellexec
 Filename: "{app}\assets\THIRD_PARTY_LICENSES.txt"; Description: "サードパーティライセンスを表示 / View third-party licenses"; Flags: nowait postinstall skipifsilent unchecked shellexec

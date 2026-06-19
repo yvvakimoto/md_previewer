@@ -22,6 +22,7 @@ use std::collections::{HashMap, HashSet};
 mod clipboard_win;
 mod editor_registry;
 mod ime_win;
+mod mdx;
 use editor_registry::EditorRegistry;
 
 // Path to a markdown file currently being viewed. Wrapped in Arc<Mutex>
@@ -775,6 +776,22 @@ fn load_and_render(
     current_file: &CurrentFile,
     editor_registry: &EditorRegistry,
 ) {
+    load_and_render_named(path, None, webview, current_dir, current_file, editor_registry);
+}
+
+/// Like [`load_and_render`], but `display_name`, when `Some`, overrides the
+/// shown filename (window title + `FileData.filename`) without changing the
+/// real `path` used for disk reads / `current_file` / editor pairing. Used for
+/// `.mdx` bundles, whose extracted entry is e.g. `index.md` on disk but should
+/// display as `foo.mdx`.
+fn load_and_render_named(
+    path: &Path,
+    display_name: Option<&str>,
+    webview: &Arc<Mutex<wry::webview::WebView>>,
+    current_dir: &CurrentDir,
+    current_file: &CurrentFile,
+    editor_registry: &EditorRegistry,
+) {
     let base_dir = path.parent().map(|p| p.to_path_buf());
     if let Some(ref parent) = base_dir {
         *current_dir.lock().unwrap() = Some(parent.clone());
@@ -782,8 +799,9 @@ fn load_and_render(
 
     match fs::read_to_string(path) {
         Ok(content) => {
-            let filename = path.file_name()
-                .map(|n| n.to_string_lossy().to_string())
+            let filename = display_name
+                .map(|s| s.to_string())
+                .or_else(|| path.file_name().map(|n| n.to_string_lossy().to_string()))
                 .unwrap_or_else(|| "Unknown".to_string());
             let filepath = path.to_string_lossy().to_string();
             let content_embedded = if let Some(ref dir) = base_dir {
@@ -815,6 +833,43 @@ fn load_and_render(
     }
 }
 
+/// If the just-saved `saved_path` belongs to an open `.mdx` bundle (it is the
+/// entry file or lives inside the bundle's temp dir), repack the temp dir back
+/// into the original `.mdx`. The `.mdx` path is added to `suppressed_saves` for
+/// ~1.5s (same mechanism as `editor:save:` / `savefile:`) so our own write does
+/// not trigger a watcher reload loop.
+fn maybe_repack_mdx(
+    saved_path: &Path,
+    mdx_session: &Arc<Mutex<Option<mdx::MdxSession>>>,
+    suppressed_saves: &Arc<Mutex<HashSet<PathBuf>>>,
+) {
+    let (temp_dir, mdx_path) = {
+        let guard = mdx_session.lock().unwrap();
+        match guard.as_ref() {
+            Some(sess)
+                if paths_equal(saved_path, &sess.entry)
+                    || saved_path.starts_with(sess.temp.path()) =>
+            {
+                (sess.temp.path().to_path_buf(), sess.mdx_path.clone())
+            }
+            _ => return,
+        }
+    };
+    {
+        let mut s = suppressed_saves.lock().unwrap();
+        s.insert(mdx_path.clone());
+    }
+    let supp = suppressed_saves.clone();
+    let mdx_for_timer = mdx_path.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(1500));
+        supp.lock().unwrap().remove(&mdx_for_timer);
+    });
+    if let Err(e) = mdx::repack_mdx(&temp_dir, &mdx_path) {
+        eprintln!("mdx: repack failed for {:?}: {}", mdx_path, e);
+    }
+}
+
 fn main() -> wry::Result<()> {
     // Check for command-line arguments (file or directory path)
     let args: Vec<String> = env::args().collect();
@@ -825,10 +880,33 @@ fn main() -> wry::Result<()> {
         None
     };
 
+    // If the CLI arg is an `.mdx` bundle, extract it now; the extracted entry
+    // `.md` then flows through the normal single-file path below. `mdx_initial`
+    // holds the live session (kept alive in `mdx_session`); `mdx_display_name`
+    // is the `.mdx` filename to show instead of the extracted `index.md`.
+    let mut mdx_initial: Option<mdx::MdxSession> = None;
+    let mut mdx_display_name: Option<String> = None;
+
     // Distinguish file vs directory. A directory opens as a workspace; a file
     // opens directly (back-compat with existing CLI / double-click flow).
     let (file_path, dir_path): (Option<PathBuf>, Option<PathBuf>) = match cli_path.as_ref() {
         Some(p) if p.is_dir() => (None, Some(to_abs(p))),
+        Some(p) if mdx::is_mdx_ext(p) && p.is_file() => {
+            let abs = to_abs(p);
+            match mdx::open_mdx(&abs) {
+                Ok(sess) => {
+                    mdx_display_name =
+                        abs.file_name().map(|n| n.to_string_lossy().to_string());
+                    let entry = sess.entry.clone();
+                    mdx_initial = Some(sess);
+                    (Some(entry), None)
+                }
+                Err(e) => {
+                    eprintln!("Failed to open .mdx {:?}: {}", abs, e);
+                    (None, None)
+                }
+            }
+        }
         Some(p) if p.is_file() => (Some(p.clone()), None),
         _ => (None, None),
     };
@@ -844,7 +922,9 @@ fn main() -> wry::Result<()> {
     // Read file content if provided
     let initial_file: Option<FileData> = effective_file_path.as_ref().and_then(|path| {
         if path.exists() && path.is_file() {
-            let filename = path.file_name()?.to_string_lossy().to_string();
+            let filename = mdx_display_name
+                .clone()
+                .or_else(|| path.file_name().map(|n| n.to_string_lossy().to_string()))?;
             // Convert to absolute path for proper relative image resolution
             // Use current_dir().join() instead of canonicalize() to avoid \\?\ prefix on Windows
             let abs_path = if path.is_absolute() {
@@ -884,13 +964,23 @@ fn main() -> wry::Result<()> {
     // Workspace state shared with the event loop and file watcher.
     let workspace: Arc<Mutex<Option<Workspace>>> = Arc::new(Mutex::new(initial_workspace.clone()));
 
+    // The open `.mdx` bundle (if any). Holds the extracted temp dir alive and
+    // maps the extracted entry back to the original `.mdx` for title display,
+    // watching, and save-time repacking.
+    let mdx_session: Arc<Mutex<Option<mdx::MdxSession>>> = Arc::new(Mutex::new(mdx_initial));
+
     // Create event loop and window
     let event_loop = EventLoop::<CustomEvent>::with_user_event();
     let event_proxy = event_loop.create_proxy();
     let initial_title = format_title(
-        effective_file_path.as_ref()
-            .and_then(|p| p.file_name())
-            .map(|n| n.to_string_lossy().into_owned())
+        mdx_display_name
+            .clone()
+            .or_else(|| {
+                effective_file_path
+                    .as_ref()
+                    .and_then(|p| p.file_name())
+                    .map(|n| n.to_string_lossy().into_owned())
+            })
             .as_deref(),
     );
     // Clamp the initial window size to fit within the primary monitor's visible
@@ -1039,9 +1129,11 @@ fn main() -> wry::Result<()> {
     let marp_themes_json = serde_json::to_string(&marp_themes).unwrap_or_else(|_| "[]".into());
     dbg_log!("marp_themes  = {}", marp_themes_json);
 
+    let app_version_json =
+        serde_json::to_string(env!("CARGO_PKG_VERSION")).unwrap_or_else(|_| "\"\"".into());
     let init_script = format!(
-        "window.__userStyles = {};\nwindow.__marpThemes = {};\nwindow.__styleExporters = {};\n{}",
-        user_styles_json, marp_themes_json, style_exporters_json, init_script
+        "window.__appVersion = {};\nwindow.__userStyles = {};\nwindow.__marpThemes = {};\nwindow.__styleExporters = {};\n{}",
+        app_version_json, user_styles_json, marp_themes_json, style_exporters_json, init_script
     );
 
     // Clone current_dir for use in the protocol handler closure
@@ -1351,6 +1443,48 @@ fn main() -> wry::Result<()> {
             if let Err(e) = ipc_event_proxy.send_event(CustomEvent::ToggleFullscreen) {
                 eprintln!("Failed to dispatch ToggleFullscreen: {}", e);
             }
+        } else if message == "newfile:" {
+            // New document (Ctrl+N) — pick a save location via a native dialog,
+            // create a blank `.md`, then open it through the normal OpenFile flow.
+            let initial_dir = ipc_current_file
+                .lock()
+                .unwrap()
+                .as_ref()
+                .and_then(|p| p.parent().map(|d| d.to_path_buf()));
+            let proxy = ipc_event_proxy.clone();
+            // rfd's save_file() blocks; run it off the IPC thread (same pattern as
+            // the `exporthtml:` / `exportdir:` handlers).
+            std::thread::spawn(move || {
+                let mut dialog = rfd::FileDialog::new()
+                    .add_filter("Markdown", &["md", "markdown"])
+                    .set_file_name("untitled.md");
+                if let Some(dir) = initial_dir {
+                    dialog = dialog.set_directory(dir);
+                }
+                if let Some(mut path) = dialog.save_file() {
+                    // Ensure a markdown extension so the OpenFile handler accepts it.
+                    let ok_ext = path
+                        .extension()
+                        .and_then(|e| e.to_str())
+                        .map(|e| {
+                            let e = e.to_ascii_lowercase();
+                            e == "md" || e == "markdown"
+                        })
+                        .unwrap_or(false);
+                    if !ok_ext {
+                        path.set_extension("md");
+                    }
+                    // Create an empty file only for a new path. If the chosen path
+                    // already exists, open it as-is (never truncate existing content).
+                    if !path.exists() {
+                        if let Err(e) = std::fs::write(&path, b"") {
+                            eprintln!("newfile: failed to create {}: {}", path.display(), e);
+                            return;
+                        }
+                    }
+                    let _ = proxy.send_event(CustomEvent::OpenFile(path));
+                }
+            });
         } else if let Some(line_str) = message.strip_prefix("openeditor:") {
             let line = line_str.trim().parse::<u32>().unwrap_or(1);
             if let Err(e) = ipc_event_proxy.send_event(CustomEvent::OpenEditorWindow { line }) {
@@ -1474,6 +1608,8 @@ fn main() -> wry::Result<()> {
                 let _ = file_drop_event_proxy.send_event(CustomEvent::OpenDirectory(dir.clone()));
             } else if let Some(md) = paths.iter().find(|p| is_markdown_ext(p)) {
                 let _ = file_drop_event_proxy.send_event(CustomEvent::OpenFile(md.clone()));
+            } else if let Some(mdx) = paths.iter().find(|p| mdx::is_mdx_ext(p)) {
+                let _ = file_drop_event_proxy.send_event(CustomEvent::OpenFile(mdx.clone()));
             } else if let Some(img) = paths.iter().find(|p| is_image_ext(p)) {
                 let _ = file_drop_event_proxy.send_event(CustomEvent::OpenImage(img.clone()));
             }
@@ -1520,9 +1656,17 @@ fn main() -> wry::Result<()> {
             }
         }
     } else if let Some(ref path) = file_path {
+        // For an `.mdx` bundle, watch the archive itself (not the extracted
+        // temp entry) so external edits to the `.mdx` trigger a re-extract.
+        let watch_target = mdx_session
+            .lock()
+            .unwrap()
+            .as_ref()
+            .map(|s| s.mdx_path.clone())
+            .unwrap_or_else(|| path.clone());
         if let Some(w) = watcher.lock().unwrap().as_mut() {
-            match w.watch(path, RecursiveMode::NonRecursive) {
-                Ok(()) => *watched_path.lock().unwrap() = Some(path.clone()),
+            match w.watch(&watch_target, RecursiveMode::NonRecursive) {
+                Ok(()) => *watched_path.lock().unwrap() = Some(watch_target),
                 Err(e) => eprintln!("Failed to watch file: {}", e),
             }
         }
@@ -1635,6 +1779,8 @@ fn main() -> wry::Result<()> {
     let editor_current_file_for_spawn = current_file.clone();
     let editor_current_dir_for_spawn = current_dir.clone();
     let editor_suppressed_for_spawn = suppressed_saves.clone();
+    // Used by the event loop to repack saves back into an open `.mdx` bundle.
+    let evloop_suppressed = suppressed_saves.clone();
 
     // Run event loop
     event_loop.run(move |event, target, control_flow| {
@@ -1683,7 +1829,30 @@ fn main() -> wry::Result<()> {
                 }
             }
             Event::UserEvent(CustomEvent::FileChanged(path)) => {
-                load_and_render(&path, &webview, &current_dir, &current_file, &editor_registry);
+                if mdx::is_mdx_ext(&path) {
+                    // The watched `.mdx` changed on disk (external edit) —
+                    // re-extract into a fresh temp dir and re-render its entry.
+                    match mdx::open_mdx(&path) {
+                        Ok(sess) => {
+                            let entry = sess.entry.clone();
+                            let display = path
+                                .file_name()
+                                .map(|n| n.to_string_lossy().to_string());
+                            *mdx_session.lock().unwrap() = Some(sess);
+                            load_and_render_named(
+                                &entry,
+                                display.as_deref(),
+                                &webview,
+                                &current_dir,
+                                &current_file,
+                                &editor_registry,
+                            );
+                        }
+                        Err(e) => eprintln!("mdx: re-extract failed for {:?}: {}", path, e),
+                    }
+                } else {
+                    load_and_render(&path, &webview, &current_dir, &current_file, &editor_registry);
+                }
             }
             Event::UserEvent(CustomEvent::CsvWatchReset) => {
                 // Flush all CSV watches. In workspace mode the root is watched
@@ -1775,8 +1944,20 @@ fn main() -> wry::Result<()> {
                 } else {
                     content.clone()
                 };
-                let filename = path.file_name()
-                    .map(|n| n.to_string_lossy().to_string())
+                // If this save belongs to an open `.mdx`, keep the `.mdx` name in
+                // the title instead of the extracted entry's name.
+                let mdx_name: Option<String> = {
+                    let g = mdx_session.lock().unwrap();
+                    g.as_ref()
+                        .filter(|s| {
+                            paths_equal(&path, &s.entry) || path.starts_with(s.temp.path())
+                        })
+                        .and_then(|s| {
+                            s.mdx_path.file_name().map(|n| n.to_string_lossy().to_string())
+                        })
+                };
+                let filename = mdx_name
+                    .or_else(|| path.file_name().map(|n| n.to_string_lossy().to_string()))
                     .unwrap_or_else(|| "Unknown".to_string());
                 let file_data = FileData {
                     filename: filename.clone(),
@@ -1793,7 +1974,9 @@ fn main() -> wry::Result<()> {
                     wv.window().set_title(&format_title(Some(&filename)));
                     let _ = wv.evaluate_script(&script);
                 }
-                *current_file.lock().unwrap() = Some(path);
+                *current_file.lock().unwrap() = Some(path.clone());
+                // Persist the edit back into the source `.mdx` bundle, if any.
+                maybe_repack_mdx(&path, &mdx_session, &evloop_suppressed);
             }
             Event::UserEvent(CustomEvent::EditorLiveContent { path, content, line }) => {
                 // Live (unsaved) editor content — re-render preview from memory
@@ -1831,10 +2014,53 @@ fn main() -> wry::Result<()> {
                     return;
                 }
 
+                // `.mdx` bundle: extract to a temp dir, watch the archive (so
+                // external edits re-extract), and render its entry `.md`.
+                if mdx::is_mdx_ext(&abs_path) {
+                    match mdx::open_mdx(&abs_path) {
+                        Ok(sess) => {
+                            let entry = sess.entry.clone();
+                            let display =
+                                abs_path.file_name().map(|n| n.to_string_lossy().to_string());
+                            let in_workspace = workspace.lock().unwrap().is_some();
+                            if !in_workspace {
+                                if let Some(w) = watcher.lock().unwrap().as_mut() {
+                                    let old = watched_path.lock().unwrap().clone();
+                                    if let Some(old_path) = old {
+                                        let _ = w.unwatch(&old_path);
+                                    }
+                                    match w.watch(&abs_path, RecursiveMode::NonRecursive) {
+                                        Ok(()) => {
+                                            *watched_path.lock().unwrap() = Some(abs_path.clone());
+                                            *watched_is_dir.lock().unwrap() = false;
+                                        }
+                                        Err(e) => eprintln!("Failed to watch .mdx: {}", e),
+                                    }
+                                }
+                            }
+                            *mdx_session.lock().unwrap() = Some(sess);
+                            load_and_render_named(
+                                &entry,
+                                display.as_deref(),
+                                &webview,
+                                &current_dir,
+                                &current_file,
+                                &editor_registry,
+                            );
+                        }
+                        Err(e) => eprintln!("OpenFile: failed to open .mdx {:?}: {}", abs_path, e),
+                    }
+                    return;
+                }
+
                 if !is_markdown_ext(&abs_path) {
                     eprintln!("OpenFile: not a markdown file: {:?}", abs_path);
                     return;
                 }
+
+                // Switching to a plain `.md` ends any active `.mdx` session
+                // (drops the temp dir).
+                *mdx_session.lock().unwrap() = None;
 
                 // Swap watcher target only if we are NOT in workspace mode.
                 // In workspace mode the recursive watch on the root already
