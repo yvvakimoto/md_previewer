@@ -10,6 +10,7 @@
 #define AppPublisher   "Yuki Wakimoto"
 #define AppExeName     "md-previewer.exe"
 #define ProgID         "MdPreviewer.md"
+#define ProgIDmdx      "MdPreviewer.mdx"
 
 [Setup]
 ; Keep this AppId stable across versions so upgrades replace the old install.
@@ -54,9 +55,9 @@ Name: "{userdesktop}\{#AppName}"; Filename: "{app}\{#AppExeName}"; IconFilename:
 
 [Tasks]
 Name: "desktopicon"; Description: "デスクトップにショートカットを作成 / Create desktop shortcut"; Flags: unchecked
-Name: "assoc_md";    Description: ".md / .markdown を {#AppName} に関連付ける / Associate .md & .markdown files"
+Name: "assoc_md";    Description: ".md / .markdown / .mdx を {#AppName} に関連付ける / Associate .md, .markdown & .mdx files"
 Name: "ctx_folder";  Description: "フォルダ右クリックメニューに追加 / Add to folder context menu"
-Name: "ctx_file";    Description: ".md ファイル右クリックメニューに追加 / Add to .md file context menu"
+Name: "ctx_file";    Description: ".md / .mdx ファイル右クリックメニューに追加 / Add to .md & .mdx file context menu"
 
 [Registry]
 ; ---- ProgID + DefaultIcon + open command ----
@@ -73,6 +74,13 @@ Root: HKCU; Subkey: "Software\Classes\.md\OpenWithProgids";       ValueType: str
 Root: HKCU; Subkey: "Software\Classes\.markdown";                 ValueType: string; ValueData: "{#ProgID}";                                    Flags: uninsdeletevalue; Tasks: assoc_md
 Root: HKCU; Subkey: "Software\Classes\.markdown\OpenWithProgids"; ValueType: string; ValueName: "{#ProgID}"; ValueData: "";                     Flags: uninsdeletevalue; Tasks: assoc_md
 
+; ---- .mdx bundle ProgID + association (Markdown + bundled resources in a ZIP) ----
+Root: HKCU; Subkey: "Software\Classes\{#ProgIDmdx}";                  ValueType: string; ValueData: "Markdown Bundle";                            Flags: uninsdeletekey; Tasks: assoc_md
+Root: HKCU; Subkey: "Software\Classes\{#ProgIDmdx}\DefaultIcon";      ValueType: string; ValueData: "{app}\{#AppExeName},0";                       Tasks: assoc_md
+Root: HKCU; Subkey: "Software\Classes\{#ProgIDmdx}\shell\open\command"; ValueType: string; ValueData: """{app}\{#AppExeName}"" ""%1""";            Tasks: assoc_md
+Root: HKCU; Subkey: "Software\Classes\.mdx";                       ValueType: string; ValueData: "{#ProgIDmdx}";                                 Flags: uninsdeletevalue; Tasks: assoc_md
+Root: HKCU; Subkey: "Software\Classes\.mdx\OpenWithProgids";       ValueType: string; ValueName: "{#ProgIDmdx}"; ValueData: "";                  Flags: uninsdeletevalue; Tasks: assoc_md
+
 ; ---- Folder context menu (folder itself + folder background) ----
 Root: HKCU; Subkey: "Software\Classes\Directory\shell\MdPreviewer";                              ValueType: string; ValueData: "Open with MD Previewer";  Flags: uninsdeletekey; Tasks: ctx_folder
 Root: HKCU; Subkey: "Software\Classes\Directory\shell\MdPreviewer";                              ValueType: string; ValueName: "Icon"; ValueData: """{app}\{#AppExeName}""";                Tasks: ctx_folder
@@ -88,6 +96,9 @@ Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.md\shell\MdPreview
 Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.markdown\shell\MdPreviewer";       ValueType: string; ValueData: "Open with MD Previewer";  Flags: uninsdeletekey; Tasks: ctx_file
 Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.markdown\shell\MdPreviewer";       ValueType: string; ValueName: "Icon"; ValueData: """{app}\{#AppExeName}""";                Tasks: ctx_file
 Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.markdown\shell\MdPreviewer\command"; ValueType: string; ValueData: """{app}\{#AppExeName}"" ""%1""";                            Tasks: ctx_file
+Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.mdx\shell\MdPreviewer";              ValueType: string; ValueData: "Open with MD Previewer";  Flags: uninsdeletekey; Tasks: ctx_file
+Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.mdx\shell\MdPreviewer";              ValueType: string; ValueName: "Icon"; ValueData: """{app}\{#AppExeName}""";                Tasks: ctx_file
+Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.mdx\shell\MdPreviewer\command";      ValueType: string; ValueData: """{app}\{#AppExeName}"" ""%1""";                              Tasks: ctx_file
 
 [Run]
 Filename: "{app}\{#AppExeName}"; Parameters: """{app}\HISTORY.md"""; Description: "{#AppName} を起動し更新内容を表示 / Launch {#AppName} (show what's new)"; Flags: nowait postinstall skipifsilent

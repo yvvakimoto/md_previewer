@@ -15,6 +15,8 @@ urlencoding = "2.1"
 base64 = "0.21"
 regex = "1"
 rfd = "0.14"
+tempfile = "3"
+zip = { version = "2", default-features = false, features = ["deflate"] }
 
 [target.'cfg(windows)'.dependencies]
 clipboard-win = "5"
