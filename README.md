@@ -25,7 +25,7 @@ Windows 専用の、軽量なスタンドアロン Markdown プレビューア�
 | オフライン動作 | ◯（CDN 不使用、全アセット同梱） | ◯ | ◯ | ◯ |
 | **CSS テーマの追加方法** | **`assets/` に `.css` を 1 枚置くだけ**（`S` キーのモーダルで選択） | `settings.json` の `markdown.styles` に絶対パス／URL を列挙 | コミュニティテーマのインストール／`.obsidian/snippets/` に CSS 配置 | テーマフォルダに `.css` 配置（命名規約あり） |
 | ライセンス | OSS（無償） | OSS（無償） | 個人利用無償／商用有償 | **有償**（v1.0 以降ライセンス購入が必要） |
-| 拡張記法 | Mermaid / KaTeX / Marp スライド / CSV・TSV テーブル / **外部CSV→Plotly 対話的チャート** / Footnote ツールチップ（標準同梱） | 多くは拡張機能の追加導入が必要 | コアおよびプラグインで対応 | Mermaid / KaTeX 等を内蔵（Marp 非対応） |
+| 拡張記法 | Mermaid / KaTeX / Marp スライド / CSV・TSV テーブル / **外部CSV→Plotly 対話的チャート** / ABC 楽譜 / **Markwhen タイムライン** / Footnote ツールチップ（標準同梱） | 多くは拡張機能の追加導入が必要 | コアおよびプラグインで対応 | Mermaid / KaTeX 等を内蔵（Marp 非対応） |
 | 単独 HTML エクスポート | ◯（`X` キー、KaTeX・Mermaid 等をインライン化した自己完結 HTML） | △（拡張機能依存） | △（プラグイン依存） | ◯ |
 
 ### 補足
@@ -171,6 +171,7 @@ md-previewer.exe path\to\bundle.mdx
 - **表を PowerPoint へコピー** — プレビュー内のすべての表（GFM のパイプ表・`csv` / `tsv` コードブロックの表の両方）にマウスを重ねると右上に **「Copy table」** ボタンが出ます。クリックすると表をリッチ HTML 形式でクリップボードへコピーするので、PowerPoint（や Word / Excel / Outlook）へ貼り付けると **そのまま編集できるネイティブの表** になります（テキストボックスや画像ではありません）。[CSV/TSV のサンプル](samples/csv-tsv.md) 参照
 - **Plotly 対話的チャート（外部CSV/TSVから）** — ` ```plotly ` フェンスブロックに `file: data.csv` と `type:` / `x:` / `y:` を YAML で書くだけで、Plotly.js による折れ線・散布・棒・ヒストグラム・箱ひげ・ヒートマップ・3Dサーフェスを描画。CSV ファイルを更新すると自動でグラフが追従。 [Plotly のサンプル](samples/plotly.md) 参照
 - **ABC 楽譜** — ` ```abc ` フェンスに [ABC 記譜法](https://abcnotation.com/) を書くと、[abcjs](https://github.com/paulrosen/abcjs)（MIT）によって五線譜 SVG として描画。調号・拍子・和音・スラー・タイ・歌詞（`w:`）などに対応（描画のみ。音声再生は非対応）。一般文書・Marp スライド両対応、HTML エクスポートにもインライン SVG として追従。[ABC のサンプル](samples/abcjs.md) 参照
+- **Markwhen タイムライン** — ` ```markwhen ` フェンスに [markwhen](https://markwhen.com/) 記法を書くと、横型のカスケードタイムラインとして描画。同梱の [@markwhen/parser](https://www.npmjs.com/package/@markwhen/parser)（MIT）が日付（ISO・米国式・欧州式・自然言語）を解決し、自前の SVG レンダラが時間軸・期間バー・単発イベント点・セクション見出し・タグ色を描画。ダークモード追従、一般文書・Marp スライド両対応、HTML エクスポートにもインライン SVG として追従（描画のみ。markwhen 公式の Vue ビュー/対話操作は非搭載）。[Markwhen のサンプル](samples/markwhen.md) 参照
 - **画像**
   - 相対パスは Markdown ファイルのあるフォルダを基準に解決
   - 内部プロトコル（`/userfile/`）経由で配信し、ブラウザが並列・非同期に読み込み（画像を多く含む文書・スライドでも起動が高速）
@@ -312,6 +313,7 @@ Marp 標準の `default` / `gaia` / `uncover` も追加設定なしで利用可�
 | `plotly.md` | 外部 CSV を読み込んで Plotly でチャート化 |
 | `video.md` | ローカル動画 / YouTube 埋め込み（画像記法を流用） |
 | `abcjs.md` | ABC 記譜法の楽譜描画（旋律・調号・和音・歌詞 ほか） |
+| `markwhen.md` | Markwhen タイムライン（セクション・期間/単発イベント・タグ色） |
 | `links.md` + `links-other.md` | クロスファイル `.md` リンクと履歴ナビ |
 | `marp.md` | Marp スライドモード |
 | `長文技術ドキュメント.md` | 長文 + TOC + セクション番号 |
@@ -356,7 +358,7 @@ Marp 標準の `default` / `gaia` / `uncover` も追加設定なしで利用可�
 
 ## ライセンス・サードパーティ表記
 
-本アプリは複数の OSS ライブラリ（marked / highlight.js / KaTeX / Mermaid / Marp Core / CodeMirror など）を同梱しています。各ライブラリの著作権表示・ライセンス全文は **`assets/THIRD_PARTY_LICENSES.txt` の 1 ファイルに集約** されています。
+本アプリは複数の OSS ライブラリ（marked / highlight.js / KaTeX / Mermaid / Marp Core / CodeMirror / @markwhen/parser など）を同梱しています。各ライブラリの著作権表示・ライセンス全文は **`assets/THIRD_PARTY_LICENSES.txt` の 1 ファイルに集約** されています。
 
 このファイルは `tools/collect-licenses.ps1` により自動生成される成果物のため、**本リポジトリには含まれていません**（git-ignored）。ただし、立場によって扱いが異なります。
 
@@ -424,7 +426,7 @@ GitHub からクローンした直後の `assets/libs/` は空です。サード
 pwsh -File tools\install-deps.ps1
 ```
 
-これで `tools/fetch-libs.ps1`（marked / mermaid / KaTeX + フォント / highlight.js を cdnjs・jsdelivr からピン留めバージョンでダウンロード）と、`tools/build-marp/` / `tools/build-editor/` の `npm install && npm run build` が順に走り、`assets/libs/` 配下が完成します。フラグ:
+これで `tools/fetch-libs.ps1`（marked / mermaid / KaTeX + フォント / highlight.js を cdnjs・jsdelivr からピン留めバージョンでダウンロード）と、`tools/build-marp/` / `tools/build-editor/` / `tools/build-markwhen/` の `npm install && npm run build` が順に走り、`assets/libs/` 配下が完成します。フラグ:
 
 - `-Force` — 静的ライブラリを再ダウンロード（既存ファイルを上書き）
 - `-SkipNode` — CDN ダウンロードのみ実行（Node がない環境用）

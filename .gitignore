@@ -12,9 +12,10 @@
 /assets/libs/katex/
 /assets/libs/plotly/
 /assets/libs/abcjs/
-#   - esbuild bundles built by tools/build-marp & tools/build-editor:
+#   - esbuild bundles built by tools/build-marp, tools/build-editor & tools/build-markwhen:
 /assets/libs/marp/
 /assets/libs/editor/
+/assets/libs/markwhen/
 
 /assets/THIRD_PARTY_LICENSES.txt
 /dist
@@ -32,5 +33,9 @@ tools/build-marp/package-lock.json
 # Editor bundler (Node toolchain)
 tools/build-editor/node_modules/
 tools/build-editor/package-lock.json
+
+# Markwhen bundler (Node toolchain)
+tools/build-markwhen/node_modules/
+tools/build-markwhen/package-lock.json
 
 *.skill

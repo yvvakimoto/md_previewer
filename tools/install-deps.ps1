@@ -8,9 +8,10 @@
 
     1. Download static third-party libs (marked, mermaid, KaTeX, highlight.js)
        via tools/fetch-libs.ps1.
-    2. npm install + npm run build inside tools/build-marp/   -> marp.iife.js
-    3. npm install + npm run build inside tools/build-editor/ -> editor.iife.js
-    4. (optional, -Licenses) regenerate assets/THIRD_PARTY_LICENSES.txt.
+    2. npm install + npm run build inside tools/build-marp/     -> marp.iife.js
+    3. npm install + npm run build inside tools/build-editor/   -> editor.iife.js
+    4. npm install + npm run build inside tools/build-markwhen/ -> markwhen.iife.js
+    5. (optional, -Licenses) regenerate assets/THIRD_PARTY_LICENSES.txt.
 
   After this, `cargo build --release` and `cargo run --release` work.
 
@@ -18,8 +19,9 @@
   Forwarded to fetch-libs.ps1 — re-downloads every static file even if present.
 
 .PARAMETER SkipNode
-  Skip the npm-based steps (marp / editor builds, license regen). Useful when
-  you only want to refresh the CDN-sourced libs and don't have Node available.
+  Skip the npm-based steps (marp / editor / markwhen builds, license regen).
+  Useful when you only want to refresh the CDN-sourced libs and don't have Node
+  available.
 
 .PARAMETER Licenses
   After the npm builds, run tools/collect-licenses.ps1 to regenerate
@@ -63,7 +65,7 @@ function Invoke-NpmStep {
 }
 
 # ---- Step 1: static libs -----------------------------------------------
-Write-Header '[1/4] fetch static libs (marked / mermaid / KaTeX / highlight.js)'
+Write-Header '[1/5] fetch static libs (marked / mermaid / KaTeX / highlight.js)'
 $fetchArgs = @{ RepoRoot = $RepoRoot }
 if ($Force) { $fetchArgs['Force'] = $true }
 & (Join-Path $ScriptDir 'fetch-libs.ps1') @fetchArgs
@@ -75,7 +77,7 @@ Write-Header 'enable git hooks (core.hooksPath -> tools/hooks)'
 # ---- npm-based steps ---------------------------------------------------
 if ($SkipNode) {
   Write-Host ''
-  Write-Host '[2-4] skipped (-SkipNode)'
+  Write-Host '[2-5] skipped (-SkipNode)'
   Write-Host ''
   Write-Host 'install-deps: done (fetch-only).'
   return
@@ -91,18 +93,21 @@ pass -SkipNode to populate only the CDN-sourced static libs.
 }
 
 # Step 2: marp
-Invoke-NpmStep -ProjectDir (Join-Path $RepoRoot 'tools/build-marp')   -Label '[2/4] build marp IIFE bundle'
+Invoke-NpmStep -ProjectDir (Join-Path $RepoRoot 'tools/build-marp')     -Label '[2/5] build marp IIFE bundle'
 
 # Step 3: editor
-Invoke-NpmStep -ProjectDir (Join-Path $RepoRoot 'tools/build-editor') -Label '[3/4] build editor IIFE bundle'
+Invoke-NpmStep -ProjectDir (Join-Path $RepoRoot 'tools/build-editor')   -Label '[3/5] build editor IIFE bundle'
 
-# Step 4: licenses (optional)
+# Step 4: markwhen
+Invoke-NpmStep -ProjectDir (Join-Path $RepoRoot 'tools/build-markwhen') -Label '[4/5] build markwhen IIFE bundle'
+
+# Step 5: licenses (optional)
 if ($Licenses) {
-  Write-Header '[4/4] regenerate THIRD_PARTY_LICENSES.txt'
+  Write-Header '[5/5] regenerate THIRD_PARTY_LICENSES.txt'
   & (Join-Path $ScriptDir 'collect-licenses.ps1') -RepoRoot $RepoRoot
 } else {
   Write-Host ''
-  Write-Host '[4/4] license regen skipped (pass -Licenses to run tools/collect-licenses.ps1)'
+  Write-Host '[5/5] license regen skipped (pass -Licenses to run tools/collect-licenses.ps1)'
 }
 
 Write-Host ''

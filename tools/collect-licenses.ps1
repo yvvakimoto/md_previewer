@@ -1,7 +1,8 @@
 <#
 .SYNOPSIS
   Regenerate assets/THIRD_PARTY_LICENSES.txt from bundled libraries and
-  the npm dependency trees of tools/build-marp and tools/build-editor.
+  the npm dependency trees of tools/build-marp, tools/build-editor and
+  tools/build-markwhen.
 
 .DESCRIPTION
   Run from repo root:
@@ -20,6 +21,8 @@
        (tools/build-marp/node_modules).
     3. Transitive npm dependencies of the CodeMirror editor IIFE bundle
        (tools/build-editor/node_modules).
+    4. Transitive npm dependencies of the Markwhen parser IIFE bundle
+       (tools/build-markwhen/node_modules).
 #>
 
 [CmdletBinding()]
@@ -200,6 +203,7 @@ function Add-NpmTree {
 
 Add-NpmTree 'Marp Core IIFE bundle (assets/libs/marp/marp.iife.js)' (Join-Path $RepoRoot 'tools/build-marp/node_modules')
 Add-NpmTree 'CodeMirror editor IIFE bundle (assets/libs/editor/editor.iife.js)' (Join-Path $RepoRoot 'tools/build-editor/node_modules')
+Add-NpmTree 'Markwhen parser IIFE bundle (assets/libs/markwhen/markwhen.iife.js)' (Join-Path $RepoRoot 'tools/build-markwhen/node_modules')
 
 # ---- Write file ----------------------------------------------------------
 $dir = Split-Path -Parent $OutFile

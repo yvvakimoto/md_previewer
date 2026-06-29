@@ -544,6 +544,42 @@
             color: #ffa198;
         }
 
+        /* Markwhen timelines — custom horizontal cascading timeline rendered as
+           inline SVG by renderMarkwhenCached(). Colors are baked into the SVG by
+           the renderer (theme-salted cache), so only layout chrome lives here. */
+        .markwhen-timeline {
+            margin: 16px 0;
+            overflow-x: auto;
+        }
+        .markwhen-timeline .mw-svg {
+            display: block;
+            max-width: 100%;
+            height: auto;
+        }
+        .markwhen-timeline .mw-title {
+            font-weight: 700;
+            font-size: 1.05em;
+            margin: 0 0 6px;
+            color: inherit;
+        }
+        .markwhen-error {
+            margin: 16px 0;
+            padding: 12px 16px;
+            border: 1px solid #d73a49;
+            border-radius: 4px;
+            background: #ffeef0;
+            color: #b31d28;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', monospace;
+            font-size: 0.9em;
+            white-space: pre-wrap;
+            text-align: left;
+        }
+        body.dark-mode .markwhen-error {
+            background: #2a0d10;
+            border-color: #f85149;
+            color: #ffa198;
+        }
+
         /* App container - flex layout for sidebar + content */
         #app-container {
             display: none;
@@ -1553,6 +1589,11 @@
             width: 100%;
             align-items: center;
         }
+        body.marp #preview section.marp-has-figs > .marp-figure-stage > .markwhen-timeline {
+            margin: 0;
+            width: 100%;
+            text-align: center;
+        }
 
         /* Split (multi-column) layout — activated by <!-- _class: split --> or
            split-2 / split-3 / split-4. The renderMarp() post-pass wraps the
@@ -1932,6 +1973,9 @@
         function ensureMarp() { return loadLib('libs/marp/marp.iife.js'); }
         function ensureJsYaml() { return loadLib('libs/js-yaml.min.js'); }
         function ensurePlotly() { return loadLib('libs/plotly/plotly.min.js'); }
+        // @markwhen/parser bundled as a browser IIFE (window.Markwhen); lazy-load
+        // it the first time a ```markwhen block is rendered.
+        function ensureMarkwhen() { return loadLib('libs/markwhen/markwhen.iife.js'); }
         // User-defined Marp theme CSS files discovered by the Rust host in
         // assets/marp/*.css. Fetched once, cached, and registered with
         // marp.themeSet.add() on each render. Themes must begin with a
@@ -2101,6 +2145,7 @@
         let mermaidCounter = 0;
         let plotlyCounter = 0;
         let abcCounter = 0;
+        let markwhenCounter = 0;
         let currentMarkdown = '';
         // Un-embedded source markdown (relative image paths intact). Mirrors
         // `currentMarkdown` but without base64-embedded images, so host-bound
@@ -4977,6 +5022,181 @@ ${previewClone.outerHTML}
             });
         }
 
+        // ---- Markwhen timelines ----
+        // @markwhen/parser (window.Markwhen) resolves natural-language dates into
+        // ISO strings, so this renderer needs no runtime date library. We draw a
+        // horizontal "cascading" timeline as inline SVG: one row per event,
+        // indented by its section/group depth, positioned on a shared time axis;
+        // ranges become bars, single dates become dots, tags pick a color. Output
+        // is pure SVG so it carries into HTML export and Marp slides with no
+        // special snapshot handling. Memoized by source + theme salt (the baked-in
+        // colors differ between light/dark), mirroring the mermaid cache.
+        const __markwhenCache = new Map();
+
+        function __mwEscape(s) {
+            return String(s == null ? '' : s)
+                .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;');
+        }
+        function __mwTrunc(str, max) {
+            str = String(str || '');
+            if (max < 4) max = 4;
+            return str.length > max ? str.slice(0, max - 1) + '…' : str;
+        }
+        function __mwPalette() {
+            return darkMode
+                ? ['#4493f8', '#3fb950', '#f85149', '#bc8cff', '#d29922', '#db6d28', '#39c5cf', '#ff7b72']
+                : ['#0969da', '#1a7f37', '#cf222e', '#8250df', '#9a6700', '#bc4c00', '#1b7c83', '#a40e26'];
+        }
+        // Tag → color: honor an explicit `#tag: color` from the markwhen header
+        // (the parser escapes the leading `#` to `)` because YAML treats `#` as a
+        // comment), else assign a stable palette color by hashing the tag name.
+        function __mwTagColor(tag, header, palette, cacheMap) {
+            if (cacheMap.has(tag)) return cacheMap.get(tag);
+            let color = null;
+            const hv = header && (header[')' + tag] || header['#' + tag]);
+            if (hv && (!(window.CSS && CSS.supports) || CSS.supports('color', hv))) color = hv;
+            if (!color) {
+                let h = 0;
+                for (let i = 0; i < tag.length; i++) h = (h * 31 + tag.charCodeAt(i)) >>> 0;
+                color = palette[h % palette.length];
+            }
+            cacheMap.set(tag, color);
+            return color;
+        }
+
+        function renderMarkwhenCached(el) {
+            let src;
+            try { src = decodeURIComponent(el.getAttribute('data-markwhen-source') || ''); }
+            catch (e) { src = el.textContent || ''; }
+            const key = __diagKey(src);
+            const cached = __markwhenCache.get(key);
+            if (cached !== undefined) { el.innerHTML = cached; return; }
+            try {
+                const MW = window.Markwhen;
+                if (!MW || typeof MW.parse !== 'function') throw new Error('parser not loaded');
+                const mw = MW.parse(src);
+                const root = mw && mw.events;
+                if (!root) throw new Error('no timeline');
+
+                // Flatten the event tree into display rows, tracking nesting depth.
+                const rows = [];
+                const walk = (node, depth) => {
+                    if (MW.isEvent(node)) {
+                        const dr = node.dateRangeIso;
+                        if (!dr || !dr.fromDateTimeIso) return;
+                        const from = Date.parse(dr.fromDateTimeIso);
+                        if (isNaN(from)) return;
+                        let to = Date.parse(dr.toDateTimeIso || dr.fromDateTimeIso);
+                        if (isNaN(to)) to = from;
+                        rows.push({
+                            type: 'event',
+                            label: (node.firstLine && node.firstLine.restTrimmed) || '(untitled)',
+                            from: from, to: to,
+                            tags: node.tags || [], depth: depth
+                        });
+                    } else {
+                        if (node.title) rows.push({ type: 'group', label: node.title, depth: depth });
+                        const kids = node.children || [];
+                        const nextDepth = node.title ? depth + 1 : depth;
+                        kids.forEach(k => walk(k, nextDepth));
+                    }
+                };
+                walk(root, 0);
+
+                const events = rows.filter(r => r.type === 'event');
+                if (events.length === 0) throw new Error('no dated events found');
+
+                // Overall span — prefer the parser's computed range, fall back to events.
+                let tMin = Infinity, tMax = -Infinity;
+                try {
+                    const r = MW.ranges(root, []);
+                    if (r && r.fromDateTime) { tMin = Date.parse(r.fromDateTime); tMax = Date.parse(r.toDateTime); }
+                } catch (e) {}
+                if (!isFinite(tMin) || !isFinite(tMax)) {
+                    tMin = Infinity; tMax = -Infinity;
+                    events.forEach(e => { tMin = Math.min(tMin, e.from); tMax = Math.max(tMax, e.to); });
+                }
+                if (tMax <= tMin) { const d = 86400000; tMin -= d; tMax += d; }
+                const padT = (tMax - tMin) * 0.03;
+                tMin -= padT; tMax += padT;
+
+                // Geometry (logical px; SVG scales to container width via viewBox).
+                const W = 960, Lw = 220, rightPad = 18, topAxis = 34, rowH = 26, barH = 13;
+                const plotW = W - Lw - rightPad;
+                const H = topAxis + rows.length * rowH + 14;
+                const xOf = (t) => Lw + (t - tMin) / (tMax - tMin) * plotW;
+
+                const c = darkMode
+                    ? { text: '#e6edf3', group: '#8b949e', axis: '#30363d', grid: '#21262d', tick: '#8b949e', defBar: '#4493f8' }
+                    : { text: '#1f2328', group: '#57606a', axis: '#d0d7de', grid: '#eaeef2', tick: '#57606a', defBar: '#0969da' };
+                const palette = __mwPalette();
+                const tagColors = new Map();
+
+                // Axis ticks — granularity by span (years / months / days).
+                const spanDays = (tMax - tMin) / 86400000;
+                const ticks = [];
+                const dFrom = new Date(tMin), dTo = new Date(tMax);
+                if (spanDays > 1100) {
+                    const yEnd = dTo.getFullYear();
+                    let y = dFrom.getFullYear();
+                    const step = Math.max(1, Math.ceil((yEnd - y + 1) / 12));
+                    for (; y <= yEnd; y += step) ticks.push({ t: new Date(y, 0, 1).getTime(), label: String(y) });
+                } else if (spanDays > 70) {
+                    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+                    let d = new Date(dFrom.getFullYear(), dFrom.getMonth(), 1);
+                    while (d.getTime() <= tMax) {
+                        ticks.push({ t: d.getTime(), label: (d.getMonth() === 0 ? d.getFullYear() + ' ' : '') + months[d.getMonth()] });
+                        d = new Date(d.getFullYear(), d.getMonth() + 1, 1);
+                    }
+                } else {
+                    const n = 8;
+                    for (let i = 0; i <= n; i++) {
+                        const t = tMin + (tMax - tMin) * i / n;
+                        const dd = new Date(t);
+                        ticks.push({ t: t, label: (dd.getMonth() + 1) + '/' + dd.getDate() });
+                    }
+                }
+
+                let s = '<svg class="mw-svg" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="xMinYMin meet" width="100%" xmlns="http://www.w3.org/2000/svg" font-family="-apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, sans-serif">';
+                ticks.forEach(tk => {
+                    const x = xOf(tk.t);
+                    if (x < Lw - 0.5 || x > W) return;
+                    s += '<line x1="' + x.toFixed(1) + '" y1="' + topAxis + '" x2="' + x.toFixed(1) + '" y2="' + (H - 6) + '" stroke="' + c.grid + '" stroke-width="1"/>';
+                    s += '<text x="' + x.toFixed(1) + '" y="20" fill="' + c.tick + '" font-size="11" text-anchor="middle">' + __mwEscape(tk.label) + '</text>';
+                });
+                s += '<line x1="' + Lw + '" y1="' + topAxis + '" x2="' + (W - rightPad) + '" y2="' + topAxis + '" stroke="' + c.axis + '" stroke-width="1"/>';
+
+                rows.forEach((r, i) => {
+                    const y = topAxis + i * rowH;
+                    const cy = y + rowH / 2;
+                    const indent = 8 + r.depth * 14;
+                    const maxChars = Math.max(8, 32 - r.depth * 2);
+                    if (r.type === 'group') {
+                        s += '<text x="' + indent + '" y="' + (cy + 4) + '" fill="' + c.group + '" font-size="12.5" font-weight="700">' + __mwEscape(__mwTrunc(r.label, maxChars)) + '</text>';
+                    } else {
+                        s += '<text x="' + indent + '" y="' + (cy + 4) + '" fill="' + c.text + '" font-size="12.5">' + __mwEscape(__mwTrunc(r.label, maxChars)) + '</text>';
+                        const color = (r.tags && r.tags.length) ? __mwTagColor(r.tags[0], mw.header, palette, tagColors) : c.defBar;
+                        const x1 = xOf(r.from), x2 = xOf(r.to);
+                        if ((x2 - x1) < 4) {
+                            s += '<circle cx="' + x1.toFixed(1) + '" cy="' + cy.toFixed(1) + '" r="5" fill="' + color + '"/>';
+                        } else {
+                            s += '<rect x="' + x1.toFixed(1) + '" y="' + (cy - barH / 2).toFixed(1) + '" width="' + (x2 - x1).toFixed(1) + '" height="' + barH + '" rx="3" fill="' + color + '"/>';
+                        }
+                    }
+                });
+                s += '</svg>';
+
+                let html = '';
+                if (mw.header && mw.header.title) html += '<div class="mw-title">' + __mwEscape(mw.header.title) + '</div>';
+                html += s;
+                el.innerHTML = html;
+                __diagCacheSet(__markwhenCache, key, el.innerHTML);
+            } catch (error) {
+                el.innerHTML = '<div class="markwhen-error">Markwhen Error: ' + __mwEscape(error && error.message) + '</div>';
+            }
+        }
+
         // Marp instance reuse — `new Marp()` rebuilds a markdown-it parser and
         // re-parses every cached theme CSS via themeSet.add() on every render.
         // marp.render is effectively pure (it returns {html, css}; all of our
@@ -5538,6 +5758,12 @@ ${previewClone.outerHTML}
                     div.setAttribute('data-abc', '1');
                     div.setAttribute('data-abc-source', encodeURIComponent(code.textContent));
                     pre.replaceWith(div);
+                } else if (lang === 'markwhen') {
+                    const div = document.createElement('div');
+                    div.className = 'markwhen-timeline';
+                    div.id = 'marp-markwhen-' + (markwhenCounter++);
+                    div.setAttribute('data-markwhen-source', encodeURIComponent(code.textContent));
+                    pre.replaceWith(div);
                 }
             });
 
@@ -5557,7 +5783,7 @@ ${previewClone.outerHTML}
             };
             const isFigureChild = (el) => {
                 if (el.nodeType !== 1) return false;
-                if (el.matches('.mermaid, .csv-table, table, .abc-notation, .plotly-block, video, iframe.video-embed, .video-embed')) return true;
+                if (el.matches('.mermaid, .csv-table, table, .abc-notation, .plotly-block, .markwhen-timeline, video, iframe.video-embed, .video-embed')) return true;
                 if (isImageParagraph(el)) return true;
                 return false;
             };
@@ -5629,6 +5855,13 @@ ${previewClone.outerHTML}
                 await Promise.all(Array.from(marpPlotlyEls).map(el =>
                     renderPlotlyBlock(el, el.getAttribute('data-plotly-source'))
                 ));
+            }
+
+            // Render markwhen timelines in slides (memoized by source + theme).
+            const marpMwEls = preview.querySelectorAll('.markwhen-timeline');
+            if (marpMwEls.length > 0) {
+                await ensureMarkwhen();
+                marpMwEls.forEach(el => renderMarkwhenCached(el));
             }
 
             // 同じファイルの再読込（保存後の再描画 / ライブプレビュー / テーマ変更）では
@@ -5719,10 +5952,12 @@ ${previewClone.outerHTML}
             const needsKatex = mathBlocks.length > 0;
             const needsPlotly = /```plotly\b/.test(processedMarkdown);
             const needsAbc = /```abc\b/.test(processedMarkdown);
+            const needsMarkwhen = /```markwhen\b/.test(processedMarkdown);
             const mermaidReady = needsMermaid ? ensureMermaid() : null;
             const katexReady = needsKatex ? ensureKatex() : null;
             const plotlyReady = needsPlotly ? Promise.all([ensureJsYaml(), ensurePlotly()]) : null;
             const abcReady = needsAbc ? ensureAbcjs() : null;
+            const markwhenReady = needsMarkwhen ? ensureMarkwhen() : null;
 
             // Flush the prior render's tracked CSV files so the Rust watcher only
             // monitors files referenced by the document we're about to render.
@@ -5768,6 +6003,15 @@ ${previewClone.outerHTML}
             html = html.replace(/<pre><code class="language-plotly">([\s\S]*?)<\/code><\/pre>/g, (match, code) => {
                 const id = `plotly-${plotlyCounter++}`;
                 return `<div class="plotly-block" id="${id}" data-plotly-source="${encodeURIComponent(decodeEntities(code))}"></div>`;
+            });
+
+            // Replace markwhen code blocks with timeline placeholders; the renderer
+            // runs after preview.innerHTML is assigned (it needs window.Markwhen).
+            html = html.replace(/<pre><code class="language-markwhen">([\s\S]*?)<\/code><\/pre>/g, (match, code) => {
+                const id = `markwhen-${markwhenCounter++}`;
+                const ta = document.createElement('textarea');
+                ta.innerHTML = code;
+                return `<div class="markwhen-timeline" id="${id}" data-markwhen-source="${encodeURIComponent(ta.value)}"></div>`;
             });
 
             // Render math expressions (await katex if needed)
@@ -5859,6 +6103,13 @@ ${previewClone.outerHTML}
                 await Promise.all(Array.from(plotlyEls).map(el =>
                     renderPlotlyBlock(el, el.getAttribute('data-plotly-source'))
                 ));
+            }
+
+            // Render markwhen timelines (memoized by source + theme)
+            const mwEls = preview.querySelectorAll('.markwhen-timeline');
+            if (mwEls.length > 0) {
+                if (markwhenReady) await markwhenReady;
+                mwEls.forEach(el => renderMarkwhenCached(el));
             }
 
             // Generate table of contents
