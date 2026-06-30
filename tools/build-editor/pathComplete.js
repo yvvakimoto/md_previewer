@@ -115,10 +115,8 @@ export function pathCompletionSource(getFile) {
     }
 
     const entries = await requestListing(base, sub);
-    if (!entries || !entries.length) return null;
 
-    const filtered = entries.filter((e) => shouldKeep(e, isImage));
-    if (!filtered.length) return null;
+    const filtered = (entries || []).filter((e) => shouldKeep(e, isImage));
 
     const options = filtered.map((e) => {
       const insertion = e.isDir ? e.name + '/' : e.name;
@@ -142,6 +140,30 @@ export function pathCompletionSource(getFile) {
       }
       return base;
     });
+
+    // Synthetic "go up a level" entry: insert `../` and reopen the popup so the
+    // user can drill UP into parent directories without typing it by hand.
+    // Matches the preview's support for `../` file references (Rust now lists
+    // `..`-containing sub-paths). Only shown when the typed prefix is empty
+    // (right after `(` or a `/`) so it doesn't clutter a filename being typed.
+    if (prefix === '') {
+      options.unshift({
+        label: '../',
+        displayLabel: '../',
+        type: 'folder',
+        detail: '親フォルダへ',
+        boost: 2,
+        apply: (view, _completion, from, to) => {
+          view.dispatch({
+            changes: { from, to, insert: '../' },
+            selection: { anchor: from + 3 },
+          });
+          setTimeout(() => startCompletion(view), 0);
+        },
+      });
+    }
+
+    if (!options.length) return null;
 
     // The completion range covers just the prefix portion after the last `/`.
     const from = context.pos - prefix.length;

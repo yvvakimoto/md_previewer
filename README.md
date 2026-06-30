@@ -173,7 +173,7 @@ md-previewer.exe path\to\bundle.mdx
 - **ABC 楽譜** — ` ```abc ` フェンスに [ABC 記譜法](https://abcnotation.com/) を書くと、[abcjs](https://github.com/paulrosen/abcjs)（MIT）によって五線譜 SVG として描画。調号・拍子・和音・スラー・タイ・歌詞（`w:`）などに対応（描画のみ。音声再生は非対応）。一般文書・Marp スライド両対応、HTML エクスポートにもインライン SVG として追従。[ABC のサンプル](samples/abcjs.md) 参照
 - **Markwhen タイムライン** — ` ```markwhen ` フェンスに [markwhen](https://markwhen.com/) 記法を書くと、横型のカスケードタイムラインとして描画。同梱の [@markwhen/parser](https://www.npmjs.com/package/@markwhen/parser)（MIT）が日付（ISO・米国式・欧州式・自然言語）を解決し、自前の SVG レンダラが時間軸・期間バー・単発イベント点・セクション見出し・タグ色を描画。ダークモード追従、一般文書・Marp スライド両対応、HTML エクスポートにもインライン SVG として追従（描画のみ。markwhen 公式の Vue ビュー/対話操作は非搭載）。[Markwhen のサンプル](samples/markwhen.md) 参照
 - **画像**
-  - 相対パスは Markdown ファイルのあるフォルダを基準に解決
+  - 相対パスは Markdown ファイルのあるフォルダを基準に解決。`../` / `../../` のように**開いている文書より上の親階層を辿る参照にも対応**（画像・動画・`plotly` の `file:` 共通）。[親階層参照のサンプル](samples/parent-paths/demo.md) 参照
   - 内部プロトコル（`/userfile/`）経由で配信し、ブラウザが並列・非同期に読み込み（画像を多く含む文書・スライドでも起動が高速）
   - **Obsidian 風サイズ指定**: `![alt|300](p)`（幅 300px）、`![alt|300x200](p)`（幅×高さ）、`![alt|x200](p)`（高さのみ）、`![alt|@0.5](p)`（元サイズの 0.5 倍）
 - **動画 / YouTube 埋め込み** — 画像記法を流用。`![alt](clip.mov)` でローカル動画（`.mov` / `.mp4` / `.m4v` / `.webm` / `.ogv` / `.ogg`）を `<video controls>` として、`![alt](https://youtu.be/ID)` で YouTube をレスポンシブ `<iframe>` として埋め込み。`|幅` / `|幅x高さ` のサイズ指定も使用可。一般文書・Marp スライド両対応。ローカル動画はシーク対応（HTTP Range）、HTML エクスポート時は `media/` にコピー配置。[動画のサンプル](samples/video.md) 参照

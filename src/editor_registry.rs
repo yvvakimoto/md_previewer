@@ -319,9 +319,11 @@ pub fn spawn_editor_window(
                 #[derive(Deserialize)]
                 struct ListDirPayload { id: u64, base: String, sub: String }
                 if let Ok(p) = serde_json::from_str::<ListDirPayload>(payload) {
-                    // Safety: only honor listings under the directory of the
-                    // currently-paired file. We allow descendants (sub may be a
-                    // multi-segment relative path) but reject `..` escape.
+                    // Safety: only honor listings whose `base` is the directory of
+                    // the currently-paired file (the JS side always sends that).
+                    // `sub` may be any relative path — including `..` segments — so
+                    // path completion can drill UP into parent directories, matching
+                    // the preview's support for `../` file references.
                     let base = PathBuf::from(&p.base);
                     let editor_file = registry_for_ipc.inner.lock().unwrap()
                         .as_ref().map(|s| s.file.clone());
@@ -339,19 +341,17 @@ pub fn spawn_editor_window(
                         }
                         return;
                     }
-                    // Reject `..` segments in sub.
-                    let sub_ok = p.sub.split(|c| c == '/' || c == '\\').all(|seg| seg != "..");
-                    let target = if p.sub.is_empty() || !sub_ok { base.clone() } else { base.join(&p.sub) };
+                    // `..` segments are allowed so completion can climb above the
+                    // file's own directory (resolved by the OS via `base.join`).
+                    let target = if p.sub.is_empty() { base.clone() } else { base.join(&p.sub) };
                     let mut entries: Vec<(String, bool)> = Vec::new();
-                    if sub_ok {
-                        if let Ok(rd) = std::fs::read_dir(&target) {
-                            for ent in rd.flatten() {
-                                let name = ent.file_name().to_string_lossy().to_string();
-                                if name.starts_with('.') { continue; }
-                                let is_dir = ent.file_type().map(|t| t.is_dir()).unwrap_or(false);
-                                entries.push((name, is_dir));
-                                if entries.len() >= 500 { break; }
-                            }
+                    if let Ok(rd) = std::fs::read_dir(&target) {
+                        for ent in rd.flatten() {
+                            let name = ent.file_name().to_string_lossy().to_string();
+                            if name.starts_with('.') { continue; }
+                            let is_dir = ent.file_type().map(|t| t.is_dir()).unwrap_or(false);
+                            entries.push((name, is_dir));
+                            if entries.len() >= 500 { break; }
                         }
                     }
                     entries.sort_by(|a, b| match (a.1, b.1) {

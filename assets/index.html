@@ -3439,11 +3439,38 @@ ${previewClone.outerHTML}
             }
         }
 
+        // Does a relative path climb ABOVE its base directory (net leading `..`)?
+        // `sub/../x` → false (stays inside); `../x` / `a/../../x` → true.
+        function relPathEscapesBase(fwd) {
+            let depth = 0;
+            for (const seg of fwd.split('/')) {
+                if (seg === '..') { if (--depth < 0) return true; }
+                else if (seg !== '.' && seg !== '') depth++;
+            }
+            return false;
+        }
+
         // Route a local path through the custom protocol so WebView2 can fetch it.
+        // A relative `../` path that escapes the document directory must be resolved
+        // to an ABSOLUTE path here: the page is served on the synthetic
+        // https://app.localhost/ origin, so the URL parser would otherwise collapse a
+        // leading `../` PAST the `/userfile/` prefix (`/userfile/../x` → `/x`), losing
+        // the route and 404ing. An absolute path has no `..` to collapse, and Rust's
+        // userfile handler serves absolute paths directly (see src/main.rs).
         function toUserfileUrl(p) {
             if (/^(https?:|app:|file:|data:|blob:)/i.test(p)) return p;
             if (/^\/userfile\//i.test(p)) return p;   // already routed — don't double-prefix
-            return '/userfile/' + encodeURI(p.replace(/\\/g, '/'));
+            const fwd = p.replace(/\\/g, '/');
+            // Already absolute (Windows drive or POSIX root) — serve as-is.
+            if (/^[A-Za-z]:\//.test(fwd) || fwd.startsWith('/')) {
+                return '/userfile/' + encodeURI(fwd);
+            }
+            // Escaping relative path: resolve to absolute against the open file's dir.
+            if (currentFilePath && relPathEscapesBase(fwd)) {
+                const abs = resolveRelativePath(fwd).replace(/^file:\/\/\//, '');
+                return '/userfile/' + encodeURI(abs);
+            }
+            return '/userfile/' + encodeURI(fwd);
         }
 
         function parseYoutubeStart(src) {
@@ -4378,9 +4405,10 @@ ${previewClone.outerHTML}
             // and gets blocked by fetch. A relative `/userfile/...` URL
             // resolves against the page origin and reaches the protocol
             // handler which resolves it against the open markdown's dir.
-            const url = /^(https?:|app:|file:|data:)/i.test(filePath)
-                ? filePath
-                : '/userfile/' + encodeURI(filePath.replace(/\\/g, '/'));
+            // toUserfileUrl() passes external schemes through and resolves an
+            // escaping `../` path to an absolute one (so it survives URL
+            // normalization — same fix as image paths).
+            const url = toUserfileUrl(filePath);
             let csvText;
             try {
                 const resp = await fetch(url);
