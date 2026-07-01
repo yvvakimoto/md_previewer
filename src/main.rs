@@ -23,6 +23,8 @@ mod clipboard_win;
 mod editor_registry;
 mod ime_win;
 mod mdx;
+#[cfg(windows)]
+mod pdf_win;
 use editor_registry::EditorRegistry;
 
 // Path to a markdown file currently being viewed. Wrapped in Arc<Mutex>
@@ -106,6 +108,11 @@ enum CustomEvent {
     // every render to flush the prior set.
     CsvWatch(PathBuf),
     CsvWatchReset,
+    // PDF export: print the document currently in the webview to `PathBuf`
+    // via WebView2's CDP `Page.printToPDF` (see `pdf_win`). PdfExportDone is
+    // posted from the async completion handler so the preview can toast.
+    PrintPdf(PathBuf),
+    PdfExportDone { ok: bool, path: PathBuf },
 }
 
 const APP_NAME: &str = "Markdown Previewer";
@@ -1417,22 +1424,37 @@ fn main() -> wry::Result<()> {
                         .unwrap()
                         .as_ref()
                         .and_then(|p| p.parent().map(|d| d.to_path_buf()));
+                    let export_proxy = ipc_event_proxy.clone();
                     // rfd's save_file() blocks; run on a worker thread so we don't tie up
                     // the IPC handler and (more importantly) so dialog errors don't
                     // propagate as a hung webview.
                     std::thread::spawn(move || {
+                        // Two filters so the user picks the format in the Save dialog.
+                        // If the chosen path is `.pdf` we print the live webview to
+                        // PDF instead (the pre-built HTML artifact is discarded).
                         let mut dialog = rfd::FileDialog::new()
                             .add_filter("HTML", &["html"])
+                            .add_filter("PDF", &["pdf"])
                             .set_file_name(&p.suggested_name);
                         if let Some(dir) = initial_dir {
                             dialog = dialog.set_directory(dir);
                         }
                         if let Some(path) = dialog.save_file() {
-                            if let Err(e) = std::fs::write(&path, p.html.as_bytes()) {
-                                eprintln!("export: failed to write {}: {}", path.display(), e);
-                            }
-                            if let Some(base) = path.parent() {
-                                copy_export_media(base, &p.media);
+                            let is_pdf = path
+                                .extension()
+                                .map(|e| e.eq_ignore_ascii_case("pdf"))
+                                .unwrap_or(false);
+                            if is_pdf {
+                                // PDF must be produced on the UI thread (COM STA);
+                                // hand off to the main loop.
+                                let _ = export_proxy.send_event(CustomEvent::PrintPdf(path));
+                            } else {
+                                if let Err(e) = std::fs::write(&path, p.html.as_bytes()) {
+                                    eprintln!("export: failed to write {}: {}", path.display(), e);
+                                }
+                                if let Some(base) = path.parent() {
+                                    copy_export_media(base, &p.media);
+                                }
                             }
                         }
                     });
@@ -1882,6 +1904,33 @@ fn main() -> wry::Result<()> {
                             eprintln!("Failed to watch CSV {:?}: {}", path, e);
                         }
                     }
+                }
+            }
+            Event::UserEvent(CustomEvent::PrintPdf(path)) => {
+                // Print the live webview to PDF on the UI thread (COM STA).
+                #[cfg(windows)]
+                {
+                    if let Ok(wv) = webview.lock() {
+                        pdf_win::print_current_to_pdf(&wv, path, event_proxy.clone());
+                    }
+                }
+                #[cfg(not(windows))]
+                {
+                    let _ = path;
+                }
+            }
+            Event::UserEvent(CustomEvent::PdfExportDone { ok, path }) => {
+                let name = path
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_default();
+                let name_js = serde_json::to_string(&name).unwrap_or_else(|_| "\"\"".to_string());
+                let script = format!(
+                    "window.__pdfExportDone && window.__pdfExportDone({}, {});",
+                    ok, name_js
+                );
+                if let Ok(wv) = webview.lock() {
+                    let _ = wv.evaluate_script(&script);
                 }
             }
             Event::UserEvent(CustomEvent::OpenEditorWindow { line }) => {
