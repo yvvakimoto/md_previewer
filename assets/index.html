@@ -3105,7 +3105,7 @@ ${previewClone.outerHTML}
                     // WebView2 serves the page on a synthetic https://app.localhost
                     // origin; use a same-origin relative URL so fetch can reach the
                     // `app://` custom-protocol handler.
-                    const url = '/userfile/' + encodeURI(f.absPath.replace(/\\/g, '/'));
+                    const url = '/userfile/' + encodePathForUserfile(f.absPath.replace(/\\/g, '/'));
                     const resp = await fetch(url);
                     if (!resp.ok) continue;
                     md = await resp.text();
@@ -3457,20 +3457,35 @@ ${previewClone.outerHTML}
         // leading `../` PAST the `/userfile/` prefix (`/userfile/../x` → `/x`), losing
         // the route and 404ing. An absolute path has no `..` to collapse, and Rust's
         // userfile handler serves absolute paths directly (see src/main.rs).
+        // Percent-encode a forward-slash path for the /userfile/ route WITHOUT double-
+        // encoding. marked already percent-encodes non-ASCII in img/link URLs, while raw
+        // paths (file drops, plotly `file:`) arrive unencoded — so normalize each segment
+        // by decoding first, then re-encoding once. encodeURI() is NOT idempotent (it turns
+        // an existing %E6 into %25E6), which double-encoded non-ASCII (e.g. Japanese) paths.
+        function encodePathForUserfile(fwd) {
+            return fwd.split('/').map(seg => {
+                if (seg === '' || seg === '.' || seg === '..') return seg;
+                if (/^[A-Za-z]:$/.test(seg)) return seg;   // keep Windows drive letter "C:" intact
+                let raw;
+                try { raw = decodeURIComponent(seg); } catch (_) { raw = seg; }
+                return encodeURIComponent(raw);
+            }).join('/');
+        }
+
         function toUserfileUrl(p) {
             if (/^(https?:|app:|file:|data:|blob:)/i.test(p)) return p;
             if (/^\/userfile\//i.test(p)) return p;   // already routed — don't double-prefix
             const fwd = p.replace(/\\/g, '/');
             // Already absolute (Windows drive or POSIX root) — serve as-is.
             if (/^[A-Za-z]:\//.test(fwd) || fwd.startsWith('/')) {
-                return '/userfile/' + encodeURI(fwd);
+                return '/userfile/' + encodePathForUserfile(fwd);
             }
             // Escaping relative path: resolve to absolute against the open file's dir.
             if (currentFilePath && relPathEscapesBase(fwd)) {
                 const abs = resolveRelativePath(fwd).replace(/^file:\/\/\//, '');
-                return '/userfile/' + encodeURI(abs);
+                return '/userfile/' + encodePathForUserfile(abs);
             }
-            return '/userfile/' + encodeURI(fwd);
+            return '/userfile/' + encodePathForUserfile(fwd);
         }
 
         function parseYoutubeStart(src) {
