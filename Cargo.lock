@@ -1630,6 +1630,8 @@ dependencies = [
  "tao",
  "tempfile",
  "urlencoding",
+ "webview2-com",
+ "windows",
  "wry",
  "zip",
 ]

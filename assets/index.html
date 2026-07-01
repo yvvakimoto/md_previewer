@@ -1945,6 +1945,12 @@
             toastTimer = setTimeout(() => t.classList.remove('visible'), 1400);
         }
 
+        // Called by the Rust host when a PDF export finishes (X → PDF filter).
+        // See src/pdf_win.rs / CustomEvent::PdfExportDone.
+        window.__pdfExportDone = function (ok, name) {
+            showToast(ok ? ('PDF exported: ' + (name || '')) : 'PDF export failed');
+        };
+
         // Lazy-load library helper. Returns a cached promise per URL.
         const _libCache = {};
         function loadLib(url) {
@@ -6915,7 +6921,7 @@ ${previewClone.outerHTML}
                     <tr><td class="keys"><kbd>W</kbd></td><td>Toggle full-width layout</td></tr>
                     <tr><td class="keys"><kbd>E</kbd></td><td>Open editor window (Vim mode, math input assist, char counter)</td></tr>
                     <tr><td class="keys"><kbd>Ctrl</kbd>+<kbd>N</kbd></td><td>Create a new blank Markdown file</td></tr>
-                    <tr><td class="keys"><kbd>X</kbd></td><td>Export current document as standalone HTML</td></tr>
+                    <tr><td class="keys"><kbd>X</kbd></td><td>Export current document (choose HTML or PDF in the save dialog; PDF keeps clickable links &amp; heading bookmarks)</td></tr>
                     <tr><td class="keys"><kbd>Ctrl</kbd>+<kbd>+</kbd> / <kbd>Ctrl</kbd>+<kbd>-</kbd> / <kbd>Ctrl</kbd>+<kbd>0</kbd></td><td>Zoom in / out / reset</td></tr>
                     <tr><td class="keys"><kbd>Alt</kbd>+<kbd>←</kbd> / <kbd>Alt</kbd>+<kbd>→</kbd></td><td>Navigate back / forward through opened files</td></tr>
                     <tr><td class="keys"><kbd>P</kbd></td><td>Cycle Marp view: scroll → deck → list (click a thumbnail in list to open it in deck)</td></tr>
