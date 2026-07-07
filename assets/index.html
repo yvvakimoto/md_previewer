@@ -1934,6 +1934,12 @@
         }
         applyDarkMode(darkMode);
         applyUserStyle(currentStyle);
+        // Expose the current calendar year to CSS as a *string* custom property so
+        // themes can print an auto-updating year (e.g. a copyright line) without any
+        // JS of their own:  content: "© " var(--current-year) " …";
+        // Written from JS (not a static :root value) so it never goes stale. Inherits
+        // to #preview and into Marp <section> content, where ::before/::after read it.
+        document.documentElement.style.setProperty('--current-year', JSON.stringify(String(new Date().getFullYear())));
 
         let toastTimer = null;
         function showToast(msg) {
