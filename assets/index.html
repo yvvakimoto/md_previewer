@@ -1543,73 +1543,67 @@
         body.marp.numbered #preview h3::before,
         body.marp.numbered #preview h4::before { content: none; }
 
-        /* 図表センタリング — 文章 → 図表の順で並ぶスライドで、
-           最初の図表以降を .marp-figure-stage にまとめて残りスペースの中央へ寄せる。
-           split レイアウトは grid 配置のため対象外 (marp-has-figs を付与しない)。
-           Marp 標準テーマは section を flex column にしているため display を強制せず
-           justify-content だけ flex-start に固定し、stage 自体に flex:1 で残り空間を
-           取らせ、内部で justify-content:center により上下中央に揃える。 */
-        body.marp #preview section.marp-has-figs {
-            display: flex;
-            flex-direction: column;
-            justify-content: flex-start;
-        }
-        body.marp #preview section.marp-has-figs .marp-figure-stage {
-            flex: 1 1 auto;
-            min-height: 0;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            gap: 16px;
-            /* horizontal centering handled per child (text-align for inline SVG,
-               margin:auto for block tables) — avoid align-items:center because it
-               collapses the mermaid wrapper width and shrinks the inline SVG. */
-        }
-        body.marp #preview section.marp-has-figs .marp-figure-stage > .mermaid {
-            margin: 0;
+        /* 図の左右中央寄せ — 文中の図表(mermaid/表/画像等)をドキュメント順のまま
+           左右中央へ揃える (.marp-fig は renderMarp() が付与)。縦(上下)の自動中央
+           配置は廃止した (大きな図が flex 中央寄せで上下にはみ出し、見出し/本文と
+           重なるため)。縦中央が要るときは ::: vcenter を使う。split レイアウトは
+           grid 配置のため対象外。
+           インライン SVG/画像は text-align:center、ブロック表/プロットは margin:auto。
+           表 (table) には text-align を付けない = セル内文字を中央化しない。 */
+        body.marp #preview section .mermaid.marp-fig,
+        body.marp #preview section .markwhen-timeline.marp-fig,
+        body.marp #preview section .abc-notation.marp-fig,
+        body.marp #preview section p.marp-fig {
             text-align: center;
         }
-        body.marp #preview section.marp-has-figs .marp-figure-stage > .csv-table {
-            margin: 0 auto;
-        }
-        body.marp #preview section.marp-has-figs .marp-figure-stage > table {
-            margin: 0 auto;
-        }
-        body.marp #preview section.marp-has-figs .marp-figure-stage > p {
-            margin: 0;
-            text-align: center;
-        }
-        /* Plotly: drop the standalone auto margins (vertical centering is the
-           stage's job via justify-content:center + gap) and pin full width so
-           an autosize chart fills the slide. align-items:center centers the
-           inner Plotly container horizontally for charts with an explicit
-           layout.width narrower than the slide (no-op for full-width ones). */
-        body.marp #preview section.marp-has-figs .marp-figure-stage > .plotly-block {
-            margin: 0;
-            width: 100%;
-            align-items: center;
-        }
-        body.marp #preview section.marp-has-figs .marp-figure-stage > .markwhen-timeline {
-            margin: 0;
-            width: 100%;
-            text-align: center;
+        body.marp #preview section table.marp-fig,
+        body.marp #preview section .csv-table.marp-fig,
+        body.marp #preview section .plotly-block.marp-fig {
+            margin-left: auto;
+            margin-right: auto;
         }
 
         /* Body-only autofit wrapper (A key) — wraps the slide body (excluding the
            title heading / header / footer). fitMarpSlides() scales ONLY this div
            when it overflows, so the title/header/footer keep their natural size.
            Normal slides keep display:block so a non-overflowing slide preserves the
-           theme's own vertical layout; figure slides make the wrapper a flex column
-           so the nested .marp-figure-stage's flex:1 vertical centering still works,
-           and footnote slides make it fill so the footnotes (margin-top:auto) stay
-           pinned to the bottom of the body area. */
-        body.marp #preview section.marp-has-figs > .marp-fit-body,
+           theme's own vertical layout; ::: vcenter slides make the wrapper a flex
+           column so the nested .md-vcenter's flex:1 vertical centering fills the
+           body, and footnote slides make it fill so the footnotes (margin-top:auto)
+           stay pinned to the bottom of the body area. */
+        body.marp #preview section.marp-has-vcenter > .marp-fit-body,
         body.marp #preview section.marp-has-footnotes > .marp-fit-body {
             flex: 1 1 auto;
             min-height: 0;
             display: flex;
             flex-direction: column;
         }
+
+        /* ::: vcenter — 残りスペースの上下・左右中央へ内容を配置。normal パイプラインは
+           左右中央のみ (高さ固定枠がないため縦中央は視覚的に無効)、Marp スライドでは
+           section を flex 列にして .marp-fit-body → .md-vcenter を flex:1 で伸長させ、
+           内部 justify-content:center で縦中央にする。はみ出しは自動縮小(A)が本文
+           (.marp-fit-body) を縮めて対処するので重ならない。 */
+        #preview .md-vcenter { text-align: center; }
+        body.marp #preview section.marp-has-vcenter {
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-start;
+        }
+        body.marp #preview .md-vcenter {
+            flex: 1 1 auto;
+            min-height: 0;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            gap: 12px;
+        }
+        body.marp #preview .md-vcenter > .mermaid,
+        body.marp #preview .md-vcenter > .markwhen-timeline { margin: 0; text-align: center; }
+        body.marp #preview .md-vcenter > table,
+        body.marp #preview .md-vcenter > .csv-table,
+        body.marp #preview .md-vcenter > .plotly-block { margin: 0 auto; }
+        body.marp #preview .md-vcenter > p { margin: 0; text-align: center; }
 
         /* Split (multi-column) layout — activated by <!-- _class: split --> or
            split-2 / split-3 / split-4. The renderMarp() post-pass wraps the
@@ -3952,11 +3946,11 @@ ${previewClone.outerHTML}
                 name: 'alignDiv',
                 level: 'block',
                 start(src) {
-                    const i = src.search(/^:::+[ \t]*(center|centre|right|left|message)[ \t]*$/im);
+                    const i = src.search(/^:::+[ \t]*(center|centre|right|left|message|vcenter)[ \t]*$/im);
                     return i < 0 ? undefined : i;
                 },
                 tokenizer(src) {
-                    const m = /^:::+[ \t]*(center|centre|right|left|message)[ \t]*\n([\s\S]*?)\n:::+[ \t]*(?:\n|$)/i.exec(src);
+                    const m = /^:::+[ \t]*(center|centre|right|left|message|vcenter)[ \t]*\n([\s\S]*?)\n:::+[ \t]*(?:\n|$)/i.exec(src);
                     if (!m) return;
                     let align = m[1].toLowerCase();
                     if (align === 'centre') align = 'center';
@@ -3965,8 +3959,11 @@ ${previewClone.outerHTML}
                     return token;
                 },
                 renderer(token) {
-                    // `message` → emphasized centered message box; others → text-align.
-                    const cls = token.align === 'message' ? 'md-message' : 'align-' + token.align;
+                    // `message` → emphasized centered message box; `vcenter` →
+                    // vertical(+horizontal) centering box; others → text-align.
+                    const cls = token.align === 'message' ? 'md-message'
+                        : token.align === 'vcenter' ? 'md-vcenter'
+                        : 'align-' + token.align;
                     return '<div class="' + cls + '">\n'
                         + this.parser.parse(token.tokens) + '</div>\n';
                 }
@@ -4689,9 +4686,9 @@ ${previewClone.outerHTML}
                         if (pos === 'static' || pos === 'relative') bottomUsed += ft.offsetHeight;
                     });
                     const avail = H - topUsed - bottomUsed;
-                    // Natural content height. On figure / footnote slides the wrapper
-                    // is flex:1 min-height:0, which clamps scrollHeight to the flexed
-                    // box (an overflowing figure inside the flex:1 .marp-figure-stage
+                    // Natural content height. On ::: vcenter / footnote slides the
+                    // wrapper is flex:1 min-height:0, which clamps scrollHeight to the
+                    // flexed box (an overflowing figure inside the flex:1 .md-vcenter
                     // wouldn't be reported). Neutralize the flex to measure the true
                     // content height, then restore (styles were reset to '' above).
                     body.style.flex = 'none';
@@ -5577,7 +5574,7 @@ ${previewClone.outerHTML}
                         continue;
                     }
                     if (!inFence) {
-                        const open = ln.match(/^:::+[ \t]*(center|centre|right|left|message)[ \t]*$/i);
+                        const open = ln.match(/^:::+[ \t]*(center|centre|right|left|message|vcenter)[ \t]*$/i);
                         if (open) {
                             let a = open[1].toLowerCase();
                             if (a === 'centre') a = 'center';
@@ -5848,11 +5845,17 @@ ${previewClone.outerHTML}
             // split post-pass, and before the mermaid substitution loop
             // (so a centered diagram still gets substituted inside the wrapper).
             Array.from(preview.querySelectorAll('section p')).forEach(p => {
-                const openM = /^⦃ALIGN:(center|right|left|message)⦄$/.exec(p.textContent.trim());
+                const openM = /^⦃ALIGN:(center|right|left|message|vcenter)⦄$/.exec(p.textContent.trim());
                 if (!openM) return;
                 const div = document.createElement('div');
-                div.className = openM[1] === 'message' ? 'md-message' : 'align-' + openM[1];
+                div.className = openM[1] === 'message' ? 'md-message'
+                    : openM[1] === 'vcenter' ? 'md-vcenter'
+                    : 'align-' + openM[1];
                 p.parentNode.replaceChild(div, p);
+                // vcenter fills the remaining slide space vertically; tag the
+                // enclosing <section> so the fit-body wrapper becomes a flex column
+                // (runs before the fit-body wrapper pass, so .md-vcenter is swept in).
+                if (openM[1] === 'vcenter') div.closest('section')?.classList.add('marp-has-vcenter');
                 let n = div.nextSibling;
                 while (n) {
                     const next = n.nextSibling;
@@ -5910,12 +5913,18 @@ ${previewClone.outerHTML}
                 }
             });
 
-            // Figure centering — for non-split slides containing a mermaid /
-            // csv-table / native <table> / image-only paragraph as a direct child, wrap
-            // that element and any following siblings into a .marp-figure-stage div, and
-            // tag the section with .marp-has-figs so CSS can flex-center the stage
-            // vertically. Images are wrapped in <p> by marked, so we detect a <p> whose
-            // only meaningful child is an <img>.
+            // Figure horizontal centering — center mermaid / csv-table / native
+            // <table> / abc / plotly / markwhen / video / image-only paragraph
+            // left-right within each non-split slide by tagging it .marp-fig.
+            // The old pass also vertically-centered these by sweeping the first
+            // figure AND its following siblings into a flex .marp-figure-stage,
+            // but flex justify-content:center overflows both ends when the figure
+            // is taller than the remaining space, so a large diagram collided with
+            // the heading/text above it. Vertical auto-centering is removed; figures
+            // now flow in document order (autofit shrinks an overflowing body), and
+            // ::: vcenter is the explicit opt-in for vertical centering.
+            // Images are wrapped in <p> by marked, so we detect a <p> whose only
+            // meaningful child is an <img> / <video> / <iframe>.
             const isImageParagraph = (el) => {
                 if (!el || el.tagName !== 'P') return false;
                 const meaningful = Array.from(el.childNodes).filter(n =>
@@ -5932,26 +5941,16 @@ ${previewClone.outerHTML}
             };
             preview.querySelectorAll('svg[data-marpit-svg] section').forEach(section => {
                 if (Array.from(section.classList).some(c => c === 'split' || c.startsWith('split-'))) return;
-                const children = Array.from(section.children);
-                const firstFig = children.find(isFigureChild);
-                if (!firstFig) return;
-                const stage = document.createElement('div');
-                stage.className = 'marp-figure-stage';
-                let node = firstFig;
-                while (node) {
-                    const next = node.nextSibling;
-                    stage.appendChild(node);
-                    node = next;
-                }
-                section.appendChild(stage);
-                section.classList.add('marp-has-figs');
+                Array.from(section.children).forEach(el => {
+                    if (isFigureChild(el)) el.classList.add('marp-fig');
+                });
             });
 
             // Per-slide footnotes — render each referenced footnote's body at the
             // bottom of the slide it appears on (global numbering, compact style).
-            // Runs after the figure-centering and split passes so the block lands
-            // as the section's last child (its true bottom) without being swept
-            // into .marp-figure-stage or a split column bucket.
+            // Runs after the figure / split passes so the block lands as the
+            // section's last child (its true bottom) without being swept into a
+            // split column bucket.
             if (footnoteState.order.length > 0) {
                 preview.querySelectorAll('svg[data-marpit-svg] section').forEach(section => {
                     const refs = section.querySelectorAll('sup.footnote-ref a[data-footnote-id]');
@@ -5975,19 +5974,19 @@ ${previewClone.outerHTML}
             // trailing <footer>) into a .marp-fit-body div so fitMarpSlides() can shrink
             // ONLY the body while the title/header/footer keep their natural size.
             // Runs last (after figure / split / footnote passes) so it sweeps up the
-            // .marp-figure-stage and .marp-footnotes as body content. Split / split-*
+            // .md-vcenter and .marp-footnotes as body content. Split / split-*
             // (grid) slides are skipped — they fall back to uniform section scaling.
             preview.querySelectorAll('div.marpit > svg[data-marpit-svg] > foreignObject > section').forEach(section => {
                 if (Array.from(section.classList).some(c => c === 'split' || c.startsWith('split-'))) return;
                 if (section.querySelector(':scope > .marp-fit-body')) return; // defensive
                 // Hoist any <footer> to be the last direct child so body + footnotes
                 // are a contiguous range and the footer stays outside the wrapper.
-                // Use a descendant scan (not :scope > footer) because the figure pass
-                // sweeps the figure AND its following siblings — the footer included —
-                // into .marp-figure-stage; left there it would fall inside the wrapper
-                // (a scaled wrapper becomes the containing block for its absolute
-                // footer, shrinking it). Footers are usually position:absolute, so
-                // moving them in the DOM doesn't change where they paint.
+                // Use a descendant scan (not :scope > footer) because a ::: vcenter
+                // block can enclose a footer that authors placed inside it; left there
+                // it would fall inside the wrapper (a scaled wrapper becomes the
+                // containing block for its absolute footer, shrinking it). Footers are
+                // usually position:absolute, so moving them in the DOM doesn't change
+                // where they paint.
                 section.querySelectorAll(':scope footer').forEach(ft => section.appendChild(ft));
                 const kids = Array.from(section.children);
                 // Fixed head: leading <header>(s), then the leading heading run (title).

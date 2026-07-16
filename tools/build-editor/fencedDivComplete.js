@@ -13,6 +13,7 @@ const DIVS = [
   { name: 'right',     detail: 'align right',   dividers: 0 },
   { name: 'left',      detail: 'align left',    dividers: 0 },
   { name: 'message',   detail: 'message box',   dividers: 0 },
+  { name: 'vcenter',   detail: 'vertical center', dividers: 0 },
   { name: 'columns',   detail: '2-column',      dividers: 1 },
   { name: 'columns-2', detail: '2-column',      dividers: 1 },
   { name: 'columns-3', detail: '3-column',      dividers: 2 },
@@ -46,7 +47,7 @@ function makeOption({ name, detail, dividers }) {
 const OPTIONS = DIVS.map(makeOption);
 
 // Open / close detection for the closing-context guard.
-const OPEN_RE = /^:::+[ \t]*(center|centre|right|left|message|columns(?:-[234])?)[ \t]*$/i;
+const OPEN_RE = /^:::+[ \t]*(center|centre|right|left|message|vcenter|columns(?:-[234])?)[ \t]*$/i;
 const CLOSE_RE = /^:::+[ \t]*$/;
 const FENCE_RE = /^\s*(```|~~~)/;
 
