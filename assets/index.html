@@ -1554,7 +1554,7 @@
             flex-direction: column;
             justify-content: flex-start;
         }
-        body.marp #preview section.marp-has-figs > .marp-figure-stage {
+        body.marp #preview section.marp-has-figs .marp-figure-stage {
             flex: 1 1 auto;
             min-height: 0;
             display: flex;
@@ -1565,17 +1565,17 @@
                margin:auto for block tables) — avoid align-items:center because it
                collapses the mermaid wrapper width and shrinks the inline SVG. */
         }
-        body.marp #preview section.marp-has-figs > .marp-figure-stage > .mermaid {
+        body.marp #preview section.marp-has-figs .marp-figure-stage > .mermaid {
             margin: 0;
             text-align: center;
         }
-        body.marp #preview section.marp-has-figs > .marp-figure-stage > .csv-table {
+        body.marp #preview section.marp-has-figs .marp-figure-stage > .csv-table {
             margin: 0 auto;
         }
-        body.marp #preview section.marp-has-figs > .marp-figure-stage > table {
+        body.marp #preview section.marp-has-figs .marp-figure-stage > table {
             margin: 0 auto;
         }
-        body.marp #preview section.marp-has-figs > .marp-figure-stage > p {
+        body.marp #preview section.marp-has-figs .marp-figure-stage > p {
             margin: 0;
             text-align: center;
         }
@@ -1584,15 +1584,31 @@
            an autosize chart fills the slide. align-items:center centers the
            inner Plotly container horizontally for charts with an explicit
            layout.width narrower than the slide (no-op for full-width ones). */
-        body.marp #preview section.marp-has-figs > .marp-figure-stage > .plotly-block {
+        body.marp #preview section.marp-has-figs .marp-figure-stage > .plotly-block {
             margin: 0;
             width: 100%;
             align-items: center;
         }
-        body.marp #preview section.marp-has-figs > .marp-figure-stage > .markwhen-timeline {
+        body.marp #preview section.marp-has-figs .marp-figure-stage > .markwhen-timeline {
             margin: 0;
             width: 100%;
             text-align: center;
+        }
+
+        /* Body-only autofit wrapper (A key) — wraps the slide body (excluding the
+           title heading / header / footer). fitMarpSlides() scales ONLY this div
+           when it overflows, so the title/header/footer keep their natural size.
+           Normal slides keep display:block so a non-overflowing slide preserves the
+           theme's own vertical layout; figure slides make the wrapper a flex column
+           so the nested .marp-figure-stage's flex:1 vertical centering still works,
+           and footnote slides make it fill so the footnotes (margin-top:auto) stay
+           pinned to the bottom of the body area. */
+        body.marp #preview section.marp-has-figs > .marp-fit-body,
+        body.marp #preview section.marp-has-footnotes > .marp-fit-body {
+            flex: 1 1 auto;
+            min-height: 0;
+            display: flex;
+            flex-direction: column;
         }
 
         /* Split (multi-column) layout — activated by <!-- _class: split --> or
@@ -4613,18 +4629,41 @@ ${previewClone.outerHTML}
         }
         // Auto-shrink-to-fit: marp-core renders each slide as a fixed 1280x720
         // logical box (svg viewBox / foreignObject); content taller than the
-        // slide height is clipped by the foreignObject. For each visible <section>
-        // whose content overflows, scale the whole section down uniformly so it
-        // fits. To keep the section background covering the full slide (a naive
-        // scale() would reveal a gap at the right/bottom), we first enlarge the
-        // box to 1/f in both dimensions, then scale by f — the rendered box snaps
-        // back to 1280x720 while the content shrinks uniformly. Logical-coordinate
-        // based, so the result is valid in scroll/deck/list regardless of the
-        // on-screen display size. Idempotent: always reset → measure → (re)apply.
+        // slide height is clipped by the foreignObject.
+        //
+        // Body-only scaling (normal + figure slides): wrapMarpBody() has wrapped
+        // the slide's body content (everything except the leading <header> / title
+        // heading and the trailing <footer>) into a .marp-fit-body div. When that
+        // body overflows the space between the fixed title/header and footer, we
+        // scale ONLY the wrapper down — so the title H2, header, and footer keep
+        // their natural size and stay consistent across slides. The wrapper's
+        // layout height is locked to the available height so it reserves no extra
+        // space (an in-flow footer isn't pushed down), width is enlarged to 1/f so
+        // it still fills after the horizontal scale, and overflow is clipped.
+        //
+        // Fallback (split / inline-cols grid slides, no wrapper): the old uniform
+        // whole-section scaling — enlarge the box to 1/f then scale by f so the
+        // rendered box snaps back to 1280x720 and the background still covers the
+        // full slide.
+        //
+        // All measurements are logical (scrollHeight / offsetHeight / computed
+        // padding are reported in the slide's 1280x720 coordinates regardless of
+        // the on-screen display size); topUsed is derived via the display/logical
+        // ratio so it stays correct under the svg display scaling. Idempotent:
+        // always reset → measure → (re)apply.
         function fitMarpSlides() {
             const sections = preview.querySelectorAll('div.marpit > svg[data-marpit-svg] > foreignObject > section');
             sections.forEach(section => {
+                const body = section.querySelector(':scope > .marp-fit-body');
                 // Reset any prior fit so we measure the natural content height.
+                if (body) {
+                    body.style.transform = '';
+                    body.style.transformOrigin = '';
+                    body.style.width = '';
+                    body.style.height = '';
+                    body.style.overflow = '';
+                    body.style.flex = '';
+                }
                 section.style.transform = '';
                 section.style.transformOrigin = '';
                 section.style.width = '';
@@ -4633,10 +4672,59 @@ ${previewClone.outerHTML}
                 const fo = section.closest('foreignObject');
                 if (!fo) return;
                 const H = parseFloat(fo.getAttribute('height')) || section.clientHeight || 720;
+
+                if (body) {
+                    // Body-only scaling. Compute the logical height available to the
+                    // body = H − (space above it: header + title) − (space below it:
+                    // section bottom padding + any in-flow footer).
+                    const sRect = section.getBoundingClientRect();
+                    const bRect = body.getBoundingClientRect();
+                    const sOff = section.offsetHeight || H;           // logical border-box height
+                    const scale = sOff ? (sRect.height / sOff) : 1;   // display / logical ratio
+                    const topUsed = scale ? (bRect.top - sRect.top) / scale : 0;
+                    const cs = getComputedStyle(section);
+                    let bottomUsed = parseFloat(cs.paddingBottom) || 0;
+                    section.querySelectorAll(':scope > footer').forEach(ft => {
+                        const pos = getComputedStyle(ft).position;
+                        if (pos === 'static' || pos === 'relative') bottomUsed += ft.offsetHeight;
+                    });
+                    const avail = H - topUsed - bottomUsed;
+                    // Natural content height. On figure / footnote slides the wrapper
+                    // is flex:1 min-height:0, which clamps scrollHeight to the flexed
+                    // box (an overflowing figure inside the flex:1 .marp-figure-stage
+                    // wouldn't be reported). Neutralize the flex to measure the true
+                    // content height, then restore (styles were reset to '' above).
+                    body.style.flex = 'none';
+                    body.style.height = 'auto';
+                    body.style.overflow = 'visible';
+                    const contentH = body.scrollHeight;
+                    body.style.flex = '';
+                    body.style.height = '';
+                    body.style.overflow = '';
+                    // contentH === 0 ⇒ slide not laid out (display:none, e.g. an
+                    // inactive deck slide); it gets fitted when activated via
+                    // __marpUpdateDeck(). Otherwise apply only when it overflows.
+                    if (avail <= 0 || contentH === 0 || contentH <= avail + 1) return;
+                    const f = Math.max(__MARP_FIT_MIN, avail / contentH);
+                    // Pre-transform box = avail/f so that after scale(f) it renders at
+                    // exactly `avail`. When not floored, avail/f === contentH so the box
+                    // holds the FULL body and nothing is clipped; when f is floored at
+                    // 0.5 (content taller than 2×avail) the box is 2×avail and overflow
+                    // is clipped, showing as much as the floor allows. flex:none makes
+                    // the explicit height authoritative over the CSS flex:1. width is
+                    // enlarged to 1/f so the body still fills the slide width after the
+                    // horizontal scale.
+                    body.style.transformOrigin = 'top left';
+                    body.style.flex = 'none';
+                    body.style.width = (100 / f) + '%';
+                    body.style.height = (avail / f) + 'px';
+                    body.style.overflow = 'hidden';
+                    body.style.transform = 'scale(' + f + ')';
+                    return;
+                }
+
+                // Fallback: split / inline-cols grid slides — uniform whole-section scale.
                 const contentH = section.scrollHeight;
-                // contentH === 0 ⇒ slide not laid out (display:none, e.g. an
-                // inactive deck slide); it gets fitted when activated via
-                // __marpUpdateDeck(). Otherwise apply only when it overflows.
                 if (contentH === 0 || contentH <= H + 1) return;
                 const f = Math.max(__MARP_FIT_MIN, H / contentH);
                 section.style.transformOrigin = 'top left';
@@ -5881,6 +5969,41 @@ ${previewClone.outerHTML}
                     section.classList.add('marp-has-footnotes');
                 });
             }
+
+            // Body wrapper for body-only autofit — wrap each non-split slide's body
+            // content (everything except the leading <header> / title heading and the
+            // trailing <footer>) into a .marp-fit-body div so fitMarpSlides() can shrink
+            // ONLY the body while the title/header/footer keep their natural size.
+            // Runs last (after figure / split / footnote passes) so it sweeps up the
+            // .marp-figure-stage and .marp-footnotes as body content. Split / split-*
+            // (grid) slides are skipped — they fall back to uniform section scaling.
+            preview.querySelectorAll('div.marpit > svg[data-marpit-svg] > foreignObject > section').forEach(section => {
+                if (Array.from(section.classList).some(c => c === 'split' || c.startsWith('split-'))) return;
+                if (section.querySelector(':scope > .marp-fit-body')) return; // defensive
+                // Hoist any <footer> to be the last direct child so body + footnotes
+                // are a contiguous range and the footer stays outside the wrapper.
+                // Use a descendant scan (not :scope > footer) because the figure pass
+                // sweeps the figure AND its following siblings — the footer included —
+                // into .marp-figure-stage; left there it would fall inside the wrapper
+                // (a scaled wrapper becomes the containing block for its absolute
+                // footer, shrinking it). Footers are usually position:absolute, so
+                // moving them in the DOM doesn't change where they paint.
+                section.querySelectorAll(':scope footer').forEach(ft => section.appendChild(ft));
+                const kids = Array.from(section.children);
+                // Fixed head: leading <header>(s), then the leading heading run (title).
+                let i = 0;
+                while (i < kids.length && kids[i].tagName === 'HEADER') i++;
+                while (i < kids.length && /^H[1-6]$/.test(kids[i].tagName)) i++;
+                // Fixed tail: trailing <footer>(s).
+                let end = kids.length;
+                while (end > i && kids[end - 1].tagName === 'FOOTER') end--;
+                if (end <= i) return; // no body content to wrap
+                const bodyDiv = document.createElement('div');
+                bodyDiv.className = 'marp-fit-body';
+                section.insertBefore(bodyDiv, kids[i]);
+                for (let k = i; k < end; k++) bodyDiv.appendChild(kids[k]);
+                section.classList.add('marp-has-fitbody');
+            });
 
             // Re-apply our highlight.js over marp-core's code blocks for consistent styling.
             preview.querySelectorAll('section pre code').forEach(block => {
