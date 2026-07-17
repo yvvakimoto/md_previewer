@@ -372,6 +372,75 @@
         #preview .md-message > :last-child  { margin-bottom: 0; }
         body.dark-mode #preview .md-message { --md-message-accent: #58a6ff; }
 
+        /* Confidential mark (front-matter `confidential: true` → body.confidential).
+           This is the DEFAULT theme's definition and the overridable baseline: the
+           look — label text / color / size / angle / opacity — is received via the
+           --confidential-* custom properties, so any user style (assets/*.css) or
+           Marp theme (assets/marp/*.css) can rebrand it (or disable it entirely with
+           --confidential-opacity: 0) simply by re-declaring the variable on
+           #preview / section. Variable inheritance sidesteps the high #preview ID
+           specificity, mirroring the --md-message-* pattern above. Two renderers:
+           (1) normal docs get one viewport-fixed diagonal watermark (fixed so it
+               stays centred while scrolling and repeats on every printed/PDF page);
+           (2) Marp docs get a per-slide watermark inside each slide <section> (its
+               SVG coordinate box) so it zooms/pans/exports with the slide.
+           Both draw via ::before content, so nothing is added to the DOM and the
+           mark carries into HTML/PDF export automatically.
+           The mark is anchored to #preview::before / section::before (both
+           descendants of #preview) rather than body::before, so a theme can set the
+           --confidential-* variables on :root / body / #preview / section — any of
+           them inherit down — and the override always wins (var() fallbacks carry
+           zero specificity). The single default colour reads on both light and dark
+           backgrounds; a theme can re-point --confidential-color under its own
+           body.dark-mode rule for a dark-tuned shade.
+           The default --confidential-size is capped (min(11vw, 6.5rem)) so the whole
+           rotated word fits within the ~900px document width and is never clipped,
+           and the default colour is kept faint — the fixed watermark stays put while
+           the page scrolls, so a stronger colour would read as visually jarring. */
+        body.confidential:not(.marp) #preview::before {
+            content: var(--confidential-label, "CONFIDENTIAL");
+            position: fixed;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: var(--confidential-font, inherit);
+            font-size: var(--confidential-size, min(11vw, 6.5rem));
+            font-weight: 800;
+            letter-spacing: 0.12em;
+            white-space: nowrap;
+            color: var(--confidential-color, rgba(196, 60, 60, 0.10));
+            opacity: var(--confidential-opacity, 1);
+            transform: rotate(var(--confidential-angle, -30deg));
+            transform-origin: center;
+            pointer-events: none;
+            overflow: hidden;
+            z-index: 4000;
+        }
+        /* Per-slide Marp watermark. section::before is unused by the bundled Marp
+           themes (they use section::after for pagination); a theme that needs
+           section::before can disable this via --confidential-opacity: 0. */
+        body.confidential.marp #preview [data-marpit-svg] section::before {
+            content: var(--confidential-label, "CONFIDENTIAL");
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: var(--confidential-font, inherit);
+            font-size: var(--confidential-size, 140px);
+            font-weight: 800;
+            letter-spacing: 0.1em;
+            white-space: nowrap;
+            color: var(--confidential-color, rgba(214, 51, 51, 0.18));
+            opacity: var(--confidential-opacity, 1);
+            transform: rotate(var(--confidential-angle, -30deg));
+            transform-origin: center;
+            pointer-events: none;
+            overflow: hidden;
+            z-index: 4000;
+        }
+
         /* Blockquote attribution (> -- Author) */
         #preview blockquote > .bq-attribution {
             text-align: right;
@@ -2838,6 +2907,7 @@
             if (document.body.classList.contains('dark-mode')) bodyClasses.push('dark-mode');
             if (document.body.classList.contains('numbered')) bodyClasses.push('numbered');
             if (document.body.classList.contains('wide')) bodyClasses.push('wide');
+            if (document.body.classList.contains('confidential')) bodyClasses.push('confidential');
             const bodyClass = bodyClasses.join(' ');
             // Title: prefer the source filename basename (without .md/.markdown) so browser tabs and
             // bookmarks identify the document. Falls back to document.title for files opened via
@@ -6094,6 +6164,30 @@ ${previewClone.outerHTML}
             return /^\s*marp\s*:\s*true\s*$/m.test(m[1]);
         }
 
+        // Detect a confidential document: YAML front-matter with `confidential: true`.
+        // Mirrors isMarpDocument (same block regex); `i` flag also accepts True/TRUE.
+        function isConfidentialDocument(md) {
+            const m = md.match(/^---\s*\n([\s\S]*?)\n---\s*(\n|$)/);
+            if (!m) return false;
+            return /^\s*confidential\s*:\s*true\s*$/im.test(m[1]);
+        }
+
+        // Remove a leading YAML front-matter block so it is not rendered in the
+        // normal pipeline. marked has no front-matter tokenizer, so an unstripped
+        // block would show up as an <hr> + text (directives like `confidential:` /
+        // `title:` leaking into the preview). The block is replaced by the SAME
+        // number of blank lines rather than deleted, so every following block keeps
+        // its original source line number — the [data-line] attributes that drive
+        // editor↔preview scroll sync stay accurate. (Marp docs never reach here:
+        // renderMarp() is dispatched first and marp-core strips their front-matter.)
+        function stripFrontMatterKeepingLines(md) {
+            const m = md.match(/^---\s*\n[\s\S]*?\n---\s*(\n|$)/);
+            if (!m) return md;
+            const block = m[0];
+            const newlines = (block.match(/\n/g) || []).length;
+            return '\n'.repeat(newlines) + md.slice(block.length);
+        }
+
         async function renderMarkdown(markdown) {
             mermaidCounter = 0;
 
@@ -6101,6 +6195,14 @@ ${previewClone.outerHTML}
             // line-anchored regexes (notably the footnote-definition matcher) rely on
             // `$` sitting flush at end-of-line, which fails when a `\r` is in the way.
             markdown = markdown.replace(/\r\n?/g, '\n');
+
+            // Confidential mark (front-matter `confidential: true`). Set/cleared here —
+            // the single entry point for both the normal and the Marp pipeline (Marp
+            // is dispatched below), and always toggled (not just added) so the class
+            // never lingers when navigating to a non-confidential document. The look
+            // is defined entirely in CSS (body.confidential rules); see the inline
+            // <style> baseline and per-theme --confidential-* overrides.
+            document.body.classList.toggle('confidential', isConfidentialDocument(markdown));
 
             // Marp branch: presentation slides. Handles a separate pipeline (marp-core
             // produces its own HTML + theme CSS; we re-apply mermaid / csv /
@@ -6115,6 +6217,11 @@ ${previewClone.outerHTML}
             if (__laserOn) setLaser(false);   // laser is deck-mode only
             // Restore the user-style <link> that renderMarp() stripped on entry.
             if (__wasMarp && currentStyle) applyUserStyle(currentStyle);
+
+            // Drop the leading YAML front-matter (kept as blank lines to preserve
+            // source line numbers) so directives like `confidential:` / `title:` /
+            // `theme:` don't render as an <hr> + text in the normal pipeline.
+            markdown = stripFrontMatterKeepingLines(markdown);
 
             // Reset footnote registry so re-renders (auto-reload, navigation) start clean.
             footnoteState.defs = {};

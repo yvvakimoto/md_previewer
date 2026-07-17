@@ -314,3 +314,19 @@ body.dark-mode #preview a:hover {
 body.dark-mode #preview img {
     box-shadow: 0 1px 8px rgba(0, 0, 0, 0.5);
 }
+
+/* ====================================================================== */
+/* Confidential mark (front-matter `confidential: true`)                   */
+/* ====================================================================== */
+/* Wine-red serif stamp matching the classical accent. Variables inherit
+   from :root down to #preview::before / section::before. Re-pointed under
+   body.dark-mode for the dark palette. Set --confidential-opacity: 0 to
+   suppress the mark for this theme. */
+:root {
+    --confidential-label: "CONFIDENTIAL";
+    --confidential-color: rgba(110, 34, 51, 0.13);
+    --confidential-font: var(--cl-font-serif);
+}
+body.dark-mode {
+    --confidential-color: rgba(224, 138, 160, 0.16);
+}

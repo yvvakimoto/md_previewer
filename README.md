@@ -184,6 +184,7 @@ md-previewer.exe path\to\bundle.mdx
 - **全幅レイアウト** — `W` キーで本文をウィンドウ幅いっぱいに表示（視認性のため左右に最低限の余白を確保）／固定幅中央寄せに戻す
 - **クロスファイル `.md` リンク** — `.md` 同士のリンクをクリックすると同じウィンドウで遷移
 - **戻る / 進む履歴** — `Alt+←` / `Alt+→`、マウス側面ボタン、右クリックメニューに対応
+- **機密表示（Confidential）** — front-matter に `confidential: true` を書くと「機密」の斜め透かしを表示。見た目は各テーマ CSS が `--confidential-*` で定義。エクスポートにも反映（後述）
 - **HTML / PDF エクスポート** — `X` キーで単一 HTML または PDF ファイルに保存（保存ダイアログの拡張子で選択。PDF はしおり・リンク付き。後述）
 - **専用エディタウィンドウ** — `E` キーで CodeMirror 6 ベースのエディタを別ウィンドウで起動（後述）
 - **Marp プレゼンテーションスライド** — front-matter に `marp: true` を書くと 16:9 のスライドモードに切替
@@ -251,6 +252,29 @@ theme: magenta    # ← assets/marp/magenta.css のテーマ名
 
 同梱: `magenta.css`（マゼンタ + ティールの非ブランドテーマ）。  
 Marp 標準の `default` / `gaia` / `uncover` も追加設定なしで利用可能です。
+
+### 機密表示（Confidential）
+
+文書の front-matter に `confidential: true` を書くと、ページ全体に「機密（CONFIDENTIAL）」の斜め透かしが重なります（文書ごとの指定）。
+
+```yaml
+---
+confidential: true
+---
+```
+
+**見た目は各テーマ CSS が定義します。** 本体（`index.html`）は `body.confidential` クラスを付けるだけで、透かしの文言・色・大きさ・角度・フォント・不透明度は `--confidential-*` カスタムプロパティで各 CSS が上書きします（`#preview` / `:root` / `section` のいずれに指定しても継承されます）。
+
+| 変数 | 用途（既定値） |
+| --- | --- |
+| `--confidential-label` | 表示文字列（`"CONFIDENTIAL"`） |
+| `--confidential-color` | 透かし色 |
+| `--confidential-size` | 文字サイズ |
+| `--confidential-angle` | 回転角（`-30deg`） |
+| `--confidential-font` | フォント |
+| `--confidential-opacity` | 不透明度（`0` で完全非表示） |
+
+同梱テーマはそれぞれ配色に合わせた透かしを定義済みです（例: `tategaki.css` は縦組みの「社外秘」）。透かしは通常プレビュー・Marp スライドの両方で機能し、`X` キーの HTML / PDF エクスポートにもそのまま反映されます。サンプル: [samples/confidential.md](samples/confidential.md)
 
 ---
 
