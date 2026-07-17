@@ -670,6 +670,17 @@ body.marp #preview > div.marpit > svg[data-marpit-svg] {
 }
 
 
+/* ---------- Confidential mark ---------- */
+/* front-matter `confidential: true` → body.confidential. A restrained rose
+   stamp in the theme's sans face. Variables inherit from :root into
+   #preview::before / section::before. Set --confidential-opacity: 0 to hide. */
+:root {
+    --confidential-label:   "CONFIDENTIAL";
+    --confidential-color:    rgba(225, 29, 72, 0.12);   /* --hk-rose, translucent */
+    --confidential-font:     var(--hk-font-sans);
+}
+
+
 /* ---------- Print ---------- */
 @media print {
     body { background: #fff; }

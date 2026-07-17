@@ -349,3 +349,14 @@ body.numbered #preview h4::before {
 #preview .align-center { text-align: center; }
 #preview .align-right  { text-align: end; }
 #preview .align-left   { text-align: start; }
+
+/* --- 機密表示 (front-matter `confidential: true`) --- */
+/* 縦書き文書には縦組みの「社外秘」印が似合うので、既定ラベルを差し替える。
+   色は Light / Dark に委ねる方針どおり既定のまま（テーマは色を指定しない）。
+   透かし ::before は #preview の writing-mode: vertical-rl を継承するため、
+   「社外秘」は自然に縦に積まれる。非表示にしたい場合は
+   --confidential-opacity: 0 を指定する。 */
+#preview {
+    --confidential-label: "社外秘";
+    --confidential-size: 22vh;
+}

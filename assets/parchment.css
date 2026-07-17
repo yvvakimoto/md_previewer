@@ -93,3 +93,13 @@ body {
     border: none;
     border-top: 1px solid #b8965f;
 }
+
+/* Confidential mark (front-matter `confidential: true`). Override the
+   --confidential-* variables to match the parchment palette — a warm
+   sepia stamp. Set --confidential-opacity: 0 to hide it for this theme. */
+#preview,
+#preview [data-marpit-svg] section {
+    --confidential-label: "CONFIDENTIAL";
+    --confidential-color: rgba(120, 70, 20, 0.14);
+    --confidential-font: 'Georgia', serif;
+}

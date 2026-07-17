@@ -222,3 +222,14 @@ section.section h2 {
   text-transform: uppercase;
   margin: 0 0 18px;
 }
+
+/* Confidential mark (front-matter `confidential: true` → body.confidential).
+   The per-slide watermark reads --confidential-* from `section`; here we tint
+   it with the magenta accent. section::before is otherwise unused by this
+   theme (pagination uses section::after). Set --confidential-opacity: 0 to
+   suppress it. */
+section {
+  --confidential-label: "CONFIDENTIAL";
+  --confidential-color: rgba(194, 24, 91, 0.13);
+  --confidential-font: var(--font-sans);
+}
