@@ -102,8 +102,17 @@ md-previewer.exe <deck.md> --export-png <outdir>
 # in the repo without a built exe: cargo run --release -- <deck.md> --export-png <outdir>
 ```
 
-It renders in a hidden window, writes one `slide-NN.png` per slide plus a `layout.json`, and
-exits. Then:
+**Faster, build-free alternative (when working in the md_previewer repo):**
+
+```powershell
+python tools/preview-harness/shoot.py <deck.md> --out <outdir> [--slides 3,5-7] [--scale 1]
+```
+
+It renders the deck in a **real headless browser** (Playwright + system Edge/Chrome — no
+`cargo build`, no `playwright install`) and writes the **same** `slide-NN.png` + `layout.json`.
+Prefer it for quick iteration; `--export-png` is the byte-exact actual-WebView2 path.
+
+Either command writes one `slide-NN.png` per slide plus a `layout.json`, then exits. Then:
 
 1. **Read `<outdir>/layout.json` first** (cheap, deterministic). Each slide entry has
    `overflow` (body exceeded the box), `scale` (applied autofit factor; `<1` = it had to
@@ -117,12 +126,14 @@ exits. Then:
    `--export-png` and repeat until no slide is `flooredAtMin` (and ideally none is badly
    cramped).
 
-Useful flags: `--slides 3,5-7` to re-capture only the slides you just changed;
-`--png-scale 1` for smaller/faster images (default 2× is crisper for reading fine text).
+Useful flags: `--slides 3,5-7` to re-capture only the slides you just changed; and for image
+size, `--png-scale 1` (`--export-png`) / `--scale 1` (`shoot.py`) — default 2× is crisper for
+reading fine text.
 
-For a **flowing (non-Marp) document**, `--export-png` writes a single `page.png` — usable for
-a quick look, but its height can be inflated by an in-document mermaid diagram, so prefer the
-structural re-read above (or the GUI below) for plain docs.
+For a **flowing (non-Marp) document**, both commands write a single `page.png` capturing the
+full `#preview` column (the earlier blank-tail on tall docs — an overflow clip, not mermaid —
+is fixed). `shoot.py` is the reliable choice for plain docs in the repo; otherwise the
+structural re-read above or the GUI below also works.
 
 ### Confirm it renders in the GUI (optional, heavier)
 

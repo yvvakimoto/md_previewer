@@ -6551,6 +6551,22 @@ ${previewClone.outerHTML}
                 };
             } else {
                 // Non-Marp: capture the whole #preview column as one tall PNG.
+                // The app shell scrolls an inner container (#preview-container,
+                // overflow:auto, viewport height); #preview is taller and gets
+                // visually CLIPPED to that box, so a CDP clip covering the full
+                // scrollHeight renders a blank tail below the viewport. Neutralize
+                // every overflow-clipping ancestor first so the whole column paints.
+                // (The window is a throwaway capture surface, so mutating layout is fine.)
+                let n = preview;
+                while (n && n !== document.body) {
+                    n.style.overflow = 'visible';
+                    n.style.overflowY = 'visible';
+                    n.style.height = 'auto';
+                    n.style.maxHeight = 'none';
+                    n = n.parentElement;
+                }
+                document.documentElement.style.height = 'auto';
+                document.body.style.height = 'auto';
                 const r = preview.getBoundingClientRect();
                 clip = {
                     x: r.left + window.scrollX,
