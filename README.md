@@ -25,7 +25,7 @@ Windows 専用の、軽量なスタンドアロン Markdown プレビューア�
 | オフライン動作 | ◯（CDN 不使用、全アセット同梱） | ◯ | ◯ | ◯ |
 | **CSS テーマの追加方法** | **`assets/` に `.css` を 1 枚置くだけ**（`S` キーのモーダルで選択） | `settings.json` の `markdown.styles` に絶対パス／URL を列挙 | コミュニティテーマのインストール／`.obsidian/snippets/` に CSS 配置 | テーマフォルダに `.css` 配置（命名規約あり） |
 | ライセンス | OSS（無償） | OSS（無償） | 個人利用無償／商用有償 | **有償**（v1.0 以降ライセンス購入が必要） |
-| 拡張記法 | Mermaid / KaTeX / Marp スライド / CSV・TSV テーブル / **外部CSV→Plotly 対話的チャート** / ABC 楽譜 / **Markwhen タイムライン** / Footnote ツールチップ（標準同梱） | 多くは拡張機能の追加導入が必要 | コアおよびプラグインで対応 | Mermaid / KaTeX 等を内蔵（Marp 非対応） |
+| 拡張記法 | Mermaid / KaTeX / Marp スライド / CSV・TSV テーブル / **外部CSV→Plotly 対話的チャート** / ABC 楽譜 / **Markwhen タイムライン／カレンダー**（`display: calendar`・祝日はオンライン時のみ考慮） / Footnote ツールチップ（標準同梱） | 多くは拡張機能の追加導入が必要 | コアおよびプラグインで対応 | Mermaid / KaTeX 等を内蔵（Marp 非対応） |
 | 単独 HTML / PDF エクスポート | ◯（`X` キー、自己完結 HTML／しおり・リンク付き PDF を拡張子で選択） | △（拡張機能依存） | △（プラグイン依存） | ◯ |
 
 ### 補足
@@ -366,7 +366,7 @@ md-previewer.exe <file.md|.mdx> --export-png <出力ディレクトリ> [--slide
 | `plotly.md` | 外部 CSV を読み込んで Plotly でチャート化 |
 | `video.md` | ローカル動画 / YouTube 埋め込み（画像記法を流用） |
 | `abcjs.md` | ABC 記譜法の楽譜描画（旋律・調号・和音・歌詞 ほか） |
-| `markwhen.md` | Markwhen タイムライン（セクション・期間/単発イベント・タグ色） |
+| `markwhen.md` | Markwhen タイムライン／カレンダー（セクション・期間/単発イベント・タグ色・`display: calendar`・オンライン祝日） |
 | `links.md` + `links-other.md` | クロスファイル `.md` リンクと履歴ナビ |
 | `marp.md` | Marp スライドモード |
 | `長文技術ドキュメント.md` | 長文 + TOC + セクション番号 |

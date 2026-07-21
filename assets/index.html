@@ -640,6 +640,12 @@
             margin: 0 0 6px;
             color: inherit;
         }
+        .markwhen-note {
+            font-size: 0.85em;
+            color: #57606a;
+            margin: 0 0 6px;
+        }
+        body.dark-mode .markwhen-note { color: #8b949e; }
         .markwhen-error {
             margin: 16px 0;
             padding: 12px 16px;
@@ -5348,13 +5354,312 @@ ${previewClone.outerHTML}
             return color;
         }
 
-        function renderMarkwhenCached(el) {
+        // Calendar view cache — separate from the timeline cache because its key
+        // must also vary with the holiday country and whether holidays were
+        // applied (online/offline), so an offline→online transition re-renders.
+        const __markwhenCalCache = new Map();
+
+        // Holiday support (calendar view only, online-only). Cached per
+        // (country, year); guarded by navigator.onLine and a hard timeout so an
+        // offline / slow network degrades to "no holidays" with no error and no
+        // block (the app is offline-capable by design). nager.at is free,
+        // key-less, CORS-*, returns `date` already as 'YYYY-MM-DD' (matching our
+        // cell keys) and `localName` in the local language (Japanese for JP).
+        const __mwHolidayCache = new Map();
+        const __MW_HOLIDAY_TIMEOUT_MS = 4000;
+        const __MW_CAL_MAX_MONTHS = 36;
+
+        function __mwFetchJson(url, ms) {
+            const ctl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+            const t = ctl ? setTimeout(() => ctl.abort(), ms) : null;
+            return fetch(url, ctl ? { signal: ctl.signal } : undefined)
+                .then(r => { if (!r.ok) throw new Error('http ' + r.status); return r.json(); })
+                .finally(() => { if (t) clearTimeout(t); });
+        }
+        async function __mwFetchHolidays(country, years) {
+            const out = {};
+            if (!navigator.onLine) return out;
+            await Promise.all(years.map(async (yr) => {
+                const ck = country + '|' + yr;
+                if (__mwHolidayCache.has(ck)) { Object.assign(out, __mwHolidayCache.get(ck)); return; }
+                try {
+                    const data = await __mwFetchJson(
+                        'https://date.nager.at/api/v3/PublicHolidays/' + yr + '/' + encodeURIComponent(country),
+                        __MW_HOLIDAY_TIMEOUT_MS);
+                    const map = {};
+                    if (Array.isArray(data)) data.forEach(h => { if (h && h.date) map[h.date] = h.localName || h.name || ''; });
+                    __mwHolidayCache.set(ck, map);
+                    Object.assign(out, map);
+                } catch (e) { /* offline / network / timeout / bad JSON → no holidays */ }
+            }));
+            return out;
+        }
+
+        // Flatten the parsed event tree into display rows, tracking nesting depth.
+        function __mwFlatten(MW, root) {
+            const rows = [];
+            const walk = (node, depth) => {
+                if (MW.isEvent(node)) {
+                    const dr = node.dateRangeIso;
+                    if (!dr || !dr.fromDateTimeIso) return;
+                    const from = Date.parse(dr.fromDateTimeIso);
+                    if (isNaN(from)) return;
+                    let to = Date.parse(dr.toDateTimeIso || dr.fromDateTimeIso);
+                    if (isNaN(to)) to = from;
+                    rows.push({
+                        type: 'event',
+                        label: (node.firstLine && node.firstLine.restTrimmed) || '(untitled)',
+                        from: from, to: to,
+                        tags: node.tags || [], depth: depth
+                    });
+                } else {
+                    if (node.title) rows.push({ type: 'group', label: node.title, depth: depth });
+                    const kids = node.children || [];
+                    const nextDepth = node.title ? depth + 1 : depth;
+                    kids.forEach(k => walk(k, nextDepth));
+                }
+            };
+            walk(root, 0);
+            return rows;
+        }
+
+        // Build the horizontal cascading timeline SVG (the default markwhen view).
+        function __mwBuildTimeline(MW, mw, rows, events) {
+            // Overall span — prefer the parser's computed range, fall back to events.
+            let tMin = Infinity, tMax = -Infinity;
+            try {
+                const r = MW.ranges(mw.events, []);
+                if (r && r.fromDateTime) { tMin = Date.parse(r.fromDateTime); tMax = Date.parse(r.toDateTime); }
+            } catch (e) {}
+            if (!isFinite(tMin) || !isFinite(tMax)) {
+                tMin = Infinity; tMax = -Infinity;
+                events.forEach(e => { tMin = Math.min(tMin, e.from); tMax = Math.max(tMax, e.to); });
+            }
+            if (tMax <= tMin) { const d = 86400000; tMin -= d; tMax += d; }
+            const padT = (tMax - tMin) * 0.03;
+            tMin -= padT; tMax += padT;
+
+            // Geometry (logical px; SVG scales to container width via viewBox).
+            const W = 960, Lw = 220, rightPad = 18, topAxis = 34, rowH = 26, barH = 13;
+            const plotW = W - Lw - rightPad;
+            const H = topAxis + rows.length * rowH + 14;
+            const xOf = (t) => Lw + (t - tMin) / (tMax - tMin) * plotW;
+
+            const c = darkMode
+                ? { text: '#e6edf3', group: '#8b949e', axis: '#30363d', grid: '#21262d', tick: '#8b949e', defBar: '#4493f8' }
+                : { text: '#1f2328', group: '#57606a', axis: '#d0d7de', grid: '#eaeef2', tick: '#57606a', defBar: '#0969da' };
+            const palette = __mwPalette();
+            const tagColors = new Map();
+
+            // Axis ticks — granularity by span (years / months / days).
+            const spanDays = (tMax - tMin) / 86400000;
+            const ticks = [];
+            const dFrom = new Date(tMin), dTo = new Date(tMax);
+            if (spanDays > 1100) {
+                const yEnd = dTo.getFullYear();
+                let y = dFrom.getFullYear();
+                const step = Math.max(1, Math.ceil((yEnd - y + 1) / 12));
+                for (; y <= yEnd; y += step) ticks.push({ t: new Date(y, 0, 1).getTime(), label: String(y) });
+            } else if (spanDays > 70) {
+                const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+                let d = new Date(dFrom.getFullYear(), dFrom.getMonth(), 1);
+                while (d.getTime() <= tMax) {
+                    ticks.push({ t: d.getTime(), label: (d.getMonth() === 0 ? d.getFullYear() + ' ' : '') + months[d.getMonth()] });
+                    d = new Date(d.getFullYear(), d.getMonth() + 1, 1);
+                }
+            } else {
+                const n = 8;
+                for (let i = 0; i <= n; i++) {
+                    const t = tMin + (tMax - tMin) * i / n;
+                    const dd = new Date(t);
+                    ticks.push({ t: t, label: (dd.getMonth() + 1) + '/' + dd.getDate() });
+                }
+            }
+
+            let s = '<svg class="mw-svg" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="xMinYMin meet" width="100%" xmlns="http://www.w3.org/2000/svg" font-family="-apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, sans-serif">';
+            ticks.forEach(tk => {
+                const x = xOf(tk.t);
+                if (x < Lw - 0.5 || x > W) return;
+                s += '<line x1="' + x.toFixed(1) + '" y1="' + topAxis + '" x2="' + x.toFixed(1) + '" y2="' + (H - 6) + '" stroke="' + c.grid + '" stroke-width="1"/>';
+                s += '<text x="' + x.toFixed(1) + '" y="20" fill="' + c.tick + '" font-size="11" text-anchor="middle">' + __mwEscape(tk.label) + '</text>';
+            });
+            s += '<line x1="' + Lw + '" y1="' + topAxis + '" x2="' + (W - rightPad) + '" y2="' + topAxis + '" stroke="' + c.axis + '" stroke-width="1"/>';
+
+            rows.forEach((r, i) => {
+                const y = topAxis + i * rowH;
+                const cy = y + rowH / 2;
+                const indent = 8 + r.depth * 14;
+                const maxChars = Math.max(8, 32 - r.depth * 2);
+                if (r.type === 'group') {
+                    s += '<text x="' + indent + '" y="' + (cy + 4) + '" fill="' + c.group + '" font-size="12.5" font-weight="700">' + __mwEscape(__mwTrunc(r.label, maxChars)) + '</text>';
+                } else {
+                    s += '<text x="' + indent + '" y="' + (cy + 4) + '" fill="' + c.text + '" font-size="12.5">' + __mwEscape(__mwTrunc(r.label, maxChars)) + '</text>';
+                    const color = (r.tags && r.tags.length) ? __mwTagColor(r.tags[0], mw.header, palette, tagColors) : c.defBar;
+                    const x1 = xOf(r.from), x2 = xOf(r.to);
+                    if ((x2 - x1) < 4) {
+                        s += '<circle cx="' + x1.toFixed(1) + '" cy="' + cy.toFixed(1) + '" r="5" fill="' + color + '"/>';
+                    } else {
+                        s += '<rect x="' + x1.toFixed(1) + '" y="' + (cy - barH / 2).toFixed(1) + '" width="' + (x2 - x1).toFixed(1) + '" height="' + barH + '" rx="3" fill="' + color + '"/>';
+                    }
+                }
+            });
+            s += '</svg>';
+            return s;
+        }
+
+        // Build the month-grid calendar SVG (display: calendar). Renders consecutive
+        // month grids from the first event's month to the last; single-day events
+        // and multi-day ranges are packed into per-week lanes (FullCalendar-style)
+        // so both read as chips / bars in the correct day cells. Holidays (online
+        // only) shade the cell and print the holiday name. Colors are baked in
+        // (theme-salted cache), so the SVG carries into export / Marp unchanged.
+        function __mwBuildCalendar(mw, events, holidays) {
+            const pad2 = (n) => (n < 10 ? '0' + n : '' + n);
+            const dayStart = (ms) => { const d = new Date(ms); return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime(); };
+            const DOW = ['日', '月', '火', '水', '木', '金', '土'];
+
+            const palette = __mwPalette();
+            const tagColors = new Map();
+            const cal = darkMode
+                ? { text: '#e6edf3', dim: '#8b949e', grid: '#30363d', cell: '#0d1117', outside: '#161b22', weekend: '#161b22', holiday: '#3d1d22', holidayText: '#ff7b72', sun: '#ff7b72', sat: '#79c0ff', month: '#e6edf3', overflow: '#8b949e', barText: '#ffffff', defBar: '#4493f8' }
+                : { text: '#1f2328', dim: '#57606a', grid: '#d0d7de', cell: '#ffffff', outside: '#f6f8fa', weekend: '#f6f8fa', holiday: '#fff0f0', holidayText: '#cf222e', sun: '#cf222e', sat: '#0969da', month: '#1f2328', overflow: '#57606a', barText: '#ffffff', defBar: '#0969da' };
+
+            // markwhen ranges use an EXCLUSIVE end (a single date "2024-05-15" is
+            // [05-15T00:00, 05-16T00:00); a whole month "2024-05" ends at 06-01),
+            // so the last covered day is dayStart(to - 1ms). Math.max with the
+            // start day keeps a zero-length / instant event at one day.
+            const calEvents = events.map(e => ({
+                s: dayStart(e.from),
+                e: Math.max(dayStart(e.to - 1), dayStart(e.from)),
+                label: e.label,
+                color: (e.tags && e.tags.length) ? __mwTagColor(e.tags[0], mw.header, palette, tagColors) : cal.defBar
+            }));
+
+            let minMs = Infinity, maxMs = -Infinity;
+            calEvents.forEach(e => { minMs = Math.min(minMs, e.s); maxMs = Math.max(maxMs, e.e); });
+            const startY = new Date(minMs).getFullYear(), startM = new Date(minMs).getMonth();
+            const endY = new Date(maxMs).getFullYear(), endM = new Date(maxMs).getMonth();
+            const monthCount = (endY - startY) * 12 + (endM - startM) + 1;
+
+            // Geometry.
+            const W = 872, PAD = 16, colW = 120;
+            const monthHdrH = 30, dowH = 22, dayNumH = 18, laneH = 15, maxLanes = 3;
+            const cellH = dayNumH + maxLanes * laneH + 13; // 76
+            const monthGap = 24, legendH = 26;
+
+            // Pre-compute month layout so the viewBox height is known up front.
+            const monthDefs = [];
+            let yCur = PAD;
+            for (let mi = 0; mi < monthCount; mi++) {
+                const yy = startY + Math.floor((startM + mi) / 12);
+                const mm = (startM + mi) % 12;
+                const daysInMonth = new Date(yy, mm + 1, 0).getDate();
+                const startWeekday = new Date(yy, mm, 1).getDay();
+                const weeks = Math.ceil((startWeekday + daysInMonth) / 7);
+                const top = yCur;
+                const h = monthHdrH + dowH + weeks * cellH;
+                monthDefs.push({ yy, mm, daysInMonth, startWeekday, weeks, top });
+                yCur = top + h + monthGap;
+            }
+            const H = yCur - monthGap + legendH + PAD;
+
+            let s = '<svg class="mw-svg mw-cal-svg" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="xMinYMin meet" width="100%" xmlns="http://www.w3.org/2000/svg" font-family="-apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, sans-serif">';
+
+            monthDefs.forEach(md => {
+                const year = md.yy, month = md.mm, daysInMonth = md.daysInMonth, startWeekday = md.startWeekday, weeks = md.weeks, top = md.top;
+                // Month title.
+                s += '<text x="' + PAD + '" y="' + (top + 20) + '" fill="' + cal.month + '" font-size="15" font-weight="700">' + year + '年 ' + (month + 1) + '月</text>';
+                // Weekday header.
+                const dowTop = top + monthHdrH;
+                for (let cCol = 0; cCol < 7; cCol++) {
+                    const cx = PAD + cCol * colW + colW / 2;
+                    const col = cCol === 0 ? cal.sun : (cCol === 6 ? cal.sat : cal.dim);
+                    s += '<text x="' + cx + '" y="' + (dowTop + 15) + '" fill="' + col + '" font-size="11" text-anchor="middle">' + DOW[cCol] + '</text>';
+                }
+                const gridTop = dowTop + dowH;
+
+                for (let w = 0; w < weeks; w++) {
+                    const rowY = gridTop + w * cellH;
+                    // Cells, day numbers, holiday names.
+                    for (let cCol = 0; cCol < 7; cCol++) {
+                        const dayNum = w * 7 + cCol - startWeekday + 1;
+                        const x = PAD + cCol * colW;
+                        const valid = dayNum >= 1 && dayNum <= daysInMonth;
+                        let fill = cal.cell, holName = null;
+                        if (!valid) fill = cal.outside;
+                        else {
+                            const dateStr = year + '-' + pad2(month + 1) + '-' + pad2(dayNum);
+                            holName = holidays[dateStr];
+                            if (holName) fill = cal.holiday;
+                            else if (cCol === 0 || cCol === 6) fill = cal.weekend;
+                        }
+                        s += '<rect x="' + x + '" y="' + rowY + '" width="' + colW + '" height="' + cellH + '" fill="' + fill + '" stroke="' + cal.grid + '" stroke-width="1"/>';
+                        if (valid) {
+                            const numColor = holName ? cal.holidayText : (cCol === 0 ? cal.sun : (cCol === 6 ? cal.sat : cal.text));
+                            s += '<text x="' + (x + 6) + '" y="' + (rowY + 14) + '" fill="' + numColor + '" font-size="11" font-weight="600">' + dayNum + '</text>';
+                            if (holName) s += '<text x="' + (x + 22) + '" y="' + (rowY + 14) + '" fill="' + cal.holidayText + '" font-size="8.5">' + __mwEscape(__mwTrunc(holName, 9)) + '</text>';
+                        }
+                    }
+
+                    // Per-week lane packing of event segments (chips + bars).
+                    const weekDates = [];
+                    for (let cCol = 0; cCol < 7; cCol++) {
+                        const dayNum = w * 7 + cCol - startWeekday + 1;
+                        if (dayNum >= 1 && dayNum <= daysInMonth) weekDates.push({ c: cCol, ms: new Date(year, month, dayNum).getTime() });
+                    }
+                    if (weekDates.length === 0) continue;
+                    const wFirstMs = weekDates[0].ms, wLastMs = weekDates[weekDates.length - 1].ms;
+                    const segs = [];
+                    calEvents.forEach(ev => {
+                        if (ev.e < wFirstMs || ev.s > wLastMs) return;
+                        let c0 = null, c1 = null;
+                        weekDates.forEach(wd => { if (ev.s <= wd.ms && wd.ms <= ev.e) { if (c0 === null) c0 = wd.c; c1 = wd.c; } });
+                        if (c0 !== null) segs.push({ c0: c0, c1: c1, ev: ev });
+                    });
+                    segs.sort((a, b) => a.c0 - b.c0 || (b.c1 - b.c0) - (a.c1 - a.c0));
+                    const laneEnds = [];
+                    const hiddenByCol = {};
+                    segs.forEach(seg => {
+                        let lane = 0;
+                        while (lane < laneEnds.length && laneEnds[lane] >= seg.c0) lane++;
+                        if (lane >= maxLanes) {
+                            for (let cc = seg.c0; cc <= seg.c1; cc++) hiddenByCol[cc] = (hiddenByCol[cc] || 0) + 1;
+                            return;
+                        }
+                        laneEnds[lane] = seg.c1;
+                        const bx = PAD + seg.c0 * colW + 2;
+                        const bw = (seg.c1 - seg.c0 + 1) * colW - 4;
+                        const by = rowY + dayNumH + lane * laneH;
+                        s += '<rect x="' + bx.toFixed(1) + '" y="' + by + '" width="' + bw.toFixed(1) + '" height="13" rx="3" fill="' + seg.ev.color + '"/>';
+                        const maxChars = Math.max(2, Math.floor((bw - 8) / 6));
+                        s += '<text x="' + (bx + 5) + '" y="' + (by + 10) + '" fill="' + cal.barText + '" font-size="9.5">' + __mwEscape(__mwTrunc(seg.ev.label, maxChars)) + '</text>';
+                    });
+                    Object.keys(hiddenByCol).forEach(cc => {
+                        const x = PAD + parseInt(cc, 10) * colW + 4;
+                        const oy = rowY + dayNumH + maxLanes * laneH + 9;
+                        s += '<text x="' + x + '" y="' + oy + '" fill="' + cal.overflow + '" font-size="9">+' + hiddenByCol[cc] + '</text>';
+                    });
+                }
+            });
+
+            // Legend (tag → color), single row, truncated.
+            const legendY = H - PAD - 4;
+            let lx = PAD;
+            Array.from(tagColors.entries()).slice(0, 8).forEach(entry => {
+                const tag = entry[0], color = entry[1];
+                s += '<rect x="' + lx + '" y="' + (legendY - 9) + '" width="11" height="11" rx="2" fill="' + color + '"/>';
+                const label = __mwTrunc(tag, 14);
+                s += '<text x="' + (lx + 15) + '" y="' + legendY + '" fill="' + cal.dim + '" font-size="11">' + __mwEscape(label) + '</text>';
+                lx += 15 + label.length * 7 + 18;
+            });
+            s += '</svg>';
+            return s;
+        }
+
+        async function renderMarkwhenCached(el) {
             let src;
             try { src = decodeURIComponent(el.getAttribute('data-markwhen-source') || ''); }
             catch (e) { src = el.textContent || ''; }
-            const key = __diagKey(src);
-            const cached = __markwhenCache.get(key);
-            if (cached !== undefined) { el.innerHTML = cached; return; }
             try {
                 const MW = window.Markwhen;
                 if (!MW || typeof MW.parse !== 'function') throw new Error('parser not loaded');
@@ -5362,118 +5667,57 @@ ${previewClone.outerHTML}
                 const root = mw && mw.events;
                 if (!root) throw new Error('no timeline');
 
-                // Flatten the event tree into display rows, tracking nesting depth.
-                const rows = [];
-                const walk = (node, depth) => {
-                    if (MW.isEvent(node)) {
-                        const dr = node.dateRangeIso;
-                        if (!dr || !dr.fromDateTimeIso) return;
-                        const from = Date.parse(dr.fromDateTimeIso);
-                        if (isNaN(from)) return;
-                        let to = Date.parse(dr.toDateTimeIso || dr.fromDateTimeIso);
-                        if (isNaN(to)) to = from;
-                        rows.push({
-                            type: 'event',
-                            label: (node.firstLine && node.firstLine.restTrimmed) || '(untitled)',
-                            from: from, to: to,
-                            tags: node.tags || [], depth: depth
-                        });
-                    } else {
-                        if (node.title) rows.push({ type: 'group', label: node.title, depth: depth });
-                        const kids = node.children || [];
-                        const nextDepth = node.title ? depth + 1 : depth;
-                        kids.forEach(k => walk(k, nextDepth));
-                    }
-                };
-                walk(root, 0);
-
+                const rows = __mwFlatten(MW, root);
                 const events = rows.filter(r => r.type === 'event');
                 if (events.length === 0) throw new Error('no dated events found');
 
-                // Overall span — prefer the parser's computed range, fall back to events.
-                let tMin = Infinity, tMax = -Infinity;
-                try {
-                    const r = MW.ranges(root, []);
-                    if (r && r.fromDateTime) { tMin = Date.parse(r.fromDateTime); tMax = Date.parse(r.toDateTime); }
-                } catch (e) {}
-                if (!isFinite(tMin) || !isFinite(tMax)) {
-                    tMin = Infinity; tMax = -Infinity;
-                    events.forEach(e => { tMin = Math.min(tMin, e.from); tMax = Math.max(tMax, e.to); });
-                }
-                if (tMax <= tMin) { const d = 86400000; tMin -= d; tMax += d; }
-                const padT = (tMax - tMin) * 0.03;
-                tMin -= padT; tMax += padT;
+                // Calendar view opt-in. `view` is a reserved markwhen header key
+                // (the parser mangles `view: calendar` into an empty array), so we
+                // use a non-reserved key: `display: calendar` (primary) or the
+                // boolean alias `calendar: true`.
+                const hdr = mw.header || {};
+                const displayVal = String(hdr.display || '').toLowerCase();
+                const calFlag = hdr.calendar === true || String(hdr.calendar || '').toLowerCase() === 'true';
+                const isCalendar = displayVal === 'calendar' || calFlag;
+                const titleHtml = hdr.title
+                    ? '<div class="mw-title">' + __mwEscape(hdr.title) + '</div>' : '';
 
-                // Geometry (logical px; SVG scales to container width via viewBox).
-                const W = 960, Lw = 220, rightPad = 18, topAxis = 34, rowH = 26, barH = 13;
-                const plotW = W - Lw - rightPad;
-                const H = topAxis + rows.length * rowH + 14;
-                const xOf = (t) => Lw + (t - tMin) / (tMax - tMin) * plotW;
+                if (isCalendar) {
+                    const country = String((mw.header && mw.header.country) || 'JP').toUpperCase().slice(0, 2);
+                    // Month span; fall back to the timeline if too wide for a
+                    // calendar. markwhen ends are exclusive, so the last covered
+                    // day is (to - 1ms) — otherwise a month-boundary end would add
+                    // a phantom empty month.
+                    let minMs = Infinity, maxMs = -Infinity;
+                    events.forEach(e => { minMs = Math.min(minMs, e.from); maxMs = Math.max(maxMs, Math.max(e.to - 1, e.from)); });
+                    const sM = new Date(minMs), eM = new Date(maxMs);
+                    const monthCount = (eM.getFullYear() - sM.getFullYear()) * 12 + (eM.getMonth() - sM.getMonth()) + 1;
 
-                const c = darkMode
-                    ? { text: '#e6edf3', group: '#8b949e', axis: '#30363d', grid: '#21262d', tick: '#8b949e', defBar: '#4493f8' }
-                    : { text: '#1f2328', group: '#57606a', axis: '#d0d7de', grid: '#eaeef2', tick: '#57606a', defBar: '#0969da' };
-                const palette = __mwPalette();
-                const tagColors = new Map();
-
-                // Axis ticks — granularity by span (years / months / days).
-                const spanDays = (tMax - tMin) / 86400000;
-                const ticks = [];
-                const dFrom = new Date(tMin), dTo = new Date(tMax);
-                if (spanDays > 1100) {
-                    const yEnd = dTo.getFullYear();
-                    let y = dFrom.getFullYear();
-                    const step = Math.max(1, Math.ceil((yEnd - y + 1) / 12));
-                    for (; y <= yEnd; y += step) ticks.push({ t: new Date(y, 0, 1).getTime(), label: String(y) });
-                } else if (spanDays > 70) {
-                    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-                    let d = new Date(dFrom.getFullYear(), dFrom.getMonth(), 1);
-                    while (d.getTime() <= tMax) {
-                        ticks.push({ t: d.getTime(), label: (d.getMonth() === 0 ? d.getFullYear() + ' ' : '') + months[d.getMonth()] });
-                        d = new Date(d.getFullYear(), d.getMonth() + 1, 1);
+                    if (monthCount > __MW_CAL_MAX_MONTHS) {
+                        const note = '<div class="markwhen-note">期間が広い（約' + monthCount + 'ヶ月）ため、カレンダー表示ではなくタイムライン表示にフォールバックしました。</div>';
+                        el.innerHTML = titleHtml + note + __mwBuildTimeline(MW, mw, rows, events);
+                        return;
                     }
-                } else {
-                    const n = 8;
-                    for (let i = 0; i <= n; i++) {
-                        const t = tMin + (tMax - tMin) * i / n;
-                        const dd = new Date(t);
-                        ticks.push({ t: t, label: (dd.getMonth() + 1) + '/' + dd.getDate() });
-                    }
+
+                    const online = navigator.onLine;
+                    const calKey = __diagKey(src) + '|cal|' + country + '|' + (online ? 'on' : 'off');
+                    const cachedCal = __markwhenCalCache.get(calKey);
+                    if (cachedCal !== undefined) { el.innerHTML = cachedCal; return; }
+
+                    const years = new Set();
+                    for (let mi = 0; mi < monthCount; mi++) years.add(sM.getFullYear() + Math.floor((sM.getMonth() + mi) / 12));
+                    const holidays = await __mwFetchHolidays(country, Array.from(years));
+
+                    el.innerHTML = titleHtml + __mwBuildCalendar(mw, events, holidays);
+                    __diagCacheSet(__markwhenCalCache, calKey, el.innerHTML);
+                    return;
                 }
 
-                let s = '<svg class="mw-svg" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="xMinYMin meet" width="100%" xmlns="http://www.w3.org/2000/svg" font-family="-apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, sans-serif">';
-                ticks.forEach(tk => {
-                    const x = xOf(tk.t);
-                    if (x < Lw - 0.5 || x > W) return;
-                    s += '<line x1="' + x.toFixed(1) + '" y1="' + topAxis + '" x2="' + x.toFixed(1) + '" y2="' + (H - 6) + '" stroke="' + c.grid + '" stroke-width="1"/>';
-                    s += '<text x="' + x.toFixed(1) + '" y="20" fill="' + c.tick + '" font-size="11" text-anchor="middle">' + __mwEscape(tk.label) + '</text>';
-                });
-                s += '<line x1="' + Lw + '" y1="' + topAxis + '" x2="' + (W - rightPad) + '" y2="' + topAxis + '" stroke="' + c.axis + '" stroke-width="1"/>';
-
-                rows.forEach((r, i) => {
-                    const y = topAxis + i * rowH;
-                    const cy = y + rowH / 2;
-                    const indent = 8 + r.depth * 14;
-                    const maxChars = Math.max(8, 32 - r.depth * 2);
-                    if (r.type === 'group') {
-                        s += '<text x="' + indent + '" y="' + (cy + 4) + '" fill="' + c.group + '" font-size="12.5" font-weight="700">' + __mwEscape(__mwTrunc(r.label, maxChars)) + '</text>';
-                    } else {
-                        s += '<text x="' + indent + '" y="' + (cy + 4) + '" fill="' + c.text + '" font-size="12.5">' + __mwEscape(__mwTrunc(r.label, maxChars)) + '</text>';
-                        const color = (r.tags && r.tags.length) ? __mwTagColor(r.tags[0], mw.header, palette, tagColors) : c.defBar;
-                        const x1 = xOf(r.from), x2 = xOf(r.to);
-                        if ((x2 - x1) < 4) {
-                            s += '<circle cx="' + x1.toFixed(1) + '" cy="' + cy.toFixed(1) + '" r="5" fill="' + color + '"/>';
-                        } else {
-                            s += '<rect x="' + x1.toFixed(1) + '" y="' + (cy - barH / 2).toFixed(1) + '" width="' + (x2 - x1).toFixed(1) + '" height="' + barH + '" rx="3" fill="' + color + '"/>';
-                        }
-                    }
-                });
-                s += '</svg>';
-
-                let html = '';
-                if (mw.header && mw.header.title) html += '<div class="mw-title">' + __mwEscape(mw.header.title) + '</div>';
-                html += s;
-                el.innerHTML = html;
+                // Timeline view (default).
+                const key = __diagKey(src);
+                const cached = __markwhenCache.get(key);
+                if (cached !== undefined) { el.innerHTML = cached; return; }
+                el.innerHTML = titleHtml + __mwBuildTimeline(MW, mw, rows, events);
                 __diagCacheSet(__markwhenCache, key, el.innerHTML);
             } catch (error) {
                 el.innerHTML = '<div class="markwhen-error">Markwhen Error: ' + __mwEscape(error && error.message) + '</div>';
@@ -6181,7 +6425,7 @@ ${previewClone.outerHTML}
             const marpMwEls = preview.querySelectorAll('.markwhen-timeline');
             if (marpMwEls.length > 0) {
                 await ensureMarkwhen();
-                marpMwEls.forEach(el => renderMarkwhenCached(el));
+                await Promise.all(Array.from(marpMwEls).map(el => renderMarkwhenCached(el)));
             }
 
             // 同じファイルの再読込（保存後の再描画 / ライブプレビュー / テーマ変更）では
@@ -6546,7 +6790,7 @@ ${previewClone.outerHTML}
             const mwEls = preview.querySelectorAll('.markwhen-timeline');
             if (mwEls.length > 0) {
                 if (markwhenReady) await markwhenReady;
-                mwEls.forEach(el => renderMarkwhenCached(el));
+                await Promise.all(Array.from(mwEls).map(el => renderMarkwhenCached(el)));
             }
 
             // Generate table of contents
