@@ -3631,15 +3631,27 @@ ${previewClone.outerHTML}
                 const isVideo = !yt && VIDEO_EXT_RE.test(rawSrc);
                 if (!yt && !isVideo) return;
 
-                // Pixel sizing from the alt suffix (|W or |WxH); @scale not supported for video.
+                // Resolve the embed size as CSS lengths, applied via inline style so
+                // they beat the stylesheet (esp. #preview video.video-embed{height:auto})
+                // — this lets an explicitly-requested height actually take effect.
+                // Priority:
+                //   1. Obsidian alt suffix `|W` / `|WxH` (px) — the explicit request.
+                //   2. else the inline width/height marp-core stamps on the <img> from
+                //      its native `w:`/`h:`/`width:`/`height:` image directives (px or %),
+                //      which are the standard way to size figures in Marp slides.
+                // When only a width is set we leave height unset so the stylesheet's
+                // height:auto (video) / aspect-ratio:16/9 (youtube iframe :not([width]))
+                // preserves the aspect ratio. @scale is image-only (not for video).
                 let alt = img.getAttribute('alt') || '';
-                let width = null, height = null;
+                let widthCss = null, heightCss = null;
                 const m = alt.match(pxRe);
                 if (m && (m[2] || m[3])) {
-                    if (m[2]) width = m[2];
-                    if (m[3]) height = m[3];
+                    if (m[2]) widthCss = m[2] + 'px';
+                    if (m[3]) heightCss = m[3] + 'px';
                     alt = m[1];
                 }
+                if (!widthCss && img.style && img.style.width) widthCss = img.style.width;
+                if (!heightCss && img.style && img.style.height) heightCss = img.style.height;
 
                 let el;
                 if (yt) {
@@ -3652,12 +3664,6 @@ ${previewClone.outerHTML}
                     el.setAttribute('allow', 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share');
                     el.setAttribute('allowfullscreen', '');
                     if (alt) el.setAttribute('title', alt);
-                    if (width) {
-                        el.setAttribute('width', width);
-                        el.setAttribute('height', height || String(Math.round(parseInt(width, 10) * 9 / 16)));
-                    } else if (height) {
-                        el.setAttribute('height', height);
-                    }
                 } else {
                     el = document.createElement('video');
                     el.className = 'video-embed';
@@ -3671,9 +3677,9 @@ ${previewClone.outerHTML}
                     const mime = videoMimeFor(rawSrc);
                     if (mime) source.setAttribute('type', mime);
                     el.appendChild(source);
-                    if (width) el.setAttribute('width', width);
-                    if (height) el.setAttribute('height', height);
                 }
+                if (widthCss) el.style.width = widthCss;
+                if (heightCss) el.style.height = heightCss;
                 img.replaceWith(el);
             });
         }
