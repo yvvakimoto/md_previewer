@@ -520,6 +520,13 @@
             margin: 16px 0;
             text-align: center;
         }
+        /* Safety net for the node-label clipping bug: even if mermaid sizes a
+           foreignObject slightly short, don't let WebView2 clip the overflowing
+           bottom of the text. Also undo the global `* { box-sizing: border-box }`
+           for mermaid's HTML labels, which assume content-box sizing. */
+        .mermaid foreignObject { overflow: visible; }
+        .mermaid foreignObject div,
+        .mermaid foreignObject span { box-sizing: content-box; }
 
         /* KaTeX math styling */
         .katex-display {
@@ -1995,11 +2002,9 @@
             localStorage.setItem('darkMode', darkMode ? 'true' : 'false');
             document.body.classList.toggle('dark-mode', darkMode);
             if (typeof mermaid !== 'undefined') {
-                mermaid.initialize({
-                    startOnLoad: false,
-                    theme: darkMode ? 'dark' : 'default',
-                    securityLevel: 'loose'
-                });
+                // dark-mode class is already toggled above, so mermaidBaseConfig()
+                // reads the correct theme.
+                mermaid.initialize(mermaidBaseConfig());
             }
         }
         // Swap the user stylesheet. `name === null` removes any active user style
