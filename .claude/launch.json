@@ -2,10 +2,10 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "capserver",
+      "name": "preview-harness",
       "runtimeExecutable": "python",
-      "runtimeArgs": ["C:/Users/wakimoto.yuki/Documents/works/md_previewer/.claude/worktrees/cool-curie-cd3cb1/temp/capserver.py"],
-      "port": 8766
+      "runtimeArgs": ["tools/preview-harness/serve.py", "--port", "8770"],
+      "port": 8770
     },
     {
       "name": "assets-static",

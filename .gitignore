@@ -1,5 +1,9 @@
 /target
 
+# preview-harness pixel-capture output (shoot.py default --out) & Python cache
+/_shots/
+__pycache__/
+
 # Generated artifacts under assets/libs/ — list each one explicitly so that
 # any in-house source (hand-written files or adapters) under assets/libs/ is
 # TRACKED BY DEFAULT and never silently dropped.

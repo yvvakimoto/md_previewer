@@ -135,3 +135,6 @@ You don't encode these — just write slides that read well one-at-a-time in dec
 - `+++` appears only inside a `split*` slide or a `::: columns` region.
 - One topic per slide; short bullets; a single centered figure where helpful.
 - Don't override theme colors with raw HTML; use the bundled themes + inline spans.
+- After writing, verify the rendered layout with the headless PNG capture and fix any
+  overflowing slide — see **SKILL.md → Step 3** (`--export-png` → read `layout.json` for
+  `flooredAtMin`/low `scale`, then the flagged PNGs, then split/trim and re-run).
