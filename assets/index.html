@@ -549,14 +549,16 @@
            with justify-content:center so the chart is vertically centered within the
            block's min-height box too (restores the centering the old flex-row layout
            gave via align-items:center). flex-direction:column keeps justify-content on
-           the VERTICAL axis only — no horizontal centering — so it never reintroduces
-           the off-the-left overflow a row-wise justify-content:center caused; the
-           default cross-axis stretch keeps the chart full-width so Plotly still
-           autosizes to the container. Scoped to body.marp, so it also governs the
-           exported Marp artifact (whose <body> now carries the marp class). */
+           the VERTICAL axis only. align-items:center horizontally centers the chart:
+           a width-fixed chart (layout.width < slide) is centered instead of hugging
+           the left, while an autosizing chart is NOT shrunk — Plotly measures the
+           full-width container and writes an explicit width onto the rendered SVG, so
+           the (now definite-size) flex item still spans the slide. Scoped to body.marp,
+           so it also governs the exported Marp artifact (whose <body> carries marp). */
         body.marp .plotly-block {
             display: flex;
             flex-direction: column;
+            align-items: center;
             justify-content: center;
             margin-top: auto;
             margin-bottom: auto;
@@ -1625,9 +1627,16 @@
         body.marp #preview section p.marp-fig {
             text-align: center;
         }
+        /* Tables (GFM + csv/tsv): the general #preview table{width:100%} rule (ID
+           specificity) forces marp tables to full slide width, which makes margin:auto
+           a no-op (no free space) and leaves them hugging the left. Reassert content
+           sizing so margin:auto has room to center; max-width:100% caps a table wider
+           than the slide. .plotly-block is handled by align-items:center on its flex
+           column above, not here. */
         body.marp #preview section table.marp-fig,
-        body.marp #preview section .csv-table.marp-fig,
-        body.marp #preview section .plotly-block.marp-fig {
+        body.marp #preview section .csv-table.marp-fig {
+            width: fit-content;
+            max-width: 100%;
             margin-left: auto;
             margin-right: auto;
         }
@@ -1670,7 +1679,7 @@
         body.marp #preview .md-vcenter > .mermaid,
         body.marp #preview .md-vcenter > .markwhen-timeline { margin: 0; text-align: center; }
         body.marp #preview .md-vcenter > table,
-        body.marp #preview .md-vcenter > .csv-table,
+        body.marp #preview .md-vcenter > .csv-table { width: fit-content; max-width: 100%; margin: 0 auto; }
         body.marp #preview .md-vcenter > .plotly-block { margin: 0 auto; }
         body.marp #preview .md-vcenter > p { margin: 0; text-align: center; }
 
@@ -2059,13 +2068,24 @@
             });
             return _libCache[url];
         }
-        async function ensureMermaid() {
-            await loadLib('libs/mermaid.min.js');
-            mermaid.initialize({
+        // Shared mermaid.initialize config. `fontFamily` is set explicitly so
+        // mermaid MEASURES label text with the same font the page RENDERS it
+        // with. Without it, foreignObject labels inherit the page's system-sans
+        // stack (Segoe UI on Windows, taller than mermaid's default measuring
+        // font), so mermaid sizes the node box too short and WebView2 clips the
+        // overflowing bottom of the glyphs — the "text cut off" bug. Called from
+        // both ensureMermaid() and applyDarkMode() (the M-key re-initialize).
+        function mermaidBaseConfig() {
+            return {
                 startOnLoad: false,
                 theme: document.body.classList.contains('dark-mode') ? 'dark' : 'default',
-                securityLevel: 'loose'
-            });
+                securityLevel: 'loose',
+                fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif",
+            };
+        }
+        async function ensureMermaid() {
+            await loadLib('libs/mermaid.min.js');
+            mermaid.initialize(mermaidBaseConfig());
         }
         function ensureKatex() { return loadLib('libs/katex/katex.min.js'); }
         // abcjs ships only a browser-global IIFE (window.ABCJS); lazy-load it the
