@@ -86,8 +86,47 @@ any) is the very first block; fenced divs are balanced (`:::` opens and closes);
 appears inside a `columns`/`split` context; code fences are closed; KaTeX `$`/`$$` are
 balanced; referenced images/data/media paths exist relative to the `.md`.
 
-To additionally confirm it *renders* in the GUI (heavier — launches a window, needs a built
-`assets/` tree per the repo's `build.ps1`):
+### Marp decks — check the rendered layout and self-correct (do this)
+
+A Marp slide is a fixed 1280×720 box, so **overflow is the main failure mode**: too many
+bullets / too much text / an oversized figure makes the body spill past the slide. The
+previewer auto-shrinks an overflowing body down to a 0.5 floor, but past that the content is
+clipped/scrolled — which looks broken in an exported deck. The previewer has a **headless
+PNG-capture mode** built exactly so you can *see* your own slides and fix them without a human
+in the loop. **After authoring a Marp deck, run it** (needs a built `assets/` tree — see the
+repo's `build.ps1`; use `cargo run --release --` in the repo, or the installed
+`md-previewer.exe`):
+
+```powershell
+md-previewer.exe <deck.md> --export-png <outdir>
+# in the repo without a built exe: cargo run --release -- <deck.md> --export-png <outdir>
+```
+
+It renders in a hidden window, writes one `slide-NN.png` per slide plus a `layout.json`, and
+exits. Then:
+
+1. **Read `<outdir>/layout.json` first** (cheap, deterministic). Each slide entry has
+   `overflow` (body exceeded the box), `scale` (applied autofit factor; `<1` = it had to
+   shrink), and **`flooredAtMin: true`** = even at the 0.5 floor it still overflows — the
+   definite "this slide is broken, fix it" signal. Also treat a low `scale` (e.g. `< 0.7`) as
+   "cramped, probably worth splitting."
+2. **Read the PNGs for the flagged slides** (and spot-check a couple of others) to judge what
+   metrics can't: awkward wrapping, an undersized diagram, poor balance, text collisions.
+3. **Fix the Markdown** — split a dense slide into two, cut words, shorten bullets, resize a
+   figure (`![alt|600](img.png)`), or move detail into speaker content — then re-run
+   `--export-png` and repeat until no slide is `flooredAtMin` (and ideally none is badly
+   cramped).
+
+Useful flags: `--slides 3,5-7` to re-capture only the slides you just changed;
+`--png-scale 1` for smaller/faster images (default 2× is crisper for reading fine text).
+
+For a **flowing (non-Marp) document**, `--export-png` writes a single `page.png` — usable for
+a quick look, but its height can be inflated by an in-document mermaid diagram, so prefer the
+structural re-read above (or the GUI below) for plain docs.
+
+### Confirm it renders in the GUI (optional, heavier)
+
+Launches a real window (also needs the built `assets/` tree):
 
 ```powershell
 cargo run --release -- <path-to-file.md>
