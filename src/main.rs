@@ -25,6 +25,8 @@ mod ime_win;
 mod mdx;
 #[cfg(windows)]
 mod pdf_win;
+#[cfg(windows)]
+mod png_win;
 use editor_registry::EditorRegistry;
 
 // Path to a markdown file currently being viewed. Wrapped in Arc<Mutex>
@@ -113,6 +115,113 @@ enum CustomEvent {
     // posted from the async completion handler so the preview can toast.
     PrintPdf(PathBuf),
     PdfExportDone { ok: bool, path: PathBuf },
+    // PNG capture (headless `--export-png` mode). The preview JS posts
+    // `renderdone:` once the initial render (incl. async Marp/mermaid/KaTeX)
+    // settles → CaptureStart initializes the capture loop. For each target
+    // slide the JS posts `captureready:` with the clip rect + layout metrics →
+    // CaptureReady runs CDP `Page.captureScreenshot` (see `png_win`).
+    // CaptureDone is posted from the async completion handler; the loop then
+    // advances to the next slide, or writes `layout.json` and exits.
+    CaptureStart { marp: bool, slides: usize },
+    CaptureReady { index: usize, clip: CaptureClip, layout: Option<SlideLayout> },
+    CaptureDone { index: usize, ok: bool },
+}
+
+/// CLI `--export-png` configuration, parsed from argv in `main()`.
+#[derive(Clone, Debug)]
+struct CaptureConfig {
+    out_dir: PathBuf,
+    /// 1-based slide spec like "1,3,5-7"; None = all slides. Marp only.
+    slides_spec: Option<String>,
+    /// Screenshot zoom factor (CDP clip.scale). Default 2.0.
+    scale: f64,
+}
+
+/// Screenshot region reported by the preview JS (`captureready:`), in CSS px.
+#[derive(Serialize, Deserialize, Clone, Copy, Debug)]
+struct CaptureClip {
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+}
+
+/// Per-slide layout metrics reported by the preview JS (from `fitMarpSlides()`),
+/// written into `layout.json`. `file` is filled in by the host after capture.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+struct SlideLayout {
+    // Filled in by the host after capture (JS doesn't send these two).
+    #[serde(default)]
+    index: usize,
+    #[serde(default)]
+    file: String,
+    overflow: bool,
+    scale: f64,
+    #[serde(rename = "flooredAtMin")]
+    floored_at_min: bool,
+    #[serde(rename = "contentH")]
+    content_h: f64,
+    avail: f64,
+}
+
+/// Live capture-loop progress, initialized on `CaptureStart`.
+struct CaptureState {
+    out_dir: PathBuf,
+    scale: f64,
+    marp: bool,
+    /// 0-based slide indices to capture, in output order.
+    indices: Vec<usize>,
+    /// Position within `indices` currently being captured.
+    cursor: usize,
+    /// Collected per-slide metrics (Marp only), written to `layout.json`.
+    layouts: Vec<SlideLayout>,
+}
+
+/// Resolve a 1-based `--slides` spec ("1,3,5-7") against `count` slides into a
+/// deduped, order-preserving list of 0-based indices. None/empty → all slides.
+/// Out-of-range values are silently dropped.
+fn parse_slides_spec(spec: &Option<String>, count: usize) -> Vec<usize> {
+    let spec = match spec {
+        Some(s) if !s.trim().is_empty() => s,
+        _ => return (0..count).collect(),
+    };
+    let mut out: Vec<usize> = Vec::new();
+    let mut seen: HashSet<usize> = HashSet::new();
+    let push = |n: usize, out: &mut Vec<usize>, seen: &mut HashSet<usize>| {
+        if n >= 1 && n <= count {
+            let idx = n - 1;
+            if seen.insert(idx) {
+                out.push(idx);
+            }
+        }
+    };
+    for part in spec.split(',') {
+        let part = part.trim();
+        if part.is_empty() {
+            continue;
+        }
+        if let Some((a, b)) = part.split_once('-') {
+            if let (Ok(a), Ok(b)) = (a.trim().parse::<usize>(), b.trim().parse::<usize>()) {
+                let (lo, hi) = if a <= b { (a, b) } else { (b, a) };
+                for n in lo..=hi {
+                    push(n, &mut out, &mut seen);
+                }
+            }
+        } else if let Ok(n) = part.parse::<usize>() {
+            push(n, &mut out, &mut seen);
+        }
+    }
+    out
+}
+
+/// Output filename for a captured slide: `slide-NN.png` (Marp, 1-based) or
+/// `page.png` (a non-Marp full-page capture).
+fn slide_png_name(marp: bool, index: usize) -> String {
+    if marp {
+        format!("slide-{:02}.png", index + 1)
+    } else {
+        "page.png".to_string()
+    }
 }
 
 const APP_NAME: &str = "Markdown Previewer";
@@ -881,11 +990,46 @@ fn main() -> wry::Result<()> {
     // Check for command-line arguments (file or directory path)
     let args: Vec<String> = env::args().collect();
 
-    let cli_path: Option<PathBuf> = if args.len() > 1 {
-        Some(PathBuf::from(&args[1]))
-    } else {
-        None
-    };
+    // Separate flags from the single positional path. `--export-png <dir>`
+    // enables headless PNG capture (see CaptureConfig / png_win); `--slides`
+    // and `--png-scale` refine it. Everything else stays back-compatible: the
+    // first non-flag argument is the file/dir/mdx to open, as before.
+    let mut positional: Option<String> = None;
+    let mut cap_out: Option<PathBuf> = None;
+    let mut cap_slides: Option<String> = None;
+    let mut cap_scale: f64 = 2.0;
+    {
+        let mut i = 1;
+        while i < args.len() {
+            match args[i].as_str() {
+                "--export-png" => {
+                    cap_out = args.get(i + 1).map(PathBuf::from);
+                    i += 2;
+                }
+                "--slides" => {
+                    cap_slides = args.get(i + 1).cloned();
+                    i += 2;
+                }
+                "--png-scale" => {
+                    cap_scale = args.get(i + 1).and_then(|s| s.parse().ok()).unwrap_or(2.0);
+                    i += 2;
+                }
+                a => {
+                    if positional.is_none() && !a.starts_with("--") {
+                        positional = Some(a.to_string());
+                    }
+                    i += 1;
+                }
+            }
+        }
+    }
+    let capture_config: Option<CaptureConfig> = cap_out.map(|out_dir| CaptureConfig {
+        out_dir,
+        slides_spec: cap_slides,
+        scale: if cap_scale > 0.0 { cap_scale } else { 2.0 },
+    });
+
+    let cli_path: Option<PathBuf> = positional.map(PathBuf::from);
 
     // If the CLI arg is an `.mdx` bundle, extract it now; the extracted entry
     // `.md` then flows through the normal single-file path below. `mdx_initial`
@@ -1001,6 +1145,13 @@ fn main() -> wry::Result<()> {
         .with_inner_size(tao::dpi::LogicalSize::new(init_w, init_h));
     if let Some(pos) = init_pos {
         window_builder = window_builder.with_position(pos);
+    }
+    // In `--export-png` capture mode the window is a throwaway render surface —
+    // keep it hidden so the user never sees it flash. CDP `Page.captureScreenshot`
+    // with `captureBeyondViewport:true` rasterizes off the renderer, not the
+    // window surface, so a hidden window still produces valid PNGs.
+    if capture_config.is_some() {
+        window_builder = window_builder.with_visible(false);
     }
     let window = window_builder.build(&event_loop).unwrap();
 
@@ -1138,9 +1289,15 @@ fn main() -> wry::Result<()> {
 
     let app_version_json =
         serde_json::to_string(env!("CARGO_PKG_VERSION")).unwrap_or_else(|_| "\"\"".into());
+    // In capture mode, tell the preview to emit `renderdone:` after the initial
+    // render settles and to expose `window.__prepareCapture(index)`.
+    let capture_init = match &capture_config {
+        Some(c) => format!("window.__captureConfig = {{ scale: {} }};\n", c.scale),
+        None => String::new(),
+    };
     let init_script = format!(
-        "window.__appVersion = {};\nwindow.__userStyles = {};\nwindow.__marpThemes = {};\nwindow.__styleExporters = {};\n{}",
-        app_version_json, user_styles_json, marp_themes_json, style_exporters_json, init_script
+        "window.__appVersion = {};\nwindow.__userStyles = {};\nwindow.__marpThemes = {};\nwindow.__styleExporters = {};\n{}{}",
+        app_version_json, user_styles_json, marp_themes_json, style_exporters_json, capture_init, init_script
     );
 
     // Clone current_dir for use in the protocol handler closure
@@ -1341,6 +1498,9 @@ fn main() -> wry::Result<()> {
     // checked by the watcher thread and cleared on use; we also clear stale
     // entries on a 1.5s timeout to avoid lockout if the OS event never arrives.
     let suppressed_saves: Arc<Mutex<HashSet<PathBuf>>> = Arc::new(Mutex::new(HashSet::new()));
+
+    // Capture-loop progress for `--export-png` mode; owned by the event loop.
+    let capture_state: Arc<Mutex<Option<CaptureState>>> = Arc::new(Mutex::new(None));
 
     let ipc_event_proxy = event_proxy.clone();
     let ipc_current_file = current_file.clone();
@@ -1607,6 +1767,41 @@ fn main() -> wry::Result<()> {
             if let Some(p) = abs {
                 let _ = ipc_event_proxy.send_event(CustomEvent::CsvWatch(p));
             }
+        } else if let Some(payload) = message.strip_prefix("renderdone:") {
+            // Capture mode: initial render (incl. async Marp/mermaid/KaTeX) has
+            // settled. Kick off the per-slide capture loop.
+            #[derive(Deserialize)]
+            struct RenderDoneMsg { marp: bool, slides: usize }
+            match serde_json::from_str::<RenderDoneMsg>(payload) {
+                Ok(m) => {
+                    let _ = ipc_event_proxy.send_event(CustomEvent::CaptureStart {
+                        marp: m.marp,
+                        slides: m.slides,
+                    });
+                }
+                Err(e) => dbg_log!("renderdone: bad payload: {}", e),
+            }
+        } else if let Some(payload) = message.strip_prefix("captureready:") {
+            // Capture mode: the preview has isolated slide `index` at 1280x720
+            // and reports its clip rect + layout metrics. Hand off to the event
+            // loop, which owns the webview lock for the CDP screenshot call.
+            #[derive(Deserialize)]
+            struct CaptureReadyMsg {
+                index: usize,
+                clip: CaptureClip,
+                #[serde(default)]
+                layout: Option<SlideLayout>,
+            }
+            match serde_json::from_str::<CaptureReadyMsg>(payload) {
+                Ok(m) => {
+                    let _ = ipc_event_proxy.send_event(CustomEvent::CaptureReady {
+                        index: m.index,
+                        clip: m.clip,
+                        layout: m.layout,
+                    });
+                }
+                Err(e) => dbg_log!("captureready: bad payload: {}", e),
+            }
         }
     });
 
@@ -1803,6 +1998,8 @@ fn main() -> wry::Result<()> {
     let editor_suppressed_for_spawn = suppressed_saves.clone();
     // Used by the event loop to repack saves back into an open `.mdx` bundle.
     let evloop_suppressed = suppressed_saves.clone();
+    // Capture config consumed by the CaptureStart arm (moved in — unused after).
+    let evloop_capture_config = capture_config;
 
     // Run event loop
     event_loop.run(move |event, target, control_flow| {
@@ -1931,6 +2128,122 @@ fn main() -> wry::Result<()> {
                 );
                 if let Ok(wv) = webview.lock() {
                     let _ = wv.evaluate_script(&script);
+                }
+            }
+            Event::UserEvent(CustomEvent::CaptureStart { marp, slides }) => {
+                // `--export-png`: the initial render settled. Build the capture
+                // plan and ask the preview to isolate the first target slide.
+                let cfg = match &evloop_capture_config {
+                    Some(c) => c.clone(),
+                    None => return,
+                };
+                if let Err(e) = std::fs::create_dir_all(&cfg.out_dir) {
+                    dbg_log!("capture: create_dir_all {:?} failed: {}", cfg.out_dir, e);
+                    *control_flow = ControlFlow::Exit;
+                    return;
+                }
+                // Marp: one PNG per (selected) slide. Non-Marp: a single
+                // full-page PNG (index 0).
+                let indices: Vec<usize> = if marp {
+                    parse_slides_spec(&cfg.slides_spec, slides)
+                } else {
+                    vec![0]
+                };
+                if indices.is_empty() {
+                    dbg_log!("capture: no slides to capture (marp={}, slides={})", marp, slides);
+                    *control_flow = ControlFlow::Exit;
+                    return;
+                }
+                let first = indices[0];
+                *capture_state.lock().unwrap() = Some(CaptureState {
+                    out_dir: cfg.out_dir.clone(),
+                    scale: cfg.scale,
+                    marp,
+                    indices,
+                    cursor: 0,
+                    layouts: Vec::new(),
+                });
+                dbg_log!("capture: start marp={} slides={} first={}", marp, slides, first);
+                if let Ok(wv) = webview.lock() {
+                    let _ = wv.evaluate_script(&format!("window.__prepareCapture({});", first));
+                }
+            }
+            Event::UserEvent(CustomEvent::CaptureReady { index, clip, layout }) => {
+                // The preview isolated slide `index`; capture it via CDP.
+                dbg_log!("capture: ready index={} clip=({},{},{},{})", index, clip.x, clip.y, clip.width, clip.height);
+                let (out_path, scale) = {
+                    let mut guard = capture_state.lock().unwrap();
+                    let st = match guard.as_mut() {
+                        Some(s) => s,
+                        None => return,
+                    };
+                    if let Some(mut l) = layout {
+                        l.index = index + 1;
+                        l.file = slide_png_name(st.marp, index);
+                        st.layouts.push(l);
+                    }
+                    (st.out_dir.join(slide_png_name(st.marp, index)), st.scale)
+                };
+                #[cfg(windows)]
+                {
+                    dbg_log!("capture: invoking CDP screenshot -> {:?}", out_path);
+                    if let Ok(wv) = webview.lock() {
+                        png_win::capture_clip_to_png(
+                            &wv,
+                            out_path,
+                            (clip.x, clip.y, clip.width, clip.height),
+                            scale,
+                            index,
+                            event_proxy.clone(),
+                        );
+                    }
+                }
+                #[cfg(not(windows))]
+                {
+                    let _ = (out_path, scale, clip);
+                    let _ = event_proxy.send_event(CustomEvent::CaptureDone { index, ok: false });
+                }
+            }
+            Event::UserEvent(CustomEvent::CaptureDone { index, ok }) => {
+                if !ok {
+                    dbg_log!("capture: slide index={} FAILED", index);
+                }
+                // Advance the loop: next slide, or finish (write layout.json, exit).
+                let next: Option<usize> = {
+                    let mut guard = capture_state.lock().unwrap();
+                    match guard.as_mut() {
+                        Some(st) => {
+                            st.cursor += 1;
+                            st.indices.get(st.cursor).copied()
+                        }
+                        None => None,
+                    }
+                };
+                match next {
+                    Some(n) => {
+                        if let Ok(wv) = webview.lock() {
+                            let _ = wv.evaluate_script(&format!("window.__prepareCapture({});", n));
+                        }
+                    }
+                    None => {
+                        if let Some(st) = capture_state.lock().unwrap().as_ref() {
+                            let report = serde_json::json!({
+                                "marp": st.marp,
+                                "slides": st.layouts,
+                            });
+                            let path = st.out_dir.join("layout.json");
+                            match serde_json::to_string_pretty(&report) {
+                                Ok(s) => {
+                                    if let Err(e) = std::fs::write(&path, s.as_bytes()) {
+                                        dbg_log!("capture: write layout.json failed: {}", e);
+                                    }
+                                }
+                                Err(e) => dbg_log!("capture: serialize layout.json failed: {}", e),
+                            }
+                            dbg_log!("capture: done, {} PNG(s) in {:?}", st.indices.len(), st.out_dir);
+                        }
+                        *control_flow = ControlFlow::Exit;
+                    }
                 }
             }
             Event::UserEvent(CustomEvent::OpenEditorWindow { line }) => {

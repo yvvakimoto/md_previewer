@@ -1838,6 +1838,16 @@
             font-variant-numeric: tabular-nums;
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
         }
+
+        /* Headless PNG capture (`--export-png`): strip all chrome so a screenshot
+           contains only the slide / document. The Marp path additionally anchors
+           the target slide fixed at the origin and the host clips exactly to the
+           1280x720 box (see __prepareCapture), so chrome only matters for the
+           non-Marp full-page capture, which is clipped to #preview's own box. */
+        body.capturing #toc-sidebar,
+        body.capturing #slide-counter,
+        body.capturing #laser-canvas,
+        body.capturing #toast { display: none !important; }
     </style>
 </head>
 <body>
@@ -4662,6 +4672,9 @@ ${previewClone.outerHTML}
         // Auto-shrink overflowing slides to fit (default on; A-key toggle).
         let __marpAutofit = localStorage.getItem('marpAutofit') !== 'false';
         const __MARP_FIT_MIN = 0.5;      // floor on the shrink scale
+        // Per-slide fit metrics recorded by fitMarpSlides() (index = slide order),
+        // consumed by __prepareCapture() to build layout.json in `--export-png` mode.
+        let __marpFitReport = [];
         // Deck-mode cursor-anchored zoom + drag-pan state. Applied as a CSS
         // transform on the active slide <svg> (transform-origin 0 0). tx/ty are
         // accumulated in screen px; see the Ctrl+wheel listener below.
@@ -4723,8 +4736,9 @@ ${previewClone.outerHTML}
         // ratio so it stays correct under the svg display scaling. Idempotent:
         // always reset → measure → (re)apply.
         function fitMarpSlides() {
+            __marpFitReport = [];
             const sections = preview.querySelectorAll('div.marpit > svg[data-marpit-svg] > foreignObject > section');
-            sections.forEach(section => {
+            sections.forEach((section, idx) => {
                 const body = section.querySelector(':scope > .marp-fit-body');
                 // Reset any prior fit so we measure the natural content height.
                 if (body) {
@@ -4776,11 +4790,20 @@ ${previewClone.outerHTML}
                     // contentH === 0 ⇒ slide not laid out (display:none, e.g. an
                     // inactive deck slide); it gets fitted when activated via
                     // __marpUpdateDeck(). Otherwise apply only when it overflows.
-                    if (avail <= 0 || contentH === 0 || contentH <= avail + 1) return;
                     // Autofit ON: shrink the body down to the 0.5 floor. OFF: don't
                     // shrink (f = 1) — the body renders at natural size and any overflow
                     // beyond `avail` is reached via the scrollbar below.
-                    const f = __marpAutofit ? Math.max(__MARP_FIT_MIN, avail / contentH) : 1;
+                    const laidOut = contentH > 0 && avail > 0;
+                    const overflow = laidOut && contentH > avail + 1;
+                    const f = overflow ? (__marpAutofit ? Math.max(__MARP_FIT_MIN, avail / contentH) : 1) : 1;
+                    // Record for the capture-mode layout report. flooredAtMin = even at
+                    // the min scale the body still overflows (= a definite "needs fixing").
+                    const flooredAtMin = overflow && (f <= __MARP_FIT_MIN + 1e-6) && (contentH * f > avail + 1);
+                    __marpFitReport[idx] = {
+                        overflow: !!overflow, scale: f, flooredAtMin: !!flooredAtMin,
+                        contentH: contentH, avail: avail
+                    };
+                    if (!overflow) return;
                     // Pre-transform box = avail/f so that after scale(f) it renders at
                     // exactly `avail`. When not floored (autofit ON), avail/f === contentH
                     // so the box holds the FULL body and no scrollbar appears (current
@@ -4803,10 +4826,16 @@ ${previewClone.outerHTML}
 
                 // Fallback: split / inline-cols grid slides (no body wrapper) — uniform
                 // whole-section scale, autofit-gated (no fixed title/footer to scroll).
-                if (!__marpAutofit) return;
-                const contentH = section.scrollHeight;
-                if (contentH === 0 || contentH <= H + 1) return;
-                const f = Math.max(__MARP_FIT_MIN, H / contentH);
+                const fbContentH = section.scrollHeight;
+                const fbOverflow = fbContentH > 0 && fbContentH > H + 1;
+                const fbF = (fbOverflow && __marpAutofit) ? Math.max(__MARP_FIT_MIN, H / fbContentH) : 1;
+                __marpFitReport[idx] = {
+                    overflow: !!fbOverflow, scale: fbF,
+                    flooredAtMin: !!(fbOverflow && __marpAutofit && fbF <= __MARP_FIT_MIN + 1e-6 && fbContentH * fbF > H + 1),
+                    contentH: fbContentH, avail: H
+                };
+                if (!__marpAutofit || !fbOverflow) return;
+                const f = fbF;
                 section.style.transformOrigin = 'top left';
                 section.style.width = (100 / f) + '%';
                 section.style.height = (100 / f) + '%';
@@ -6188,6 +6217,85 @@ ${previewClone.outerHTML}
             return '\n'.repeat(newlines) + md.slice(block.length);
         }
 
+        // ---- Headless PNG capture (`--export-png`) ---------------------------
+        // When the host launches in capture mode it injects window.__captureConfig.
+        // We then (1) signal the host once the initial render settles, and (2)
+        // expose __prepareCapture(index) which isolates one slide (or the whole
+        // page for a non-Marp doc) and reports its clip rect + layout metrics.
+        // The host drives the loop and runs the CDP screenshot per slide.
+        function __emitRenderDone(isMarp) {
+            if (!window.__captureConfig || window.__renderDoneSent) return;
+            window.__renderDoneSent = true;
+            const slides = isMarp ? __marpSlides().length : 0;
+            // setTimeout (not rAF): the capture window is hidden, so rAF is frozen
+            // (it only fires while painting). Give layout a beat, then signal.
+            setTimeout(() => {
+                try {
+                    window.ipc.postMessage('renderdone:' + JSON.stringify({ marp: !!isMarp, slides }));
+                } catch (e) {}
+            }, 80);
+        }
+        // Isolate slide `index` for capture and report its clip + layout to the host.
+        window.__prepareCapture = function(index) {
+          try {
+            document.body.classList.add('capturing');
+            let clip, layout = null;
+            const isMarp = document.body.classList.contains('marp');
+            if (isMarp) {
+                const slides = __marpSlides();
+                slides.forEach((s, i) => {
+                    if (i === index) {
+                        // Anchor the target slide at the viewport origin, sized to the
+                        // logical 1280x720 box. Clear any deck zoom transform so it's 1:1.
+                        s.style.display = 'block';
+                        s.style.position = 'fixed';
+                        s.style.left = '0';
+                        s.style.top = '0';
+                        s.style.margin = '0';
+                        s.style.width = '1280px';
+                        s.style.height = '720px';
+                        s.style.transform = '';
+                        s.style.transformOrigin = '';
+                        s.style.transition = '';
+                        s.style.zIndex = '2147483646';
+                    } else {
+                        s.style.display = 'none';
+                    }
+                });
+                // Re-fit this slide at the 1280x720 box (records __marpFitReport[index]).
+                fitMarpSlides();
+                clip = { x: 0, y: 0, width: 1280, height: 720 };
+                const m = __marpFitReport[index];
+                // Coerce to finite numbers: getBoundingClientRect can yield 0/NaN in a
+                // hidden window, and JSON.stringify(NaN) === "null" would break the
+                // host's f64 deserialize. Round for a clean layout.json.
+                const fin = v => (Number.isFinite(v) ? Math.round(v) : 0);
+                if (m) layout = {
+                    overflow: !!m.overflow, scale: (Number.isFinite(m.scale) ? m.scale : 1),
+                    flooredAtMin: !!m.flooredAtMin, contentH: fin(m.contentH), avail: fin(m.avail)
+                };
+            } else {
+                // Non-Marp: capture the whole #preview column as one tall PNG.
+                const r = preview.getBoundingClientRect();
+                clip = {
+                    x: r.left + window.scrollX,
+                    y: r.top + window.scrollY,
+                    width: Math.ceil(preview.scrollWidth),
+                    height: Math.ceil(preview.scrollHeight)
+                };
+            }
+            // setTimeout (not rAF): the capture window is hidden, so rAF is frozen.
+            setTimeout(() => {
+                try {
+                    window.ipc.postMessage('captureready:' + JSON.stringify({ index, clip, layout }));
+                } catch (e) {}
+            }, 48);
+          } catch (err) {
+            // Surface a capture failure to the forensic log (release has no console).
+            try { fetch('/__log/prepareCapture%20ERROR%20' + encodeURIComponent(String(err))); } catch (e) {}
+          }
+        };
+
         async function renderMarkdown(markdown) {
             mermaidCounter = 0;
 
@@ -6209,6 +6317,7 @@ ${previewClone.outerHTML}
             // footnotes post-render so the tool's extensions still work inside slides).
             if (isMarpDocument(markdown)) {
                 await renderMarp(markdown);
+                __emitRenderDone(true);
                 return;
             }
             // Leaving a previous Marp document: shed mode classes and slide-counter.
@@ -6411,6 +6520,8 @@ ${previewClone.outerHTML}
 
             // Generate table of contents
             generateTOC();
+
+            __emitRenderDone(false);
         }
 
         let __footnoteTooltip = null;
