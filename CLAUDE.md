@@ -390,6 +390,13 @@ iscc installer\md-previewer.iss
 
 The installer bundles `target/release/md-previewer.exe` + the full `assets/` tree into a single `.exe` that installs to `%LOCALAPPDATA%\Programs\MdPreviewer\` without admin rights. See `installer/README.md` for prerequisites and versioning rules.
 
+## Git commit conventions
+
+- **Messages are Japanese**, following the existing history: a concise `<type>: <要約>` subject (types like `feat:` / `fix:` seen in the log, or a plain Japanese summary such as `リリース v0.14.0`), a blank line, then Japanese bullet points for the details.
+- **Multi-line messages via the Bash tool must use a Bash heredoc**, e.g. `git commit -F - <<'EOF' … EOF` (or repeated `-m` flags). **Do NOT use PowerShell here-string syntax (`@'…'@`)** — this repo's shell is PowerShell-primary, but commit messages are almost always authored through the **Bash** tool, where `@'` / `'@` are *literal* characters, not string delimiters. Passing `git commit -m @'…'@` leaks a stray `@` onto the subject line (and pushes the real subject to line 2). If it happens, fix with `git commit --amend -F - <<'EOF' … EOF`. When committing from the PowerShell tool instead, the `@'…'@` here-string *is* correct (see the PowerShell tool's own guidance) — the point is to match the syntax to the shell actually running the command.
+- End every commit message with the trailer `Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>`.
+- Commit or push only when the user asks; if on the default (`main`) branch, note that the `post-merge` release hook fires on merges — see *Architecture → Release automation*.
+
 ## Maintenance reminder
 
 At the end of every task, review whether this `CLAUDE.md` and `README.md` still matches reality (features, build steps, architecture). If anything has drifted, update it as part of the same task before declaring the task complete.
