@@ -1495,6 +1495,7 @@
             white-space: nowrap;
             width: 1%;
             padding-right: 14px;
+            text-align: right;
         }
         #help-modal kbd {
             display: inline-block;
@@ -1583,6 +1584,26 @@
             background: #0d1117;
             border-color: #30363d;
             color: #c9d1d9;
+        }
+
+        /* ---- GitHub task lists (- [ ] / - [x]) ---- */
+        /* Shared by both pipelines: marked emits these classes for gfm task lists,
+           and applyTaskLists() adds the same structure to Marp slides. Scoped to
+           #preview so it reaches Marp <section> content and rides into HTML export. */
+        #preview .contains-task-list {
+            list-style: none;
+            padding-left: 0;
+        }
+        /* A nested normal list inside a task list keeps its bullets/indent. */
+        #preview .contains-task-list .contains-task-list { padding-left: 1.2em; }
+        #preview li.task-list-item {
+            list-style: none;
+        }
+        #preview li.task-list-item > input[type="checkbox"],
+        #preview li.task-list-item > p:first-child > input[type="checkbox"] {
+            margin: 0 0.4em 0 0;
+            vertical-align: middle;
+            cursor: default;
         }
 
         /* ---- Marp slide mode ---- */
@@ -1875,17 +1896,17 @@
 <body>
     <div id="splash">
         <div class="spinner"></div>
-        <div class="label">Loading…</div>
+        <div class="label">読み込み中…</div>
     </div>
     <div id="drop-zone">
         <div class="drop-icon">📄</div>
-        <div class="drop-text">Drop your files here</div>
-        <div class="drop-hint">Drop markdown with images together, or image files directly</div>
+        <div class="drop-text">ファイルをここにドロップ</div>
+        <div class="drop-hint">Markdownと画像をまとめて、または画像ファイルを直接ドロップできます</div>
     </div>
 
     <div id="app-container">
         <div id="toc-sidebar">
-            <button id="toc-toggle" title="Toggle Table of Contents">
+            <button id="toc-toggle" title="目次の表示切り替え">
                 <span class="toggle-icon"></span>
             </button>
             <section id="file-tree" class="empty">
@@ -2050,6 +2071,10 @@
         // to #preview and into Marp <section> content, where ::before/::after read it.
         document.documentElement.style.setProperty('--current-year', JSON.stringify(String(new Date().getFullYear())));
 
+        // Japanese labels for the Marp view modes (internal keys stay in English
+        // for localStorage / class names; only the toast text is localized).
+        const MARP_VIEW_LABELS = { scroll: 'スクロール', deck: 'デッキ', list: '一覧' };
+
         let toastTimer = null;
         function showToast(msg) {
             const t = document.getElementById('toast');
@@ -2063,7 +2088,7 @@
         // Called by the Rust host when a PDF export finishes (X → PDF filter).
         // See src/pdf_win.rs / CustomEvent::PdfExportDone.
         window.__pdfExportDone = function (ok, name) {
-            showToast(ok ? ('PDF exported: ' + (name || '')) : 'PDF export failed');
+            showToast(ok ? ('PDF出力: ' + (name || '')) : 'PDF出力に失敗しました');
         };
 
         // Lazy-load library helper. Returns a cached promise per URL.
@@ -2229,16 +2254,16 @@
         // via the existing EditorSavedContent → loadFileFromRust path.
         function applyMarpTheme(name) {
             if (!currentFilePath) {
-                showToast('No file to update');
+                showToast('更新するファイルがありません');
                 return;
             }
             if (!isMarpDocument(currentMarkdownRaw)) {
-                showToast('Not a Marp document');
+                showToast('Marp文書ではありません');
                 return;
             }
             const next = setMarpTheme(currentMarkdownRaw, name);
             if (next === currentMarkdownRaw) {
-                showToast('Marp theme: ' + name);
+                showToast('Marpテーマ: ' + name);
                 return;
             }
             try {
@@ -2246,10 +2271,10 @@
                     path: currentFilePath,
                     content: next,
                 }));
-                showToast('Marp theme: ' + name);
+                showToast('Marpテーマ: ' + name);
             } catch (e) {
                 console.warn('applyMarpTheme: postMessage failed', e);
-                showToast('Failed to save theme');
+                showToast('テーマの保存に失敗しました');
             }
         }
 
@@ -2418,7 +2443,7 @@
             if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
             const on = document.body.classList.toggle('wide');
             localStorage.setItem('wide', on);
-            showToast('Full width: ' + (on ? 'on' : 'off'));
+            showToast('全幅表示: ' + (on ? 'オン' : 'オフ'));
         });
 
         // Auto-shrink Marp slides to fit (A key). When on (default), slides whose
@@ -2434,7 +2459,7 @@
             localStorage.setItem('marpAutofit', __marpAutofit);
             fitMarpSlides();   // re-fit on / clear on off
             if (document.body.classList.contains('marp')) {
-                showToast('Autofit slides: ' + (__marpAutofit ? 'on' : 'off'));
+                showToast('自動縮小: ' + (__marpAutofit ? 'オン' : 'オフ'));
             }
         });
 
@@ -2451,7 +2476,7 @@
             if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
             const on = document.body.classList.toggle('numbered');
             localStorage.setItem('numbered', on);
-            showToast('Numbering: ' + (on ? 'on' : 'off'));
+            showToast('セクション番号: ' + (on ? 'オン' : 'オフ'));
         });
 
         // Dark / Light toggle (M key). Orthogonal to the user-style picker (S).
@@ -2461,14 +2486,14 @@
             const t = e.target;
             if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
             if (document.body.classList.contains('marp')) {
-                showToast('Theme is fixed by Marp directives');
+                showToast('テーマはMarpディレクティブで固定されています');
                 return;
             }
             // Anchor by source-line BEFORE re-render — mermaid theme switch
             // requires re-rendering, which rebuilds the DOM.
             const anchor = capturePreviewAnchor();
             applyDarkMode(!darkMode);
-            showToast(darkMode ? 'Dark' : 'Light');
+            showToast(darkMode ? 'ダーク' : 'ライト');
             if (currentMarkdown) await renderMarkdown(currentMarkdown);
             requestAnimationFrame(() => restorePreviewAnchor(anchor));
         });
@@ -2482,7 +2507,7 @@
             const tbody = document.getElementById('style-modal-rows');
             if (!tbody) return;
             const title = document.getElementById('style-modal-title');
-            if (title) title.textContent = isMarp ? 'Select Marp Theme' : 'Select Style';
+            if (title) title.textContent = isMarp ? 'Marpテーマを選択' : 'スタイルを選択';
             let entries;
             let activeKey;
             if (isMarp) {
@@ -2565,7 +2590,7 @@
             if ((next || null) === (currentStyle || null)) return;
             const anchor = capturePreviewAnchor();
             const cssReady = applyUserStyle(next);
-            showToast(next || 'Default');
+            showToast(next || 'デフォルト');
             const renderDone = currentMarkdown ? renderMarkdown(currentMarkdown) : Promise.resolve();
             await Promise.all([cssReady, renderDone]);
             requestAnimationFrame(() => restorePreviewAnchor(anchor));
@@ -2586,7 +2611,7 @@
                 const next = order[(order.indexOf(cur) + 1) % order.length];
                 setMarpView(next);
                 if (next === 'deck') __marpUpdateDeck();
-                showToast('Slides: ' + next);
+                showToast('表示: ' + (MARP_VIEW_LABELS[next] || next));
                 return;
             }
             if (e.key === 'f' || e.key === 'F') {
@@ -2598,7 +2623,7 @@
             if (e.key === 'z' || e.key === 'Z') {
                 e.preventDefault();
                 setLaser(!__laserOn);
-                showToast('Laser: ' + (__laserOn ? 'on' : 'off'));
+                showToast('レーザー: ' + (__laserOn ? 'オン' : 'オフ'));
                 return;
             }
             if (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === ' ') {
@@ -2654,11 +2679,11 @@
                 if (!pane.hidden) { pane.hidden = true; return; }
                 pane.hidden = false;
                 if (!pane.dataset.loaded) {
-                    pane.textContent = 'Loading…';
+                    pane.textContent = '読み込み中…';
                     fetch('THIRD_PARTY_LICENSES.txt')
                         .then(r => r.ok ? r.text() : Promise.reject(r.status))
                         .then(t => { pane.textContent = t; pane.dataset.loaded = '1'; })
-                        .catch(err => { pane.textContent = 'Failed to load THIRD_PARTY_LICENSES.txt (' + err + ')'; });
+                        .catch(err => { pane.textContent = 'THIRD_PARTY_LICENSES.txt の読み込みに失敗しました (' + err + ')'; });
                 }
                 return;
             }
@@ -3316,6 +3341,20 @@ ${previewClone.outerHTML}
             if (currentWorkspace) { exportWorkspace(); } else { exportHtml(); }
         });
 
+        // Open install directory (Ctrl+D) — reveal the folder that holds the exe and
+        // assets/ in Explorer. Same modifier guard shape as Ctrl+N; preventDefault to
+        // suppress the browser "add bookmark" default. Rust handles `openinstalldir:`.
+        document.addEventListener('keydown', (e) => {
+            if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return;
+            if (e.key !== 'd' && e.key !== 'D') return;
+            const t = e.target;
+            if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+            e.preventDefault();
+            if (window.ipc && typeof window.ipc.postMessage === 'function') {
+                window.ipc.postMessage('openinstalldir:');
+            }
+        });
+
         // Compute starting source-line for each top-level block token
         function computeBlockLineNumbers(markdown) {
             let tokens;
@@ -3511,6 +3550,62 @@ ${previewClone.outerHTML}
                     cite.innerHTML = '— ' + m[1];
                     p.after(cite);
                 }
+            });
+        }
+
+        // GitHub task lists — unify `- [ ]` / `- [x]` rendering across both pipelines.
+        // marked (normal pipeline, gfm:true) already turns them into a disabled
+        // <input type=checkbox> but this build tags neither the <li> nor the <ul> with
+        // the GFM classes; marp-core's markdown-it ships no task-list plugin at all, so
+        // in Marp `- [ ]` survives as literal "[ ] …" text in a plain bullet. Given a
+        // NodeList of <li> elements, this handles BOTH cases and normalizes them to the
+        // canonical GFM DOM shape (a leading disabled checkbox + the .task-list-item /
+        // .contains-task-list classes) so the shared #preview .task-list-item CSS styles
+        // both pipelines and rides into HTML export.
+        function applyTaskLists(liNodes) {
+            if (!liNodes) return;
+            const markerRe = /^(\s*)\[([ xX])\]\s+/;
+            const tag = (li) => {
+                li.classList.add('task-list-item');
+                const parent = li.parentElement;
+                if (parent && (parent.tagName === 'UL' || parent.tagName === 'OL')) {
+                    parent.classList.add('contains-task-list');
+                }
+            };
+            liNodes.forEach(li => {
+                if (li.classList.contains('task-list-item')) return;   // idempotent
+                // The container that holds the leading content: the <li> itself for a
+                // tight list, or its first-child <p> for a loose list.
+                const firstEl = li.firstElementChild;
+                const host = (firstEl && firstEl.tagName === 'P') ? firstEl : li;
+                // Case A — a disabled checkbox is already present (marked's gfm output).
+                // Just add the classes so the CSS applies (no bullet).
+                const hostFirstEl = host.firstElementChild;
+                if (hostFirstEl && hostFirstEl.tagName === 'INPUT'
+                    && hostFirstEl.getAttribute('type') === 'checkbox') {
+                    tag(li);
+                    return;
+                }
+                // Case B — leading "[ ]" / "[x]" text (Marp / markdown-it, no plugin):
+                // find the first text node with non-whitespace content in the host.
+                let textNode = null;
+                for (const n of host.childNodes) {
+                    if (n.nodeType === 3) {
+                        if (n.textContent.trim()) { textNode = n; break; }
+                        continue;   // skip leading whitespace-only text
+                    }
+                    break;   // a leading element (not a checkbox marker) — bail
+                }
+                if (!textNode) return;
+                const m = markerRe.exec(textNode.textContent);
+                if (!m) return;
+                textNode.textContent = textNode.textContent.slice(m[0].length);
+                const box = document.createElement('input');
+                box.type = 'checkbox';
+                box.disabled = true;
+                if (m[2] !== ' ') box.checked = true;
+                host.insertBefore(box, host.firstChild);
+                tag(li);
             });
         }
 
@@ -3901,7 +3996,7 @@ ${previewClone.outerHTML}
                             __marpDeckIndex = slideIdx;
                             setMarpView('deck');
                             __marpUpdateDeck();
-                            showToast('Slides: deck');
+                            showToast('表示: デッキ');
                         } else {
                             // scroll mode (deck hides the sidebar, so no deck click path)
                             svg.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -6300,6 +6395,15 @@ ${previewClone.outerHTML}
                 }
             });
 
+            // Task lists (- [ ] / - [x]) — marp-core (markdown-it) has no task-list
+            // plugin, so `- [ ]` survives marp.render as literal "[ ] …" text inside
+            // an ordinary <li>. Convert those to the canonical GFM shape (a disabled
+            // <input type=checkbox> + the task-list-item / contains-task-list classes)
+            // so Marp slides show real checkboxes. Pure DOM post-pass (no sentinel
+            // needed); the shared #preview .task-list-item CSS styles both pipelines
+            // and rides into export. Same helper as the normal pipeline.
+            applyTaskLists(preview.querySelectorAll('svg[data-marpit-svg] section li'));
+
             // Figure horizontal centering — center mermaid / csv-table / native
             // <table> / abc / plotly / markwhen / video / image-only paragraph
             // left-right within each non-split slide by tagging it .marp-fig.
@@ -6458,7 +6562,7 @@ ${previewClone.outerHTML}
             __marpDeckIndex = idx;
             setMarpView('deck');
             __marpUpdateDeck();
-            showToast('Slides: deck');
+            showToast('表示: デッキ');
         }
 
         // Detect a Marp document: must have a YAML front-matter block with `marp: true`.
@@ -6760,6 +6864,10 @@ ${previewClone.outerHTML}
 
             // Right-align blockquote attribution lines (`> -- Author`).
             applyBlockquoteAttribution(preview);
+
+            // Task lists — marked emits the checkbox but not the GFM classes, so tag
+            // <li>/<ul> with .task-list-item / .contains-task-list for the shared CSS.
+            applyTaskLists(preview.querySelectorAll('li'));
 
             // Join CJK sentences wrapped across a single newline (改行連結).
             applyCjkSoftBreakJoin(preview);
@@ -7559,32 +7667,33 @@ ${previewClone.outerHTML}
     <canvas id="laser-canvas"></canvas>
     <div id="help-modal" role="dialog" aria-modal="true" aria-labelledby="help-modal-title">
         <div class="panel">
-            <button class="close" type="button" aria-label="Close">&times;</button>
-            <h2 id="help-modal-title">Keyboard Shortcuts</h2>
+            <button class="close" type="button" aria-label="閉じる">&times;</button>
+            <h2 id="help-modal-title">キーボードショートカット</h2>
             <table>
                 <tbody>
-                    <tr><td class="keys"><kbd>H</kbd></td><td>Show / hide this help</td></tr>
-                    <tr><td class="keys"><kbd>M</kbd></td><td>Toggle Dark / Light mode</td></tr>
-                    <tr><td class="keys"><kbd>S</kbd></td><td>Select theme style — or Marp theme in Marp mode (rewrites front-matter)</td></tr>
-                    <tr><td class="keys"><kbd>N</kbd></td><td>Toggle auto section numbering</td></tr>
-                    <tr><td class="keys"><kbd>L</kbd></td><td>Toggle line numbers</td></tr>
-                    <tr><td class="keys"><kbd>W</kbd></td><td>Toggle full-width layout</td></tr>
-                    <tr><td class="keys"><kbd>E</kbd></td><td>Open editor window (Vim mode, math input assist, char counter)</td></tr>
-                    <tr><td class="keys"><kbd>Ctrl</kbd>+<kbd>N</kbd></td><td>Create a new blank Markdown file</td></tr>
-                    <tr><td class="keys"><kbd>X</kbd></td><td>Export current document (choose HTML or PDF in the save dialog; PDF keeps clickable links &amp; heading bookmarks)</td></tr>
-                    <tr><td class="keys"><kbd>Ctrl</kbd>+<kbd>+</kbd> / <kbd>Ctrl</kbd>+<kbd>-</kbd> / <kbd>Ctrl</kbd>+<kbd>0</kbd></td><td>Zoom in / out / reset</td></tr>
-                    <tr><td class="keys"><kbd>Alt</kbd>+<kbd>←</kbd> / <kbd>Alt</kbd>+<kbd>→</kbd></td><td>Navigate back / forward through opened files</td></tr>
-                    <tr><td class="keys"><kbd>P</kbd></td><td>Cycle Marp view: scroll → deck → list (click a thumbnail in list to open it in deck)</td></tr>
-                    <tr><td class="keys"><kbd>F</kbd></td><td>Toggle fullscreen (Marp documents)</td></tr>
-                    <tr><td class="keys"><kbd>A</kbd></td><td>Toggle auto-shrink slides to fit (Marp)</td></tr>
-                    <tr><td class="keys"><kbd>←</kbd> / <kbd>→</kbd> / <kbd>PgUp</kbd> / <kbd>PgDn</kbd> / <kbd>Home</kbd> / <kbd>End</kbd></td><td>Navigate slides in Marp deck mode</td></tr>
-                    <tr><td class="keys"><kbd>Ctrl</kbd>+<kbd>Wheel</kbd> / Drag</td><td>Zoom at cursor / pan the slide (Marp deck mode)</td></tr>
-                    <tr><td class="keys"><kbd>Z</kbd></td><td>Toggle laser pointer with trail (Marp deck mode)</td></tr>
-                    <tr><td class="keys"><kbd>Esc</kbd></td><td>Close this dialog</td></tr>
+                    <tr><td class="keys"><kbd>H</kbd></td><td>このヘルプの表示 / 非表示</td></tr>
+                    <tr><td class="keys"><kbd>M</kbd></td><td>ダーク / ライト表示の切り替え</td></tr>
+                    <tr><td class="keys"><kbd>S</kbd></td><td>スタイルの選択（Marpモードでは Marpテーマ。フロントマターを書き換え）</td></tr>
+                    <tr><td class="keys"><kbd>N</kbd></td><td>セクション自動番号の切り替え</td></tr>
+                    <tr><td class="keys"><kbd>L</kbd></td><td>行番号の表示切り替え</td></tr>
+                    <tr><td class="keys"><kbd>W</kbd></td><td>全幅レイアウトの切り替え</td></tr>
+                    <tr><td class="keys"><kbd>E</kbd></td><td>エディタウィンドウを開く（Vimモード・数式入力補助・文字数カウント）</td></tr>
+                    <tr><td class="keys"><kbd>Ctrl</kbd>+<kbd>N</kbd></td><td>新規の空Markdownファイルを作成</td></tr>
+                    <tr><td class="keys"><kbd>Ctrl</kbd>+<kbd>D</kbd></td><td>インストール先フォルダを Explorer で開く</td></tr>
+                    <tr><td class="keys"><kbd>X</kbd></td><td>現在の文書をエクスポート（保存ダイアログで HTML / PDF を選択。PDFはクリック可能なリンクと見出しのしおりを保持）</td></tr>
+                    <tr><td class="keys"><kbd>Ctrl</kbd>+<kbd>+</kbd> / <kbd>Ctrl</kbd>+<kbd>-</kbd> / <kbd>Ctrl</kbd>+<kbd>0</kbd></td><td>ズームイン / アウト / リセット</td></tr>
+                    <tr><td class="keys"><kbd>Alt</kbd>+<kbd>←</kbd> / <kbd>Alt</kbd>+<kbd>→</kbd></td><td>開いたファイルの履歴を戻る / 進む</td></tr>
+                    <tr><td class="keys"><kbd>P</kbd></td><td>Marp表示の切り替え: スクロール → デッキ → 一覧（一覧でサムネイルをクリックするとデッキで開く）</td></tr>
+                    <tr><td class="keys"><kbd>F</kbd></td><td>全画面表示の切り替え（Marp文書）</td></tr>
+                    <tr><td class="keys"><kbd>A</kbd></td><td>スライドの自動縮小の切り替え（Marp）</td></tr>
+                    <tr><td class="keys"><kbd>←</kbd> / <kbd>→</kbd> / <kbd>PgUp</kbd> / <kbd>PgDn</kbd> / <kbd>Home</kbd> / <kbd>End</kbd></td><td>Marpデッキモードでのスライド移動</td></tr>
+                    <tr><td class="keys"><kbd>Ctrl</kbd>+<kbd>Wheel</kbd> / ドラッグ</td><td>カーソル位置でズーム / スライドをパン（Marpデッキモード）</td></tr>
+                    <tr><td class="keys"><kbd>Z</kbd></td><td>軌跡付きレーザーポインタの切り替え（Marpデッキモード）</td></tr>
+                    <tr><td class="keys"><kbd>Esc</kbd></td><td>このダイアログを閉じる</td></tr>
                 </tbody>
             </table>
             <div class="help-footer">
-                <a href="#" id="show-licenses">Third-party licenses</a>
+                <a href="#" id="show-licenses">サードパーティライセンス</a>
                 <span id="app-version" class="app-version"></span>
             </div>
             <pre id="licenses-pane" hidden></pre>
@@ -7592,8 +7701,8 @@ ${previewClone.outerHTML}
     </div>
     <div id="style-modal" role="dialog" aria-modal="true" aria-labelledby="style-modal-title">
         <div class="panel">
-            <button class="close" type="button" aria-label="Close">&times;</button>
-            <h2 id="style-modal-title">Select Style</h2>
+            <button class="close" type="button" aria-label="閉じる">&times;</button>
+            <h2 id="style-modal-title">スタイルを選択</h2>
             <table>
                 <tbody id="style-modal-rows"></tbody>
             </table>

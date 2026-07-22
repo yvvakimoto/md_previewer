@@ -36,6 +36,11 @@ You can make text **bold**, *italic*, or ***both***. You can also use ~~striketh
 10. tenth
     - 2 桁マーカー配下は 4 スペース字下げ
 
+### Task List
+- [x] 完了したタスク
+- [ ] 未完了のタスク
+- [ ] もう一つのタスク
+
 ## Code
 
 Inline code: `const x = 42;`

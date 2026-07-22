@@ -1506,6 +1506,9 @@ fn main() -> wry::Result<()> {
     let ipc_current_file = current_file.clone();
     let ipc_editor_registry = editor_registry.clone();
     let ipc_suppressed_saves = suppressed_saves.clone();
+    // Owned copy of the install directory (exe_dir is a borrowed &Path) so the
+    // `openinstalldir:` IPC branch can open it in Explorer from the move closure.
+    let ipc_install_dir = exe_dir.to_path_buf();
     webview_builder = webview_builder.with_ipc_handler(move |window, message| {
         if let Some(name) = message.strip_prefix("settitle:") {
             window.set_title(&format_title(Some(name)));
@@ -1625,6 +1628,16 @@ fn main() -> wry::Result<()> {
             if let Err(e) = ipc_event_proxy.send_event(CustomEvent::ToggleFullscreen) {
                 eprintln!("Failed to dispatch ToggleFullscreen: {}", e);
             }
+        } else if message == "openinstalldir:" {
+            // Open the install directory (exe + assets) in Explorer (Ctrl+D).
+            // Off-thread like the other dialog/spawn handlers so the IPC thread
+            // is never blocked.
+            let dir = ipc_install_dir.clone();
+            std::thread::spawn(move || {
+                if let Err(e) = std::process::Command::new("explorer").arg(&dir).spawn() {
+                    eprintln!("openinstalldir: failed to open {}: {}", dir.display(), e);
+                }
+            });
         } else if message == "newfile:" {
             // New document (Ctrl+N) — pick a save location via a native dialog,
             // create a blank `.md`, then open it through the normal OpenFile flow.
