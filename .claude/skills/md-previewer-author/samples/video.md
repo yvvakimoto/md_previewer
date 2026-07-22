@@ -23,12 +23,14 @@
 
 ## 2. サイズ指定
 
-画像と同じ `|幅` / `|幅x高さ` 接尾辞でピクセルサイズを指定できる（`@scale` は動画では非対応）。
+画像と同じ **alt テキストの `|幅` / `|幅x高さ` 接尾辞**でピクセルサイズを指定できる（`@scale` は動画では非対応）。接尾辞は URL 側ではなく `]` の前（alt 内）に置くこと。
 
 ```markdown
-![480px幅](videos/sample.mp4|480)
-![640x360](videos/sample.mp4|640x360)
+![480px幅|480](videos/sample.mp4)
+![|640x360](videos/sample.mp4)
 ```
+
+Marp スライドでは、Marp ネイティブの画像ディレクティブ `![w:400](clip.mp4)` / `![w:400 h:225](clip.mp4)`（`width:` / `height:` も可）でも動画・YouTube のサイズを指定できる。
 
 ## 3. YouTube
 
@@ -36,7 +38,7 @@
 ![](https://www.youtube.com/watch?v=dQw4w9WgXcQ)
 ![短縮URL](https://youtu.be/dQw4w9WgXcQ)
 ![開始位置=90秒](https://youtu.be/dQw4w9WgXcQ?t=90)
-![幅指定](https://youtu.be/dQw4w9WgXcQ|560)
+![幅指定|560](https://youtu.be/dQw4w9WgXcQ)
 ```
 
 ![](https://www.youtube.com/watch?v=dQw4w9WgXcQ)
