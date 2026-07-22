@@ -22,7 +22,7 @@ import {
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
 import { history, historyKeymap, defaultKeymap, indentWithTab } from '@codemirror/commands';
 import { search, searchKeymap } from '@codemirror/search';
-import { autocompletion, completionKeymap } from '@codemirror/autocomplete';
+import { autocompletion, completionKeymap, startCompletion, completionStatus } from '@codemirror/autocomplete';
 import { oneDark } from '@codemirror/theme-one-dark';
 import { vim, Vim, getCM } from '@replit/codemirror-vim';
 
@@ -33,6 +33,7 @@ import { katexCommandCompletionSource } from './katexCommandComplete.js';
 import { pathCompletionSource } from './pathComplete.js';
 import { fencedDivCompletionSource } from './fencedDivComplete.js';
 import { spanStyleCompletionSource } from './spanStyleComplete.js';
+import { frontMatterCompletionSource, frontMatterBlankFieldAt } from './frontMatterComplete.js';
 import { installJpWordMotion } from './jpWordMotion.js';
 import { numberedListIndentKeymap } from './numberedListIndent.js';
 import { installClipboardSync } from './clipboardSync.js';
@@ -575,6 +576,12 @@ export function create(root, opts = {}) {
 
   // Track Vim mode changes (for the status bar).
   let lastGutterCursorLine = -1;
+  // Auto-open the completion popup when the caret lands on a *blank* YAML
+  // front-matter field, so options (marp / theme / paginate / …) are presented
+  // without the user having to type or know them. Guarded to fire only on an
+  // actual cursor move or edit (not on e.g. an Escape that closed the popup at
+  // the same position) so pressing Esc doesn't immediately reopen it.
+  let fmLastAutoPos = -1;
   const modeListener = EditorView.updateListener.of((u) => {
     if (u.docChanged) {
       const cur = u.state.doc.toString();
@@ -591,6 +598,16 @@ export function create(root, opts = {}) {
         const head = u.state.selection.main.head;
         const line = u.state.doc.lineAt(head).number;
         ipcSend('editor:cursor:' + line);
+      }
+      // Front-matter blank-field auto-suggest.
+      const sel = u.state.selection.main;
+      if (sel.empty && (u.docChanged || sel.head !== fmLastAutoPos)) {
+        fmLastAutoPos = sel.head;
+        if (!completionStatus(u.state) && frontMatterBlankFieldAt(u.state, sel.head)) {
+          setTimeout(() => startCompletion(view), 0);
+        }
+      } else if (!sel.empty) {
+        fmLastAutoPos = -1;
       }
       // Force the line-number gutter to refresh in relative mode (CodeMirror
       // doesn't re-call formatNumber for non-active lines on selection change).
@@ -628,7 +645,7 @@ export function create(root, opts = {}) {
       markdown({ base: markdownLanguage }),
       search(),
       autocompletion({
-        override: [fencedDivCompletionSource, spanStyleCompletionSource, texEnvCompletionSource, katexCommandCompletionSource, pathCompletionSource(() => currentPath)],
+        override: [frontMatterCompletionSource, fencedDivCompletionSource, spanStyleCompletionSource, texEnvCompletionSource, katexCommandCompletionSource, pathCompletionSource(() => currentPath)],
         activateOnTyping: true,
         defaultKeymap: false,
       }),

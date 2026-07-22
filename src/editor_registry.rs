@@ -51,6 +51,35 @@ pub fn clamped_window_geometry(
     }
 }
 
+/// Scan `marp_dir` for `*.css` files and extract each theme's declared name
+/// from its mandatory `/* @theme <name> */` header. Mirrors the webview-side
+/// extraction in assets/index.html so the editor's front-matter `theme:`
+/// completion offers the same user-theme names as the preview's picker.
+/// Returns an empty vec if the directory is missing/unreadable.
+fn scan_marp_theme_names(marp_dir: &Path) -> Vec<String> {
+    use regex::Regex;
+    let re = Regex::new(r"/\*\s*@theme\s+([A-Za-z0-9_-]+)\s*\*/").unwrap();
+    let mut names: Vec<String> = Vec::new();
+    if let Ok(rd) = std::fs::read_dir(marp_dir) {
+        for ent in rd.flatten() {
+            let p = ent.path();
+            let is_css = p.extension().and_then(|s| s.to_str())
+                .map(|s| s.eq_ignore_ascii_case("css")).unwrap_or(false);
+            if !p.is_file() || !is_css { continue; }
+            // The @theme header is on the first line; read a small prefix only.
+            if let Ok(content) = std::fs::read_to_string(&p) {
+                let head: String = content.chars().take(512).collect();
+                if let Some(c) = re.captures(&head) {
+                    let name = c[1].to_string();
+                    if !names.contains(&name) { names.push(name); }
+                }
+            }
+        }
+    }
+    names.sort();
+    names
+}
+
 struct State {
     window_id: WindowId,
     webview: WebView,
@@ -198,9 +227,15 @@ pub fn spawn_editor_window(
         "content": initial_content,
         "line": initial_line,
     });
+    // Marp theme names (from assets/marp/*.css @theme headers) for the editor's
+    // front-matter `theme:` value completion. Built-ins (default/gaia/uncover)
+    // are added JS-side; here we only ship the user themes.
+    let marp_user_themes = scan_marp_theme_names(&assets_dir.join("marp"));
+    let marp_user_themes_json = serde_json::to_string(&marp_user_themes).unwrap_or_else(|_| "[]".into());
     let init_script = format!(
-        r#"window.__initialFile = {payload};"#,
-        payload = init_payload
+        r#"window.__initialFile = {payload}; window.__marpUserThemes = {themes};"#,
+        payload = init_payload,
+        themes = marp_user_themes_json,
     );
 
     let assets_dir_owned = assets_dir.to_path_buf();
