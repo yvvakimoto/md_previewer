@@ -1,0 +1,7 @@
+{
+  "_readme": "EXAMPLE ONLY — not read by the app. To enable opt-in auto-update, copy this to `update.json` (next to the exe, or in assets/) and set a real `source`. Absent update.json => feature OFF, app stays fully offline. Windows-only. See CLAUDE.md 'Auto-update'.",
+  "enabled": true,
+  "source": "\\\\FILESERVER\\share\\MdPreviewer",
+  "manifest": "latest.json",
+  "timeoutMs": 4000
+}

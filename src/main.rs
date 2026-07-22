@@ -27,6 +27,7 @@ mod mdx;
 mod pdf_win;
 #[cfg(windows)]
 mod png_win;
+mod updater;
 use editor_registry::EditorRegistry;
 
 // Path to a markdown file currently being viewed. Wrapped in Arc<Mutex>
@@ -125,6 +126,12 @@ enum CustomEvent {
     CaptureStart { marp: bool, slides: usize },
     CaptureReady { index: usize, clip: CaptureClip, layout: Option<SlideLayout> },
     CaptureDone { index: usize, ok: bool },
+    // Opt-in auto-update (see `updater`, Windows-only). The background startup
+    // check found a newer version on the internal share → show the preview's
+    // update banner. QuitForUpdate exits the app after the silent installer has
+    // been launched so the running exe unlocks for in-place replacement.
+    UpdateAvailable { version: String, notes: String },
+    QuitForUpdate,
 }
 
 /// CLI `--export-png` configuration, parsed from argv in `main()`.
@@ -1300,6 +1307,27 @@ fn main() -> wry::Result<()> {
         app_version_json, user_styles_json, marp_themes_json, style_exporters_json, capture_init, init_script
     );
 
+    // Opt-in auto-update (Windows-only, off unless an `update.json` config is
+    // present — see `updater`). Holds the prefetched installer info once the
+    // background check confirms a newer version; the `update:install` IPC reads
+    // it. Absent config ⇒ no thread, no network, offline as before.
+    let update_ready: Arc<Mutex<Option<updater::UpdateReady>>> = Arc::new(Mutex::new(None));
+    if capture_config.is_none() {
+        if let Some(cfg) = updater::load_config(exe_dir, &assets_dir) {
+            let proxy = event_proxy.clone();
+            let ver = env!("CARGO_PKG_VERSION").to_string();
+            let ready_state = update_ready.clone();
+            std::thread::spawn(move || {
+                if let Some(r) = updater::check_and_prepare(&cfg, &ver) {
+                    let version = r.version.clone();
+                    let notes = r.notes.clone();
+                    *ready_state.lock().unwrap() = Some(r);
+                    let _ = proxy.send_event(CustomEvent::UpdateAvailable { version, notes });
+                }
+            });
+        }
+    }
+
     // Clone current_dir for use in the protocol handler closure
     let current_dir_clone = current_dir.clone();
     let assets_dir_for_proto = assets_dir.clone();
@@ -1509,6 +1537,13 @@ fn main() -> wry::Result<()> {
     // Owned copy of the install directory (exe_dir is a borrowed &Path) so the
     // `openinstalldir:` IPC branch can open it in Explorer from the move closure.
     let ipc_install_dir = exe_dir.to_path_buf();
+    // Auto-update: the prefetched-installer handle + this exe's path, so the
+    // `update:install` IPC branch can launch the silent installer + relaunch
+    // (Windows-only; the install branch below is cfg-gated).
+    #[cfg(windows)]
+    let ipc_update_ready = update_ready.clone();
+    #[cfg(windows)]
+    let ipc_exe_path = exe_path.clone();
     webview_builder = webview_builder.with_ipc_handler(move |window, message| {
         if let Some(name) = message.strip_prefix("settitle:") {
             window.set_title(&format_title(Some(name)));
@@ -1638,6 +1673,33 @@ fn main() -> wry::Result<()> {
                     eprintln!("openinstalldir: failed to open {}: {}", dir.display(), e);
                 }
             });
+        } else if message == "update:install" {
+            // User accepted the update banner. Launch the (prefetched) silent
+            // installer + relaunch, then quit so the running exe unlocks for
+            // in-place replacement. Windows-only (updater is cfg(windows)).
+            #[cfg(windows)]
+            {
+                let ready = ipc_update_ready.lock().unwrap().clone();
+                if let Some(r) = ready {
+                    let exe = ipc_exe_path.clone();
+                    let open_file = ipc_current_file.lock().unwrap().clone();
+                    let proxy = ipc_event_proxy.clone();
+                    std::thread::spawn(move || {
+                        match updater::launch_installer_and_relaunch(
+                            &r.setup_temp,
+                            &exe,
+                            open_file.as_deref(),
+                        ) {
+                            Ok(()) => {
+                                let _ = proxy.send_event(CustomEvent::QuitForUpdate);
+                            }
+                            Err(e) => {
+                                eprintln!("update:install: failed to launch installer: {}", e);
+                            }
+                        }
+                    });
+                }
+            }
         } else if message == "newfile:" {
             // New document (Ctrl+N) — pick a save location via a native dialog,
             // create a blank `.md`, then open it through the normal OpenFile flow.
@@ -2142,6 +2204,28 @@ fn main() -> wry::Result<()> {
                 if let Ok(wv) = webview.lock() {
                     let _ = wv.evaluate_script(&script);
                 }
+            }
+            Event::UserEvent(CustomEvent::UpdateAvailable { version, notes }) => {
+                // Background startup check found a newer version → show the
+                // preview's update banner (the JS gates on its own opt-out flag).
+                let info = serde_json::to_string(&serde_json::json!({
+                    "version": version,
+                    "notes": notes,
+                }))
+                .unwrap_or_else(|_| "{}".to_string());
+                let script = format!(
+                    "window.__updateAvailable && window.__updateAvailable({});",
+                    info
+                );
+                if let Ok(wv) = webview.lock() {
+                    let _ = wv.evaluate_script(&script);
+                }
+            }
+            Event::UserEvent(CustomEvent::QuitForUpdate) => {
+                // The silent installer has been launched; exit so the running
+                // exe unlocks for in-place replacement (the installer relaunches
+                // the new exe afterwards).
+                *control_flow = ControlFlow::Exit;
             }
             Event::UserEvent(CustomEvent::CaptureStart { marp, slides }) => {
                 // `--export-png`: the initial render settled. Build the capture
