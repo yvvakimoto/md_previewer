@@ -2596,6 +2596,12 @@
         let currentMarkdownRaw = '';
         let currentFilePath = '';
         let suppressHistoryPush = false;
+        // Back/forward (Alt+←/→) view-position restore: the current slide (Marp) or
+        // scroll position (plain doc / Marp scroll mode) is persisted per history
+        // entry as a source line in history.state.line and restored on popstate.
+        let pendingHistLine = null;   // restore line requested by popstate (consumed by loadFileFromRust)
+        let __loadingFile = false;    // guard: suppress history sync during a (re)load
+        let __histSyncTimer = null;   // debounce timer for scroll-driven history sync
         let tocCollapsed = localStorage.getItem('tocCollapsed') === 'true';
         let scrollSpyObserver = null;
 
@@ -5177,6 +5183,20 @@ ${previewClone.outerHTML}
             document.body.classList.toggle('list-mode', mode === 'list');
             localStorage.setItem('marpView', mode);
         }
+        // Persist the current view position (Marp slide / scroll line) into the
+        // current history entry so Back/Forward can restore it. currentPreviewLine()
+        // already resolves the right line for every mode (deck active slide, list,
+        // scroll, plain doc). Guarded so it never runs while a load is in flight
+        // (history.state is transient then) or during --export-png capture.
+        function __syncHistoryLine() {
+            if (__loadingFile) return;
+            if (document.body.classList.contains('capturing')) return;
+            if (!history.state || !history.state.filepath) return;
+            if (appContainer.style.display !== 'flex') return;
+            const line = window.currentPreviewLine();
+            if (line == null) return;
+            history.replaceState(Object.assign({}, history.state, { line }), '', location.hash);
+        }
         function __marpUpdateDeck() {
             // Slide change / deck entry / re-render all funnel through here, so
             // resetting zoom here guarantees each slide starts at 1:1, centered.
@@ -5191,6 +5211,9 @@ ${previewClone.outerHTML}
             // Fit the now-visible slide (in deck mode the others are display:none
             // and unmeasurable, so they get fitted when navigated to).
             fitMarpSlides();
+            // Keep this history entry's remembered slide up to date (deck moves
+            // don't scroll the container, so the scroll listener won't catch them).
+            __syncHistoryLine();
         }
         // Auto-shrink-to-fit: marp-core renders each slide as a fixed 1280x720
         // logical box (svg viewBox / foreignObject); content taller than the
@@ -7784,13 +7807,23 @@ ${previewClone.outerHTML}
             }
         });
 
+        // Keep the current history entry's remembered scroll position in sync
+        // (plain docs and Marp scroll mode). Deck-mode slide moves are handled in
+        // __marpUpdateDeck() instead (they don't scroll the container). Debounced.
+        previewContainer.addEventListener('scroll', () => {
+            if (__histSyncTimer) clearTimeout(__histSyncTimer);
+            __histSyncTimer = setTimeout(__syncHistoryLine, 200);
+        }, { passive: true });
+
         // Navigate back/forward via WebView2 context menu, Alt+Arrow, or mouse side buttons.
-        // history.state carries the filepath for each entry; popstate routes back to Rust.
+        // history.state carries the filepath + view line for each entry; popstate routes back to Rust.
         window.addEventListener('popstate', (e) => {
             const target = e.state && e.state.filepath;
             if (!target) return;
             if (window.ipc && typeof window.ipc.postMessage === 'function') {
                 suppressHistoryPush = true;
+                // Remember where to restore the view once the file re-renders.
+                pendingHistLine = (e.state && Number.isFinite(e.state.line)) ? e.state.line : null;
                 window.ipc.postMessage('openmd:' + target);
             }
         });
@@ -7973,12 +8006,24 @@ ${previewClone.outerHTML}
             // Store scroll position before reload
             const scrollPos = isReload ? previewContainer.scrollTop : 0;
 
+            // Suppress history sync while the load is in flight (history.state is
+            // transient during render). restoreLine (from a popstate navigation) is
+            // re-applied after the document re-renders.
+            __loadingFile = true;
+            const restoreLine = pendingHistLine;
+            pendingHistLine = null;
+
             currentMarkdown = fileData.content;
             currentMarkdownRaw = (fileData.raw != null) ? fileData.raw : fileData.content;
             currentFilePath = fileData.filepath;
             setWindowTitle(fileData.filename);
             await renderMarkdown(currentMarkdown);
             if (typeof window.__setActiveFile === 'function') window.__setActiveFile(currentFilePath);
+            // Back/forward restore: jump to the remembered slide / scroll position.
+            // popstate never sets pendingHeadingSlug/pendingScrollToTop, so no conflict.
+            if (restoreLine != null) {
+                window.applyEditorScroll(restoreLine);
+            }
             // ToC-triggered scroll: heading takes priority, then "scroll to top".
             if (pendingHeadingSlug) {
                 const target = document.getElementById(pendingHeadingSlug);
@@ -7999,13 +8044,19 @@ ${previewClone.outerHTML}
             // Skip when reloading the same file or when the load was triggered by popstate.
             const hashUrl = '#' + encodeURIComponent(fileData.filename);
             if (suppressHistoryPush) {
-                history.replaceState({ filepath: fileData.filepath }, '', hashUrl);
+                // Keep the restored view line on this entry for future navigations.
+                const st = { filepath: fileData.filepath };
+                if (restoreLine != null) st.line = restoreLine;
+                history.replaceState(st, '', hashUrl);
             } else if (!history.state || !history.state.filepath) {
                 history.replaceState({ filepath: fileData.filepath }, '', hashUrl);
             } else if (!isReload && history.state.filepath !== fileData.filepath) {
                 history.pushState({ filepath: fileData.filepath }, '', hashUrl);
             }
             suppressHistoryPush = false;
+
+            // Load finished: re-enable history sync for subsequent user navigation.
+            __loadingFile = false;
 
             // Restore scroll position after reload
             if (isReload) {
