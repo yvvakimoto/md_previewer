@@ -2152,6 +2152,107 @@
             showToast(ok ? ('PDF出力: ' + (name || '')) : 'PDF出力に失敗しました');
         };
 
+        // ---- PDF video-frame rasterization -----------------------------------
+        // PDF export prints the LIVE DOM (see pdf_win.rs), and a <video> prints as a
+        // blank/black placeholder with controls. So right before printing we swap each
+        // <video> for a still <img> of a chosen frame, and restore afterward. The frame
+        // time comes from the `|t=<time>` alt token (dataset.pdfFrameTime); videos with
+        // no explicit time fall back to their current frame (best-effort). The Rust host
+        // drives the handshake: PrintPdf → __beforePdfPrint() → (posts `pdfprintready:`)
+        // → CDP printToPDF → PdfExportDone → __afterPdfPrint().
+        let __pdfSwaps = [];
+
+        // Resolve on `event` or after `timeoutMs` (whichever first). Never rejects.
+        function __once(el, event, timeoutMs) {
+            return new Promise(resolve => {
+                let done = false;
+                const finish = () => { if (done) return; done = true; el.removeEventListener(event, finish); resolve(); };
+                el.addEventListener(event, finish, { once: true });
+                setTimeout(finish, timeoutMs);
+            });
+        }
+
+        // Capture a frame of <video> `v` at `time` seconds (or the current frame when
+        // `time` is null) as a PNG data URL. Returns null on any failure (metadata not
+        // loaded, undecodable codec → videoWidth 0, or a tainted canvas).
+        async function __captureVideoFrame(v, time) {
+            try {
+                if (v.readyState < 1) { v.load && v.load(); await __once(v, 'loadedmetadata', 4000); }
+                if (!v.videoWidth || !v.videoHeight) return null;
+                // Target frame time: the explicit `t=` value, else the current position.
+                const d = v.duration;
+                let target = (time != null && isFinite(time)) ? time : v.currentTime;
+                if (isFinite(d) && d > 0) target = Math.min(Math.max(0, target), Math.max(0, d - 0.05));
+                // Force a real seek so the frame actually DECODES before we draw it:
+                // a <video> that was never seeked (e.g. never painted, or off-screen)
+                // rasterizes transparent/black via drawImage even at readyState 4. If
+                // we're already at `target`, nudge to a different time first so the
+                // `seeked` event fires, then land back on `target` (a second seek).
+                if (Math.abs(v.currentTime - target) <= 0.02) {
+                    v.currentTime = target > 0.05 ? target - 0.04 : target + 0.04;
+                    await __once(v, 'seeked', 4000);
+                }
+                v.currentTime = target;
+                await __once(v, 'seeked', 4000);
+                const c = document.createElement('canvas');
+                c.width = v.videoWidth;
+                c.height = v.videoHeight;
+                c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
+                return c.toDataURL('image/png');
+            } catch (e) {
+                __dbgLog('pdf-frame capture failed: ' + (e && e.message));
+                return null;
+            }
+        }
+
+        window.__beforePdfPrint = async function () {
+            __pdfSwaps = [];
+            try {
+                const vids = Array.from(document.querySelectorAll('#preview video.video-embed'));
+                const decodes = [];
+                for (const v of vids) {
+                    const tStr = v.dataset.pdfFrameTime;
+                    const time = (tStr != null && tStr !== '') ? parseFloat(tStr) : null;
+                    const url = await __captureVideoFrame(v, time);
+                    if (!url) continue;   // leave the <video> in place (prints as-is)
+                    const img = document.createElement('img');
+                    img.src = url;
+                    img.className = (v.className ? v.className + ' ' : '') + 'pdf-video-frame';
+                    if (v.style.width) img.style.width = v.style.width;
+                    if (v.style.height) img.style.height = v.style.height;
+                    img.style.display = 'block';
+                    v.parentNode.insertBefore(img, v);
+                    v.style.display = 'none';
+                    __pdfSwaps.push({ img, video: v });
+                    // Bound the decode wait: the src is an in-memory data URL (print
+                    // will decode it synchronously anyway), so never let a stalled
+                    // decode() block posting `pdfprintready:`.
+                    if (img.decode) {
+                        decodes.push(Promise.race([
+                            img.decode().catch(() => {}),
+                            new Promise(r => setTimeout(r, 1500)),
+                        ]));
+                    }
+                }
+                await Promise.all(decodes);
+            } catch (e) {
+                __dbgLog('__beforePdfPrint error: ' + (e && e.message));
+            } finally {
+                // Always signal readiness so the print proceeds even with no videos.
+                if (window.ipc && typeof window.ipc.postMessage === 'function') {
+                    window.ipc.postMessage('pdfprintready:');
+                }
+            }
+        };
+
+        window.__afterPdfPrint = function () {
+            for (const { img, video } of __pdfSwaps) {
+                if (img && img.parentNode) img.remove();
+                if (video) video.style.display = '';
+            }
+            __pdfSwaps = [];
+        };
+
         // Opt-in auto-update banner. Called by the Rust host (CustomEvent::
         // UpdateAvailable) when the startup check finds a newer version on the
         // internal share. The feature only runs at all when an `update.json`
@@ -2890,6 +2991,8 @@
             // Strip preview-only artifacts that don't belong in a static artifact.
             previewClone.querySelectorAll('[data-line]').forEach(el => el.removeAttribute('data-line'));
             previewClone.querySelectorAll('.copy-button').forEach(el => el.remove());
+            // PDF-only frame hint — irrelevant to the (playable) HTML artifact.
+            previewClone.querySelectorAll('[data-pdf-frame-time]').forEach(el => el.removeAttribute('data-pdf-frame-time'));
             // Unwrap .code-block-wrapper (it only existed to host the copy button).
             previewClone.querySelectorAll('.code-block-wrapper').forEach(wrapper => {
                 while (wrapper.firstChild) wrapper.parentNode.insertBefore(wrapper.firstChild, wrapper);
@@ -3839,6 +3942,62 @@ ${previewClone.outerHTML}
             return s;
         }
 
+        // Parse a video-frame time spec into seconds (float). Accepts:
+        //   plain seconds "3" / "2.5", "90s", "1m30s", "1h2m3s",
+        //   colon forms "0:03" (m:s) / "1:02:03" (h:m:s). Returns null if unparseable.
+        function parseTimeSpec(v) {
+            if (v == null) return null;
+            const s = String(v).trim();
+            if (!s) return null;
+            if (/^\d+(?:\.\d+)?$/.test(s)) return parseFloat(s);          // bare seconds
+            if (/^[\d:]+(?:\.\d+)?$/.test(s) && s.includes(':')) {         // mm:ss / hh:mm:ss
+                const parts = s.split(':').map(Number);
+                if (parts.some(n => Number.isNaN(n))) return null;
+                let total = 0;
+                for (const p of parts) total = total * 60 + p;
+                return total;
+            }
+            if (/^(?:\d+(?:\.\d+)?[hms])+$/i.test(s)) {                    // 1h2m3s / 90s / 1m30s
+                let total = 0;
+                const h = s.match(/(\d+(?:\.\d+)?)h/i); if (h) total += parseFloat(h[1]) * 3600;
+                const m = s.match(/(\d+(?:\.\d+)?)m/i); if (m) total += parseFloat(m[1]) * 60;
+                const sec = s.match(/(\d+(?:\.\d+)?)s/i); if (sec) total += parseFloat(sec[1]);
+                return total;
+            }
+            return null;
+        }
+
+        // Parse a video/image alt text into its display text plus the pipe-delimited
+        // trailing tokens: an Obsidian-style size (`W` / `WxH` / `xH`, px) and a PDF
+        // frame-time token (`t=<spec>`). Tokens are order-independent among the
+        // `|`-separated trailing segments. Returns { text, widthCss, heightCss, frameTime }.
+        function parseVideoAlt(alt) {
+            const out = { text: alt || '', widthCss: null, heightCss: null, frameTime: null };
+            if (!alt || alt.indexOf('|') < 0) return out;
+            const parts = alt.split('|');
+            const text = parts.shift();
+            const leftover = [];
+            for (const seg of parts) {
+                const t = seg.trim();
+                const tm = t.match(/^t=(.+)$/i);
+                if (tm) {
+                    const secs = parseTimeSpec(tm[1]);
+                    if (secs != null) { out.frameTime = secs; continue; }
+                }
+                const sz = t.match(/^(\d+)?(?:x(\d+))?$/);
+                if (sz && (sz[1] || sz[2]) && out.widthCss == null && out.heightCss == null) {
+                    if (sz[1]) out.widthCss = sz[1] + 'px';
+                    if (sz[2]) out.heightCss = sz[2] + 'px';
+                    continue;
+                }
+                leftover.push(seg);
+            }
+            // Keep the display text as the first segment; unrecognized trailing tokens
+            // (rare) are re-appended so nothing silently disappears.
+            out.text = leftover.length ? [text, ...leftover].join('|') : text;
+            return out;
+        }
+
         // Returns { id, start } for a YouTube URL, else null.
         function youtubeEmbedInfo(src) {
             const patterns = [
@@ -3860,7 +4019,6 @@ ${previewClone.outerHTML}
         // Marp pipelines.
         function applyVideoEmbeds(root) {
             if (!root) return;
-            const pxRe = /^(.*)\|(\d+)?(?:x(\d+))?$/;
             root.querySelectorAll('img').forEach(img => {
                 const rawSrc = img.getAttribute('src') || '';
                 if (!rawSrc) return;
@@ -3879,14 +4037,12 @@ ${previewClone.outerHTML}
                 // When only a width is set we leave height unset so the stylesheet's
                 // height:auto (video) / aspect-ratio:16/9 (youtube iframe :not([width]))
                 // preserves the aspect ratio. @scale is image-only (not for video).
-                let alt = img.getAttribute('alt') || '';
-                let widthCss = null, heightCss = null;
-                const m = alt.match(pxRe);
-                if (m && (m[2] || m[3])) {
-                    if (m[2]) widthCss = m[2] + 'px';
-                    if (m[3]) heightCss = m[3] + 'px';
-                    alt = m[1];
-                }
+                // The alt may also carry a `|t=<time>` token — the frame time used when
+                // this video is rasterized for PDF export (see __beforePdfPrint).
+                const parsed = parseVideoAlt(img.getAttribute('alt') || '');
+                let alt = parsed.text;
+                let widthCss = parsed.widthCss, heightCss = parsed.heightCss;
+                const frameTime = parsed.frameTime;
                 if (!widthCss && img.style && img.style.width) widthCss = img.style.width;
                 if (!heightCss && img.style && img.style.height) heightCss = img.style.height;
 
@@ -3914,6 +4070,18 @@ ${previewClone.outerHTML}
                     const mime = videoMimeFor(rawSrc);
                     if (mime) source.setAttribute('type', mime);
                     el.appendChild(source);
+                    // PDF frame time (`|t=<time>` in the alt): remembered here and used
+                    // by __beforePdfPrint to rasterize this frame into the PDF. Also seek
+                    // the (non-playing) video to it once metadata loads, so the preview
+                    // shows that frame — visual confirmation for the author.
+                    if (frameTime != null) {
+                        el.dataset.pdfFrameTime = String(frameTime);
+                        el.addEventListener('loadedmetadata', () => {
+                            const d = el.duration;
+                            const t = (isFinite(d) && d > 0) ? Math.min(frameTime, d) : frameTime;
+                            try { el.currentTime = t; } catch (_) {}
+                        }, { once: true });
+                    }
                 }
                 if (widthCss) el.style.width = widthCss;
                 if (heightCss) el.style.height = heightCss;

@@ -114,7 +114,11 @@ enum CustomEvent {
     // PDF export: print the document currently in the webview to `PathBuf`
     // via WebView2's CDP `Page.printToPDF` (see `pdf_win`). PdfExportDone is
     // posted from the async completion handler so the preview can toast.
+    // PrintPdf stashes the target path and asks the preview to rasterize any
+    // <video> to its chosen frame (`__beforePdfPrint`); the JS posts
+    // `pdfprintready:` when the DOM is ready → PrintPdfNow runs the actual print.
     PrintPdf(PathBuf),
+    PrintPdfNow,
     PdfExportDone { ok: bool, path: PathBuf },
     // PNG capture (headless `--export-png` mode). The preview JS posts
     // `renderdone:` once the initial render (incl. async Marp/mermaid/KaTeX)
@@ -1530,6 +1534,11 @@ fn main() -> wry::Result<()> {
     // Capture-loop progress for `--export-png` mode; owned by the event loop.
     let capture_state: Arc<Mutex<Option<CaptureState>>> = Arc::new(Mutex::new(None));
 
+    // Target path for an in-flight PDF export, stashed by PrintPdf while the
+    // preview rasterizes its videos (__beforePdfPrint) and consumed by
+    // PrintPdfNow once the JS posts `pdfprintready:`.
+    let pending_pdf: Arc<Mutex<Option<PathBuf>>> = Arc::new(Mutex::new(None));
+
     let ipc_event_proxy = event_proxy.clone();
     let ipc_current_file = current_file.clone();
     let ipc_editor_registry = editor_registry.clone();
@@ -1662,6 +1671,11 @@ fn main() -> wry::Result<()> {
         } else if message == "fullscreen:toggle" {
             if let Err(e) = ipc_event_proxy.send_event(CustomEvent::ToggleFullscreen) {
                 eprintln!("Failed to dispatch ToggleFullscreen: {}", e);
+            }
+        } else if message == "pdfprintready:" {
+            // Preview finished swapping <video> → still frames; run the print now.
+            if let Err(e) = ipc_event_proxy.send_event(CustomEvent::PrintPdfNow) {
+                eprintln!("Failed to dispatch PrintPdfNow: {}", e);
             }
         } else if message == "openinstalldir:" {
             // Open the install directory (exe + assets) in Explorer (Ctrl+D).
@@ -2179,26 +2193,40 @@ fn main() -> wry::Result<()> {
                 }
             }
             Event::UserEvent(CustomEvent::PrintPdf(path)) => {
-                // Print the live webview to PDF on the UI thread (COM STA).
-                #[cfg(windows)]
-                {
-                    if let Ok(wv) = webview.lock() {
-                        pdf_win::print_current_to_pdf(&wv, path, event_proxy.clone());
-                    }
+                // Stash the target and ask the preview to rasterize its <video>
+                // elements to still frames; the JS posts `pdfprintready:` when the
+                // DOM is ready → PrintPdfNow performs the actual print. The handshake
+                // is a no-op (immediate ready) for documents without videos.
+                *pending_pdf.lock().unwrap() = Some(path);
+                if let Ok(wv) = webview.lock() {
+                    let _ = wv.evaluate_script("window.__beforePdfPrint && window.__beforePdfPrint()");
                 }
-                #[cfg(not(windows))]
-                {
-                    let _ = path;
+            }
+            Event::UserEvent(CustomEvent::PrintPdfNow) => {
+                let path = pending_pdf.lock().unwrap().take();
+                if let Some(path) = path {
+                    // Print the live webview to PDF on the UI thread (COM STA).
+                    #[cfg(windows)]
+                    {
+                        if let Ok(wv) = webview.lock() {
+                            pdf_win::print_current_to_pdf(&wv, path, event_proxy.clone());
+                        }
+                    }
+                    #[cfg(not(windows))]
+                    {
+                        let _ = path;
+                    }
                 }
             }
             Event::UserEvent(CustomEvent::PdfExportDone { ok, path }) => {
+                // Restore the swapped-out <video> elements (undo __beforePdfPrint).
                 let name = path
                     .file_name()
                     .map(|n| n.to_string_lossy().to_string())
                     .unwrap_or_default();
                 let name_js = serde_json::to_string(&name).unwrap_or_else(|_| "\"\"".to_string());
                 let script = format!(
-                    "window.__pdfExportDone && window.__pdfExportDone({}, {});",
+                    "window.__afterPdfPrint && window.__afterPdfPrint(); window.__pdfExportDone && window.__pdfExportDone({}, {});",
                     ok, name_js
                 );
                 if let Ok(wv) = webview.lock() {
