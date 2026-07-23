@@ -2160,7 +2160,18 @@
         // no explicit time fall back to their current frame (best-effort). The Rust host
         // drives the handshake: PrintPdf → __beforePdfPrint() → (posts `pdfprintready:`)
         // → CDP printToPDF → PdfExportDone → __afterPdfPrint().
+        //
+        // __beforePdfPrint ALSO downscales unnecessarily high-resolution <img>s so a
+        // PDF doesn't embed a 4000px photo shown at a few-hundred-px width at full
+        // resolution (Chromium's print engine embeds the live DOM bitmaps verbatim).
+        // Same swap/restore mechanism as the video-frame swap: the original src is
+        // stashed in `__pdfImgSwaps` and restored in __afterPdfPrint.
         let __pdfSwaps = [];
+        let __pdfImgSwaps = [];   // {img, origSrc, origSrcset}
+        const __PDF_IMG_MAX_EDGE = 1600;      // absolute cap on the long edge (~A4 width at high DPI)
+        const __PDF_IMG_TARGET_SCALE = 2;     // keep up to 2× the displayed CSS size (retina-crisp)
+        const __PDF_IMG_SLACK = 1.25;         // only re-encode when meaningfully oversized
+        const __PDF_IMG_JPEG_QUALITY = 0.82;  // JPEG quality for non-transparent sources
 
         // Resolve on `event` or after `timeoutMs` (whichever first). Never rejects.
         function __once(el, event, timeoutMs) {
@@ -2205,11 +2216,67 @@
             }
         }
 
+        // Return a downscaled data URL for `img` when it is unnecessarily high-resolution
+        // for its displayed size, else null (leave it untouched). Mirrors the canvas→
+        // toDataURL pattern in __captureVideoFrame, plus a resize + codec choice.
+        function __downscaleImageForPdf(img) {
+            try {
+                if (!img || !img.complete || !img.naturalWidth || !img.naturalHeight) return null;
+                const src = img.getAttribute('src') || '';
+                // Skip vector: an <svg> has no meaningful raster resolution to shrink.
+                if (/\.svg(\?|#|$)/i.test(src) || /^data:image\/svg/i.test(src)) return null;
+                const nw = img.naturalWidth, nh = img.naturalHeight;
+                const naturalLong = Math.max(nw, nh);
+                // Target long edge: absolute cap, tightened by the displayed size when measurable.
+                let target = __PDF_IMG_MAX_EDGE;
+                const rect = img.getBoundingClientRect();
+                const dispLong = Math.max(rect.width, rect.height);
+                if (dispLong > 0) target = Math.min(target, Math.round(dispLong * __PDF_IMG_TARGET_SCALE));
+                if (target < 1) return null;
+                // Already appropriately sized (or only mildly oversized) → don't re-encode.
+                if (naturalLong <= target * __PDF_IMG_SLACK) return null;
+                const f = target / naturalLong;
+                const dw = Math.max(1, Math.round(nw * f));
+                const dh = Math.max(1, Math.round(nh * f));
+                const c = document.createElement('canvas');
+                c.width = dw;
+                c.height = dh;
+                const ctx = c.getContext('2d');
+                // Preserve transparency only for PNG/GIF sources; everything else → JPEG
+                // (a white matte avoids black where an unexpected alpha channel exists).
+                const keepAlpha = /\.(png|gif)(\?|#|$)/i.test(src) || /^data:image\/(png|gif)/i.test(src);
+                if (!keepAlpha) { ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, dw, dh); }
+                ctx.drawImage(img, 0, 0, dw, dh);
+                return keepAlpha ? c.toDataURL('image/png') : c.toDataURL('image/jpeg', __PDF_IMG_JPEG_QUALITY);
+            } catch (e) {
+                // Tainted canvas (external cross-origin image) or any failure → leave as-is.
+                __dbgLog('pdf-img downscale failed: ' + (e && e.message));
+                return null;
+            }
+        }
+
         window.__beforePdfPrint = async function () {
             __pdfSwaps = [];
+            __pdfImgSwaps = [];
             try {
-                const vids = Array.from(document.querySelectorAll('#preview video.video-embed'));
                 const decodes = [];
+                // Downscale unnecessarily high-res images first (skip freshly-inserted
+                // video-frame stills, handled by the loop below).
+                const imgs = Array.from(document.querySelectorAll('#preview img:not(.pdf-video-frame)'));
+                for (const img of imgs) {
+                    const dataUrl = __downscaleImageForPdf(img);
+                    if (!dataUrl) continue;
+                    __pdfImgSwaps.push({ img, origSrc: img.getAttribute('src'), origSrcset: img.getAttribute('srcset') });
+                    if (img.hasAttribute('srcset')) img.removeAttribute('srcset');
+                    img.src = dataUrl;
+                    if (img.decode) {
+                        decodes.push(Promise.race([
+                            img.decode().catch(() => {}),
+                            new Promise(r => setTimeout(r, 1500)),
+                        ]));
+                    }
+                }
+                const vids = Array.from(document.querySelectorAll('#preview video.video-embed'));
                 for (const v of vids) {
                     const tStr = v.dataset.pdfFrameTime;
                     const time = (tStr != null && tStr !== '') ? parseFloat(tStr) : null;
@@ -2251,6 +2318,13 @@
                 if (video) video.style.display = '';
             }
             __pdfSwaps = [];
+            // Restore images whose src was swapped for a downscaled data URL.
+            for (const { img, origSrc, origSrcset } of __pdfImgSwaps) {
+                if (!img) continue;
+                if (origSrc != null) img.setAttribute('src', origSrc); else img.removeAttribute('src');
+                if (origSrcset != null) img.setAttribute('srcset', origSrcset);
+            }
+            __pdfImgSwaps = [];
         };
 
         // Opt-in auto-update banner. Called by the Rust host (CustomEvent::
