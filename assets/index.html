@@ -7797,6 +7797,13 @@ ${previewClone.outerHTML}
                 localPath = decodeURIComponent(localPath.slice('file:///'.length));
             } else if (localPath.startsWith('file://')) {
                 localPath = decodeURIComponent(localPath.slice('file://'.length));
+            } else if (!/^[A-Za-z]:[\\/]/.test(localPath) && !localPath.startsWith('/')) {
+                // Relative link. The normal pipeline rewrites <a href> to absolute
+                // file:/// at render time, but the Marp pipeline leaves hrefs
+                // relative (marp-core renders them as-is), so resolve here against
+                // the current document's directory. Rust's to_abs() resolves a
+                // relative path against the process CWD, which is the wrong dir.
+                localPath = decodeURIComponent(resolveRelativePath(localPath).replace(/^file:\/\/\//, ''));
             }
             // Normalize to backslashes for Windows
             localPath = localPath.replace(/\//g, '\\');
