@@ -389,6 +389,14 @@ fn copy_export_media(base_dir: &Path, media: &[MediaItem]) {
     }
 }
 
+/// Open a just-exported file with its OS default program (既定のプログラムで開く).
+/// Mirrors the `openinstalldir:` pattern; `explorer <file>` uses the default handler.
+fn open_with_default(path: &Path) {
+    if let Err(e) = std::process::Command::new("explorer").arg(path).spawn() {
+        eprintln!("open exported: failed to open {}: {}", path.display(), e);
+    }
+}
+
 /// Embed local images as base64 data URIs in markdown content.
 /// This bypasses WebView2's limitation where dynamically-loaded images
 /// don't go through the custom protocol handler.
@@ -1605,8 +1613,9 @@ fn main() -> wry::Result<()> {
                             copy_export_media(&out_dir, &p.media);
                             if !p.index_html.is_empty() {
                                 let idx = out_dir.join("index.html");
-                                if let Err(e) = std::fs::write(&idx, p.index_html.as_bytes()) {
-                                    eprintln!("exportdir: failed to write index: {}", e);
+                                match std::fs::write(&idx, p.index_html.as_bytes()) {
+                                    Ok(()) => open_with_default(&idx),
+                                    Err(e) => eprintln!("exportdir: failed to write index: {}", e),
                                 }
                             }
                         }
@@ -1656,11 +1665,14 @@ fn main() -> wry::Result<()> {
                                 // hand off to the main loop.
                                 let _ = export_proxy.send_event(CustomEvent::PrintPdf(path));
                             } else {
-                                if let Err(e) = std::fs::write(&path, p.html.as_bytes()) {
-                                    eprintln!("export: failed to write {}: {}", path.display(), e);
-                                }
-                                if let Some(base) = path.parent() {
-                                    copy_export_media(base, &p.media);
+                                match std::fs::write(&path, p.html.as_bytes()) {
+                                    Ok(()) => {
+                                        if let Some(base) = path.parent() {
+                                            copy_export_media(base, &p.media);
+                                        }
+                                        open_with_default(&path);
+                                    }
+                                    Err(e) => eprintln!("export: failed to write {}: {}", path.display(), e),
                                 }
                             }
                         }
@@ -2231,6 +2243,9 @@ fn main() -> wry::Result<()> {
                 );
                 if let Ok(wv) = webview.lock() {
                     let _ = wv.evaluate_script(&script);
+                }
+                if ok {
+                    open_with_default(&path);
                 }
             }
             Event::UserEvent(CustomEvent::UpdateAvailable { version, notes }) => {
