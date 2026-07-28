@@ -384,8 +384,14 @@ md-previewer.exe <file.md|.mdx> --export-png <出力ディレクトリ> [--slide
 | `markwhen.md` | Markwhen タイムライン／カレンダー（セクション・期間/単発イベント・タグ色・`display: calendar`・オンライン祝日） |
 | `links.md` + `links-other.md` | クロスファイル `.md` リンクと履歴ナビ |
 | `marp.md` | Marp スライドモード |
+| `confidential.md` | 機密マーク（フロントマターの `confidential: true`） |
+| `bundle.mdx` | `.mdx` バンドル形式（Markdown + 画像 + CSV を 1 ファイルに同梱） |
 | `長文技術ドキュメント.md` | 長文 + TOC + セクション番号 |
+| `縦書き長文.md` | 縦書きテーマ `tategaki.css` 向けの長文 |
 | `日本語ファイル.md` | 日本語ファイル名・日本語コンテンツ |
+| `japanese-path/文書.md` | 日本語フォルダ・ファイル名への画像 / リンク参照 |
+| `parent-paths/demo.md` | `../` で親フォルダを辿る相対パス参照 |
+| `workspace/` | ワークスペース（ディレクトリ）モードと `_toc.md` |
 
 ---
 
