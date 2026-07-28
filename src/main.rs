@@ -18,6 +18,8 @@ use notify::{Watcher, RecursiveMode, RecommendedWatcher, recommended_watcher};
 use regex::Regex;
 use std::collections::{HashMap, HashSet};
 
+#[cfg(windows)]
+mod cdp_win;
 mod clipboard_win;
 mod editor_registry;
 mod ime_win;
