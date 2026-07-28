@@ -15,7 +15,6 @@ use wry::webview::WebViewBuilder;
 use wry::http::Response;
 use serde::{Deserialize, Serialize};
 use notify::{Watcher, RecursiveMode, RecommendedWatcher, recommended_watcher};
-use base64::{Engine as _, engine::general_purpose};
 use regex::Regex;
 use std::collections::{HashMap, HashSet};
 
@@ -38,12 +37,14 @@ pub(crate) type CurrentFile = Arc<Mutex<Option<PathBuf>>>;
 struct FileData {
     filename: String,
     filepath: String,
-    /// Display content with local images embedded as base64 data URIs
-    /// (WebView2 can't load dynamic relative-path local images).
+    /// The markdown the webview renders. Local images used to be inlined here as
+    /// base64; they are now served lazily through the `/userfile/` protocol route
+    /// instead (see *Preview Pipeline* in CLAUDE.md), so this equals `raw`.
     content: String,
-    /// The un-embedded source markdown (relative image paths intact). The
-    /// webview keeps this for any host-bound save (e.g. the Marp theme picker)
-    /// so base64 data URIs never leak back into the on-disk `.md`.
+    /// The canonical source markdown. Kept as a separate channel — the webview
+    /// holds it as `currentMarkdownRaw` and it is what any host-bound save
+    /// (e.g. the Marp theme picker's `savefile:`) writes back to disk, so a
+    /// future display-only rewrite of `content` can never leak into the `.md`.
     raw: String,
 }
 
@@ -395,104 +396,6 @@ fn open_with_default(path: &Path) {
     if let Err(e) = std::process::Command::new("explorer").arg(path).spawn() {
         eprintln!("open exported: failed to open {}: {}", path.display(), e);
     }
-}
-
-/// Embed local images as base64 data URIs in markdown content.
-/// This bypasses WebView2's limitation where dynamically-loaded images
-/// don't go through the custom protocol handler.
-// Compiled once. Recompiling this on every live-edit keystroke (this function
-// runs on every EditorLiveContent / EditorSavedContent) is pure waste.
-static IMG_RE: OnceLock<Regex> = OnceLock::new();
-fn img_re() -> &'static Regex {
-    IMG_RE.get_or_init(|| Regex::new(r"!\[([^\]]*)\]\(([^)]+)\)").unwrap())
-}
-
-// Cache of resolved-absolute-path -> (mtime, data-URI). Embedding images means
-// reading each file from disk and base64-encoding it; this re-ran in full on
-// every live-edit keystroke even when the images were unchanged. Keyed by mtime
-// so an externally edited image is correctly re-encoded on its next render.
-// Global static (one logical cache per process) mirrors the DBG_LOG pattern and
-// avoids threading an Arc<Mutex<…>> through both event-loop arms.
-static IMG_CACHE: OnceLock<Mutex<HashMap<String, (std::time::SystemTime, String)>>> = OnceLock::new();
-fn img_cache() -> &'static Mutex<HashMap<String, (std::time::SystemTime, String)>> {
-    IMG_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
-}
-
-fn embed_images_as_base64(markdown: &str, base_dir: &Path) -> String {
-    let re = img_re();
-
-    re.replace_all(markdown, |caps: &regex::Captures| {
-        let alt = &caps[1];
-        let path_str = &caps[2];
-
-        // Skip URLs and data URIs - don't embed external resources
-        if path_str.starts_with("http://") || path_str.starts_with("https://")
-           || path_str.starts_with("data:") || path_str.starts_with("//") {
-            return caps[0].to_string();
-        }
-
-        // Skip local media — both videos AND images are served lazily via the
-        // `/userfile/` protocol route instead of being inlined as huge data URIs.
-        // Inlining images base64 made image-heavy decks (esp. Marp slides) slow to
-        // open: a ~40MB image set became a ~53MB string that had to be marshalled
-        // through `evaluate_script`, parsed as a JS source literal, and decoded
-        // synchronously on `innerHTML`. The webview now rewrites local image `src`s
-        // to `/userfile/...` URLs (see `transformImagePath` in assets/index.html),
-        // letting the browser fetch/decode them in parallel off the UI thread, and
-        // HTML export re-inlines them as base64 at export time to stay self-contained.
-        let lower = path_str.to_ascii_lowercase();
-        let lower = lower.split(['?', '#']).next().unwrap_or(&lower);
-        if lower.ends_with(".mov") || lower.ends_with(".mp4") || lower.ends_with(".m4v")
-            || lower.ends_with(".webm") || lower.ends_with(".ogv") || lower.ends_with(".ogg")
-            || lower.ends_with(".png") || lower.ends_with(".jpg") || lower.ends_with(".jpeg")
-            || lower.ends_with(".gif") || lower.ends_with(".webp") || lower.ends_with(".svg")
-            || lower.ends_with(".bmp") || lower.ends_with(".ico") || lower.ends_with(".avif")
-            || lower.ends_with(".tif") || lower.ends_with(".tiff") {
-            return caps[0].to_string();
-        }
-
-        // Resolve the image path
-        let img_path = if PathBuf::from(path_str).is_absolute() {
-            PathBuf::from(path_str)
-        } else {
-            base_dir.join(path_str)
-        };
-
-        // Cache key: resolved absolute path. We validate freshness with the
-        // file's mtime, so an externally edited image is re-encoded on the next
-        // render rather than served stale. If mtime can't be read we fall back
-        // to read-every-time (the previous behavior).
-        let cache_key = img_path.to_string_lossy().to_string();
-        let mtime = fs::metadata(&img_path).and_then(|m| m.modified()).ok();
-        if let Some(mt) = mtime {
-            if let Ok(cache) = img_cache().lock() {
-                if let Some((cached_mt, data_uri)) = cache.get(&cache_key) {
-                    if *cached_mt == mt {
-                        return format!("![{}]({})", alt, data_uri);
-                    }
-                }
-            }
-        }
-
-        // Read the image file and convert to base64
-        match fs::read(&img_path) {
-            Ok(data) => {
-                let mime = get_mime_type(&img_path);
-                let b64 = general_purpose::STANDARD.encode(&data);
-                let data_uri = format!("data:{};base64,{}", mime, b64);
-                if let Some(mt) = mtime {
-                    if let Ok(mut cache) = img_cache().lock() {
-                        cache.insert(cache_key, (mt, data_uri.clone()));
-                    }
-                }
-                format!("![{}]({})", alt, data_uri)
-            }
-            Err(_) => {
-                // Keep original if file can't be read (might be broken link)
-                caps[0].to_string()
-            }
-        }
-    }).to_string()
 }
 
 // Normalize a path to absolute without the `\\?\` Windows prefix.
@@ -917,9 +820,9 @@ fn build_workspace(root: &Path) -> Workspace {
     }
 }
 
-/// Read the markdown file at `path`, embed its local images as base64, and push
-/// the resulting `FileData` into the webview via `loadFileFromRust`. Also updates
-/// `current_dir` so subsequent relative-path lookups resolve correctly.
+/// Read the markdown file at `path` and push the resulting `FileData` into the
+/// webview via `loadFileFromRust`. Also updates `current_dir` so subsequent
+/// relative-path lookups (images / CSV / video via `/userfile/`) resolve.
 fn load_and_render(
     path: &Path,
     webview: &Arc<Mutex<wry::webview::WebView>>,
@@ -955,13 +858,7 @@ fn load_and_render_named(
                 .or_else(|| path.file_name().map(|n| n.to_string_lossy().to_string()))
                 .unwrap_or_else(|| "Unknown".to_string());
             let filepath = path.to_string_lossy().to_string();
-            let content_embedded = if let Some(ref dir) = base_dir {
-                embed_images_as_base64(&content, dir)
-            } else {
-                content.clone()
-            };
-
-            let file_data = FileData { filename, filepath: filepath.clone(), content: content_embedded, raw: content.clone() };
+            let file_data = FileData { filename, filepath: filepath.clone(), content: content.clone(), raw: content.clone() };
             let json_data = serde_json::to_string(&file_data).unwrap();
             let script = format!(
                 "if (typeof window.loadFileFromRust === 'function') {{ window.loadFileFromRust({}); }}",
@@ -1119,14 +1016,12 @@ fn main() -> wry::Result<()> {
                 std::env::current_dir().unwrap_or_default().join(path)
             };
             let filepath = abs_path.to_string_lossy().to_string();
-            let base_dir = abs_path.parent()?;
+            // A file with no parent directory is not something we can serve
+            // `/userfile/` assets for, so bail out exactly as before.
+            abs_path.parent()?;
 
             match fs::read_to_string(&path) {
-                Ok(raw) => {
-                    // Embed local images as base64 data URIs
-                    let content = embed_images_as_base64(&raw, base_dir);
-                    Some(FileData { filename, filepath, content, raw })
-                }
+                Ok(raw) => Some(FileData { filename, filepath, content: raw.clone(), raw }),
                 Err(e) => {
                     eprintln!("Error reading file: {}", e);
                     None
@@ -1359,7 +1254,6 @@ fn main() -> wry::Result<()> {
     // Clone current_dir for use in the protocol handler closure
     let current_dir_clone = current_dir.clone();
     let assets_dir_for_proto = assets_dir.clone();
-    let assets_dir = assets_dir; // keep original around for the editor spawner
 
     // Create webview with custom protocol handler
     let mut webview_builder = WebViewBuilder::new(window)?
@@ -2107,13 +2001,13 @@ fn main() -> wry::Result<()> {
     }
 
     // Editor-window builder context. The editor is spawned lazily on the first
-    // 'E' keypress and lives in `editor_registry` thereafter.
-    let editor_assets_dir = assets_dir.clone();
-    let editor_event_proxy = event_proxy.clone();
-    let editor_current_file_for_spawn = current_file.clone();
-    let editor_current_dir_for_spawn = current_dir.clone();
-    let editor_suppressed_for_spawn = suppressed_saves.clone();
-    // Used by the event loop to repack saves back into an open `.mdx` bundle.
+    // 'E' keypress and lives in `editor_registry` thereafter. Only these two need
+    // their own binding: `assets_dir` is not otherwise used inside the event loop
+    // (so it moves), and `suppressed_saves` is reached only through this alias.
+    // `event_proxy` / `current_file` / `current_dir` are captured by the closure
+    // directly, so aliasing them here would just be an extra clone.
+    let editor_assets_dir = assets_dir;
+    // Also used by the event loop to repack saves back into an open `.mdx` bundle.
     let evloop_suppressed = suppressed_saves.clone();
     // Capture config consumed by the CaptureStart arm (moved in — unused after).
     let evloop_capture_config = capture_config;
@@ -2417,11 +2311,10 @@ fn main() -> wry::Result<()> {
                     if let Err(e) = editor_registry::spawn_editor_window(
                         target,
                         &editor_assets_dir,
-                        editor_event_proxy.clone(),
+                        event_proxy.clone(),
                         editor_registry.clone(),
-                        editor_current_file_for_spawn.clone(),
-                        editor_current_dir_for_spawn.clone(),
-                        editor_suppressed_for_spawn.clone(),
+                        current_file.clone(),
+                        evloop_suppressed.clone(),
                         &path,
                         line,
                     ) {
@@ -2456,12 +2349,6 @@ fn main() -> wry::Result<()> {
                 if let Some(parent) = path.parent() {
                     *current_dir.lock().unwrap() = Some(parent.to_path_buf());
                 }
-                let base_dir = path.parent().map(|p| p.to_path_buf());
-                let content_embedded = if let Some(ref dir) = base_dir {
-                    embed_images_as_base64(&content, dir)
-                } else {
-                    content.clone()
-                };
                 // If this save belongs to an open `.mdx`, keep the `.mdx` name in
                 // the title instead of the extracted entry's name.
                 let mdx_name: Option<String> = {
@@ -2480,7 +2367,7 @@ fn main() -> wry::Result<()> {
                 let file_data = FileData {
                     filename: filename.clone(),
                     filepath: path.to_string_lossy().to_string(),
-                    content: content_embedded,
+                    content: content.clone(),
                     raw: content.clone(),
                 };
                 let json = serde_json::to_string(&file_data).unwrap();
@@ -2500,19 +2387,13 @@ fn main() -> wry::Result<()> {
                 // Live (unsaved) editor content — re-render preview from memory
                 // and re-anchor scroll to the cursor line. Skip disk, title,
                 // and current_file updates (path is already the paired file).
-                let base_dir = path.parent().map(|p| p.to_path_buf());
-                let content_embedded = if let Some(ref dir) = base_dir {
-                    embed_images_as_base64(&content, dir)
-                } else {
-                    content.clone()
-                };
                 let filename = path.file_name()
                     .map(|n| n.to_string_lossy().to_string())
                     .unwrap_or_else(|| "Unknown".to_string());
                 let file_data = FileData {
                     filename,
                     filepath: path.to_string_lossy().to_string(),
-                    content: content_embedded,
+                    content: content.clone(),
                     raw: content.clone(),
                 };
                 let json = serde_json::to_string(&file_data).unwrap();

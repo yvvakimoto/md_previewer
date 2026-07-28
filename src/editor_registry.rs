@@ -18,7 +18,7 @@ use wry::webview::{WebView, WebViewBuilder};
 use wry::http::Response;
 use serde::Deserialize;
 
-use crate::{CurrentDir, CurrentFile, CustomEvent, get_mime_type};
+use crate::{CurrentFile, CustomEvent, get_mime_type};
 
 /// Clamp a desired logical window size to the primary monitor's visible area
 /// (minus a margin for the taskbar / window chrome) and center it. Returns the
@@ -202,7 +202,6 @@ pub fn spawn_editor_window(
     event_proxy: EventLoopProxy<CustomEvent>,
     registry: EditorRegistry,
     current_file: CurrentFile,
-    _current_dir: CurrentDir,
     suppressed_saves: Arc<Mutex<HashSet<PathBuf>>>,
     initial_file: &Path,
     initial_line: u32,
