@@ -5009,7 +5009,9 @@ ${previewClone.outerHTML}
                         const sup = occ > 1 ? '<sup>' + n + '</sup>' : '';
                         backlinks += '<a href="#fnref-' + sid + '-' + n + '" class="footnote-backref" aria-label="Back to reference">↩' + sup + '</a> ';
                     }
-                    html += '<li id="fn-' + sid + '" class="footnote-item">'
+                    // `data-fn-id` is the stable lookup hook for the hover tooltip.
+                    // The `id` stays the anchor target for `href="#fn-…"`.
+                    html += '<li id="fn-' + sid + '" data-fn-id="' + sid + '" class="footnote-item">'
                         + '<div class="footnote-content">' + rendered + '</div>'
                         + '<span class="footnote-backrefs">' + backlinks.trim() + '</span>'
                         + '</li>';
@@ -5024,8 +5026,16 @@ ${previewClone.outerHTML}
         // Compact per-slide footnote block for Marp mode: renders only the given
         // footnote ids (those referenced on one slide) at the bottom of that slide.
         // Numbering is global (matches the in-text <sup>), no heading / back-links.
-        function renderMarpSlideFootnotes(ids) {
+        //
+        // A footnote cited on N slides is rendered N times, so the canonical
+        // `id="fn-…"` anchor target is stamped only the FIRST time each footnote is
+        // emitted (tracked in the caller-owned `emitted` set) — otherwise the
+        // document would carry N duplicate ids. Every copy always carries
+        // `data-fn-id`, which is what the hover tooltip resolves against, so the
+        // tooltip can prefer the copy on the reader's own slide.
+        function renderMarpSlideFootnotes(ids, emitted) {
             if (!ids || ids.length === 0) return '';
+            const seen = emitted || new Set();
             let html = '<div class="marp-footnotes">';
             footnoteState.suspend = true;
             try {
@@ -5036,7 +5046,10 @@ ${previewClone.outerHTML}
                     const rendered = /\n/.test(body)
                         ? marked.parse(body)
                         : marked.parseInline(body);
-                    html += '<div class="marp-footnote-item" id="fn-' + sid + '">'
+                    const anchorId = seen.has(sid) ? '' : ' id="fn-' + sid + '"';
+                    seen.add(sid);
+                    html += '<div class="marp-footnote-item"' + anchorId
+                        + ' data-fn-id="' + sid + '">'
                         + '<sup class="marp-fn-num">' + num + '</sup> '
                         + '<span class="marp-fn-body">' + rendered + '</span>'
                         + '</div>';
@@ -7121,6 +7134,10 @@ ${previewClone.outerHTML}
             // section's last child (its true bottom) without being swept into a
             // split column bucket.
             if (footnoteState.order.length > 0) {
+                // Shared across every slide so a footnote cited on several slides
+                // stamps its `id="fn-…"` anchor target exactly once (see
+                // renderMarpSlideFootnotes).
+                const __fnEmitted = new Set();
                 preview.querySelectorAll('svg[data-marpit-svg] section').forEach(section => {
                     const refs = section.querySelectorAll('sup.footnote-ref a[data-footnote-id]');
                     if (refs.length === 0) return;
@@ -7129,7 +7146,7 @@ ${previewClone.outerHTML}
                         const id = a.getAttribute('data-footnote-id');
                         if (id && !ids.includes(id)) ids.push(id);
                     });
-                    const fnHtml = renderMarpSlideFootnotes(ids);
+                    const fnHtml = renderMarpSlideFootnotes(ids, __fnEmitted);
                     if (!fnHtml) return;
                     const tpl = document.createElement('template');
                     tpl.innerHTML = fnHtml;
@@ -7632,9 +7649,21 @@ ${previewClone.outerHTML}
                 link.addEventListener('mouseenter', () => {
                     const id = link.getAttribute('data-footnote-id');
                     if (!id) return;
-                    const target = preview.querySelector('#fn-' + footnoteSafeId(id));
+                    // footnoteSafeId() reduces to [A-Za-z0-9_-], so `sid` never needs
+                    // attribute-selector escaping.
+                    const sid = footnoteSafeId(id);
+                    const sel = '[data-fn-id="' + sid + '"]';
+                    // In Marp a footnote cited on several slides is rendered once per
+                    // slide, so prefer the copy on the reader's own slide and fall
+                    // back to the document-wide one. `closest` is null in the normal
+                    // pipeline, which falls straight through to the old behavior.
+                    const slide = link.closest('svg[data-marpit-svg] section');
+                    const target = (slide && slide.querySelector(sel)) || preview.querySelector(sel);
                     if (!target) return;
-                    const content = target.querySelector('.footnote-content');
+                    // The two pipelines wrap the body differently: the normal <li>
+                    // uses <div class="footnote-content">, a slide's compact block
+                    // uses <span class="marp-fn-body">. Exactly one exists per target.
+                    const content = target.querySelector('.footnote-content, .marp-fn-body');
                     if (!content) return;
                     tip.__cancelHide();
                     tip.innerHTML = content.innerHTML;
