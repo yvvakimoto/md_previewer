@@ -252,6 +252,19 @@ body.numbered #preview h4::before {
 #preview li > ul,
 #preview li > ol { margin-top: 0.3em; margin-bottom: 0.3em; }
 
+/* Definition lists — the accent rail idiom shared with blockquote, so a
+   glossary reads as the same family. Only the --md-dl-* variables are set;
+   the geometry stays with the baseline rules in index.html. */
+#preview dl {
+    --md-dl-accent: var(--hk-line);
+    --md-dl-term-color: var(--hk-ink);
+    --md-dl-desc-color: var(--hk-ink-2);
+    --md-dl-gap: 1.1em;
+    margin-bottom: 1.1em;
+}
+#preview dt { line-height: var(--hk-leading); }
+#preview dd { line-height: var(--hk-leading); }
+
 /* GFM task lists, if the renderer emits them */
 #preview li > input[type="checkbox"] {
     accent-color: var(--hk-accent);

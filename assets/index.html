@@ -458,6 +458,66 @@
             margin-bottom: 4px;
         }
 
+        /* Definition lists (Pandoc / PHP-Markdown-Extra `用語` / `: 説明`).
+           Emitted by the `defList` marked extension (normal pipeline) and by the
+           ⦃DL⦄/⦃DT⦄/⦃DD⦄ sentinel post-pass (Marp) — identical DOM, so one rule set
+           serves both. #preview-scoped like the align / footnote / task-list rules, so
+           it also reaches Marp slide <section>s inside the foreignObject and rides into
+           HTML export (buildExportArtifact ships this whole <style> block).
+           The look is received via --md-dl-* custom properties so a user style or Marp
+           theme can rebrand it — or flatten it with `--md-dl-accent: transparent` — by
+           setting them on #preview / section; variable inheritance sidesteps the high
+           #preview ID specificity, mirroring the --md-message-* pattern below.
+           Logical properties (inline-start) keep the indent and accent rule on the
+           correct edge under the vertical-writing tategaki theme.
+           `.dl-loose` marks the Pandoc loose form (a blank line between a term and its
+           definition) — the DOM is unchanged, only the spacing. */
+        #preview dl {
+            margin: 0 0 16px;
+            padding: 0;
+        }
+
+        #preview dt {
+            font-weight: var(--md-dl-term-weight, 600);
+            /* marp-core's bundled GitHub-markdown CSS italicizes `dl dt`. Left
+               alone, the same document would render italic terms in Marp and
+               upright ones in the normal preview, so the baseline states the
+               style explicitly (ID specificity beats marp's element chain) and
+               exposes it as a variable for themes that do want GitHub's italic. */
+            font-style: var(--md-dl-term-style, normal);
+            color: var(--md-dl-term-color, inherit);
+            line-height: 1.5;
+            margin-top: var(--md-dl-gap, 0.8em);
+        }
+
+        #preview dl > dt:first-child { margin-top: 0; }
+
+        #preview dd {
+            /* The physical shorthands zero out marp-core's GitHub-markdown
+               `dd { margin-left: 0 }` / `padding: 0 16px`, then the logical
+               longhands (declared after, so they win for their side) place the
+               indent and accent rule on the writing-axis start edge. */
+            margin: 0.15em 0 0 0;
+            margin-inline-start: var(--md-dl-indent, 1.6em);
+            padding: 0;
+            padding-inline-start: var(--md-dl-pad, 0.7em);
+            border-inline-start: 2px solid var(--md-dl-accent, #dfe2e5);
+            color: var(--md-dl-desc-color, inherit);
+        }
+
+        #preview dd > :first-child { margin-top: 0; }
+        #preview dd > :last-child { margin-bottom: 0; }
+        #preview dl.dl-loose dd { margin-bottom: 0.6em; }
+
+        /* Dark default for the accent rule. Declared on `body` — NOT on
+           `body.dark-mode #preview dl` — on purpose: that selector would
+           out-specify a theme's own `#preview dl { --md-dl-accent: … }` and
+           override a theme that ships a real dark palette (classical.css does).
+           Declaring it on an ancestor makes it merely *inherited*, so a theme
+           setting the variable directly on the <dl> always wins, while the
+           Default theme still gets a dark-appropriate rule. */
+        body.dark-mode { --md-dl-accent: #30363d; }
+
         #preview table {
             border-collapse: collapse;
             width: 100%;
@@ -1312,8 +1372,18 @@
                 max-width: 100%;
             }
 
-            /* Avoid page breaks inside code blocks and tables */
-            pre, table, .code-block-wrapper {
+            /* Avoid page breaks inside code blocks, tables and definition lists */
+            pre, table, .code-block-wrapper, dl {
+                page-break-inside: avoid;
+            }
+
+            /* Never orphan a definition term at the bottom of a page */
+            #preview dt {
+                break-after: avoid-page;
+                page-break-after: avoid;
+            }
+            #preview dd {
+                break-inside: avoid;
                 page-break-inside: avoid;
             }
 
@@ -4589,6 +4659,178 @@ ${previewClone.outerHTML}
             }]
         });
 
+        // ----- Definition lists (Pandoc / PHP Markdown Extra) -----
+        //   用語
+        //   : 説明テキスト
+        //   : 2つめの説明          ← 1つの <dt> に複数の <dd>
+        //
+        //   別の用語               ← 連続するグループは 1 つの <dl> にマージ
+        //   : 説明
+        //
+        // Line-based grammar, shared verbatim by the normal pipeline (the `defList`
+        // marked extension below) and the Marp sentinel pre-pass in renderMarp(), so
+        // the two pipelines can never drift — same single-source-of-truth design as
+        // buildSpanStyle() for the styled span. Deliberately conservative:
+        //   • the definition marker is `:` + a space/tab — `:::` (fenced div),
+        //     `:---|---:` (GFM table alignment row) and a bare `:` never match;
+        //   • the term line must not look like ANY other block construct
+        //     (DL_TERM_BAD_RE). This matters because marked tries block extensions
+        //     BEFORE its own fences/heading/hr/list/table tokenizers, so without the
+        //     guard `# 見出し` followed by `: x` would silently become a <dt>;
+        //   • continuation lines must be indented ≥2 spaces or a tab and there is NO
+        //     lazy continuation — a following ```fence / heading / prose line
+        //     therefore ends the list instead of being swallowed into the <dd>.
+        //     (Pandoc wants 4 spaces; 2 is friendlier for the 2-char `: ` marker.)
+        //   • only ONE term line per group (Pandoc's rule, not PHP-Extra's multiple
+        //     <dt>). Allowing several would make the tokenizer match at ^ for
+        //     `Intro paragraph.\n用語\n: 説明`, emitting <dt>Intro paragraph.</dt>
+        //     and robbing start() of its chance to clip the paragraph.
+        // `⦃` is excluded from term lines so a Marp sentinel paragraph emitted by an
+        // earlier pre-pass (⦃ALIGN:…⦄ / ⦃COLS⦄ / ⦃COL⦄ / ⦃FN:…⦄) can never be read
+        // as a term.
+        const DL_MARK_RE = /^[ \t]{0,3}:[ \t]/;
+        const DL_CONT_RE = /^(?: {2,}|\t)[^\s]/;
+        const DL_TERM_BAD_RE = /^(?:[ \t]*$|(?: {4,}|\t)|[ \t]{0,3}(?::|>|#|⦃|`{3,}|~{3,}|\||<|={2,}[ \t]*$|(?:[-*_][ \t]*){3,}[ \t]*$|[-*+][ \t]|\d{1,9}[.)][ \t]))/;
+        const dlIsBlank = (l) => l === undefined || l.trim() === '';
+        const dlIsTerm = (l) => !DL_TERM_BAD_RE.test(l);
+
+        // Scan `lines` starting at index `start`. Returns null when no definition
+        // list begins there, else { end, loose, groups: [{ term, defs: [string] }] }
+        // where `end` is the index of the first line NOT consumed. `loose` is true
+        // when a blank line separated a term from its definition (Pandoc's "loose"
+        // form) — it only sets the `.dl-loose` CSS hook, the DOM shape is identical.
+        function scanDefList(lines, start) {
+            if (dlIsBlank(lines[start])) return null;
+            const groups = [];
+            let i = start, end = start, loose = false;
+            while (i < lines.length) {
+                let j = i;
+                while (j < lines.length && dlIsBlank(lines[j])) j++;
+                if (j >= lines.length || !dlIsTerm(lines[j])) break;
+                const term = lines[j];
+                const defs = [];
+                let k = j + 1;
+                while (k < lines.length) {
+                    let p = k, blanks = 0;
+                    while (p < lines.length && dlIsBlank(lines[p])) { p++; blanks++; }
+                    if (p >= lines.length || !DL_MARK_RE.test(lines[p])) break;
+                    if (blanks > 0) loose = true;
+                    const body = [lines[p].replace(/^[ \t]{0,3}:[ \t]/, '')];
+                    let q = p + 1;
+                    while (q < lines.length) {
+                        if (dlIsBlank(lines[q])) {
+                            // A blank line continues the definition only when an
+                            // indented block follows (multi-paragraph / code / list).
+                            let r = q, b2 = 0;
+                            while (r < lines.length && dlIsBlank(lines[r])) { r++; b2++; }
+                            if (r < lines.length && DL_CONT_RE.test(lines[r])) {
+                                for (let z = 0; z < b2; z++) body.push('');
+                                q = r;
+                                continue;
+                            }
+                            break;
+                        }
+                        if (DL_MARK_RE.test(lines[q])) break;      // next <dd>
+                        if (!DL_CONT_RE.test(lines[q])) break;     // not indented → list ends
+                        body.push(lines[q].replace(/^(?: {1,4}|\t)/, ''));
+                        q++;
+                    }
+                    defs.push(body.join('\n'));
+                    k = q;
+                }
+                if (defs.length === 0) break;   // a term with no definition is not a dl
+                groups.push({ term: term.trim(), defs });
+                end = k;
+                i = k;
+            }
+            return groups.length > 0 ? { end, loose, groups } : null;
+        }
+
+        // Block-level marked extension emitting <dl>/<dt>/<dd> for the normal
+        // pipeline. Registration order relative to alignDiv / columnsDiv /
+        // styledSpan is immaterial (marked.use unshifts block tokenizers, so this
+        // one runs first, but the grammars are mutually exclusive — `:::` lines fail
+        // both DL_TERM_BAD_RE and DL_MARK_RE, and a term/`: ` pair fails the
+        // `:::`-anchored regexes). Kept here so the block extensions stay contiguous.
+        // Marp gets the same feature via a sentinel pre/post pass in renderMarp().
+        marked.use({
+            extensions: [{
+                name: 'defList',
+                level: 'block',
+                // marked calls startBlock(src.slice(1)) on every extension and clips a
+                // would-be paragraph to src.substring(0, min + 1). Returning the
+                // *sliced* index of a term line therefore ends the paragraph exactly
+                // where the term begins, which is what stops
+                //     Intro paragraph.
+                //     用語
+                //     : 説明
+                // from swallowing the term into the paragraph. Index 0 is deliberately
+                // never returned (it would clip after the first character and split a
+                // word); starting the loop at i = 1 guarantees that.
+                start(src) {
+                    const lines = src.split('\n');
+                    let pos = lines[0].length + 1;
+                    for (let i = 1; i + 1 < lines.length; i++) {
+                        if (dlIsTerm(lines[i]) && DL_MARK_RE.test(lines[i + 1])) return pos;
+                        pos += lines[i].length + 1;
+                    }
+                    return undefined;
+                },
+                tokenizer(src) {
+                    const lines = src.split('\n');
+                    const scan = scanDefList(lines, 0);
+                    if (!scan) return;
+                    const token = {
+                        type: 'defList',
+                        raw: lines.slice(0, scan.end).join('\n') + (scan.end < lines.length ? '\n' : ''),
+                        loose: scan.loose,
+                        rows: []
+                    };
+                    // <dt> is inline-only: a term is a phrase, and block-parsing it
+                    // would wrap it in <p>. <dd> is block-parsed so lists, code
+                    // fences, images, nested ::: divs and multiple paragraphs work.
+                    // state.top is forced true around the recursion so a
+                    // single-paragraph body yields a `paragraph` token even when the
+                    // whole <dl> sits inside a list item (where top is false and
+                    // marked would emit a bare `text` token instead).
+                    const prevTop = this.lexer.state.top;
+                    this.lexer.state.top = true;
+                    scan.groups.forEach(g => {
+                        const dt = { kind: 'dt', tokens: [] };
+                        this.lexer.inlineTokens(g.term, dt.tokens);
+                        token.rows.push(dt);
+                        g.defs.forEach(d => {
+                            const dd = { kind: 'dd', tokens: [] };
+                            this.lexer.blockTokens(d + '\n', dd.tokens);
+                            token.rows.push(dd);
+                        });
+                    });
+                    this.lexer.state.top = prevTop;
+                    return token;
+                },
+                // Emits exactly ONE top-level element — stampLineNumbers() walks
+                // preview.children positionally, so the <dl> picks up its data-line
+                // (editor↔preview sync) for free. Don't add sibling wrappers here or
+                // every following block's data-line silently shifts.
+                renderer(token) {
+                    let html = '<dl' + (token.loose ? ' class="dl-loose"' : '') + '>\n';
+                    token.rows.forEach(r => {
+                        if (r.kind === 'dt') {
+                            html += '<dt>' + this.parser.parseInline(r.tokens) + '</dt>\n';
+                            return;
+                        }
+                        // Tight <dd> (a single paragraph) → bare inline HTML, no <p>.
+                        // Anything richer keeps its blocks.
+                        const only = r.tokens.length === 1 ? r.tokens[0] : null;
+                        html += (only && (only.type === 'paragraph' || only.type === 'text'))
+                            ? '<dd>' + this.parser.parseInline(only.tokens) + '</dd>\n'
+                            : '<dd>\n' + this.parser.parse(r.tokens) + '</dd>\n';
+                    });
+                    return html + '</dl>\n';
+                }
+            }]
+        });
+
         // Inline-level marked extension for the Pandoc-style styled span:
         //   [テキスト]{color=red size=large font=serif}
         // The label is recursively inline-parsed (so nested **bold** / *italic* / `code`
@@ -6465,6 +6707,72 @@ ${previewClone.outerHTML}
                 markdown = out.join('\n');
             }
 
+            // Definition-list pre-pass (Pandoc `用語` / `: 説明`) — marp-core's
+            // markdown-it ships no deflist plugin, and it runs with `breaks: true`
+            // (verified against the bundled marp-core), so a `用語`/`: 説明` block
+            // would otherwise collapse into a single `<p>用語<br>: 説明</p>`. The
+            // grammar is therefore recognized here by the SAME shared scanner the
+            // normal pipeline's `defList` marked extension uses (scanDefList — one
+            // source of truth) and emitted as sentinel paragraphs that survive
+            // marp.render:  ⦃DL⦄ | ⦃DL:loose⦄ … ⦃DT⦄ … ⦃DD⦄ … ⦃/DL⦄
+            // Each sentinel is blank-line padded so it becomes its own <p>, while the
+            // term / definition bodies stay ordinary Markdown blocks — so **強調**,
+            // lists, code fences and images inside a definition all render normally.
+            // (Emitting raw <dl>/<dt>/<dd> instead is NOT an option even with
+            // html:true: those are CommonMark HTML-block tags, so markdown-it passes
+            // their content through verbatim and `**用語**` would show as literal
+            // asterisks.) Runs LAST among the pre-passes so every `:::` line is
+            // already an ⦃ALIGN…⦄ / ⦃COLS…⦄ sentinel; `⦃` is in DL_TERM_BAD_RE so
+            // those can never be misread as a term. Line shifts are harmless — the
+            // slide→source-line map is built from the untouched original markdown,
+            // and this pass neither adds nor removes `---` separators (a `---` /
+            // `***` / `___` line fails dlIsTerm, so a scan can't cross a slide break).
+            const DL_OPEN = '⦃DL⦄';
+            const DL_OPEN_LOOSE = '⦃DL:loose⦄';
+            const DT_SENTINEL = '⦃DT⦄';
+            const DD_SENTINEL = '⦃DD⦄';
+            const DL_CLOSE = '⦃/DL⦄';
+            {
+                const lines = markdown.split('\n');
+                const out = [];
+                let inFm = lines.length > 0 && /^---\s*$/.test(lines[0]);
+                let fmClosed = !inFm;
+                let inFence = false;
+                let fenceMarker = '';
+                let i = 0;
+                while (i < lines.length) {
+                    const ln = lines[i];
+                    if (inFm && !fmClosed) {
+                        out.push(ln);
+                        if (i > 0 && /^---\s*$/.test(ln)) fmClosed = true;
+                        i++;
+                        continue;
+                    }
+                    const fenceMatch = ln.match(/^(\s*)(```+|~~~+)(.*)$/);
+                    if (fenceMatch) {
+                        const marker = fenceMatch[2][0];
+                        if (!inFence) { inFence = true; fenceMarker = marker; }
+                        else if (marker === fenceMarker) { inFence = false; fenceMarker = ''; }
+                        out.push(ln);
+                        i++;
+                        continue;
+                    }
+                    const scan = inFence ? null : scanDefList(lines, i);
+                    if (!scan) { out.push(ln); i++; continue; }
+                    out.push('', scan.loose ? DL_OPEN_LOOSE : DL_OPEN);
+                    scan.groups.forEach(g => {
+                        out.push('', DT_SENTINEL, '', g.term);
+                        g.defs.forEach(d => {
+                            out.push('', DD_SENTINEL, '');
+                            d.split('\n').forEach(dline => out.push(dline));
+                        });
+                    });
+                    out.push('', DL_CLOSE, '');
+                    i = scan.end;
+                }
+                markdown = out.join('\n');
+            }
+
             const marp = await getMarp();
 
             // Build a slide → source-line map by scanning the ORIGINAL (un-pre-passed)
@@ -6725,6 +7033,62 @@ ${previewClone.outerHTML}
                     div.appendChild(n);
                     n = next;
                 }
+            });
+
+            // Definition-list post-pass — turn the ⦃DL⦄ / ⦃DT⦄ / ⦃DD⦄ / ⦃/DL⦄
+            // sentinel paragraphs into a real <dl> with <dt>/<dd> children, matching
+            // the DOM the normal pipeline's `defList` marked extension emits so the
+            // shared `#preview dl / dt / dd` CSS styles both and it rides into HTML
+            // export. Same shape as the inline-columns pass: replace the open
+            // sentinel's <p> with the wrapper, walk nextSibling bucketing at each
+            // marker, stop at the close sentinel. Operating on the open sentinel's
+            // actual parent means it also works inside .split-col / .align-… /
+            // .md-vcenter. Position is load-bearing: AFTER the footnote sentinel →
+            // <sup> restore (so <sup> nodes survive being moved into a <dd>) and
+            // after the split / inline-columns / alignment passes (so a <dl> can live
+            // inside them), but BEFORE the code-block substitution below (so a
+            // diagram inside a <dd> is still substituted), before the figure-centering
+            // pass, and — critically — before the .marp-fit-body wrapper, which runs
+            // last and sweeps every body child (it would otherwise wrap the raw
+            // sentinel <p>s and leave the <dl> outside the autofit region).
+            Array.from(preview.querySelectorAll('section p')).forEach(p => {
+                const m = /^⦃DL(:loose)?⦄$/.exec(p.textContent.trim());
+                if (!m) return;
+                const dl = document.createElement('dl');
+                if (m[1]) dl.className = 'dl-loose';
+                p.parentNode.replaceChild(dl, p);
+                const cells = [];                     // [{ tag: 'dt'|'dd', nodes: [] }]
+                let n = dl.nextSibling;
+                while (n) {
+                    const next = n.nextSibling;
+                    const isP = n.nodeType === 1 && n.tagName === 'P';
+                    const txt = isP ? n.textContent.trim() : '';
+                    if (isP && txt === DL_CLOSE) { n.remove(); break; }
+                    if (isP && (txt === DT_SENTINEL || txt === DD_SENTINEL)) {
+                        n.remove();
+                        cells.push({ tag: txt === DT_SENTINEL ? 'dt' : 'dd', nodes: [] });
+                    } else if (cells.length > 0) {
+                        cells[cells.length - 1].nodes.push(n);
+                    } else {
+                        n.remove();                   // stray content before the first marker
+                    }
+                    n = next;
+                }
+                cells.forEach(c => {
+                    const el = document.createElement(c.tag);
+                    c.nodes.forEach(x => { if (x.parentNode) x.parentNode.removeChild(x); });
+                    // Drop marp-core's inter-block whitespace text nodes so a
+                    // single-paragraph body is detected, then unwrap that lone <p> so
+                    // a tight <dt>/<dd> matches the normal pipeline's bare-inline
+                    // output. Multi-block bodies keep their nodes.
+                    const kids = c.nodes.filter(x => !(x.nodeType === 3 && !x.textContent.trim()));
+                    if (kids.length === 1 && kids[0].tagName === 'P') {
+                        while (kids[0].firstChild) el.appendChild(kids[0].firstChild);
+                    } else {
+                        kids.forEach(x => el.appendChild(x));
+                    }
+                    dl.appendChild(el);
+                });
             });
 
             // Replace mermaid / csv / tsv code blocks inside each slide with

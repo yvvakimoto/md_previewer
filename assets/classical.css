@@ -177,6 +177,24 @@ body {
     margin: 0.5em 0;
 }
 
+/* ---- Definition list --------------------------------------------------- */
+/* 用語をゴチ起こし（強調語と同じサンセリフ）にし、説明の罫線は本文罫の淡色へ。
+   幾何は index.html のベースラインに任せ、--md-dl-* だけを差し替える。値は
+   --cl-* トークン経由なので body.dark-mode のパレット再定義に自動追従する。 */
+
+#preview dl {
+    --md-dl-accent: var(--cl-rule-soft);
+    --md-dl-term-color: var(--cl-heading);
+    --md-dl-desc-color: var(--cl-ink-soft);
+    --md-dl-gap: 1em;
+    margin: 1.4em 0;
+}
+
+#preview dt {
+    font-family: var(--cl-font-sans);
+    letter-spacing: 0.01em;
+}
+
 /* ---- Code -------------------------------------------------------------- */
 
 #preview code {

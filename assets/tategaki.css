@@ -160,6 +160,29 @@
 #preview li > ol {
     padding-inline-start: 1.5em;
 }
+/* --- 定義リスト: 説明側のアクセント罫を縦書きの論理軸へ --- */
+/* ベースライン (index.html) は既に margin-inline-start / border-inline-start と
+   論理プロパティで書かれているので、罫線は vertical-rl のインライン軸＝画面上側
+   に自動で回る。ここで足すのは縦書き固有の 2 点だけ:
+   ・説明の中の段落は #preview p の全角1字下げを継承してしまうので抑制する
+     (#preview li > p と同じ扱い)
+   ・block 軸 (画面横方向) の余白を段落の 1em 系に揃える */
+#preview dl {
+    margin-block: 0;
+    margin-inline: 0 1em;
+}
+#preview dt {
+    text-indent: 0;
+}
+#preview dd > p,
+#preview dd > ul,
+#preview dd > ol {
+    text-indent: 0;
+}
+#preview dd > p:first-child {
+    text-indent: 0;
+}
+
 /* 番号付きリストのマーカー (1. 2. 10. など) を縦中横で正立合成。
  * digits 2 だと "10." のドットで合成が崩れるため、マーカー全体を一塊に。 */
 #preview ol > li::marker {

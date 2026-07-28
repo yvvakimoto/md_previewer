@@ -41,6 +41,14 @@ You can make text **bold**, *italic*, or ***both***. You can also use ~~striketh
 - [ ] 未完了のタスク
 - [ ] もう一つのタスク
 
+### Definition List
+Markdown
+: A lightweight markup language for formatting plain text.
+
+WebView2
+: Microsoft's Chromium-based embeddable browser control.
+: Used here to render the preview on Windows.
+
 ## Code
 
 Inline code: `const x = 42;`
