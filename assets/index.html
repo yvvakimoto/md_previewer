@@ -4641,6 +4641,67 @@ ${previewClone.outerHTML}
             return out.join('\n');
         }
 
+        // ----- Sentinel region post-passes (shared walker) -----
+        // Three renderMarp() post-passes (inline columns, alignment, definition
+        // lists) had the same hand-written shape: find an opening sentinel <p>,
+        // replace it with a wrapper, then walk `nextSibling` to the closing
+        // sentinel, optionally splitting at separator sentinels. The comments even
+        // said so ("Combines the alignment post-pass shape…", "Same shape as the
+        // inline-columns pass"). This is that shape, once.
+        //
+        // The split post-pass deliberately does NOT use it: it has no opening
+        // sentinel (the whole <section> is the region), uses a stricter
+        // single-text-child predicate, rebuilds the section wholesale, and has a
+        // header-hoisting tail. Forcing it in would be a worse abstraction.
+
+        // True when `node` is a <p> whose entire trimmed text is exactly `text` —
+        // i.e. one of the sentinel paragraphs a pre-pass emitted.
+        function __isSentinelP(node, text) {
+            return node.nodeType === 1 && node.tagName === 'P'
+                && node.textContent.trim() === text;
+        }
+
+        // For every <p> under `root` matching `opts.open`, replace it with
+        // `opts.wrap(match)` and hand the wrapper the sibling region that follows.
+        //   opts.open   RegExp                 tested against p.textContent.trim()
+        //   opts.close  string                 that <p> is removed and ends the region
+        //   opts.marker (txt) => name | null   separator sentinel → bucket name
+        //   opts.wrap   (match) => Element     replacement, inserted BEFORE the walk
+        //   opts.fill   (wrapEl, buckets, match) => void
+        //
+        // `buckets` always starts with one `{ marker: null, nodes: [] }` holding
+        // whatever preceded the first separator. `next` is captured before any
+        // mutation; separator and close sentinels are removed during the walk;
+        // content nodes stay where they are until `fill` moves (or removes) them.
+        //
+        // The query is re-run on every call and snapshotted with Array.from() —
+        // nesting works precisely because a later pass sees sentinels that an
+        // earlier pass relocated into a wrapper. Do NOT hoist it.
+        function __unwrapSentinelRegions(root, opts) {
+            Array.from(root.querySelectorAll('section p')).forEach(p => {
+                const m = opts.open.exec(p.textContent.trim());
+                if (!m) return;
+                const wrap = opts.wrap(m);
+                p.parentNode.replaceChild(wrap, p);
+                const buckets = [{ marker: null, nodes: [] }];
+                let n = wrap.nextSibling;
+                while (n) {
+                    const next = n.nextSibling;
+                    if (__isSentinelP(n, opts.close)) { n.remove(); break; }
+                    const isP = n.nodeType === 1 && n.tagName === 'P';
+                    const mk = (opts.marker && isP) ? opts.marker(n.textContent.trim()) : null;
+                    if (mk) {
+                        n.remove();
+                        buckets.push({ marker: mk, nodes: [] });
+                    } else {
+                        buckets[buckets.length - 1].nodes.push(n);
+                    }
+                    n = next;
+                }
+                opts.fill(wrap, buckets, m);
+            });
+        }
+
         // ----- Fenced-div grammar (single source of truth) -----
         // The `:::` family is recognized in TWO places — the `alignDiv` /
         // `columnsDiv` marked extensions below (normal pipeline) and the sentinel
@@ -6648,6 +6709,9 @@ ${previewClone.outerHTML}
             const ALIGN_OPEN = '⦃ALIGN:';
             const ALIGN_CLOSE = '⦃/ALIGN⦄';
             const COLS_CLOSE = '⦃/COLS⦄';
+            // Opening sentinels, matched by the post-passes below. Capture group 1
+            // is the column count / looseness flag the wrapper needs.
+            const COLS_SENTINEL_RE = /^⦃COLS(?::([234]))?⦄$/;
             {
                 const fenceStack = []; // 'align' | 'cols', innermost last
                 // Blank line padding ensures each sentinel becomes its own <p>.
@@ -6697,6 +6761,7 @@ ${previewClone.outerHTML}
             const DT_SENTINEL = '⦃DT⦄';
             const DD_SENTINEL = '⦃DD⦄';
             const DL_CLOSE = '⦃/DL⦄';
+            const DL_SENTINEL_RE = /^⦃DL(:loose)?⦄$/;
             markdown = __rewriteMdLines(markdown, (ln, i, lines) => {
                 const scan = scanDefList(lines, i);
                 if (!scan) return;
@@ -6849,6 +6914,8 @@ ${previewClone.outerHTML}
                 const buckets = [[]];
                 const children = Array.from(section.childNodes);
                 for (const node of children) {
+                    // Stricter than __isSentinelP on purpose: a section child is only
+                    // a boundary when the <p> is exactly one text node.
                     if (node.nodeType === 1 && node.tagName === 'P'
                             && node.childNodes.length === 1
                             && node.firstChild.nodeType === 3
@@ -6895,37 +6962,25 @@ ${previewClone.outerHTML}
             // Runs after the split post-pass and before the alignment post-pass so a
             // `::: center` inside a column is still wrapped, and before the mermaid /
             // csv substitution loop so diagrams land inside the column.
-            Array.from(preview.querySelectorAll('section p')).forEach(p => {
-                const m = /^⦃COLS(?::([234]))?⦄$/.exec(p.textContent.trim());
-                if (!m) return;
-                const wrap = document.createElement('div');
-                wrap.className = 'inline-cols';
-                p.parentNode.replaceChild(wrap, p);
-                const buckets = [[]];
-                let n = wrap.nextSibling;
-                while (n) {
-                    const next = n.nextSibling;
-                    if (n.nodeType === 1 && n.tagName === 'P' && n.textContent.trim() === COLS_CLOSE) {
-                        n.remove();
-                        break;
-                    }
-                    if (n.nodeType === 1 && n.tagName === 'P' && n.textContent.trim() === COL_SENTINEL) {
-                        n.remove();
-                        buckets.push([]);
-                        n = next;
-                        continue;
-                    }
-                    buckets[buckets.length - 1].push(n);
-                    n = next;
-                }
-                const count = Math.min(4, Math.max(2, m[1] ? +m[1] : buckets.length));
-                if (count >= 3) wrap.classList.add('inline-cols-' + count);
-                buckets.forEach(bucket => {
-                    const col = document.createElement('div');
-                    col.className = 'split-col';
-                    bucket.forEach(node => col.appendChild(node));
-                    wrap.appendChild(col);
-                });
+            __unwrapSentinelRegions(preview, {
+                open: COLS_SENTINEL_RE,
+                close: COLS_CLOSE,
+                marker: txt => txt === COL_SENTINEL ? 'col' : null,
+                wrap: () => {
+                    const wrap = document.createElement('div');
+                    wrap.className = 'inline-cols';
+                    return wrap;
+                },
+                fill: (wrap, buckets, m) => {
+                    const count = Math.min(4, Math.max(2, m[1] ? +m[1] : buckets.length));
+                    if (count >= 3) wrap.classList.add('inline-cols-' + count);
+                    buckets.forEach(bucket => {
+                        const col = document.createElement('div');
+                        col.className = 'split-col';
+                        bucket.nodes.forEach(node => col.appendChild(node));
+                        wrap.appendChild(col);
+                    });
+                },
             });
 
             // Alignment post-pass — convert ⦃ALIGN:…⦄ / ⦃/ALIGN⦄ sentinel paragraphs
@@ -6935,27 +6990,22 @@ ${previewClone.outerHTML}
             // after footnote restoration (so <sup> nodes are preserved) and the
             // split post-pass, and before the mermaid substitution loop
             // (so a centered diagram still gets substituted inside the wrapper).
-            Array.from(preview.querySelectorAll('section p')).forEach(p => {
-                const openM = ALIGN_SENTINEL_RE.exec(p.textContent.trim());
-                if (!openM) return;
-                const div = document.createElement('div');
-                div.className = alignKeywordClass(openM[1]);
-                p.parentNode.replaceChild(div, p);
-                // vcenter fills the remaining slide space vertically; tag the
-                // enclosing <section> so the fit-body wrapper becomes a flex column
-                // (runs before the fit-body wrapper pass, so .md-vcenter is swept in).
-                if (openM[1] === 'vcenter') div.closest('section')?.classList.add('marp-has-vcenter');
-                let n = div.nextSibling;
-                while (n) {
-                    const next = n.nextSibling;
-                    if (n.nodeType === 1 && n.tagName === 'P'
-                            && n.textContent.trim() === '⦃/ALIGN⦄') {
-                        n.remove();
-                        break;
-                    }
-                    div.appendChild(n);
-                    n = next;
-                }
+            __unwrapSentinelRegions(preview, {
+                open: ALIGN_SENTINEL_RE,
+                close: ALIGN_CLOSE,
+                // No separators: the whole region is one bucket.
+                wrap: m => {
+                    const div = document.createElement('div');
+                    div.className = alignKeywordClass(m[1]);
+                    return div;
+                },
+                fill: (div, buckets, m) => {
+                    // vcenter fills the remaining slide space vertically; tag the
+                    // enclosing <section> so the fit-body wrapper becomes a flex column
+                    // (runs before the fit-body wrapper pass, so .md-vcenter is swept in).
+                    if (m[1] === 'vcenter') div.closest('section')?.classList.add('marp-has-vcenter');
+                    buckets[0].nodes.forEach(n => div.appendChild(n));
+                },
             });
 
             // Definition-list post-pass — turn the ⦃DL⦄ / ⦃DT⦄ / ⦃DD⦄ / ⦃/DL⦄
@@ -6974,44 +7024,34 @@ ${previewClone.outerHTML}
             // pass, and — critically — before the .marp-fit-body wrapper, which runs
             // last and sweeps every body child (it would otherwise wrap the raw
             // sentinel <p>s and leave the <dl> outside the autofit region).
-            Array.from(preview.querySelectorAll('section p')).forEach(p => {
-                const m = /^⦃DL(:loose)?⦄$/.exec(p.textContent.trim());
-                if (!m) return;
-                const dl = document.createElement('dl');
-                if (m[1]) dl.className = 'dl-loose';
-                p.parentNode.replaceChild(dl, p);
-                const cells = [];                     // [{ tag: 'dt'|'dd', nodes: [] }]
-                let n = dl.nextSibling;
-                while (n) {
-                    const next = n.nextSibling;
-                    const isP = n.nodeType === 1 && n.tagName === 'P';
-                    const txt = isP ? n.textContent.trim() : '';
-                    if (isP && txt === DL_CLOSE) { n.remove(); break; }
-                    if (isP && (txt === DT_SENTINEL || txt === DD_SENTINEL)) {
-                        n.remove();
-                        cells.push({ tag: txt === DT_SENTINEL ? 'dt' : 'dd', nodes: [] });
-                    } else if (cells.length > 0) {
-                        cells[cells.length - 1].nodes.push(n);
-                    } else {
-                        n.remove();                   // stray content before the first marker
-                    }
-                    n = next;
-                }
-                cells.forEach(c => {
-                    const el = document.createElement(c.tag);
-                    c.nodes.forEach(x => { if (x.parentNode) x.parentNode.removeChild(x); });
-                    // Drop marp-core's inter-block whitespace text nodes so a
-                    // single-paragraph body is detected, then unwrap that lone <p> so
-                    // a tight <dt>/<dd> matches the normal pipeline's bare-inline
-                    // output. Multi-block bodies keep their nodes.
-                    const kids = c.nodes.filter(x => !(x.nodeType === 3 && !x.textContent.trim()));
-                    if (kids.length === 1 && kids[0].tagName === 'P') {
-                        while (kids[0].firstChild) el.appendChild(kids[0].firstChild);
-                    } else {
-                        kids.forEach(x => el.appendChild(x));
-                    }
-                    dl.appendChild(el);
-                });
+            __unwrapSentinelRegions(preview, {
+                open: DL_SENTINEL_RE,
+                close: DL_CLOSE,
+                marker: txt => txt === DT_SENTINEL ? 'dt' : txt === DD_SENTINEL ? 'dd' : null,
+                wrap: m => {
+                    const dl = document.createElement('dl');
+                    if (m[1]) dl.className = 'dl-loose';
+                    return dl;
+                },
+                fill: (dl, buckets) => {
+                    // buckets[0] holds anything before the first ⦃DT⦄ — stray, drop it.
+                    buckets.shift().nodes.forEach(n => { if (n.parentNode) n.remove(); });
+                    buckets.forEach(c => {
+                        const el = document.createElement(c.marker);
+                        c.nodes.forEach(x => { if (x.parentNode) x.parentNode.removeChild(x); });
+                        // Drop marp-core's inter-block whitespace text nodes so a
+                        // single-paragraph body is detected, then unwrap that lone <p> so
+                        // a tight <dt>/<dd> matches the normal pipeline's bare-inline
+                        // output. Multi-block bodies keep their nodes.
+                        const kids = c.nodes.filter(x => !(x.nodeType === 3 && !x.textContent.trim()));
+                        if (kids.length === 1 && kids[0].tagName === 'P') {
+                            while (kids[0].firstChild) el.appendChild(kids[0].firstChild);
+                        } else {
+                            kids.forEach(x => el.appendChild(x));
+                        }
+                        dl.appendChild(el);
+                    });
+                },
             });
 
             // Replace mermaid / csv / tsv code blocks inside each slide with
