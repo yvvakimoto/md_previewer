@@ -2422,11 +2422,9 @@
                 msg.innerHTML = html;
                 b.classList.add('visible');
             };
-            function escapeHtml(s) {
-                return s.replace(/[&<>"']/g, function (c) {
-                    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
-                });
-            }
+            // `escapeHtml` is the hoisted top-level one; `ver` / `notes` are
+            // already String()-coerced above, so its extra coercion is moot and
+            // the escaped output is character-identical.
             document.addEventListener('DOMContentLoaded', function () {
                 const install = document.getElementById('update-install-btn');
                 const later = document.getElementById('update-later-btn');
@@ -4262,13 +4260,6 @@ ${previewClone.outerHTML}
             return 'file:///' + resolved.join('/');
         }
 
-        // Helper function to escape HTML in attributes
-        function escapeHtmlAttr(text) {
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
-        }
-
         // Generate GitHub-compatible heading ID. Keep the raw Unicode slug as
         // the id (browsers match decoded fragments against raw ids), and do not
         // collapse runs of hyphens \u2014 GitHub preserves them, and links like
@@ -4951,63 +4942,18 @@ ${previewClone.outerHTML}
             }, false);
         });
 
-        // Handle dropped files
-        dropZone.addEventListener('drop', handleDrop, false);
-        previewContainer.addEventListener('drop', handleDrop, false);
-
-        // Helper function to read file as data URL
-        function readFileAsDataURL(file) {
-            return new Promise((resolve, reject) => {
-                const reader = new FileReader();
-                reader.onload = (e) => resolve(e.target.result);
-                reader.onerror = reject;
-                reader.readAsDataURL(file);
-            });
-        }
-
-        function handleDrop(e) {
-            const dt = e.dataTransfer;
-            const files = Array.from(dt.files);
-
-            // Separate markdown and image files
-            const mdFile = files.find(f => f.name.match(/\.(md|markdown)$/i));
-            const imageFiles = files.filter(f => f.name.match(/\.(png|jpe?g|gif|svg|webp|ico|bmp|tiff?|avif)$/i));
-
-            if (mdFile) {
-                // Markdown drops are handled by the Rust host
-                // (WindowEvent::DroppedFile -> OpenFile), which sets up the
-                // watcher / current_file / editor pairing exactly like a
-                // double-click. Both tao and the WebView2 HTML5 drop fire for the
-                // same file, so do nothing here to avoid loading it twice.
-                return;
-            } else if (imageFiles.length > 0) {
-                // Single image viewing
-                handleImageFile(imageFiles[0]);
-            } else {
-                alert('Please drop a markdown file (.md, .markdown) or image files');
-            }
-        }
-
-        // Handle single image file
-        async function handleImageFile(file) {
-            const dataUrl = await readFileAsDataURL(file);
-            currentMarkdown = '';
-            currentMarkdownRaw = '';
-            currentFilePath = '';
-            preview.innerHTML = `<p><img src="${dataUrl}" alt="${file.name.replace(/"/g, '&quot;')}" style="max-width: 100%; display: block; margin: 0 auto;"></p>`;
-            dropZone.style.display = 'none';
-            appContainer.style.display = 'flex';
-            hideSplash();
-            setWindowTitle(file.name);
-            // Generate TOC for image (will show "No headings found")
-            generateTOC();
-        }
+        // NOTE: there is deliberately no JS `drop` handler. wry's file-drop
+        // handler revokes WebView2's own drop target (see `with_file_drop_handler`
+        // in src/main.rs), so a JS `drop` event never fires and never carries a
+        // usable path. Every drop — folder, .md, .mdx, image — is routed by the
+        // Rust host, which is also what sets up the watcher / current_file /
+        // editor pairing. The `preventDefaults` + `.drag-over` wiring above stays:
+        // it suppresses the browser's default "navigate to the dropped file"
+        // behavior and drives the drop-zone highlight.
 
         // Display a dropped image. The Rust file-drop handler routes single-image
         // drops here (it has already pointed `current_dir` at the image's folder,
-        // so the `/userfile/` route resolves the bare filename). This is the live
-        // path for image drops on Windows — `handleImageFile` above only runs if
-        // the webview's HTML5 drag-drop is ever active (fallback).
+        // so the `/userfile/` route resolves the bare filename).
         window.loadImageFromRust = function(name) {
             const url = toUserfileUrl(name);
             currentMarkdown = '';
@@ -6035,6 +5981,9 @@ ${previewClone.outerHTML}
         // colors differ between light/dark), mirroring the mermaid cache.
         const __markwhenCache = new Map();
 
+        // Deliberately NOT the shared `escapeHtml`: this one maps null/undefined
+        // to '' (relied on by the error path, which passes `error && error.message`)
+        // and leaves `'` alone, which is correct inside the SVG <text> it feeds.
         function __mwEscape(s) {
             return String(s == null ? '' : s)
                 .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -6500,12 +6449,8 @@ ${previewClone.outerHTML}
             // re-applies it.
             const __userLink = document.getElementById('user-style');
             if (__userLink) __userLink.remove();
-            // Restore last view preference. Migrates the older boolean `deckMode` key
-            // (true → 'deck') on first read.
+            // Restore last view preference.
             let __savedView = localStorage.getItem('marpView');
-            if (!__savedView) {
-                __savedView = localStorage.getItem('deckMode') === 'true' ? 'deck' : 'scroll';
-            }
             if (__savedView !== 'scroll' && __savedView !== 'deck' && __savedView !== 'list') {
                 __savedView = 'scroll';
             }

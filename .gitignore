@@ -46,3 +46,4 @@ tools/build-markwhen/package-lock.json
 # preview-harness working output (domdump.py digests / shoot.py pixels)
 _dom/
 _shots/
+_smoke/
