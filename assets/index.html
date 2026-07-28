@@ -2777,44 +2777,73 @@
             if (__laserOn) __resizeLaserCanvas();
         });
 
-        // Line number toggle (L key)
-        if (localStorage.getItem('showLineNumbers') === 'true') {
-            document.body.classList.add('show-line-numbers');
+        // ----- Keyboard shortcut plumbing (shared prelude) -----
+        // Every single-key shortcut needs the same two guards, and they were
+        // retyped a dozen times each. The listeners stay separate on purpose —
+        // their `preventDefault` placement and return-vs-else-if structure differ,
+        // so folding them into one dispatcher would be risk without benefit.
+
+        // True when the event target is a text-entry surface, so a bare letter
+        // belongs to whatever the user is typing rather than to a shortcut.
+        function __isTypingTarget(t) {
+            return !!(t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable));
         }
-        document.addEventListener('keydown', (e) => {
-            if (e.ctrlKey || e.metaKey || e.altKey) return;
-            if (e.key !== 'l' && e.key !== 'L') return;
-            const t = e.target;
-            if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
-            document.body.classList.toggle('show-line-numbers');
-            localStorage.setItem('showLineNumbers', document.body.classList.contains('show-line-numbers'));
-        });
+
+        // Register a keydown handler for an unmodified letter key (case-insensitive).
+        // Ctrl/Meta/Alt and text-entry focus both suppress it.
+        function onPlainKey(key, handler) {
+            document.addEventListener('keydown', (e) => {
+                if (e.ctrlKey || e.metaKey || e.altKey) return;
+                if (typeof e.key !== 'string' || e.key.toLowerCase() !== key) return;
+                if (__isTypingTarget(e.target)) return;
+                return handler(e);
+            });
+        }
+
+        // Same for Ctrl/Cmd + letter. Shift is excluded so Ctrl+Shift+N stays free.
+        // Does NOT preventDefault — each caller keeps its own suppression semantics.
+        function onCtrlKey(key, handler) {
+            document.addEventListener('keydown', (e) => {
+                if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return;
+                if (typeof e.key !== 'string' || e.key.toLowerCase() !== key) return;
+                if (__isTypingTarget(e.target)) return;
+                return handler(e);
+            });
+        }
+
+        // Prelude only, no key test — for handlers that dispatch on several keys.
+        function onShortcutKey(handler) {
+            document.addEventListener('keydown', (e) => {
+                if (e.ctrlKey || e.metaKey || e.altKey) return;
+                if (__isTypingTarget(e.target)) return;
+                return handler(e);
+            });
+        }
+
+        // Restore a persisted body-class flag and bind `key` to toggle + persist it
+        // (optionally announcing the new state via a toast).
+        function bindBodyClassToggle(key, cls, storeKey, toastLabel) {
+            if (localStorage.getItem(storeKey) === 'true') document.body.classList.add(cls);
+            onPlainKey(key, () => {
+                const on = document.body.classList.toggle(cls);
+                localStorage.setItem(storeKey, on);
+                if (toastLabel) showToast(toastLabel + ': ' + (on ? 'オン' : 'オフ'));
+            });
+        }
+
+        // Line number toggle (L key)
+        bindBodyClassToggle('l', 'show-line-numbers', 'showLineNumbers', null);
 
         // Full-width layout toggle (W key). Same pattern as L/N; pure body-class
         // toggle, persisted in localStorage. CSS scoped to body.wide #preview;
         // no-op in Marp mode (the later body.marp #preview rule wins).
-        if (localStorage.getItem('wide') === 'true') {
-            document.body.classList.add('wide');
-        }
-        document.addEventListener('keydown', (e) => {
-            if (e.ctrlKey || e.metaKey || e.altKey) return;
-            if (e.key !== 'w' && e.key !== 'W') return;
-            const t = e.target;
-            if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
-            const on = document.body.classList.toggle('wide');
-            localStorage.setItem('wide', on);
-            showToast('全幅表示: ' + (on ? 'オン' : 'オフ'));
-        });
+        bindBodyClassToggle('w', 'wide', 'wide', '全幅表示');
 
         // Auto-shrink Marp slides to fit (A key). When on (default), slides whose
         // content overflows the 1280x720 box are scaled down uniformly to fit;
         // when off, content is clipped by the foreignObject as before. Persisted
         // in localStorage. No-op outside Marp mode (fitMarpSlides finds no sections).
-        document.addEventListener('keydown', (e) => {
-            if (e.ctrlKey || e.metaKey || e.altKey) return;
-            if (e.key !== 'a' && e.key !== 'A') return;
-            const t = e.target;
-            if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+        onPlainKey('a', () => {
             __marpAutofit = !__marpAutofit;
             localStorage.setItem('marpAutofit', __marpAutofit);
             fitMarpSlides();   // re-fit on / clear on off
@@ -2826,25 +2855,10 @@
         // Section numbering toggle (N key). Baseline counter rules live in the inline <style>
         // above so numbering works on every theme by default; user themes may
         // override the ::before content/styling for their custom number presentation.
-        if (localStorage.getItem('numbered') === 'true') {
-            document.body.classList.add('numbered');
-        }
-        document.addEventListener('keydown', (e) => {
-            if (e.ctrlKey || e.metaKey || e.altKey) return;
-            if (e.key !== 'n' && e.key !== 'N') return;
-            const t = e.target;
-            if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
-            const on = document.body.classList.toggle('numbered');
-            localStorage.setItem('numbered', on);
-            showToast('セクション番号: ' + (on ? 'オン' : 'オフ'));
-        });
+        bindBodyClassToggle('n', 'numbered', 'numbered', 'セクション番号');
 
         // Dark / Light toggle (M key). Orthogonal to the user-style picker (S).
-        document.addEventListener('keydown', async (e) => {
-            if (e.ctrlKey || e.metaKey || e.altKey) return;
-            if (e.key !== 'm' && e.key !== 'M') return;
-            const t = e.target;
-            if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+        onPlainKey('m', async () => {
             if (document.body.classList.contains('marp')) {
                 showToast('テーマはMarpディレクティブで固定されています');
                 return;
@@ -2906,11 +2920,7 @@
             if (open) __renderStyleRows(document.body.classList.contains('marp'));
             m.classList.toggle('visible', open);
         }
-        document.addEventListener('keydown', (e) => {
-            if (e.ctrlKey || e.metaKey || e.altKey) return;
-            if (e.key !== 's' && e.key !== 'S') return;
-            const t = e.target;
-            if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+        onPlainKey('s', (e) => {
             const m = __styleModal();
             if (!m) return;
             e.preventDefault();
@@ -2957,11 +2967,8 @@
         });
 
         // Marp deck-mode navigation (P toggle, F fullscreen, arrows/PgUp/PgDn/Home/End).
-        document.addEventListener('keydown', (e) => {
+        onShortcutKey((e) => {
             if (!document.body.classList.contains('marp')) return;
-            if (e.ctrlKey || e.metaKey || e.altKey) return;
-            const t = e.target;
-            if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
             if (e.key === 'p' || e.key === 'P') {
                 e.preventDefault();
                 const order = ['scroll', 'deck', 'list'];
@@ -3013,10 +3020,7 @@
             }
             m.classList.toggle('visible', open);
         }
-        document.addEventListener('keydown', (e) => {
-            if (e.ctrlKey || e.metaKey || e.altKey) return;
-            const t = e.target;
-            if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+        onShortcutKey((e) => {
             const m = __helpModal();
             if (!m) return;
             if (e.key === 'h' || e.key === 'H') {
@@ -3668,11 +3672,7 @@ ${previewClone.outerHTML}
         }
 
         // New document (Ctrl+N) — create a blank .md via a native Save dialog, then open it.
-        document.addEventListener('keydown', (e) => {
-            if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return;
-            if (e.key !== 'n' && e.key !== 'N') return;
-            const t = e.target;
-            if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+        onCtrlKey('n', (e) => {
             e.preventDefault();   // suppress any WebView2 "new window" default
             if (window.ipc && typeof window.ipc.postMessage === 'function') {
                 window.ipc.postMessage('newfile:');
@@ -3680,11 +3680,7 @@ ${previewClone.outerHTML}
         });
 
         // Editor window (E key) — opens the dedicated editor for the current file.
-        document.addEventListener('keydown', (e) => {
-            if (e.ctrlKey || e.metaKey || e.altKey) return;
-            if (e.key !== 'e' && e.key !== 'E') return;
-            const t = e.target;
-            if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+        onPlainKey('e', () => {
             if (window.ipc && typeof window.ipc.postMessage === 'function') {
                 let line = 1;
                 try {
@@ -3695,22 +3691,14 @@ ${previewClone.outerHTML}
         });
 
         // Export shortcut (X key) — single-page or workspace export.
-        document.addEventListener('keydown', (e) => {
-            if (e.ctrlKey || e.metaKey || e.altKey) return;
-            if (e.key !== 'x' && e.key !== 'X') return;
-            const t = e.target;
-            if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+        onPlainKey('x', () => {
             if (currentWorkspace) { exportWorkspace(); } else { exportHtml(); }
         });
 
         // Open install directory (Ctrl+D) — reveal the folder that holds the exe and
         // assets/ in Explorer. Same modifier guard shape as Ctrl+N; preventDefault to
         // suppress the browser "add bookmark" default. Rust handles `openinstalldir:`.
-        document.addEventListener('keydown', (e) => {
-            if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return;
-            if (e.key !== 'd' && e.key !== 'D') return;
-            const t = e.target;
-            if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+        onCtrlKey('d', (e) => {
             e.preventDefault();
             if (window.ipc && typeof window.ipc.postMessage === 'function') {
                 window.ipc.postMessage('openinstalldir:');
