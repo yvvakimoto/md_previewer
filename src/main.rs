@@ -703,6 +703,11 @@ fn parse_toc_md(root: &Path, toc_text: &str) -> Vec<TocNode> {
     // Buffer for current item's text/link.
     let mut cur_text = String::new();
     let mut cur_href: Option<String> = None;
+    // `cur_text` / `cur_href` are single shared buffers that every Start(Item)
+    // clears, so an item's own text does not survive its nested list — the
+    // parent would end up named after its LAST child. Stash the enclosing
+    // item's text/href across each nested list and restore it on the way out.
+    let mut outer_item: Vec<(String, Option<String>)> = Vec::new();
     let mut in_item = false;
     let mut in_link = false;
 
@@ -711,9 +716,16 @@ fn parse_toc_md(root: &Path, toc_text: &str) -> Vec<TocNode> {
         match ev {
             Event::Start(Tag::List(_)) => {
                 stack.push(Vec::new());
+                outer_item.push((std::mem::take(&mut cur_text), cur_href.take()));
             }
             Event::End(Tag::List(_)) => {
                 let level = stack.pop().unwrap_or_default();
+                // Restore the enclosing item's own text/href, which this list's
+                // items overwrote, before End(Tag::Item) reads them for the name.
+                if let Some((text, href)) = outer_item.pop() {
+                    cur_text = text;
+                    cur_href = href;
+                }
                 // Attach to the currently-open item, if any. The slot may not
                 // exist yet (item only had text + nested list, no link), in which
                 // case create a placeholder dir node now and let End(Tag::Item)
@@ -771,7 +783,11 @@ fn parse_toc_md(root: &Path, toc_text: &str) -> Vec<TocNode> {
                         }
                     }
                     n
-                } else if let Some(h) = href {
+                } else if let Some(h) = href.filter(|h| is_markdown_href(h)) {
+                    // Non-markdown hrefs (external URLs, assets) are ignored the
+                    // same way the nested-list branch above ignores them, so they
+                    // fall through to the plain-label node instead of becoming a
+                    // "file" whose relPath is a URL that resolves nowhere.
                     let rel = normalize_rel(&h);
                     let abs = root.join(&rel.replace('/', std::path::MAIN_SEPARATOR_STR));
                     let (title, headings) = read_file_headings(&abs);
@@ -2697,4 +2713,366 @@ fn main() -> wry::Result<()> {
             _ => (),
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ---- parse_slides_spec -------------------------------------------------
+
+    fn slides(spec: &str, count: usize) -> Vec<usize> {
+        parse_slides_spec(&Some(spec.to_string()), count)
+    }
+
+    #[test]
+    fn slides_spec_absent_or_blank_selects_everything() {
+        assert_eq!(parse_slides_spec(&None, 3), vec![0, 1, 2]);
+        assert_eq!(slides("", 3), vec![0, 1, 2]);
+        assert_eq!(slides("   ", 3), vec![0, 1, 2]);
+        assert_eq!(parse_slides_spec(&None, 0), Vec::<usize>::new());
+    }
+
+    #[test]
+    fn slides_spec_parses_lists_and_ranges() {
+        assert_eq!(slides("1,3", 5), vec![0, 2]);
+        assert_eq!(slides("5-7", 8), vec![4, 5, 6]);
+        assert_eq!(slides("1, 2 , 3", 5), vec![0, 1, 2]);
+        assert_eq!(slides("2-2", 5), vec![1]);
+    }
+
+    #[test]
+    fn slides_spec_reverses_descending_ranges_but_keeps_ascending_output() {
+        // `5-3` is accepted and normalized to 3..=5, so the emitted order is
+        // ascending -- NOT the reversed 5,4,3 one might expect from the spelling.
+        assert_eq!(slides("5-3", 8), vec![2, 3, 4]);
+    }
+
+    #[test]
+    fn slides_spec_dedupes_and_preserves_first_seen_order() {
+        assert_eq!(slides("1,1,2", 5), vec![0, 1]);
+        assert_eq!(slides("3,1", 5), vec![2, 0]);
+        assert_eq!(slides("2-4,3", 5), vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn slides_spec_drops_out_of_range_and_malformed_parts() {
+        assert_eq!(slides("0,99", 3), Vec::<usize>::new()); // 1-based: 0 is invalid
+        assert_eq!(slides("1,99", 3), vec![0]);
+        assert_eq!(slides("abc", 3), Vec::<usize>::new());
+        assert_eq!(slides("1,,2", 3), vec![0, 1]);
+        // Open-ended ranges are NOT supported: `split_once('-')` succeeds but the
+        // empty side fails to parse, so the whole part is silently dropped.
+        assert_eq!(slides("-3", 5), Vec::<usize>::new());
+        assert_eq!(slides("3-", 5), Vec::<usize>::new());
+    }
+
+    // ---- slide_png_name ----------------------------------------------------
+
+    #[test]
+    fn slide_png_name_is_one_based_and_zero_padded() {
+        // layout.json consumers depend on this exact naming.
+        assert_eq!(slide_png_name(true, 0), "slide-01.png");
+        assert_eq!(slide_png_name(true, 9), "slide-10.png");
+        assert_eq!(slide_png_name(true, 99), "slide-100.png");
+        assert_eq!(slide_png_name(false, 5), "page.png");
+    }
+
+    // ---- format_title ------------------------------------------------------
+
+    #[test]
+    fn format_title_uses_em_dash_and_falls_back_to_app_name() {
+        assert_eq!(format_title(Some("a.md")), "a.md \u{2014} Markdown Previewer");
+        assert_eq!(format_title(Some("")), "Markdown Previewer");
+        assert_eq!(format_title(None), "Markdown Previewer");
+    }
+
+    // ---- paths_equal -------------------------------------------------------
+
+    #[test]
+    fn paths_equal_folds_case_and_separators() {
+        assert!(paths_equal(Path::new(r"C:\a\B.md"), Path::new(r"c:\A\b.md")));
+        assert!(paths_equal(Path::new("C:/a/b.md"), Path::new(r"C:\a\b.md")));
+        assert!(!paths_equal(Path::new(r"C:\a\b.md"), Path::new(r"C:\a\c.md")));
+    }
+
+    // ---- get_mime_type -----------------------------------------------------
+
+    #[test]
+    fn mime_type_covers_served_kinds_and_defaults_to_octet_stream() {
+        let mime = |p: &str| get_mime_type(&PathBuf::from(p));
+        assert_eq!(mime("a.html"), "text/html");
+        assert_eq!(mime("a.PNG"), "image/png"); // extension match is case-insensitive
+        assert_eq!(mime("a.mp4"), "video/mp4");
+        assert_eq!(mime("a.csv"), "text/csv; charset=utf-8");
+        assert_eq!(mime("a.tsv"), "text/tab-separated-values; charset=utf-8");
+        assert_eq!(mime("a.txt"), "text/plain; charset=utf-8");
+        // The default is why a non-image extension can never be usefully inlined.
+        assert_eq!(mime("a.unknown"), "application/octet-stream");
+        assert_eq!(mime("noext"), "application/octet-stream");
+    }
+
+    // ---- parse_byte_range --------------------------------------------------
+
+    #[test]
+    fn byte_range_handles_open_closed_and_suffix_forms() {
+        assert_eq!(parse_byte_range("bytes=0-", 10), Some((0, 9)));
+        assert_eq!(parse_byte_range("bytes=2-5", 10), Some((2, 5)));
+        assert_eq!(parse_byte_range("bytes=5-999", 10), Some((5, 9))); // clamped
+        assert_eq!(parse_byte_range("bytes=-3", 10), Some((7, 9))); // last 3 bytes
+        assert_eq!(parse_byte_range("bytes=-100", 10), Some((0, 9))); // clamped
+        assert_eq!(parse_byte_range(" bytes=2-5 ", 10), Some((2, 5)));
+    }
+
+    #[test]
+    fn byte_range_rejects_unsatisfiable_and_malformed() {
+        assert_eq!(parse_byte_range("bytes=0-5", 0), None); // empty resource
+        assert_eq!(parse_byte_range("bytes=-0", 10), None); // zero-length suffix
+        assert_eq!(parse_byte_range("bytes=100-200", 10), None); // past the end
+        assert_eq!(parse_byte_range("bytes=5-2", 10), None); // start > end
+        assert_eq!(parse_byte_range("bytes=abc", 10), None);
+        assert_eq!(parse_byte_range("0-5", 10), None); // missing unit
+        assert_eq!(parse_byte_range("", 10), None);
+    }
+
+    #[test]
+    fn byte_range_uses_only_the_first_of_a_multi_range() {
+        assert_eq!(parse_byte_range("bytes=0-1,5-6", 10), Some((0, 1)));
+    }
+
+    // ---- slugify -----------------------------------------------------------
+
+    fn slug(text: &str) -> String {
+        slugify(text, &mut std::collections::HashSet::new())
+    }
+
+    #[test]
+    fn slugify_lowercases_and_hyphenates() {
+        assert_eq!(slug("Hello World"), "hello-world");
+        assert_eq!(slug("  Spaced   Out  "), "spaced-out"); // whitespace runs collapse
+        assert_eq!(slug("A/B:C"), "abc"); // punctuation dropped
+    }
+
+    #[test]
+    fn slugify_keeps_cjk_and_strips_edge_hyphens() {
+        assert_eq!(slug("\u{65E5}\u{672C}\u{8A9E} \u{898B}\u{51FA}\u{3057}"),
+                   "\u{65E5}\u{672C}\u{8A9E}-\u{898B}\u{51FA}\u{3057}");
+        // Only ONE hyphen is stripped per end, not a run — `^-|-$`, not `^-+|-+$`.
+        // The JS `generateHeadingId` uses the same regex, so the two agree.
+        assert_eq!(slug("- leading and trailing -"), "-leading-and-trailing-");
+    }
+
+    #[test]
+    fn slugify_falls_back_to_heading_and_dedupes() {
+        let mut seen = std::collections::HashSet::new();
+        assert_eq!(slugify("!!!", &mut seen), "heading");
+        assert_eq!(slugify("???", &mut seen), "heading-1");
+        assert_eq!(slugify("***", &mut seen), "heading-2");
+
+        let mut seen = std::collections::HashSet::new();
+        assert_eq!(slugify("Intro", &mut seen), "intro");
+        assert_eq!(slugify("Intro", &mut seen), "intro-1");
+        assert_eq!(slugify("Intro", &mut seen), "intro-2");
+    }
+
+    #[test]
+    fn slugify_unicode_word_class_diverges_from_js_generate_heading_id() {
+        // KNOWN PRE-EXISTING DIVERGENCE -- pinning current behavior, not endorsing it.
+        // Rust's `regex` treats `\w` as Unicode-aware, so the accented letter is
+        // kept; the JS `generateHeadingId` in assets/index.html uses JS `\w`, which
+        // is ASCII-only, and produces "caf". An exported HTML artifact's sidebar
+        // anchor (Rust-generated) therefore misses the in-page id (JS-generated)
+        // for accented non-CJK headings. Fixing it is a behavior change and needs
+        // its own change window; see CLAUDE.md.
+        assert_eq!(slug("Caf\u{00E9}"), "caf\u{00E9}");
+    }
+
+    // ---- is_markdown_href / normalize_rel / extension helpers --------------
+
+    #[test]
+    fn markdown_href_detection_ignores_fragments_and_case() {
+        assert!(is_markdown_href("a.md"));
+        assert!(is_markdown_href("a.MARKDOWN"));
+        assert!(is_markdown_href("dir/a.md#section"));
+        assert!(!is_markdown_href("a.txt"));
+        assert!(!is_markdown_href("https://example.com/"));
+    }
+
+    #[test]
+    fn normalize_rel_drops_fragment_and_dot_slash_and_folds_separators() {
+        assert_eq!(normalize_rel("./dir/a.md"), "dir/a.md");
+        assert_eq!(normalize_rel("dir/a.md#frag"), "dir/a.md");
+        assert_eq!(normalize_rel(r"dir\a.md"), "dir/a.md");
+    }
+
+    #[test]
+    fn markdown_and_image_ext_detection() {
+        assert!(is_markdown_ext(Path::new("a.MD")));
+        assert!(is_markdown_ext(Path::new("a.markdown")));
+        assert!(!is_markdown_ext(Path::new("a.mdx"))); // .mdx is a separate format
+        assert!(is_image_ext(Path::new("a.JPEG")));
+        assert!(!is_image_ext(Path::new("a.mp4")));
+    }
+
+    // ---- extract_headings_from_md -----------------------------------------
+
+    #[test]
+    fn headings_capture_level_text_and_slug() {
+        let hs = extract_headings_from_md("# Title\n\ntext\n\n## Sub A\n\n### Deep\n");
+        let got: Vec<_> = hs.iter().map(|h| (h.level, h.text.as_str(), h.slug.as_str())).collect();
+        assert_eq!(got, vec![
+            (1, "Title", "title"),
+            (2, "Sub A", "sub-a"),
+            (3, "Deep", "deep"),
+        ]);
+    }
+
+    #[test]
+    fn headings_include_inline_code_text_and_support_setext() {
+        let hs = extract_headings_from_md("Title\n=====\n\n## Use `foo()`\n");
+        assert_eq!(hs.len(), 2);
+        assert_eq!((hs[0].level, hs[0].text.as_str()), (1, "Title"));
+        assert_eq!((hs[1].level, hs[1].text.as_str()), (2, "Use foo()"));
+    }
+
+    #[test]
+    fn headings_skip_fenced_code_and_empty_headings() {
+        let hs = extract_headings_from_md("# Real\n\n```\n# Not a heading\n```\n\n##\n");
+        let got: Vec<_> = hs.iter().map(|h| h.text.as_str()).collect();
+        assert_eq!(got, vec!["Real"]);
+    }
+
+    #[test]
+    fn headings_dedupe_slugs_across_the_document() {
+        let hs = extract_headings_from_md("## Setup\n\n## Setup\n");
+        assert_eq!(hs[0].slug, "setup");
+        assert_eq!(hs[1].slug, "setup-1");
+    }
+
+    // ---- parse_toc_md ------------------------------------------------------
+    //
+    // Against an EMPTY root every `read_file_headings` misses and
+    // `append_unlisted_files` contributes nothing, so the output is a pure
+    // function of `toc_text` -- no markdown fixtures on disk are needed.
+
+    fn toc(text: &str) -> Vec<TocNode> {
+        let dir = tempfile::tempdir().unwrap();
+        parse_toc_md(dir.path(), text)
+    }
+
+    #[test]
+    fn toc_flat_list_of_links_becomes_files() {
+        let t = toc("- [Intro](intro.md)\n- [Next](sub/next.md)\n");
+        assert_eq!(t.len(), 2);
+        assert_eq!((t[0].kind.as_str(), t[0].name.as_str(), t[0].rel_path.as_str()),
+                   ("file", "Intro", "intro.md"));
+        assert_eq!((t[1].kind.as_str(), t[1].name.as_str(), t[1].rel_path.as_str()),
+                   ("file", "Next", "sub/next.md"));
+        assert!(t[0].children.is_none());
+    }
+
+    #[test]
+    fn toc_nested_list_upgrades_the_parent_to_a_dir() {
+        let t = toc("- Chapters\n  - [One](a.md)\n  - [Two](b.md)\n");
+        assert_eq!(t.len(), 1);
+        assert_eq!((t[0].kind.as_str(), t[0].name.as_str()), ("dir", "Chapters"));
+        let kids = t[0].children.as_ref().unwrap();
+        assert_eq!(kids.len(), 2);
+        assert_eq!(kids[0].rel_path, "a.md");
+        assert_eq!(kids[1].rel_path, "b.md");
+    }
+
+    #[test]
+    fn toc_bullet_with_both_link_and_children_stays_a_dir_and_ignores_the_href() {
+        // The `n.children.is_none()` guard means a parent that also carries a link
+        // keeps its `dir` kind and never gets a rel_path.
+        let t = toc("- [Group](group.md)\n  - [Inner](inner.md)\n");
+        assert_eq!(t.len(), 1);
+        assert_eq!((t[0].kind.as_str(), t[0].name.as_str()), ("dir", "Group"));
+        assert_eq!(t[0].rel_path, "");
+        assert_eq!(t[0].children.as_ref().unwrap()[0].rel_path, "inner.md");
+    }
+
+    #[test]
+    fn toc_link_without_text_falls_back_to_the_file_name() {
+        let t = toc("- [](sub/page.md)\n");
+        assert_eq!(t.len(), 1);
+        assert_eq!((t[0].kind.as_str(), t[0].name.as_str()), ("file", "page.md"));
+    }
+
+    #[test]
+    fn toc_childless_plain_text_bullet_is_an_empty_dir() {
+        let t = toc("- Just a label\n");
+        assert_eq!(t.len(), 1);
+        assert_eq!((t[0].kind.as_str(), t[0].name.as_str()), ("dir", "Just a label"));
+        assert_eq!(t[0].children.as_ref().unwrap().len(), 0);
+    }
+
+    #[test]
+    fn toc_non_markdown_href_is_not_treated_as_a_file() {
+        let t = toc("- [Site](https://example.com/)\n");
+        assert_eq!(t.len(), 1);
+        // No .md/.markdown suffix -> the file branch is skipped entirely, so the
+        // URL never leaks into relPath/absPath. The bullet keeps its label.
+        assert_eq!((t[0].kind.as_str(), t[0].name.as_str()), ("dir", "Site"));
+        assert_eq!(t[0].rel_path, "");
+        assert_eq!(t[0].abs_path, "");
+    }
+
+    #[test]
+    fn toc_group_name_survives_its_nested_list() {
+        // Regression: `cur_text` is shared across items, so before the outer_item
+        // save/restore the group below was named "Third" (its last child).
+        let t = toc("- Group\n  - [First](a.md)\n  - [Second](b.md)\n  - [Third](c.md)\n");
+        assert_eq!(t.len(), 1);
+        assert_eq!(t[0].name, "Group");
+        assert_eq!(t[0].children.as_ref().unwrap().len(), 3);
+    }
+
+    #[test]
+    fn toc_group_names_survive_two_levels_of_nesting() {
+        let t = toc("- Outer\n  - Inner\n    - [Leaf](a.md)\n  - [Sibling](b.md)\n");
+        assert_eq!(t.len(), 1);
+        assert_eq!(t[0].name, "Outer");
+        let kids = t[0].children.as_ref().unwrap();
+        assert_eq!(kids.len(), 2);
+        assert_eq!(kids[0].name, "Inner");
+        assert_eq!(kids[0].children.as_ref().unwrap()[0].name, "Leaf");
+        assert_eq!(kids[1].name, "Sibling");
+    }
+
+    #[test]
+    fn toc_real_workspace_sample_labels_its_group_correctly() {
+        // End-to-end against the shipped sample, which is what surfaced the bug.
+        let root = Path::new("samples/workspace");
+        let txt = fs::read_to_string(root.join("_toc.md")).unwrap();
+        let t = parse_toc_md(root, &txt);
+        let names: Vec<_> = t.iter().map(|n| n.name.as_str()).collect();
+        assert_eq!(names, vec!["Introduction", "Chapters", "Conclusion", "Other"]);
+    }
+
+    #[test]
+    fn toc_strips_dot_slash_and_fragments_from_hrefs() {
+        let t = toc("- [A](./docs/a.md#intro)\n");
+        assert_eq!(t[0].rel_path, "docs/a.md");
+    }
+
+    #[test]
+    fn toc_appends_on_disk_files_missing_from_the_list_under_other() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("listed.md"), "# Listed\n").unwrap();
+        fs::write(dir.path().join("stray.md"), "# Stray\n").unwrap();
+
+        let t = parse_toc_md(dir.path(), "- [Listed](listed.md)\n");
+        // The listed file keeps its position and now resolves its real headings.
+        assert_eq!(t[0].rel_path, "listed.md");
+        assert_eq!(t[0].title.as_deref(), Some("Listed"));
+        // The unlisted one is appended in a synthetic trailing group.
+        let other = t.last().unwrap();
+        assert_eq!(other.kind, "dir");
+        let names: Vec<_> = other.children.as_ref().unwrap()
+            .iter().map(|n| n.rel_path.as_str()).collect();
+        assert!(names.contains(&"stray.md"), "expected stray.md in {:?}", names);
+        assert!(!names.contains(&"listed.md"), "listed.md must not be duplicated");
+    }
 }
