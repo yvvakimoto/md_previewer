@@ -231,6 +231,67 @@ def main():
             check("Home jumps to the first slide",
                   page.evaluate(ACTIVE_IDX), 0)
 
+            # ---------- context menus (__createContextMenu) ----------
+            load("samples/math.md")
+            MENU = "() => document.querySelectorAll('.app-context-menu .app-menu-item').length"
+            VISIBLE = ("() => { const m = document.querySelector('.app-context-menu');"
+                       " return !!m && m.style.display !== 'none'; }")
+
+            def right_click_center(selector):
+                """Right-click an element's center via raw mouse coords.
+
+                Playwright's actionability check rejects `.katex` (its own inner
+                spans "intercept" pointer events), but the app resolves the target
+                with closest('.katex'), so hitting a descendant is equivalent.
+                """
+                box = page.evaluate("""(sel) => {
+                  const el = document.querySelector(sel);
+                  if (!el) return null;
+                  el.scrollIntoView({ block: 'center' });
+                  const r = el.getBoundingClientRect();
+                  return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+                }""", selector)
+                assert box, "selector not found: %s" % selector
+                page.mouse.click(box["x"], box["y"], button="right")
+                page.wait_for_timeout(150)
+
+            # Right-clicking rendered math opens the copy menu...
+            right_click_center("#preview .katex")
+            check("right-click on KaTeX opens the menu", page.evaluate(VISIBLE), True)
+            check("...with two copy items", page.evaluate(MENU), 2)
+            labels = page.evaluate(
+                "() => [...document.querySelectorAll('.app-context-menu .app-menu-item')]"
+                ".map(i => i.textContent)")
+            check("...labelled Copy MathML / Copy LaTeX", labels, ["Copy MathML", "Copy LaTeX"])
+            check("...and neither is disabled",
+                  page.evaluate("() => [...document.querySelectorAll("
+                                "'.app-context-menu .app-menu-item.disabled')].length"), 0)
+
+            # Escape dismisses it.
+            press(page, "Escape")
+            check("Escape dismisses the context menu", page.evaluate(VISIBLE), False)
+
+            # ...but right-clicking plain prose must fall through to the native menu.
+            right_click_center("#preview p:not(:has(.katex))")
+            check("right-click on prose shows no in-app menu", page.evaluate(VISIBLE), False)
+
+            # Clamped inside the viewport even when opened at the far corner.
+            box = page.evaluate("() => { const k = document.querySelector('#preview .katex');"
+                                " k.scrollIntoView(); const r = k.getBoundingClientRect();"
+                                " return {x: r.left + 2, y: r.top + 2}; }")
+            page.mouse.move(box["x"], box["y"])
+            page.mouse.click(box["x"], box["y"], button="right")
+            page.wait_for_timeout(150)
+            fits = page.evaluate("""() => {
+              const m = document.querySelector('.app-context-menu');
+              if (!m || m.style.display === 'none') return null;
+              const r = m.getBoundingClientRect();
+              return r.right <= window.innerWidth && r.bottom <= window.innerHeight
+                  && r.left >= 0 && r.top >= 0;
+            }""")
+            check("the menu is clamped inside the viewport", fits, True)
+            press(page, "Escape")
+
             errors = page.evaluate("() => (window.__kcErrors || [])")
             check("no uncaught page errors recorded", errors, [])
 

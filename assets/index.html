@@ -268,8 +268,10 @@
             opacity: 1;
         }
 
-        /* Right-click "Copy MathML / Copy LaTeX" menu for rendered KaTeX (see setupMathContextMenu). */
-        .math-context-menu {
+        /* Floating right-click menu, shared by every in-app context menu built with
+           __createContextMenu(): the KaTeX "Copy MathML / Copy LaTeX" menu and the
+           workspace file tree's collapse/expand menu. */
+        .app-context-menu {
             position: fixed;
             z-index: 10000;
             min-width: 150px;
@@ -284,53 +286,30 @@
             user-select: none;
         }
 
-        .math-context-menu .math-menu-item {
+        .app-context-menu .app-menu-item {
             padding: 6px 10px;
             border-radius: 4px;
             cursor: pointer;
             white-space: nowrap;
         }
 
-        .math-context-menu .math-menu-item:hover {
+        .app-context-menu .app-menu-item:hover {
             background: #f3f4f6;
         }
 
-        .math-context-menu .math-menu-item.disabled {
+        .app-context-menu .app-menu-item.disabled {
             color: #a0a4a8;
             cursor: default;
         }
 
-        .math-context-menu .math-menu-item.disabled:hover {
+        .app-context-menu .app-menu-item.disabled:hover {
             background: transparent;
         }
 
-        .math-context-menu .math-menu-item.copied {
+        .app-context-menu .app-menu-item.copied {
             background: #28a745;
             color: #ffffff;
         }
-
-        /* Right-click menu for the workspace file tree (see setupFileTreeContextMenu). */
-        .ft-context-menu {
-            position: fixed;
-            z-index: 10000;
-            min-width: 150px;
-            padding: 4px;
-            background: #ffffff;
-            border: 1px solid #d1d5da;
-            border-radius: 6px;
-            box-shadow: 0 4px 16px rgba(27, 31, 35, 0.18);
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
-            font-size: 13px;
-            color: #24292e;
-            user-select: none;
-        }
-        .ft-context-menu .ft-menu-item {
-            padding: 6px 10px;
-            border-radius: 4px;
-            cursor: pointer;
-            white-space: nowrap;
-        }
-        .ft-context-menu .ft-menu-item:hover { background: #f3f4f6; }
 
         #preview blockquote {
             border-left: 4px solid #dfe2e5;
@@ -1115,37 +1094,29 @@
             color: #ffffff;
         }
 
-        body.dark-mode .math-context-menu {
+        body.dark-mode .app-context-menu {
             background: #21262d;
             border-color: #30363d;
             color: #c9d1d9;
             box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
         }
 
-        body.dark-mode .math-context-menu .math-menu-item:hover {
+        body.dark-mode .app-context-menu .app-menu-item:hover {
             background: #30363d;
         }
 
-        body.dark-mode .math-context-menu .math-menu-item.disabled {
+        body.dark-mode .app-context-menu .app-menu-item.disabled {
             color: #6e7681;
         }
 
-        body.dark-mode .math-context-menu .math-menu-item.disabled:hover {
+        body.dark-mode .app-context-menu .app-menu-item.disabled:hover {
             background: transparent;
         }
 
-        body.dark-mode .math-context-menu .math-menu-item.copied {
+        body.dark-mode .app-context-menu .app-menu-item.copied {
             background: #238636;
             color: #ffffff;
         }
-
-        body.dark-mode .ft-context-menu {
-            background: #21262d;
-            border-color: #30363d;
-            color: #c9d1d9;
-            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
-        }
-        body.dark-mode .ft-context-menu .ft-menu-item:hover { background: #30363d; }
 
         body.dark-mode #toc-sidebar {
             background: #161b22;
@@ -7835,53 +7806,55 @@ ${previewClone.outerHTML}
         // Works for both the normal pipeline (output:'htmlAndMathml', see renderMathExpressions)
         // and Marp slides (marp-core's KaTeX also emits MathML); a format with no source in the
         // DOM (e.g. an html-only .katex) is shown disabled rather than copying empty text.
-        let __mathMenuWired = false;
-        function setupMathContextMenu() {
-            if (__mathMenuWired) return;
-            __mathMenuWired = true;
-
+        // ----- Floating right-click menu (shared factory) -----
+        // Both in-app context menus (KaTeX copy, file-tree collapse/expand) had a
+        // byte-identical viewport-clamp block and dismiss wiring. This owns exactly
+        // what was duplicated; each caller keeps its own `contextmenu` listener and
+        // target test, so a right-click elsewhere still falls through to WebView2's
+        // native menu.
+        //
+        // Returns { addItem, show, hide }:
+        //   addItem(label, onClick, opts)  opts.disabled → inert item.
+        //                                  onClick may return
+        //                                  { label, copied, delay } to flash a result
+        //                                  instead of closing immediately.
+        //   show(e, build)                 build() adds the items, then the menu is
+        //                                  positioned at e.clientX/Y and clamped.
+        //   hide()                         hide and clear.
+        function __createContextMenu() {
             const menu = document.createElement('div');
-            menu.className = 'math-context-menu';
+            menu.className = 'app-context-menu';
             menu.style.display = 'none';
             document.body.appendChild(menu);
 
-            const hideMenu = () => { menu.style.display = 'none'; menu.innerHTML = ''; };
+            const hide = () => { menu.style.display = 'none'; menu.innerHTML = ''; };
 
-            // Add an item; `value` null/empty → rendered disabled. `onCopy` flashes "Copied!".
-            const addItem = (label, value) => {
+            const addItem = (label, onClick, opts) => {
+                const disabled = !!(opts && opts.disabled);
                 const item = document.createElement('div');
-                item.className = 'math-menu-item' + (value ? '' : ' disabled');
+                item.className = 'app-menu-item' + (disabled ? ' disabled' : '');
                 item.textContent = label;
-                if (value) {
+                if (!disabled) {
                     item.addEventListener('click', (ev) => {
                         ev.stopPropagation();
-                        if (copyTextViaTextarea(value)) {
-                            item.textContent = 'Copied!';
-                            item.classList.add('copied');
-                            setTimeout(hideMenu, 600);
+                        const r = onClick();
+                        if (r && r.label) {
+                            // Keep the menu up briefly to show the outcome.
+                            item.textContent = r.label;
+                            if (r.copied) item.classList.add('copied');
+                            setTimeout(hide, r.delay || 600);
                         } else {
-                            item.textContent = 'Failed';
-                            setTimeout(hideMenu, 800);
+                            hide();
                         }
                     });
                 }
                 menu.appendChild(item);
             };
 
-            preview.addEventListener('contextmenu', (e) => {
-                const k = e.target.closest('.katex');
-                if (!k) { hideMenu(); return; } // let WebView2's native menu show elsewhere
-                e.preventDefault();
-
-                const mathEl = k.querySelector('.katex-mathml math');
-                const mathml = mathEl ? new XMLSerializer().serializeToString(mathEl) : '';
-                const latex = (k.querySelector('annotation[encoding="application/x-tex"]')?.textContent || '').trim();
-
+            const show = (e, build) => {
                 menu.innerHTML = '';
-                addItem('Copy MathML', mathml);
-                addItem('Copy LaTeX', latex);
-
-                // Position at the cursor, clamped to the viewport.
+                build();
+                // display must precede getBoundingClientRect — a hidden element is 0x0.
                 menu.style.display = 'block';
                 const m = menu.getBoundingClientRect();
                 const margin = 4;
@@ -7891,14 +7864,44 @@ ${previewClone.outerHTML}
                 if (top + m.height > window.innerHeight - margin) top = window.innerHeight - m.height - margin;
                 menu.style.left = Math.max(margin, left) + 'px';
                 menu.style.top = Math.max(margin, top) + 'px';
-            });
+            };
 
             // Dismiss on outside click, Esc, or scroll.
             document.addEventListener('click', (e) => {
-                if (menu.style.display !== 'none' && !menu.contains(e.target)) hideMenu();
+                if (menu.style.display !== 'none' && !menu.contains(e.target)) hide();
             });
-            document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hideMenu(); });
-            window.addEventListener('scroll', hideMenu, true);
+            document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hide(); });
+            window.addEventListener('scroll', hide, true);
+
+            return { addItem, show, hide };
+        }
+
+        let __mathMenuWired = false;
+        function setupMathContextMenu() {
+            if (__mathMenuWired) return;
+            __mathMenuWired = true;
+            const { addItem, show, hide } = __createContextMenu();
+
+            // A copy item: `value` null/empty → disabled; on click, flash the result.
+            const addCopyItem = (label, value) => addItem(label, () => {
+                const ok = copyTextViaTextarea(value);
+                return { label: ok ? 'Copied!' : 'Failed', copied: ok, delay: ok ? 600 : 800 };
+            }, { disabled: !value });
+
+            preview.addEventListener('contextmenu', (e) => {
+                const k = e.target.closest('.katex');
+                if (!k) { hide(); return; } // let WebView2's native menu show elsewhere
+                e.preventDefault();
+
+                const mathEl = k.querySelector('.katex-mathml math');
+                const mathml = mathEl ? new XMLSerializer().serializeToString(mathEl) : '';
+                const latex = (k.querySelector('annotation[encoding="application/x-tex"]')?.textContent || '').trim();
+
+                show(e, () => {
+                    addCopyItem('Copy MathML', mathml);
+                    addCopyItem('Copy LaTeX', latex);
+                });
+            });
         }
         setupMathContextMenu();
 
@@ -7912,12 +7915,7 @@ ${previewClone.outerHTML}
             if (!ftEl) return;
             __ftMenuWired = true;
 
-            const menu = document.createElement('div');
-            menu.className = 'ft-context-menu';
-            menu.style.display = 'none';
-            document.body.appendChild(menu);
-
-            const hideMenu = () => { menu.style.display = 'none'; menu.innerHTML = ''; };
+            const { addItem, show, hide } = __createContextMenu();
 
             const setAllDetails = (open) => {
                 // Setting .open fires each <details>'s persistDetails 'toggle' listener,
@@ -7925,44 +7923,16 @@ ${previewClone.outerHTML}
                 ftEl.querySelectorAll('details').forEach((d) => { d.open = open; });
             };
 
-            const addItem = (label, onClick) => {
-                const item = document.createElement('div');
-                item.className = 'ft-menu-item';
-                item.textContent = label;
-                item.addEventListener('click', (ev) => {
-                    ev.stopPropagation();
-                    onClick();
-                    hideMenu();
-                });
-                menu.appendChild(item);
-            };
-
             ftEl.addEventListener('contextmenu', (e) => {
                 // Only act when the tree actually has collapsible nodes.
-                if (!ftEl.querySelector('details')) { hideMenu(); return; }
+                if (!ftEl.querySelector('details')) { hide(); return; }
                 e.preventDefault();
-
-                menu.innerHTML = '';
-                addItem('すべて閉じる', () => setAllDetails(false));
-                addItem('すべて開く', () => setAllDetails(true));
-
-                // Position at the cursor, clamped to the viewport.
-                menu.style.display = 'block';
-                const m = menu.getBoundingClientRect();
-                const margin = 4;
-                let left = e.clientX;
-                let top = e.clientY;
-                if (left + m.width > window.innerWidth - margin) left = window.innerWidth - m.width - margin;
-                if (top + m.height > window.innerHeight - margin) top = window.innerHeight - m.height - margin;
-                menu.style.left = Math.max(margin, left) + 'px';
-                menu.style.top = Math.max(margin, top) + 'px';
+                show(e, () => {
+                    addItem('すべて閉じる', () => setAllDetails(false));
+                    addItem('すべて開く', () => setAllDetails(true));
+                });
             });
-
-            document.addEventListener('click', (e) => {
-                if (menu.style.display !== 'none' && !menu.contains(e.target)) hideMenu();
-            });
-            document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hideMenu(); });
-            window.addEventListener('scroll', hideMenu, true);
+            // Outside-click / Esc / scroll dismissal is wired by __createContextMenu.
         }
         setupFileTreeContextMenu();
 
