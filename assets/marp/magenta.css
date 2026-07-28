@@ -142,6 +142,15 @@ section th {
 section ul, section ol { margin: 0 0 14px 1.4em; }
 section li { margin: 4px 0; }
 
+/* 定義リスト — 用語をアクセント色、説明の罫線をティールのルールカラーに寄せる。
+   幾何は index.html のベースラインに任せ、ここでは --md-dl-* だけを指定する。 */
+section dl {
+  --md-dl-accent: var(--rule-soft);
+  --md-dl-term-color: var(--accent-deep);
+  --md-dl-gap: 0.7em;
+  margin: 0 0 14px;
+}
+
 section hr {
   border: none;
   border-top: 2px dashed var(--rule);

@@ -15,10 +15,11 @@ use wry::webview::WebViewBuilder;
 use wry::http::Response;
 use serde::{Deserialize, Serialize};
 use notify::{Watcher, RecursiveMode, RecommendedWatcher, recommended_watcher};
-use base64::{Engine as _, engine::general_purpose};
 use regex::Regex;
 use std::collections::{HashMap, HashSet};
 
+#[cfg(windows)]
+mod cdp_win;
 mod clipboard_win;
 mod editor_registry;
 mod ime_win;
@@ -38,12 +39,14 @@ pub(crate) type CurrentFile = Arc<Mutex<Option<PathBuf>>>;
 struct FileData {
     filename: String,
     filepath: String,
-    /// Display content with local images embedded as base64 data URIs
-    /// (WebView2 can't load dynamic relative-path local images).
+    /// The markdown the webview renders. Local images used to be inlined here as
+    /// base64; they are now served lazily through the `/userfile/` protocol route
+    /// instead (see *Preview Pipeline* in CLAUDE.md), so this equals `raw`.
     content: String,
-    /// The un-embedded source markdown (relative image paths intact). The
-    /// webview keeps this for any host-bound save (e.g. the Marp theme picker)
-    /// so base64 data URIs never leak back into the on-disk `.md`.
+    /// The canonical source markdown. Kept as a separate channel — the webview
+    /// holds it as `currentMarkdownRaw` and it is what any host-bound save
+    /// (e.g. the Marp theme picker's `savefile:`) writes back to disk, so a
+    /// future display-only rewrite of `content` can never leak into the `.md`.
     raw: String,
 }
 
@@ -273,6 +276,95 @@ fn format_title(filename: Option<&str>) -> String {
 // Thread-safe storage for the current markdown file's parent directory
 pub(crate) type CurrentDir = Arc<Mutex<Option<PathBuf>>>;
 
+/// Paths we wrote ourselves, whose next `notify` event must be ignored so a save
+/// does not bounce back as an external change and re-render (or loop).
+pub(crate) type SuppressedSaves = Arc<Mutex<HashSet<PathBuf>>>;
+
+/// How long a self-written path stays suppressed. A safety net rather than a
+/// handshake: if the watcher event never arrives, the entry simply expires.
+const SAVE_SUPPRESS_MS: u64 = 1500;
+
+/// Mark `path` as self-written and schedule the mark's removal on a detached
+/// thread. Idempotent and non-blocking; call it *before* writing so the watcher
+/// can never observe a partial write.
+pub(crate) fn suppress_watcher(path: &Path, suppressed: &SuppressedSaves) {
+    suppressed.lock().unwrap().insert(path.to_path_buf());
+    let suppressed = suppressed.clone();
+    let path = path.to_path_buf();
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(SAVE_SUPPRESS_MS));
+        suppressed.lock().unwrap().remove(&path);
+    });
+}
+
+/// [`suppress_watcher`] followed by `fs::write`. Returns the write's result
+/// unchanged so each caller keeps its own error message and follow-up work.
+pub(crate) fn write_suppressed(
+    path: &Path,
+    content: &[u8],
+    suppressed: &SuppressedSaves,
+) -> std::io::Result<()> {
+    suppress_watcher(path, suppressed);
+    fs::write(path, content)
+}
+
+/// Parent directory of the currently-previewed file, if any. Used to seed native
+/// Save-As dialogs and to resolve document-relative paths off the IPC thread.
+fn current_file_dir(current_file: &CurrentFile) -> Option<PathBuf> {
+    current_file
+        .lock()
+        .unwrap()
+        .as_ref()
+        .and_then(|p| p.parent().map(|d| d.to_path_buf()))
+}
+
+/// Apply `dir` as the dialog's starting directory when one is known.
+fn with_initial_dir(dialog: rfd::FileDialog, dir: Option<PathBuf>) -> rfd::FileDialog {
+    match dir {
+        Some(d) => dialog.set_directory(d),
+        None => dialog,
+    }
+}
+
+/// Build `if (typeof window.<f> === 'function') { window.<f>(<args…>); }`.
+///
+/// The guard matters because the host can push before `index.html`'s script has
+/// run. `args` are already-serialized JS expressions (`serde_json` output, or a
+/// number / bool rendered with `to_string()`) and are inserted verbatim — this
+/// does no escaping, so never pass unsanitized text.
+pub(crate) fn js_call(f: &str, args: &[&str]) -> String {
+    format!(
+        "if (typeof window.{f} === 'function') {{ window.{f}({}); }}",
+        args.join(", ")
+    )
+}
+
+/// [`js_call`] + `evaluate_script`, discarding the always-ignored result. Takes
+/// `&WebView` (not the `Arc<Mutex<…>>`) so both the preview and the editor
+/// registry can use it after their own locking.
+pub(crate) fn eval_js_fn(webview: &wry::webview::WebView, f: &str, args: &[&str]) {
+    let _ = webview.evaluate_script(&js_call(f, args));
+}
+
+/// Serialize a [`FileData`] and wrap it in the guarded `loadFileFromRust(...)`
+/// call — the one step every render path shares. `raw` is set equal to
+/// `content`; the two stay distinct fields so the webview's save channel
+/// (`currentMarkdownRaw` → `savefile:`) keeps its own source of truth.
+///
+/// Callers keep what actually differs between them: where the content came
+/// from, and whether they also set the title / `current_file` / `current_dir`
+/// or push to the paired editor.
+fn build_load_file_script(filename: &str, filepath: &str, content: &str) -> String {
+    let file_data = FileData {
+        filename: filename.to_string(),
+        filepath: filepath.to_string(),
+        content: content.to_string(),
+        raw: content.to_string(),
+    };
+    let json = serde_json::to_string(&file_data).unwrap_or_else(|_| "null".into());
+    js_call("loadFileFromRust", &[&json])
+}
+
 // Compare two filesystem paths for equality. Case-insensitive on Windows
 // to match the OS, so editors using a different drive-letter case still match.
 pub(crate) fn paths_equal(a: &Path, b: &Path) -> bool {
@@ -395,104 +487,6 @@ fn open_with_default(path: &Path) {
     if let Err(e) = std::process::Command::new("explorer").arg(path).spawn() {
         eprintln!("open exported: failed to open {}: {}", path.display(), e);
     }
-}
-
-/// Embed local images as base64 data URIs in markdown content.
-/// This bypasses WebView2's limitation where dynamically-loaded images
-/// don't go through the custom protocol handler.
-// Compiled once. Recompiling this on every live-edit keystroke (this function
-// runs on every EditorLiveContent / EditorSavedContent) is pure waste.
-static IMG_RE: OnceLock<Regex> = OnceLock::new();
-fn img_re() -> &'static Regex {
-    IMG_RE.get_or_init(|| Regex::new(r"!\[([^\]]*)\]\(([^)]+)\)").unwrap())
-}
-
-// Cache of resolved-absolute-path -> (mtime, data-URI). Embedding images means
-// reading each file from disk and base64-encoding it; this re-ran in full on
-// every live-edit keystroke even when the images were unchanged. Keyed by mtime
-// so an externally edited image is correctly re-encoded on its next render.
-// Global static (one logical cache per process) mirrors the DBG_LOG pattern and
-// avoids threading an Arc<Mutex<…>> through both event-loop arms.
-static IMG_CACHE: OnceLock<Mutex<HashMap<String, (std::time::SystemTime, String)>>> = OnceLock::new();
-fn img_cache() -> &'static Mutex<HashMap<String, (std::time::SystemTime, String)>> {
-    IMG_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
-}
-
-fn embed_images_as_base64(markdown: &str, base_dir: &Path) -> String {
-    let re = img_re();
-
-    re.replace_all(markdown, |caps: &regex::Captures| {
-        let alt = &caps[1];
-        let path_str = &caps[2];
-
-        // Skip URLs and data URIs - don't embed external resources
-        if path_str.starts_with("http://") || path_str.starts_with("https://")
-           || path_str.starts_with("data:") || path_str.starts_with("//") {
-            return caps[0].to_string();
-        }
-
-        // Skip local media — both videos AND images are served lazily via the
-        // `/userfile/` protocol route instead of being inlined as huge data URIs.
-        // Inlining images base64 made image-heavy decks (esp. Marp slides) slow to
-        // open: a ~40MB image set became a ~53MB string that had to be marshalled
-        // through `evaluate_script`, parsed as a JS source literal, and decoded
-        // synchronously on `innerHTML`. The webview now rewrites local image `src`s
-        // to `/userfile/...` URLs (see `transformImagePath` in assets/index.html),
-        // letting the browser fetch/decode them in parallel off the UI thread, and
-        // HTML export re-inlines them as base64 at export time to stay self-contained.
-        let lower = path_str.to_ascii_lowercase();
-        let lower = lower.split(['?', '#']).next().unwrap_or(&lower);
-        if lower.ends_with(".mov") || lower.ends_with(".mp4") || lower.ends_with(".m4v")
-            || lower.ends_with(".webm") || lower.ends_with(".ogv") || lower.ends_with(".ogg")
-            || lower.ends_with(".png") || lower.ends_with(".jpg") || lower.ends_with(".jpeg")
-            || lower.ends_with(".gif") || lower.ends_with(".webp") || lower.ends_with(".svg")
-            || lower.ends_with(".bmp") || lower.ends_with(".ico") || lower.ends_with(".avif")
-            || lower.ends_with(".tif") || lower.ends_with(".tiff") {
-            return caps[0].to_string();
-        }
-
-        // Resolve the image path
-        let img_path = if PathBuf::from(path_str).is_absolute() {
-            PathBuf::from(path_str)
-        } else {
-            base_dir.join(path_str)
-        };
-
-        // Cache key: resolved absolute path. We validate freshness with the
-        // file's mtime, so an externally edited image is re-encoded on the next
-        // render rather than served stale. If mtime can't be read we fall back
-        // to read-every-time (the previous behavior).
-        let cache_key = img_path.to_string_lossy().to_string();
-        let mtime = fs::metadata(&img_path).and_then(|m| m.modified()).ok();
-        if let Some(mt) = mtime {
-            if let Ok(cache) = img_cache().lock() {
-                if let Some((cached_mt, data_uri)) = cache.get(&cache_key) {
-                    if *cached_mt == mt {
-                        return format!("![{}]({})", alt, data_uri);
-                    }
-                }
-            }
-        }
-
-        // Read the image file and convert to base64
-        match fs::read(&img_path) {
-            Ok(data) => {
-                let mime = get_mime_type(&img_path);
-                let b64 = general_purpose::STANDARD.encode(&data);
-                let data_uri = format!("data:{};base64,{}", mime, b64);
-                if let Some(mt) = mtime {
-                    if let Ok(mut cache) = img_cache().lock() {
-                        cache.insert(cache_key, (mt, data_uri.clone()));
-                    }
-                }
-                format!("![{}]({})", alt, data_uri)
-            }
-            Err(_) => {
-                // Keep original if file can't be read (might be broken link)
-                caps[0].to_string()
-            }
-        }
-    }).to_string()
 }
 
 // Normalize a path to absolute without the `\\?\` Windows prefix.
@@ -703,6 +697,11 @@ fn parse_toc_md(root: &Path, toc_text: &str) -> Vec<TocNode> {
     // Buffer for current item's text/link.
     let mut cur_text = String::new();
     let mut cur_href: Option<String> = None;
+    // `cur_text` / `cur_href` are single shared buffers that every Start(Item)
+    // clears, so an item's own text does not survive its nested list — the
+    // parent would end up named after its LAST child. Stash the enclosing
+    // item's text/href across each nested list and restore it on the way out.
+    let mut outer_item: Vec<(String, Option<String>)> = Vec::new();
     let mut in_item = false;
     let mut in_link = false;
 
@@ -711,9 +710,16 @@ fn parse_toc_md(root: &Path, toc_text: &str) -> Vec<TocNode> {
         match ev {
             Event::Start(Tag::List(_)) => {
                 stack.push(Vec::new());
+                outer_item.push((std::mem::take(&mut cur_text), cur_href.take()));
             }
             Event::End(Tag::List(_)) => {
                 let level = stack.pop().unwrap_or_default();
+                // Restore the enclosing item's own text/href, which this list's
+                // items overwrote, before End(Tag::Item) reads them for the name.
+                if let Some((text, href)) = outer_item.pop() {
+                    cur_text = text;
+                    cur_href = href;
+                }
                 // Attach to the currently-open item, if any. The slot may not
                 // exist yet (item only had text + nested list, no link), in which
                 // case create a placeholder dir node now and let End(Tag::Item)
@@ -771,7 +777,11 @@ fn parse_toc_md(root: &Path, toc_text: &str) -> Vec<TocNode> {
                         }
                     }
                     n
-                } else if let Some(h) = href {
+                } else if let Some(h) = href.filter(|h| is_markdown_href(h)) {
+                    // Non-markdown hrefs (external URLs, assets) are ignored the
+                    // same way the nested-list branch above ignores them, so they
+                    // fall through to the plain-label node instead of becoming a
+                    // "file" whose relPath is a URL that resolves nowhere.
                     let rel = normalize_rel(&h);
                     let abs = root.join(&rel.replace('/', std::path::MAIN_SEPARATOR_STR));
                     let (title, headings) = read_file_headings(&abs);
@@ -901,9 +911,9 @@ fn build_workspace(root: &Path) -> Workspace {
     }
 }
 
-/// Read the markdown file at `path`, embed its local images as base64, and push
-/// the resulting `FileData` into the webview via `loadFileFromRust`. Also updates
-/// `current_dir` so subsequent relative-path lookups resolve correctly.
+/// Read the markdown file at `path` and push the resulting `FileData` into the
+/// webview via `loadFileFromRust`. Also updates `current_dir` so subsequent
+/// relative-path lookups (images / CSV / video via `/userfile/`) resolve.
 fn load_and_render(
     path: &Path,
     webview: &Arc<Mutex<wry::webview::WebView>>,
@@ -939,21 +949,11 @@ fn load_and_render_named(
                 .or_else(|| path.file_name().map(|n| n.to_string_lossy().to_string()))
                 .unwrap_or_else(|| "Unknown".to_string());
             let filepath = path.to_string_lossy().to_string();
-            let content_embedded = if let Some(ref dir) = base_dir {
-                embed_images_as_base64(&content, dir)
-            } else {
-                content.clone()
-            };
-
-            let file_data = FileData { filename, filepath: filepath.clone(), content: content_embedded, raw: content.clone() };
-            let json_data = serde_json::to_string(&file_data).unwrap();
-            let script = format!(
-                "if (typeof window.loadFileFromRust === 'function') {{ window.loadFileFromRust({}); }}",
-                json_data
-            );
+            // Not `eval_js_fn`: this is the one site that surfaces the error.
+            let script = build_load_file_script(&filename, &filepath, &content);
 
             if let Ok(webview_guard) = webview.lock() {
-                webview_guard.window().set_title(&format_title(Some(&file_data.filename)));
+                webview_guard.window().set_title(&format_title(Some(&filename)));
                 if let Err(e) = webview_guard.evaluate_script(&script) {
                     eprintln!("Failed to update webview: {}", e);
                 }
@@ -976,7 +976,7 @@ fn load_and_render_named(
 fn maybe_repack_mdx(
     saved_path: &Path,
     mdx_session: &Arc<Mutex<Option<mdx::MdxSession>>>,
-    suppressed_saves: &Arc<Mutex<HashSet<PathBuf>>>,
+    suppressed_saves: &SuppressedSaves,
 ) {
     let (temp_dir, mdx_path) = {
         let guard = mdx_session.lock().unwrap();
@@ -990,16 +990,8 @@ fn maybe_repack_mdx(
             _ => return,
         }
     };
-    {
-        let mut s = suppressed_saves.lock().unwrap();
-        s.insert(mdx_path.clone());
-    }
-    let supp = suppressed_saves.clone();
-    let mdx_for_timer = mdx_path.clone();
-    std::thread::spawn(move || {
-        std::thread::sleep(Duration::from_millis(1500));
-        supp.lock().unwrap().remove(&mdx_for_timer);
-    });
+    // Suppress-only: the write itself is `repack_mdx`, not `fs::write`.
+    suppress_watcher(&mdx_path, suppressed_saves);
     if let Err(e) = mdx::repack_mdx(&temp_dir, &mdx_path) {
         eprintln!("mdx: repack failed for {:?}: {}", mdx_path, e);
     }
@@ -1103,14 +1095,12 @@ fn main() -> wry::Result<()> {
                 std::env::current_dir().unwrap_or_default().join(path)
             };
             let filepath = abs_path.to_string_lossy().to_string();
-            let base_dir = abs_path.parent()?;
+            // A file with no parent directory is not something we can serve
+            // `/userfile/` assets for, so bail out exactly as before.
+            abs_path.parent()?;
 
             match fs::read_to_string(&path) {
-                Ok(raw) => {
-                    // Embed local images as base64 data URIs
-                    let content = embed_images_as_base64(&raw, base_dir);
-                    Some(FileData { filename, filepath, content, raw })
-                }
+                Ok(raw) => Some(FileData { filename, filepath, content: raw.clone(), raw }),
                 Err(e) => {
                     eprintln!("Error reading file: {}", e);
                     None
@@ -1343,7 +1333,6 @@ fn main() -> wry::Result<()> {
     // Clone current_dir for use in the protocol handler closure
     let current_dir_clone = current_dir.clone();
     let assets_dir_for_proto = assets_dir.clone();
-    let assets_dir = assets_dir; // keep original around for the editor spawner
 
     // Create webview with custom protocol handler
     let mut webview_builder = WebViewBuilder::new(window)?
@@ -1537,7 +1526,7 @@ fn main() -> wry::Result<()> {
     // we just wrote them ourselves (from the editor's Ctrl+S). Entries are
     // checked by the watcher thread and cleared on use; we also clear stale
     // entries on a 1.5s timeout to avoid lockout if the OS event never arrives.
-    let suppressed_saves: Arc<Mutex<HashSet<PathBuf>>> = Arc::new(Mutex::new(HashSet::new()));
+    let suppressed_saves: SuppressedSaves = Arc::new(Mutex::new(HashSet::new()));
 
     // Capture-loop progress for `--export-png` mode; owned by the event loop.
     let capture_state: Arc<Mutex<Option<CaptureState>>> = Arc::new(Mutex::new(None));
@@ -1635,11 +1624,7 @@ fn main() -> wry::Result<()> {
             }
             match serde_json::from_str::<ExportPayload>(payload) {
                 Ok(p) => {
-                    let initial_dir = ipc_current_file
-                        .lock()
-                        .unwrap()
-                        .as_ref()
-                        .and_then(|p| p.parent().map(|d| d.to_path_buf()));
+                    let initial_dir = current_file_dir(&ipc_current_file);
                     let export_proxy = ipc_event_proxy.clone();
                     // rfd's save_file() blocks; run on a worker thread so we don't tie up
                     // the IPC handler and (more importantly) so dialog errors don't
@@ -1648,13 +1633,13 @@ fn main() -> wry::Result<()> {
                         // Two filters so the user picks the format in the Save dialog.
                         // If the chosen path is `.pdf` we print the live webview to
                         // PDF instead (the pre-built HTML artifact is discarded).
-                        let mut dialog = rfd::FileDialog::new()
-                            .add_filter("HTML", &["html"])
-                            .add_filter("PDF", &["pdf"])
-                            .set_file_name(&p.suggested_name);
-                        if let Some(dir) = initial_dir {
-                            dialog = dialog.set_directory(dir);
-                        }
+                        let dialog = with_initial_dir(
+                            rfd::FileDialog::new()
+                                .add_filter("HTML", &["html"])
+                                .add_filter("PDF", &["pdf"])
+                                .set_file_name(&p.suggested_name),
+                            initial_dir,
+                        );
                         if let Some(path) = dialog.save_file() {
                             let is_pdf = path
                                 .extension()
@@ -1729,21 +1714,17 @@ fn main() -> wry::Result<()> {
         } else if message == "newfile:" {
             // New document (Ctrl+N) — pick a save location via a native dialog,
             // create a blank `.md`, then open it through the normal OpenFile flow.
-            let initial_dir = ipc_current_file
-                .lock()
-                .unwrap()
-                .as_ref()
-                .and_then(|p| p.parent().map(|d| d.to_path_buf()));
+            let initial_dir = current_file_dir(&ipc_current_file);
             let proxy = ipc_event_proxy.clone();
             // rfd's save_file() blocks; run it off the IPC thread (same pattern as
             // the `exporthtml:` / `exportdir:` handlers).
             std::thread::spawn(move || {
-                let mut dialog = rfd::FileDialog::new()
-                    .add_filter("Markdown", &["md", "markdown"])
-                    .set_file_name("untitled.md");
-                if let Some(dir) = initial_dir {
-                    dialog = dialog.set_directory(dir);
-                }
+                let dialog = with_initial_dir(
+                    rfd::FileDialog::new()
+                        .add_filter("Markdown", &["md", "markdown"])
+                        .set_file_name("untitled.md"),
+                    initial_dir,
+                );
                 if let Some(mut path) = dialog.save_file() {
                     // Ensure a markdown extension so the OpenFile handler accepts it.
                     let ok_ext = path
@@ -1788,17 +1769,7 @@ fn main() -> wry::Result<()> {
             match serde_json::from_str::<SavePayload>(payload) {
                 Ok(p) => {
                     let path = PathBuf::from(&p.path);
-                    {
-                        let mut s = ipc_suppressed_saves.lock().unwrap();
-                        s.insert(path.clone());
-                    }
-                    let suppressed = ipc_suppressed_saves.clone();
-                    let path_for_clear = path.clone();
-                    std::thread::spawn(move || {
-                        std::thread::sleep(Duration::from_millis(1500));
-                        suppressed.lock().unwrap().remove(&path_for_clear);
-                    });
-                    match std::fs::write(&path, p.content.as_bytes()) {
+                    match write_suppressed(&path, p.content.as_bytes(), &ipc_suppressed_saves) {
                         Ok(()) => {
                             let _ = ipc_event_proxy.send_event(CustomEvent::EditorSavedContent {
                                 path,
@@ -1821,17 +1792,7 @@ fn main() -> wry::Result<()> {
             match serde_json::from_str::<SaveFilePayload>(payload) {
                 Ok(p) => {
                     let path = PathBuf::from(&p.path);
-                    {
-                        let mut s = ipc_suppressed_saves.lock().unwrap();
-                        s.insert(path.clone());
-                    }
-                    let suppressed = ipc_suppressed_saves.clone();
-                    let path_for_clear = path.clone();
-                    std::thread::spawn(move || {
-                        std::thread::sleep(Duration::from_millis(1500));
-                        suppressed.lock().unwrap().remove(&path_for_clear);
-                    });
-                    match std::fs::write(&path, p.content.as_bytes()) {
+                    match write_suppressed(&path, p.content.as_bytes(), &ipc_suppressed_saves) {
                         Ok(()) => {
                             ipc_editor_registry.push_file_to_editor(&path, &p.content);
                             let _ = ipc_event_proxy.send_event(CustomEvent::EditorSavedContent {
@@ -1859,11 +1820,7 @@ fn main() -> wry::Result<()> {
             let abs = if raw.is_absolute() {
                 Some(raw)
             } else {
-                ipc_current_file
-                    .lock()
-                    .unwrap()
-                    .as_ref()
-                    .and_then(|p| p.parent().map(|d| d.join(&raw)))
+                current_file_dir(&ipc_current_file).map(|d| d.join(&raw))
             };
             if let Some(p) = abs {
                 let _ = ipc_event_proxy.send_event(CustomEvent::CsvWatch(p));
@@ -2091,13 +2048,13 @@ fn main() -> wry::Result<()> {
     }
 
     // Editor-window builder context. The editor is spawned lazily on the first
-    // 'E' keypress and lives in `editor_registry` thereafter.
-    let editor_assets_dir = assets_dir.clone();
-    let editor_event_proxy = event_proxy.clone();
-    let editor_current_file_for_spawn = current_file.clone();
-    let editor_current_dir_for_spawn = current_dir.clone();
-    let editor_suppressed_for_spawn = suppressed_saves.clone();
-    // Used by the event loop to repack saves back into an open `.mdx` bundle.
+    // 'E' keypress and lives in `editor_registry` thereafter. Only these two need
+    // their own binding: `assets_dir` is not otherwise used inside the event loop
+    // (so it moves), and `suppressed_saves` is reached only through this alias.
+    // `event_proxy` / `current_file` / `current_dir` are captured by the closure
+    // directly, so aliasing them here would just be an extra clone.
+    let editor_assets_dir = assets_dir;
+    // Also used by the event loop to repack saves back into an open `.mdx` bundle.
     let evloop_suppressed = suppressed_saves.clone();
     // Capture config consumed by the CaptureStart arm (moved in — unused after).
     let evloop_capture_config = capture_config;
@@ -2401,11 +2358,10 @@ fn main() -> wry::Result<()> {
                     if let Err(e) = editor_registry::spawn_editor_window(
                         target,
                         &editor_assets_dir,
-                        editor_event_proxy.clone(),
+                        event_proxy.clone(),
                         editor_registry.clone(),
-                        editor_current_file_for_spawn.clone(),
-                        editor_current_dir_for_spawn.clone(),
-                        editor_suppressed_for_spawn.clone(),
+                        current_file.clone(),
+                        evloop_suppressed.clone(),
                         &path,
                         line,
                     ) {
@@ -2427,12 +2383,8 @@ fn main() -> wry::Result<()> {
             }
             Event::UserEvent(CustomEvent::EditorCursorMoved { line }) => {
                 // Editor → preview: scroll preview to mirror cursor line.
-                let script = format!(
-                    "if (typeof window.applyEditorScroll === 'function') {{ window.applyEditorScroll({}); }}",
-                    line
-                );
                 if let Ok(wv) = webview.lock() {
-                    let _ = wv.evaluate_script(&script);
+                    eval_js_fn(&wv, "applyEditorScroll", &[&line.to_string()]);
                 }
             }
             Event::UserEvent(CustomEvent::EditorSavedContent { path, content }) => {
@@ -2440,12 +2392,6 @@ fn main() -> wry::Result<()> {
                 if let Some(parent) = path.parent() {
                     *current_dir.lock().unwrap() = Some(parent.to_path_buf());
                 }
-                let base_dir = path.parent().map(|p| p.to_path_buf());
-                let content_embedded = if let Some(ref dir) = base_dir {
-                    embed_images_as_base64(&content, dir)
-                } else {
-                    content.clone()
-                };
                 // If this save belongs to an open `.mdx`, keep the `.mdx` name in
                 // the title instead of the extracted entry's name.
                 let mdx_name: Option<String> = {
@@ -2461,16 +2407,8 @@ fn main() -> wry::Result<()> {
                 let filename = mdx_name
                     .or_else(|| path.file_name().map(|n| n.to_string_lossy().to_string()))
                     .unwrap_or_else(|| "Unknown".to_string());
-                let file_data = FileData {
-                    filename: filename.clone(),
-                    filepath: path.to_string_lossy().to_string(),
-                    content: content_embedded,
-                    raw: content.clone(),
-                };
-                let json = serde_json::to_string(&file_data).unwrap();
-                let script = format!(
-                    "if (typeof window.loadFileFromRust === 'function') {{ window.loadFileFromRust({}); }}",
-                    json
+                let script = build_load_file_script(
+                    &filename, &path.to_string_lossy(), &content,
                 );
                 if let Ok(wv) = webview.lock() {
                     wv.window().set_title(&format_title(Some(&filename)));
@@ -2484,25 +2422,15 @@ fn main() -> wry::Result<()> {
                 // Live (unsaved) editor content — re-render preview from memory
                 // and re-anchor scroll to the cursor line. Skip disk, title,
                 // and current_file updates (path is already the paired file).
-                let base_dir = path.parent().map(|p| p.to_path_buf());
-                let content_embedded = if let Some(ref dir) = base_dir {
-                    embed_images_as_base64(&content, dir)
-                } else {
-                    content.clone()
-                };
                 let filename = path.file_name()
                     .map(|n| n.to_string_lossy().to_string())
                     .unwrap_or_else(|| "Unknown".to_string());
-                let file_data = FileData {
-                    filename,
-                    filepath: path.to_string_lossy().to_string(),
-                    content: content_embedded,
-                    raw: content.clone(),
-                };
-                let json = serde_json::to_string(&file_data).unwrap();
+                // One script, so the re-render and the scroll re-anchor land in
+                // the same evaluation and the preview never paints in between.
                 let script = format!(
-                    "if (typeof window.loadFileFromRust === 'function') {{ window.loadFileFromRust({}); }} if (typeof window.applyEditorScroll === 'function') {{ window.applyEditorScroll({}); }}",
-                    json, line
+                    "{} {}",
+                    build_load_file_script(&filename, &path.to_string_lossy(), &content),
+                    js_call("applyEditorScroll", &[&line.to_string()]),
                 );
                 if let Ok(wv) = webview.lock() {
                     let _ = wv.evaluate_script(&script);
@@ -2590,12 +2518,8 @@ fn main() -> wry::Result<()> {
                 if in_workspace {
                     let abs_str = serde_json::to_string(&abs_path.to_string_lossy().to_string())
                         .unwrap_or_else(|_| "\"\"".into());
-                    let script = format!(
-                        "if (typeof window.__setActiveFile === 'function') {{ window.__setActiveFile({}); }}",
-                        abs_str
-                    );
                     if let Ok(wv) = webview.lock() {
-                        let _ = wv.evaluate_script(&script);
+                        eval_js_fn(&wv, "__setActiveFile", &[&abs_str]);
                     }
                 }
             }
@@ -2618,13 +2542,9 @@ fn main() -> wry::Result<()> {
                     .map(|n| n.to_string_lossy().to_string())
                     .unwrap_or_default();
                 let name_json = serde_json::to_string(&name).unwrap_or_else(|_| "\"\"".into());
-                let script = format!(
-                    "if (typeof window.loadImageFromRust === 'function') {{ window.loadImageFromRust({}); }}",
-                    name_json
-                );
                 if let Ok(wv) = webview.lock() {
                     wv.window().set_title(&format_title(Some(&name)));
-                    let _ = wv.evaluate_script(&script);
+                    eval_js_fn(&wv, "loadImageFromRust", &[&name_json]);
                 }
             }
             Event::UserEvent(CustomEvent::OpenDirectory(path)) => {
@@ -2654,12 +2574,8 @@ fn main() -> wry::Result<()> {
 
                 // Push workspace to the webview.
                 let json = serde_json::to_string(&ws).unwrap_or_else(|_| "null".into());
-                let script = format!(
-                    "if (typeof window.loadDirectoryFromRust === 'function') {{ window.loadDirectoryFromRust({}); }}",
-                    json
-                );
                 if let Ok(wv) = webview.lock() {
-                    let _ = wv.evaluate_script(&script);
+                    eval_js_fn(&wv, "loadDirectoryFromRust", &[&json]);
                 }
 
                 if let Some(first) = first {
@@ -2667,12 +2583,8 @@ fn main() -> wry::Result<()> {
                     load_and_render(&p, &webview, &current_dir, &current_file, &editor_registry);
                     let abs_str = serde_json::to_string(&p.to_string_lossy().to_string())
                         .unwrap_or_else(|_| "\"\"".into());
-                    let script = format!(
-                        "if (typeof window.__setActiveFile === 'function') {{ window.__setActiveFile({}); }}",
-                        abs_str
-                    );
                     if let Ok(wv) = webview.lock() {
-                        let _ = wv.evaluate_script(&script);
+                        eval_js_fn(&wv, "__setActiveFile", &[&abs_str]);
                     }
                 }
             }
@@ -2684,12 +2596,8 @@ fn main() -> wry::Result<()> {
                         let ws = build_workspace(&root);
                         *workspace.lock().unwrap() = Some(ws.clone());
                         let json = serde_json::to_string(&ws).unwrap_or_else(|_| "null".into());
-                        let script = format!(
-                            "if (typeof window.refreshFileTree === 'function') {{ window.refreshFileTree({}); }}",
-                            json
-                        );
                         if let Ok(wv) = webview.lock() {
-                            let _ = wv.evaluate_script(&script);
+                            eval_js_fn(&wv, "refreshFileTree", &[&json]);
                         }
                     }
                 }
@@ -2697,4 +2605,400 @@ fn main() -> wry::Result<()> {
             _ => (),
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ---- parse_slides_spec -------------------------------------------------
+
+    fn slides(spec: &str, count: usize) -> Vec<usize> {
+        parse_slides_spec(&Some(spec.to_string()), count)
+    }
+
+    #[test]
+    fn slides_spec_absent_or_blank_selects_everything() {
+        assert_eq!(parse_slides_spec(&None, 3), vec![0, 1, 2]);
+        assert_eq!(slides("", 3), vec![0, 1, 2]);
+        assert_eq!(slides("   ", 3), vec![0, 1, 2]);
+        assert_eq!(parse_slides_spec(&None, 0), Vec::<usize>::new());
+    }
+
+    #[test]
+    fn slides_spec_parses_lists_and_ranges() {
+        assert_eq!(slides("1,3", 5), vec![0, 2]);
+        assert_eq!(slides("5-7", 8), vec![4, 5, 6]);
+        assert_eq!(slides("1, 2 , 3", 5), vec![0, 1, 2]);
+        assert_eq!(slides("2-2", 5), vec![1]);
+    }
+
+    #[test]
+    fn slides_spec_reverses_descending_ranges_but_keeps_ascending_output() {
+        // `5-3` is accepted and normalized to 3..=5, so the emitted order is
+        // ascending -- NOT the reversed 5,4,3 one might expect from the spelling.
+        assert_eq!(slides("5-3", 8), vec![2, 3, 4]);
+    }
+
+    #[test]
+    fn slides_spec_dedupes_and_preserves_first_seen_order() {
+        assert_eq!(slides("1,1,2", 5), vec![0, 1]);
+        assert_eq!(slides("3,1", 5), vec![2, 0]);
+        assert_eq!(slides("2-4,3", 5), vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn slides_spec_drops_out_of_range_and_malformed_parts() {
+        assert_eq!(slides("0,99", 3), Vec::<usize>::new()); // 1-based: 0 is invalid
+        assert_eq!(slides("1,99", 3), vec![0]);
+        assert_eq!(slides("abc", 3), Vec::<usize>::new());
+        assert_eq!(slides("1,,2", 3), vec![0, 1]);
+        // Open-ended ranges are NOT supported: `split_once('-')` succeeds but the
+        // empty side fails to parse, so the whole part is silently dropped.
+        assert_eq!(slides("-3", 5), Vec::<usize>::new());
+        assert_eq!(slides("3-", 5), Vec::<usize>::new());
+    }
+
+    // ---- slide_png_name ----------------------------------------------------
+
+    #[test]
+    fn slide_png_name_is_one_based_and_zero_padded() {
+        // layout.json consumers depend on this exact naming.
+        assert_eq!(slide_png_name(true, 0), "slide-01.png");
+        assert_eq!(slide_png_name(true, 9), "slide-10.png");
+        assert_eq!(slide_png_name(true, 99), "slide-100.png");
+        assert_eq!(slide_png_name(false, 5), "page.png");
+    }
+
+    // ---- format_title ------------------------------------------------------
+
+    #[test]
+    fn format_title_uses_em_dash_and_falls_back_to_app_name() {
+        assert_eq!(format_title(Some("a.md")), "a.md \u{2014} Markdown Previewer");
+        assert_eq!(format_title(Some("")), "Markdown Previewer");
+        assert_eq!(format_title(None), "Markdown Previewer");
+    }
+
+    // ---- paths_equal -------------------------------------------------------
+
+    #[test]
+    fn paths_equal_folds_case_and_separators() {
+        assert!(paths_equal(Path::new(r"C:\a\B.md"), Path::new(r"c:\A\b.md")));
+        assert!(paths_equal(Path::new("C:/a/b.md"), Path::new(r"C:\a\b.md")));
+        assert!(!paths_equal(Path::new(r"C:\a\b.md"), Path::new(r"C:\a\c.md")));
+    }
+
+    // ---- get_mime_type -----------------------------------------------------
+
+    #[test]
+    fn mime_type_covers_served_kinds_and_defaults_to_octet_stream() {
+        let mime = |p: &str| get_mime_type(&PathBuf::from(p));
+        assert_eq!(mime("a.html"), "text/html");
+        assert_eq!(mime("a.PNG"), "image/png"); // extension match is case-insensitive
+        assert_eq!(mime("a.mp4"), "video/mp4");
+        assert_eq!(mime("a.csv"), "text/csv; charset=utf-8");
+        assert_eq!(mime("a.tsv"), "text/tab-separated-values; charset=utf-8");
+        assert_eq!(mime("a.txt"), "text/plain; charset=utf-8");
+        // The default is why a non-image extension can never be usefully inlined.
+        assert_eq!(mime("a.unknown"), "application/octet-stream");
+        assert_eq!(mime("noext"), "application/octet-stream");
+    }
+
+    // ---- parse_byte_range --------------------------------------------------
+
+    #[test]
+    fn byte_range_handles_open_closed_and_suffix_forms() {
+        assert_eq!(parse_byte_range("bytes=0-", 10), Some((0, 9)));
+        assert_eq!(parse_byte_range("bytes=2-5", 10), Some((2, 5)));
+        assert_eq!(parse_byte_range("bytes=5-999", 10), Some((5, 9))); // clamped
+        assert_eq!(parse_byte_range("bytes=-3", 10), Some((7, 9))); // last 3 bytes
+        assert_eq!(parse_byte_range("bytes=-100", 10), Some((0, 9))); // clamped
+        assert_eq!(parse_byte_range(" bytes=2-5 ", 10), Some((2, 5)));
+    }
+
+    #[test]
+    fn byte_range_rejects_unsatisfiable_and_malformed() {
+        assert_eq!(parse_byte_range("bytes=0-5", 0), None); // empty resource
+        assert_eq!(parse_byte_range("bytes=-0", 10), None); // zero-length suffix
+        assert_eq!(parse_byte_range("bytes=100-200", 10), None); // past the end
+        assert_eq!(parse_byte_range("bytes=5-2", 10), None); // start > end
+        assert_eq!(parse_byte_range("bytes=abc", 10), None);
+        assert_eq!(parse_byte_range("0-5", 10), None); // missing unit
+        assert_eq!(parse_byte_range("", 10), None);
+    }
+
+    #[test]
+    fn byte_range_uses_only_the_first_of_a_multi_range() {
+        assert_eq!(parse_byte_range("bytes=0-1,5-6", 10), Some((0, 1)));
+    }
+
+    // ---- js_call / build_load_file_script ----------------------------------
+
+    #[test]
+    fn js_call_reproduces_the_hand_written_guard_strings_byte_for_byte() {
+        // These are the exact strings the call sites used before extraction; the
+        // spacing (incl. ", " between args) must not drift.
+        assert_eq!(
+            js_call("loadFileFromRust", &["X"]),
+            "if (typeof window.loadFileFromRust === 'function') { window.loadFileFromRust(X); }"
+        );
+        assert_eq!(
+            js_call("__listDirResult", &["7", "[]"]),
+            "if (typeof window.__listDirResult === 'function') { window.__listDirResult(7, []); }"
+        );
+        assert_eq!(
+            js_call("__showDropZone", &[]),
+            "if (typeof window.__showDropZone === 'function') { window.__showDropZone(); }"
+        );
+    }
+
+    #[test]
+    fn load_file_script_sets_raw_equal_to_content_and_escapes_json() {
+        let script = build_load_file_script("a\"b.md", r"C:\d\a.md", "# Hi\n");
+        assert!(script.starts_with(
+            "if (typeof window.loadFileFromRust === 'function') { window.loadFileFromRust({"
+        ));
+        assert!(script.ends_with("); }"));
+        // Quotes / backslashes / newlines must arrive as valid JSON, not raw text.
+        assert!(script.contains(r#"\"b.md"#), "{script}");
+        assert!(script.contains(r"C:\\d\\a.md"), "{script}");
+        assert!(script.contains(r##""content":"# Hi\n""##), "{script}");
+        assert!(script.contains(r##""raw":"# Hi\n""##), "{script}");
+    }
+
+    // ---- slugify -----------------------------------------------------------
+
+    fn slug(text: &str) -> String {
+        slugify(text, &mut std::collections::HashSet::new())
+    }
+
+    #[test]
+    fn slugify_lowercases_and_hyphenates() {
+        assert_eq!(slug("Hello World"), "hello-world");
+        assert_eq!(slug("  Spaced   Out  "), "spaced-out"); // whitespace runs collapse
+        assert_eq!(slug("A/B:C"), "abc"); // punctuation dropped
+    }
+
+    #[test]
+    fn slugify_keeps_cjk_and_strips_edge_hyphens() {
+        assert_eq!(slug("\u{65E5}\u{672C}\u{8A9E} \u{898B}\u{51FA}\u{3057}"),
+                   "\u{65E5}\u{672C}\u{8A9E}-\u{898B}\u{51FA}\u{3057}");
+        // Only ONE hyphen is stripped per end, not a run — `^-|-$`, not `^-+|-+$`.
+        // The JS `generateHeadingId` uses the same regex, so the two agree.
+        assert_eq!(slug("- leading and trailing -"), "-leading-and-trailing-");
+    }
+
+    #[test]
+    fn slugify_falls_back_to_heading_and_dedupes() {
+        let mut seen = std::collections::HashSet::new();
+        assert_eq!(slugify("!!!", &mut seen), "heading");
+        assert_eq!(slugify("???", &mut seen), "heading-1");
+        assert_eq!(slugify("***", &mut seen), "heading-2");
+
+        let mut seen = std::collections::HashSet::new();
+        assert_eq!(slugify("Intro", &mut seen), "intro");
+        assert_eq!(slugify("Intro", &mut seen), "intro-1");
+        assert_eq!(slugify("Intro", &mut seen), "intro-2");
+    }
+
+    #[test]
+    fn slugify_unicode_word_class_diverges_from_js_generate_heading_id() {
+        // KNOWN PRE-EXISTING DIVERGENCE -- pinning current behavior, not endorsing it.
+        // Rust's `regex` treats `\w` as Unicode-aware, so the accented letter is
+        // kept; the JS `generateHeadingId` in assets/index.html uses JS `\w`, which
+        // is ASCII-only, and produces "caf". An exported HTML artifact's sidebar
+        // anchor (Rust-generated) therefore misses the in-page id (JS-generated)
+        // for accented non-CJK headings. Fixing it is a behavior change and needs
+        // its own change window; see CLAUDE.md.
+        assert_eq!(slug("Caf\u{00E9}"), "caf\u{00E9}");
+    }
+
+    // ---- is_markdown_href / normalize_rel / extension helpers --------------
+
+    #[test]
+    fn markdown_href_detection_ignores_fragments_and_case() {
+        assert!(is_markdown_href("a.md"));
+        assert!(is_markdown_href("a.MARKDOWN"));
+        assert!(is_markdown_href("dir/a.md#section"));
+        assert!(!is_markdown_href("a.txt"));
+        assert!(!is_markdown_href("https://example.com/"));
+    }
+
+    #[test]
+    fn normalize_rel_drops_fragment_and_dot_slash_and_folds_separators() {
+        assert_eq!(normalize_rel("./dir/a.md"), "dir/a.md");
+        assert_eq!(normalize_rel("dir/a.md#frag"), "dir/a.md");
+        assert_eq!(normalize_rel(r"dir\a.md"), "dir/a.md");
+    }
+
+    #[test]
+    fn markdown_and_image_ext_detection() {
+        assert!(is_markdown_ext(Path::new("a.MD")));
+        assert!(is_markdown_ext(Path::new("a.markdown")));
+        assert!(!is_markdown_ext(Path::new("a.mdx"))); // .mdx is a separate format
+        assert!(is_image_ext(Path::new("a.JPEG")));
+        assert!(!is_image_ext(Path::new("a.mp4")));
+    }
+
+    // ---- extract_headings_from_md -----------------------------------------
+
+    #[test]
+    fn headings_capture_level_text_and_slug() {
+        let hs = extract_headings_from_md("# Title\n\ntext\n\n## Sub A\n\n### Deep\n");
+        let got: Vec<_> = hs.iter().map(|h| (h.level, h.text.as_str(), h.slug.as_str())).collect();
+        assert_eq!(got, vec![
+            (1, "Title", "title"),
+            (2, "Sub A", "sub-a"),
+            (3, "Deep", "deep"),
+        ]);
+    }
+
+    #[test]
+    fn headings_include_inline_code_text_and_support_setext() {
+        let hs = extract_headings_from_md("Title\n=====\n\n## Use `foo()`\n");
+        assert_eq!(hs.len(), 2);
+        assert_eq!((hs[0].level, hs[0].text.as_str()), (1, "Title"));
+        assert_eq!((hs[1].level, hs[1].text.as_str()), (2, "Use foo()"));
+    }
+
+    #[test]
+    fn headings_skip_fenced_code_and_empty_headings() {
+        let hs = extract_headings_from_md("# Real\n\n```\n# Not a heading\n```\n\n##\n");
+        let got: Vec<_> = hs.iter().map(|h| h.text.as_str()).collect();
+        assert_eq!(got, vec!["Real"]);
+    }
+
+    #[test]
+    fn headings_dedupe_slugs_across_the_document() {
+        let hs = extract_headings_from_md("## Setup\n\n## Setup\n");
+        assert_eq!(hs[0].slug, "setup");
+        assert_eq!(hs[1].slug, "setup-1");
+    }
+
+    // ---- parse_toc_md ------------------------------------------------------
+    //
+    // Against an EMPTY root every `read_file_headings` misses and
+    // `append_unlisted_files` contributes nothing, so the output is a pure
+    // function of `toc_text` -- no markdown fixtures on disk are needed.
+
+    fn toc(text: &str) -> Vec<TocNode> {
+        let dir = tempfile::tempdir().unwrap();
+        parse_toc_md(dir.path(), text)
+    }
+
+    #[test]
+    fn toc_flat_list_of_links_becomes_files() {
+        let t = toc("- [Intro](intro.md)\n- [Next](sub/next.md)\n");
+        assert_eq!(t.len(), 2);
+        assert_eq!((t[0].kind.as_str(), t[0].name.as_str(), t[0].rel_path.as_str()),
+                   ("file", "Intro", "intro.md"));
+        assert_eq!((t[1].kind.as_str(), t[1].name.as_str(), t[1].rel_path.as_str()),
+                   ("file", "Next", "sub/next.md"));
+        assert!(t[0].children.is_none());
+    }
+
+    #[test]
+    fn toc_nested_list_upgrades_the_parent_to_a_dir() {
+        let t = toc("- Chapters\n  - [One](a.md)\n  - [Two](b.md)\n");
+        assert_eq!(t.len(), 1);
+        assert_eq!((t[0].kind.as_str(), t[0].name.as_str()), ("dir", "Chapters"));
+        let kids = t[0].children.as_ref().unwrap();
+        assert_eq!(kids.len(), 2);
+        assert_eq!(kids[0].rel_path, "a.md");
+        assert_eq!(kids[1].rel_path, "b.md");
+    }
+
+    #[test]
+    fn toc_bullet_with_both_link_and_children_stays_a_dir_and_ignores_the_href() {
+        // The `n.children.is_none()` guard means a parent that also carries a link
+        // keeps its `dir` kind and never gets a rel_path.
+        let t = toc("- [Group](group.md)\n  - [Inner](inner.md)\n");
+        assert_eq!(t.len(), 1);
+        assert_eq!((t[0].kind.as_str(), t[0].name.as_str()), ("dir", "Group"));
+        assert_eq!(t[0].rel_path, "");
+        assert_eq!(t[0].children.as_ref().unwrap()[0].rel_path, "inner.md");
+    }
+
+    #[test]
+    fn toc_link_without_text_falls_back_to_the_file_name() {
+        let t = toc("- [](sub/page.md)\n");
+        assert_eq!(t.len(), 1);
+        assert_eq!((t[0].kind.as_str(), t[0].name.as_str()), ("file", "page.md"));
+    }
+
+    #[test]
+    fn toc_childless_plain_text_bullet_is_an_empty_dir() {
+        let t = toc("- Just a label\n");
+        assert_eq!(t.len(), 1);
+        assert_eq!((t[0].kind.as_str(), t[0].name.as_str()), ("dir", "Just a label"));
+        assert_eq!(t[0].children.as_ref().unwrap().len(), 0);
+    }
+
+    #[test]
+    fn toc_non_markdown_href_is_not_treated_as_a_file() {
+        let t = toc("- [Site](https://example.com/)\n");
+        assert_eq!(t.len(), 1);
+        // No .md/.markdown suffix -> the file branch is skipped entirely, so the
+        // URL never leaks into relPath/absPath. The bullet keeps its label.
+        assert_eq!((t[0].kind.as_str(), t[0].name.as_str()), ("dir", "Site"));
+        assert_eq!(t[0].rel_path, "");
+        assert_eq!(t[0].abs_path, "");
+    }
+
+    #[test]
+    fn toc_group_name_survives_its_nested_list() {
+        // Regression: `cur_text` is shared across items, so before the outer_item
+        // save/restore the group below was named "Third" (its last child).
+        let t = toc("- Group\n  - [First](a.md)\n  - [Second](b.md)\n  - [Third](c.md)\n");
+        assert_eq!(t.len(), 1);
+        assert_eq!(t[0].name, "Group");
+        assert_eq!(t[0].children.as_ref().unwrap().len(), 3);
+    }
+
+    #[test]
+    fn toc_group_names_survive_two_levels_of_nesting() {
+        let t = toc("- Outer\n  - Inner\n    - [Leaf](a.md)\n  - [Sibling](b.md)\n");
+        assert_eq!(t.len(), 1);
+        assert_eq!(t[0].name, "Outer");
+        let kids = t[0].children.as_ref().unwrap();
+        assert_eq!(kids.len(), 2);
+        assert_eq!(kids[0].name, "Inner");
+        assert_eq!(kids[0].children.as_ref().unwrap()[0].name, "Leaf");
+        assert_eq!(kids[1].name, "Sibling");
+    }
+
+    #[test]
+    fn toc_real_workspace_sample_labels_its_group_correctly() {
+        // End-to-end against the shipped sample, which is what surfaced the bug.
+        let root = Path::new("samples/workspace");
+        let txt = fs::read_to_string(root.join("_toc.md")).unwrap();
+        let t = parse_toc_md(root, &txt);
+        let names: Vec<_> = t.iter().map(|n| n.name.as_str()).collect();
+        assert_eq!(names, vec!["Introduction", "Chapters", "Conclusion", "Other"]);
+    }
+
+    #[test]
+    fn toc_strips_dot_slash_and_fragments_from_hrefs() {
+        let t = toc("- [A](./docs/a.md#intro)\n");
+        assert_eq!(t[0].rel_path, "docs/a.md");
+    }
+
+    #[test]
+    fn toc_appends_on_disk_files_missing_from_the_list_under_other() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("listed.md"), "# Listed\n").unwrap();
+        fs::write(dir.path().join("stray.md"), "# Stray\n").unwrap();
+
+        let t = parse_toc_md(dir.path(), "- [Listed](listed.md)\n");
+        // The listed file keeps its position and now resolves its real headings.
+        assert_eq!(t[0].rel_path, "listed.md");
+        assert_eq!(t[0].title.as_deref(), Some("Listed"));
+        // The unlisted one is appended in a synthetic trailing group.
+        let other = t.last().unwrap();
+        assert_eq!(other.kind, "dir");
+        let names: Vec<_> = other.children.as_ref().unwrap()
+            .iter().map(|n| n.rel_path.as_str()).collect();
+        assert!(names.contains(&"stray.md"), "expected stray.md in {:?}", names);
+        assert!(!names.contains(&"listed.md"), "listed.md must not be duplicated");
+    }
 }

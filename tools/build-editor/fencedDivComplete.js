@@ -8,6 +8,11 @@
 // Each entry: keyword + how many `+++` column dividers its template carries.
 // alignment / message blocks have no dividers; columns templates pre-seed the
 // number of dividers implied by the layout (columns/columns-2 → 1, -3 → 2, -4 → 3).
+// Keep in sync with ALIGN_KW_SRC / COLS_OPEN_RE in assets/index.html — this bundle
+// is a separate esbuild artifact and cannot import from there.
+// `centre` is deliberately NOT offered: the renderer accepts it (and OPEN_RE below
+// matches it so the closing-context guard still works), but it is only a spelling
+// variant of `center`, which the menu already surfaces from the same first letter.
 const DIVS = [
   { name: 'center',    detail: 'align center',  dividers: 0 },
   { name: 'right',     detail: 'align right',   dividers: 0 },

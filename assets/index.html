@@ -268,8 +268,10 @@
             opacity: 1;
         }
 
-        /* Right-click "Copy MathML / Copy LaTeX" menu for rendered KaTeX (see setupMathContextMenu). */
-        .math-context-menu {
+        /* Floating right-click menu, shared by every in-app context menu built with
+           __createContextMenu(): the KaTeX "Copy MathML / Copy LaTeX" menu and the
+           workspace file tree's collapse/expand menu. */
+        .app-context-menu {
             position: fixed;
             z-index: 10000;
             min-width: 150px;
@@ -284,53 +286,30 @@
             user-select: none;
         }
 
-        .math-context-menu .math-menu-item {
+        .app-context-menu .app-menu-item {
             padding: 6px 10px;
             border-radius: 4px;
             cursor: pointer;
             white-space: nowrap;
         }
 
-        .math-context-menu .math-menu-item:hover {
+        .app-context-menu .app-menu-item:hover {
             background: #f3f4f6;
         }
 
-        .math-context-menu .math-menu-item.disabled {
+        .app-context-menu .app-menu-item.disabled {
             color: #a0a4a8;
             cursor: default;
         }
 
-        .math-context-menu .math-menu-item.disabled:hover {
+        .app-context-menu .app-menu-item.disabled:hover {
             background: transparent;
         }
 
-        .math-context-menu .math-menu-item.copied {
+        .app-context-menu .app-menu-item.copied {
             background: #28a745;
             color: #ffffff;
         }
-
-        /* Right-click menu for the workspace file tree (see setupFileTreeContextMenu). */
-        .ft-context-menu {
-            position: fixed;
-            z-index: 10000;
-            min-width: 150px;
-            padding: 4px;
-            background: #ffffff;
-            border: 1px solid #d1d5da;
-            border-radius: 6px;
-            box-shadow: 0 4px 16px rgba(27, 31, 35, 0.18);
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
-            font-size: 13px;
-            color: #24292e;
-            user-select: none;
-        }
-        .ft-context-menu .ft-menu-item {
-            padding: 6px 10px;
-            border-radius: 4px;
-            cursor: pointer;
-            white-space: nowrap;
-        }
-        .ft-context-menu .ft-menu-item:hover { background: #f3f4f6; }
 
         #preview blockquote {
             border-left: 4px solid #dfe2e5;
@@ -457,6 +436,66 @@
         #preview li {
             margin-bottom: 4px;
         }
+
+        /* Definition lists (Pandoc / PHP-Markdown-Extra `用語` / `: 説明`).
+           Emitted by the `defList` marked extension (normal pipeline) and by the
+           ⦃DL⦄/⦃DT⦄/⦃DD⦄ sentinel post-pass (Marp) — identical DOM, so one rule set
+           serves both. #preview-scoped like the align / footnote / task-list rules, so
+           it also reaches Marp slide <section>s inside the foreignObject and rides into
+           HTML export (buildExportArtifact ships this whole <style> block).
+           The look is received via --md-dl-* custom properties so a user style or Marp
+           theme can rebrand it — or flatten it with `--md-dl-accent: transparent` — by
+           setting them on #preview / section; variable inheritance sidesteps the high
+           #preview ID specificity, mirroring the --md-message-* pattern below.
+           Logical properties (inline-start) keep the indent and accent rule on the
+           correct edge under the vertical-writing tategaki theme.
+           `.dl-loose` marks the Pandoc loose form (a blank line between a term and its
+           definition) — the DOM is unchanged, only the spacing. */
+        #preview dl {
+            margin: 0 0 16px;
+            padding: 0;
+        }
+
+        #preview dt {
+            font-weight: var(--md-dl-term-weight, 600);
+            /* marp-core's bundled GitHub-markdown CSS italicizes `dl dt`. Left
+               alone, the same document would render italic terms in Marp and
+               upright ones in the normal preview, so the baseline states the
+               style explicitly (ID specificity beats marp's element chain) and
+               exposes it as a variable for themes that do want GitHub's italic. */
+            font-style: var(--md-dl-term-style, normal);
+            color: var(--md-dl-term-color, inherit);
+            line-height: 1.5;
+            margin-top: var(--md-dl-gap, 0.8em);
+        }
+
+        #preview dl > dt:first-child { margin-top: 0; }
+
+        #preview dd {
+            /* The physical shorthands zero out marp-core's GitHub-markdown
+               `dd { margin-left: 0 }` / `padding: 0 16px`, then the logical
+               longhands (declared after, so they win for their side) place the
+               indent and accent rule on the writing-axis start edge. */
+            margin: 0.15em 0 0 0;
+            margin-inline-start: var(--md-dl-indent, 1.6em);
+            padding: 0;
+            padding-inline-start: var(--md-dl-pad, 0.7em);
+            border-inline-start: 2px solid var(--md-dl-accent, #dfe2e5);
+            color: var(--md-dl-desc-color, inherit);
+        }
+
+        #preview dd > :first-child { margin-top: 0; }
+        #preview dd > :last-child { margin-bottom: 0; }
+        #preview dl.dl-loose dd { margin-bottom: 0.6em; }
+
+        /* Dark default for the accent rule. Declared on `body` — NOT on
+           `body.dark-mode #preview dl` — on purpose: that selector would
+           out-specify a theme's own `#preview dl { --md-dl-accent: … }` and
+           override a theme that ships a real dark palette (classical.css does).
+           Declaring it on an ancestor makes it merely *inherited*, so a theme
+           setting the variable directly on the <dl> always wins, while the
+           Default theme still gets a dark-appropriate rule. */
+        body.dark-mode { --md-dl-accent: #30363d; }
 
         #preview table {
             border-collapse: collapse;
@@ -1055,37 +1094,29 @@
             color: #ffffff;
         }
 
-        body.dark-mode .math-context-menu {
+        body.dark-mode .app-context-menu {
             background: #21262d;
             border-color: #30363d;
             color: #c9d1d9;
             box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
         }
 
-        body.dark-mode .math-context-menu .math-menu-item:hover {
+        body.dark-mode .app-context-menu .app-menu-item:hover {
             background: #30363d;
         }
 
-        body.dark-mode .math-context-menu .math-menu-item.disabled {
+        body.dark-mode .app-context-menu .app-menu-item.disabled {
             color: #6e7681;
         }
 
-        body.dark-mode .math-context-menu .math-menu-item.disabled:hover {
+        body.dark-mode .app-context-menu .app-menu-item.disabled:hover {
             background: transparent;
         }
 
-        body.dark-mode .math-context-menu .math-menu-item.copied {
+        body.dark-mode .app-context-menu .app-menu-item.copied {
             background: #238636;
             color: #ffffff;
         }
-
-        body.dark-mode .ft-context-menu {
-            background: #21262d;
-            border-color: #30363d;
-            color: #c9d1d9;
-            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
-        }
-        body.dark-mode .ft-context-menu .ft-menu-item:hover { background: #30363d; }
 
         body.dark-mode #toc-sidebar {
             background: #161b22;
@@ -1312,8 +1343,18 @@
                 max-width: 100%;
             }
 
-            /* Avoid page breaks inside code blocks and tables */
-            pre, table, .code-block-wrapper {
+            /* Avoid page breaks inside code blocks, tables and definition lists */
+            pre, table, .code-block-wrapper, dl {
+                page-break-inside: avoid;
+            }
+
+            /* Never orphan a definition term at the bottom of a page */
+            #preview dt {
+                break-after: avoid-page;
+                page-break-after: avoid;
+            }
+            #preview dd {
+                break-inside: avoid;
                 page-break-inside: avoid;
             }
 
@@ -2352,11 +2393,9 @@
                 msg.innerHTML = html;
                 b.classList.add('visible');
             };
-            function escapeHtml(s) {
-                return s.replace(/[&<>"']/g, function (c) {
-                    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
-                });
-            }
+            // `escapeHtml` is the hoisted top-level one; `ver` / `notes` are
+            // already String()-coerced above, so its extra coercion is moot and
+            // the escaped output is character-identical.
             document.addEventListener('DOMContentLoaded', function () {
                 const install = document.getElementById('update-install-btn');
                 const later = document.getElementById('update-later-btn');
@@ -2709,44 +2748,73 @@
             if (__laserOn) __resizeLaserCanvas();
         });
 
-        // Line number toggle (L key)
-        if (localStorage.getItem('showLineNumbers') === 'true') {
-            document.body.classList.add('show-line-numbers');
+        // ----- Keyboard shortcut plumbing (shared prelude) -----
+        // Every single-key shortcut needs the same two guards, and they were
+        // retyped a dozen times each. The listeners stay separate on purpose —
+        // their `preventDefault` placement and return-vs-else-if structure differ,
+        // so folding them into one dispatcher would be risk without benefit.
+
+        // True when the event target is a text-entry surface, so a bare letter
+        // belongs to whatever the user is typing rather than to a shortcut.
+        function __isTypingTarget(t) {
+            return !!(t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable));
         }
-        document.addEventListener('keydown', (e) => {
-            if (e.ctrlKey || e.metaKey || e.altKey) return;
-            if (e.key !== 'l' && e.key !== 'L') return;
-            const t = e.target;
-            if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
-            document.body.classList.toggle('show-line-numbers');
-            localStorage.setItem('showLineNumbers', document.body.classList.contains('show-line-numbers'));
-        });
+
+        // Register a keydown handler for an unmodified letter key (case-insensitive).
+        // Ctrl/Meta/Alt and text-entry focus both suppress it.
+        function onPlainKey(key, handler) {
+            document.addEventListener('keydown', (e) => {
+                if (e.ctrlKey || e.metaKey || e.altKey) return;
+                if (typeof e.key !== 'string' || e.key.toLowerCase() !== key) return;
+                if (__isTypingTarget(e.target)) return;
+                return handler(e);
+            });
+        }
+
+        // Same for Ctrl/Cmd + letter. Shift is excluded so Ctrl+Shift+N stays free.
+        // Does NOT preventDefault — each caller keeps its own suppression semantics.
+        function onCtrlKey(key, handler) {
+            document.addEventListener('keydown', (e) => {
+                if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return;
+                if (typeof e.key !== 'string' || e.key.toLowerCase() !== key) return;
+                if (__isTypingTarget(e.target)) return;
+                return handler(e);
+            });
+        }
+
+        // Prelude only, no key test — for handlers that dispatch on several keys.
+        function onShortcutKey(handler) {
+            document.addEventListener('keydown', (e) => {
+                if (e.ctrlKey || e.metaKey || e.altKey) return;
+                if (__isTypingTarget(e.target)) return;
+                return handler(e);
+            });
+        }
+
+        // Restore a persisted body-class flag and bind `key` to toggle + persist it
+        // (optionally announcing the new state via a toast).
+        function bindBodyClassToggle(key, cls, storeKey, toastLabel) {
+            if (localStorage.getItem(storeKey) === 'true') document.body.classList.add(cls);
+            onPlainKey(key, () => {
+                const on = document.body.classList.toggle(cls);
+                localStorage.setItem(storeKey, on);
+                if (toastLabel) showToast(toastLabel + ': ' + (on ? 'オン' : 'オフ'));
+            });
+        }
+
+        // Line number toggle (L key)
+        bindBodyClassToggle('l', 'show-line-numbers', 'showLineNumbers', null);
 
         // Full-width layout toggle (W key). Same pattern as L/N; pure body-class
         // toggle, persisted in localStorage. CSS scoped to body.wide #preview;
         // no-op in Marp mode (the later body.marp #preview rule wins).
-        if (localStorage.getItem('wide') === 'true') {
-            document.body.classList.add('wide');
-        }
-        document.addEventListener('keydown', (e) => {
-            if (e.ctrlKey || e.metaKey || e.altKey) return;
-            if (e.key !== 'w' && e.key !== 'W') return;
-            const t = e.target;
-            if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
-            const on = document.body.classList.toggle('wide');
-            localStorage.setItem('wide', on);
-            showToast('全幅表示: ' + (on ? 'オン' : 'オフ'));
-        });
+        bindBodyClassToggle('w', 'wide', 'wide', '全幅表示');
 
         // Auto-shrink Marp slides to fit (A key). When on (default), slides whose
         // content overflows the 1280x720 box are scaled down uniformly to fit;
         // when off, content is clipped by the foreignObject as before. Persisted
         // in localStorage. No-op outside Marp mode (fitMarpSlides finds no sections).
-        document.addEventListener('keydown', (e) => {
-            if (e.ctrlKey || e.metaKey || e.altKey) return;
-            if (e.key !== 'a' && e.key !== 'A') return;
-            const t = e.target;
-            if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+        onPlainKey('a', () => {
             __marpAutofit = !__marpAutofit;
             localStorage.setItem('marpAutofit', __marpAutofit);
             fitMarpSlides();   // re-fit on / clear on off
@@ -2758,25 +2826,10 @@
         // Section numbering toggle (N key). Baseline counter rules live in the inline <style>
         // above so numbering works on every theme by default; user themes may
         // override the ::before content/styling for their custom number presentation.
-        if (localStorage.getItem('numbered') === 'true') {
-            document.body.classList.add('numbered');
-        }
-        document.addEventListener('keydown', (e) => {
-            if (e.ctrlKey || e.metaKey || e.altKey) return;
-            if (e.key !== 'n' && e.key !== 'N') return;
-            const t = e.target;
-            if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
-            const on = document.body.classList.toggle('numbered');
-            localStorage.setItem('numbered', on);
-            showToast('セクション番号: ' + (on ? 'オン' : 'オフ'));
-        });
+        bindBodyClassToggle('n', 'numbered', 'numbered', 'セクション番号');
 
         // Dark / Light toggle (M key). Orthogonal to the user-style picker (S).
-        document.addEventListener('keydown', async (e) => {
-            if (e.ctrlKey || e.metaKey || e.altKey) return;
-            if (e.key !== 'm' && e.key !== 'M') return;
-            const t = e.target;
-            if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+        onPlainKey('m', async () => {
             if (document.body.classList.contains('marp')) {
                 showToast('テーマはMarpディレクティブで固定されています');
                 return;
@@ -2838,11 +2891,7 @@
             if (open) __renderStyleRows(document.body.classList.contains('marp'));
             m.classList.toggle('visible', open);
         }
-        document.addEventListener('keydown', (e) => {
-            if (e.ctrlKey || e.metaKey || e.altKey) return;
-            if (e.key !== 's' && e.key !== 'S') return;
-            const t = e.target;
-            if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+        onPlainKey('s', (e) => {
             const m = __styleModal();
             if (!m) return;
             e.preventDefault();
@@ -2889,11 +2938,8 @@
         });
 
         // Marp deck-mode navigation (P toggle, F fullscreen, arrows/PgUp/PgDn/Home/End).
-        document.addEventListener('keydown', (e) => {
+        onShortcutKey((e) => {
             if (!document.body.classList.contains('marp')) return;
-            if (e.ctrlKey || e.metaKey || e.altKey) return;
-            const t = e.target;
-            if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
             if (e.key === 'p' || e.key === 'P') {
                 e.preventDefault();
                 const order = ['scroll', 'deck', 'list'];
@@ -2945,10 +2991,7 @@
             }
             m.classList.toggle('visible', open);
         }
-        document.addEventListener('keydown', (e) => {
-            if (e.ctrlKey || e.metaKey || e.altKey) return;
-            const t = e.target;
-            if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+        onShortcutKey((e) => {
             const m = __helpModal();
             if (!m) return;
             if (e.key === 'h' || e.key === 'H') {
@@ -3600,11 +3643,7 @@ ${previewClone.outerHTML}
         }
 
         // New document (Ctrl+N) — create a blank .md via a native Save dialog, then open it.
-        document.addEventListener('keydown', (e) => {
-            if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return;
-            if (e.key !== 'n' && e.key !== 'N') return;
-            const t = e.target;
-            if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+        onCtrlKey('n', (e) => {
             e.preventDefault();   // suppress any WebView2 "new window" default
             if (window.ipc && typeof window.ipc.postMessage === 'function') {
                 window.ipc.postMessage('newfile:');
@@ -3612,11 +3651,7 @@ ${previewClone.outerHTML}
         });
 
         // Editor window (E key) — opens the dedicated editor for the current file.
-        document.addEventListener('keydown', (e) => {
-            if (e.ctrlKey || e.metaKey || e.altKey) return;
-            if (e.key !== 'e' && e.key !== 'E') return;
-            const t = e.target;
-            if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+        onPlainKey('e', () => {
             if (window.ipc && typeof window.ipc.postMessage === 'function') {
                 let line = 1;
                 try {
@@ -3627,22 +3662,14 @@ ${previewClone.outerHTML}
         });
 
         // Export shortcut (X key) — single-page or workspace export.
-        document.addEventListener('keydown', (e) => {
-            if (e.ctrlKey || e.metaKey || e.altKey) return;
-            if (e.key !== 'x' && e.key !== 'X') return;
-            const t = e.target;
-            if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+        onPlainKey('x', () => {
             if (currentWorkspace) { exportWorkspace(); } else { exportHtml(); }
         });
 
         // Open install directory (Ctrl+D) — reveal the folder that holds the exe and
         // assets/ in Explorer. Same modifier guard shape as Ctrl+N; preventDefault to
         // suppress the browser "add bookmark" default. Rust handles `openinstalldir:`.
-        document.addEventListener('keydown', (e) => {
-            if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return;
-            if (e.key !== 'd' && e.key !== 'D') return;
-            const t = e.target;
-            if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+        onCtrlKey('d', (e) => {
             e.preventDefault();
             if (window.ipc && typeof window.ipc.postMessage === 'function') {
                 window.ipc.postMessage('openinstalldir:');
@@ -3746,6 +3773,9 @@ ${previewClone.outerHTML}
         // caller can decline to emit a span (leaving links / refs / unrelated `{…}`
         // untouched). Keys (case-insensitive, with short forms):
         //   color/c  size/s  font/f  bg/background  weight/w  valign/v
+        // Keyword tables for the `[text]{key=value}` syntax. The editor's value
+        // completion mirrors these in tools/build-editor/spanStyleComplete.js
+        // (a separate esbuild bundle) — add a keyword to both.
         const SPAN_SIZE_KW = { xs:'0.7em', sm:'0.85em', small:'0.85em', md:'1em', normal:'1em',
             lg:'1.4em', large:'1.4em', xl:'1.8em', xxl:'2.4em', '2xl':'2.4em' };
         const SPAN_WEIGHT_KW = { thin:'100', light:'300', normal:'400', medium:'500',
@@ -4192,13 +4222,6 @@ ${previewClone.outerHTML}
             return 'file:///' + resolved.join('/');
         }
 
-        // Helper function to escape HTML in attributes
-        function escapeHtmlAttr(text) {
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
-        }
-
         // Generate GitHub-compatible heading ID. Keep the raw Unicode slug as
         // the id (browsers match decoded fragments against raw ids), and do not
         // collapse runs of hyphens \u2014 GitHub preserves them, and links like
@@ -4505,6 +4528,186 @@ ${previewClone.outerHTML}
             }]
         });
 
+        // ----- Front-matter / fence–aware line scanning (single source of truth) -----
+        // Every renderMarp() pre-pass has to walk the source line by line while
+        // ignoring YAML front-matter and fenced code. That state machine used to be
+        // hand-written five times, i.e. five independent chances for the fence
+        // rules to drift. It lives here once now.
+        //
+        // A fence marker line: ```-or-more / ~~~-or-more, optionally indented. The
+        // *first character* is the marker kind, so ``` never closes a ~~~ block.
+        const MD_FENCE_RE = /^(\s*)(```+|~~~+)(.*)$/;
+        const MD_FM_DELIM_RE = /^---\s*$/;
+        // Marp's slide separator (a thematic break on its own line).
+        const SLIDE_SEP_RE = /^(---|\*\*\*|___)\s*$/;
+        // Column divider inside a `split` slide or a `::: columns` region.
+        const COL_DIVIDER_RE = /^\s*\+\+\+\s*$/;
+
+        // Stateful single-forward-pass classifier over `lines`. Call `step(i)` at
+        // the cursor, in increasing order; lines you SKIP are never examined —
+        // which is exactly what the definition-list pre-pass relies on.
+        // Returns 'fm' | 'fm-close' | 'fence' | 'code' | 'body'.
+        function __makeMdLineScanner(lines) {
+            let inFm = lines.length > 0 && MD_FM_DELIM_RE.test(lines[0]);
+            let fmClosed = !inFm;
+            let inFence = false;
+            let fenceMarker = '';
+            return {
+                step(i) {
+                    const ln = lines[i];
+                    if (inFm && !fmClosed) {
+                        // i > 0: line 0 is the OPENING delimiter, not the close.
+                        if (i > 0 && MD_FM_DELIM_RE.test(ln)) { fmClosed = true; return 'fm-close'; }
+                        return 'fm';
+                    }
+                    const m = ln.match(MD_FENCE_RE);
+                    if (m) {
+                        const marker = m[2][0]; // ` or ~
+                        if (!inFence) { inFence = true; fenceMarker = marker; }
+                        else if (marker === fenceMarker) { inFence = false; fenceMarker = ''; }
+                        return 'fence';
+                    }
+                    return inFence ? 'code' : 'body';
+                }
+            };
+        }
+
+        // Rewrite a markdown document line by line, front-matter- and fence-aware.
+        // `visit(line, i, lines)` is called ONLY for 'body' lines; front-matter,
+        // fence markers and in-fence code are copied verbatim and never visited.
+        // It may return:
+        //   undefined / null       → copy the line, advance 1
+        //   string                 → emit that instead, advance 1
+        //   string[]               → emit those, advance 1
+        //   { out: string[], skip } → emit `out`, advance `skip`. Skipped lines are
+        //                             NOT re-examined for fences — reproducing the
+        //                             definition-list pre-pass exactly (a scanned
+        //                             <dd> body may contain an indented fence that
+        //                             the scanner likewise never sees).
+        function __rewriteMdLines(md, visit) {
+            const lines = md.split('\n');
+            const scan = __makeMdLineScanner(lines);
+            const out = [];
+            let i = 0;
+            while (i < lines.length) {
+                if (scan.step(i) !== 'body') { out.push(lines[i]); i++; continue; }
+                const r = visit(lines[i], i, lines);
+                if (r === undefined || r === null) { out.push(lines[i]); i++; }
+                else if (typeof r === 'string') { out.push(r); i++; }
+                else if (Array.isArray(r)) { for (const l of r) out.push(l); i++; }
+                else {
+                    for (const l of (r.out || [])) out.push(l);
+                    i += Math.max(1, r.skip || 1);
+                }
+            }
+            return out.join('\n');
+        }
+
+        // ----- Sentinel region post-passes (shared walker) -----
+        // Three renderMarp() post-passes (inline columns, alignment, definition
+        // lists) had the same hand-written shape: find an opening sentinel <p>,
+        // replace it with a wrapper, then walk `nextSibling` to the closing
+        // sentinel, optionally splitting at separator sentinels. The comments even
+        // said so ("Combines the alignment post-pass shape…", "Same shape as the
+        // inline-columns pass"). This is that shape, once.
+        //
+        // The split post-pass deliberately does NOT use it: it has no opening
+        // sentinel (the whole <section> is the region), uses a stricter
+        // single-text-child predicate, rebuilds the section wholesale, and has a
+        // header-hoisting tail. Forcing it in would be a worse abstraction.
+
+        // True when `node` is a <p> whose entire trimmed text is exactly `text` —
+        // i.e. one of the sentinel paragraphs a pre-pass emitted.
+        function __isSentinelP(node, text) {
+            return node.nodeType === 1 && node.tagName === 'P'
+                && node.textContent.trim() === text;
+        }
+
+        // For every <p> under `root` matching `opts.open`, replace it with
+        // `opts.wrap(match)` and hand the wrapper the sibling region that follows.
+        //   opts.open   RegExp                 tested against p.textContent.trim()
+        //   opts.close  string                 that <p> is removed and ends the region
+        //   opts.marker (txt) => name | null   separator sentinel → bucket name
+        //   opts.wrap   (match) => Element     replacement, inserted BEFORE the walk
+        //   opts.fill   (wrapEl, buckets, match) => void
+        //
+        // `buckets` always starts with one `{ marker: null, nodes: [] }` holding
+        // whatever preceded the first separator. `next` is captured before any
+        // mutation; separator and close sentinels are removed during the walk;
+        // content nodes stay where they are until `fill` moves (or removes) them.
+        //
+        // The query is re-run on every call and snapshotted with Array.from() —
+        // nesting works precisely because a later pass sees sentinels that an
+        // earlier pass relocated into a wrapper. Do NOT hoist it.
+        function __unwrapSentinelRegions(root, opts) {
+            Array.from(root.querySelectorAll('section p')).forEach(p => {
+                const m = opts.open.exec(p.textContent.trim());
+                if (!m) return;
+                const wrap = opts.wrap(m);
+                p.parentNode.replaceChild(wrap, p);
+                const buckets = [{ marker: null, nodes: [] }];
+                let n = wrap.nextSibling;
+                while (n) {
+                    const next = n.nextSibling;
+                    if (__isSentinelP(n, opts.close)) { n.remove(); break; }
+                    const isP = n.nodeType === 1 && n.tagName === 'P';
+                    const mk = (opts.marker && isP) ? opts.marker(n.textContent.trim()) : null;
+                    if (mk) {
+                        n.remove();
+                        buckets.push({ marker: mk, nodes: [] });
+                    } else {
+                        buckets[buckets.length - 1].nodes.push(n);
+                    }
+                    n = next;
+                }
+                opts.fill(wrap, buckets, m);
+            });
+        }
+
+        // ----- Fenced-div grammar (single source of truth) -----
+        // The `:::` family is recognized in TWO places — the `alignDiv` /
+        // `columnsDiv` marked extensions below (normal pipeline) and the sentinel
+        // pre-pass in renderMarp() (Marp) — so the patterns live here rather than
+        // being retyped. They previously drifted; keep adding keywords HERE only.
+        //
+        // Mirrored (by necessity, different bundle) in
+        // tools/build-editor/fencedDivComplete.js — keep the two in sync. That file
+        // deliberately does not offer `centre` in its menu; see the note there.
+        //
+        // None carry /g, so hoisting introduces no `lastIndex` state; the *_RE
+        // forms are used inside per-line loops and must stay hoisted.
+        const ALIGN_KW_SRC = 'center|centre|right|left|message|vcenter';
+        const ALIGN_OPEN_RE = new RegExp('^:::+[ \\t]*(' + ALIGN_KW_SRC + ')[ \\t]*$', 'i');
+        const ALIGN_OPEN_SEEK_RE = new RegExp('^:::+[ \\t]*(' + ALIGN_KW_SRC + ')[ \\t]*$', 'im');
+        const ALIGN_BLOCK_RE = new RegExp(
+            '^:::+[ \\t]*(' + ALIGN_KW_SRC + ')[ \\t]*\\n([\\s\\S]*?)\\n:::+[ \\t]*(?:\\n|$)', 'i');
+        const COLS_OPEN_RE = /^:::+[ \t]*columns(?:-([234]))?[ \t]*$/i;
+        const COLS_OPEN_SEEK_RE = /^:::+[ \t]*columns(?:-([234]))?[ \t]*$/im;
+        const COLS_BLOCK_RE = /^:::+[ \t]*columns(?:-([234]))?[ \t]*\n([\s\S]*?)\n:::+[ \t]*(?:\n|$)/i;
+        const FENCED_DIV_CLOSE_RE = /^:::+[ \t]*$/;
+        // Matches the sentinel the Marp pre-pass emits, NOT source syntax. Its
+        // keyword has already been through normalizeAlignKeyword, which is why
+        // there is deliberately no `centre` branch — do not "unify" it with
+        // ALIGN_KW_SRC above.
+        const ALIGN_SENTINEL_RE = /^⦃ALIGN:(center|right|left|message|vcenter)⦄$/;
+
+        // `centre` → `center`; every other keyword passes through lowercased.
+        // Downstream (class names, Marp sentinels) only ever sees the normalized
+        // form — which is why the sentinel regex below has no `centre` branch.
+        function normalizeAlignKeyword(kw) {
+            const a = String(kw).toLowerCase();
+            return a === 'centre' ? 'center' : a;
+        }
+
+        // Map a normalized keyword to the class the renderer emits. `message` →
+        // emphasized centered message box; `vcenter` → vertical(+horizontal)
+        // centering box; the rest → plain text-align.
+        function alignKeywordClass(kw) {
+            return kw === 'message' ? 'md-message'
+                : kw === 'vcenter' ? 'md-vcenter'
+                : 'align-' + kw;
+        }
+
         // Block-level marked extension for Pandoc-style alignment fences:
         //   ::: center        ::: right         ::: left
         //   ...content...     ...content...     ...content...
@@ -4517,24 +4720,19 @@ ${previewClone.outerHTML}
                 name: 'alignDiv',
                 level: 'block',
                 start(src) {
-                    const i = src.search(/^:::+[ \t]*(center|centre|right|left|message|vcenter)[ \t]*$/im);
+                    const i = src.search(ALIGN_OPEN_SEEK_RE);
                     return i < 0 ? undefined : i;
                 },
                 tokenizer(src) {
-                    const m = /^:::+[ \t]*(center|centre|right|left|message|vcenter)[ \t]*\n([\s\S]*?)\n:::+[ \t]*(?:\n|$)/i.exec(src);
+                    const m = ALIGN_BLOCK_RE.exec(src);
                     if (!m) return;
-                    let align = m[1].toLowerCase();
-                    if (align === 'centre') align = 'center';
+                    const align = normalizeAlignKeyword(m[1]);
                     const token = { type: 'alignDiv', raw: m[0], align, text: m[2], tokens: [] };
                     this.lexer.blockTokens(token.text, token.tokens);
                     return token;
                 },
                 renderer(token) {
-                    // `message` → emphasized centered message box; `vcenter` →
-                    // vertical(+horizontal) centering box; others → text-align.
-                    const cls = token.align === 'message' ? 'md-message'
-                        : token.align === 'vcenter' ? 'md-vcenter'
-                        : 'align-' + token.align;
+                    const cls = alignKeywordClass(token.align);
                     return '<div class="' + cls + '">\n'
                         + this.parser.parse(token.tokens) + '</div>\n';
                 }
@@ -4563,11 +4761,11 @@ ${previewClone.outerHTML}
                 name: 'columnsDiv',
                 level: 'block',
                 start(src) {
-                    const i = src.search(/^:::+[ \t]*columns(?:-[234])?[ \t]*$/im);
+                    const i = src.search(COLS_OPEN_SEEK_RE);
                     return i < 0 ? undefined : i;
                 },
                 tokenizer(src) {
-                    const m = /^:::+[ \t]*columns(?:-([234]))?[ \t]*\n([\s\S]*?)\n:::+[ \t]*(?:\n|$)/i.exec(src);
+                    const m = COLS_BLOCK_RE.exec(src);
                     if (!m) return;
                     const parts = m[2].split(/^[ \t]*\+\+\+[ \t]*$/m);
                     const cols = parts.map(p => {
@@ -4585,6 +4783,178 @@ ${previewClone.outerHTML}
                         html += '<div class="split-col">\n' + this.parser.parse(tokens) + '</div>\n';
                     });
                     return html + '</div>\n';
+                }
+            }]
+        });
+
+        // ----- Definition lists (Pandoc / PHP Markdown Extra) -----
+        //   用語
+        //   : 説明テキスト
+        //   : 2つめの説明          ← 1つの <dt> に複数の <dd>
+        //
+        //   別の用語               ← 連続するグループは 1 つの <dl> にマージ
+        //   : 説明
+        //
+        // Line-based grammar, shared verbatim by the normal pipeline (the `defList`
+        // marked extension below) and the Marp sentinel pre-pass in renderMarp(), so
+        // the two pipelines can never drift — same single-source-of-truth design as
+        // buildSpanStyle() for the styled span. Deliberately conservative:
+        //   • the definition marker is `:` + a space/tab — `:::` (fenced div),
+        //     `:---|---:` (GFM table alignment row) and a bare `:` never match;
+        //   • the term line must not look like ANY other block construct
+        //     (DL_TERM_BAD_RE). This matters because marked tries block extensions
+        //     BEFORE its own fences/heading/hr/list/table tokenizers, so without the
+        //     guard `# 見出し` followed by `: x` would silently become a <dt>;
+        //   • continuation lines must be indented ≥2 spaces or a tab and there is NO
+        //     lazy continuation — a following ```fence / heading / prose line
+        //     therefore ends the list instead of being swallowed into the <dd>.
+        //     (Pandoc wants 4 spaces; 2 is friendlier for the 2-char `: ` marker.)
+        //   • only ONE term line per group (Pandoc's rule, not PHP-Extra's multiple
+        //     <dt>). Allowing several would make the tokenizer match at ^ for
+        //     `Intro paragraph.\n用語\n: 説明`, emitting <dt>Intro paragraph.</dt>
+        //     and robbing start() of its chance to clip the paragraph.
+        // `⦃` is excluded from term lines so a Marp sentinel paragraph emitted by an
+        // earlier pre-pass (⦃ALIGN:…⦄ / ⦃COLS⦄ / ⦃COL⦄ / ⦃FN:…⦄) can never be read
+        // as a term.
+        const DL_MARK_RE = /^[ \t]{0,3}:[ \t]/;
+        const DL_CONT_RE = /^(?: {2,}|\t)[^\s]/;
+        const DL_TERM_BAD_RE = /^(?:[ \t]*$|(?: {4,}|\t)|[ \t]{0,3}(?::|>|#|⦃|`{3,}|~{3,}|\||<|={2,}[ \t]*$|(?:[-*_][ \t]*){3,}[ \t]*$|[-*+][ \t]|\d{1,9}[.)][ \t]))/;
+        const dlIsBlank = (l) => l === undefined || l.trim() === '';
+        const dlIsTerm = (l) => !DL_TERM_BAD_RE.test(l);
+
+        // Scan `lines` starting at index `start`. Returns null when no definition
+        // list begins there, else { end, loose, groups: [{ term, defs: [string] }] }
+        // where `end` is the index of the first line NOT consumed. `loose` is true
+        // when a blank line separated a term from its definition (Pandoc's "loose"
+        // form) — it only sets the `.dl-loose` CSS hook, the DOM shape is identical.
+        function scanDefList(lines, start) {
+            if (dlIsBlank(lines[start])) return null;
+            const groups = [];
+            let i = start, end = start, loose = false;
+            while (i < lines.length) {
+                let j = i;
+                while (j < lines.length && dlIsBlank(lines[j])) j++;
+                if (j >= lines.length || !dlIsTerm(lines[j])) break;
+                const term = lines[j];
+                const defs = [];
+                let k = j + 1;
+                while (k < lines.length) {
+                    let p = k, blanks = 0;
+                    while (p < lines.length && dlIsBlank(lines[p])) { p++; blanks++; }
+                    if (p >= lines.length || !DL_MARK_RE.test(lines[p])) break;
+                    if (blanks > 0) loose = true;
+                    const body = [lines[p].replace(/^[ \t]{0,3}:[ \t]/, '')];
+                    let q = p + 1;
+                    while (q < lines.length) {
+                        if (dlIsBlank(lines[q])) {
+                            // A blank line continues the definition only when an
+                            // indented block follows (multi-paragraph / code / list).
+                            let r = q, b2 = 0;
+                            while (r < lines.length && dlIsBlank(lines[r])) { r++; b2++; }
+                            if (r < lines.length && DL_CONT_RE.test(lines[r])) {
+                                for (let z = 0; z < b2; z++) body.push('');
+                                q = r;
+                                continue;
+                            }
+                            break;
+                        }
+                        if (DL_MARK_RE.test(lines[q])) break;      // next <dd>
+                        if (!DL_CONT_RE.test(lines[q])) break;     // not indented → list ends
+                        body.push(lines[q].replace(/^(?: {1,4}|\t)/, ''));
+                        q++;
+                    }
+                    defs.push(body.join('\n'));
+                    k = q;
+                }
+                if (defs.length === 0) break;   // a term with no definition is not a dl
+                groups.push({ term: term.trim(), defs });
+                end = k;
+                i = k;
+            }
+            return groups.length > 0 ? { end, loose, groups } : null;
+        }
+
+        // Block-level marked extension emitting <dl>/<dt>/<dd> for the normal
+        // pipeline. Registration order relative to alignDiv / columnsDiv /
+        // styledSpan is immaterial (marked.use unshifts block tokenizers, so this
+        // one runs first, but the grammars are mutually exclusive — `:::` lines fail
+        // both DL_TERM_BAD_RE and DL_MARK_RE, and a term/`: ` pair fails the
+        // `:::`-anchored regexes). Kept here so the block extensions stay contiguous.
+        // Marp gets the same feature via a sentinel pre/post pass in renderMarp().
+        marked.use({
+            extensions: [{
+                name: 'defList',
+                level: 'block',
+                // marked calls startBlock(src.slice(1)) on every extension and clips a
+                // would-be paragraph to src.substring(0, min + 1). Returning the
+                // *sliced* index of a term line therefore ends the paragraph exactly
+                // where the term begins, which is what stops
+                //     Intro paragraph.
+                //     用語
+                //     : 説明
+                // from swallowing the term into the paragraph. Index 0 is deliberately
+                // never returned (it would clip after the first character and split a
+                // word); starting the loop at i = 1 guarantees that.
+                start(src) {
+                    const lines = src.split('\n');
+                    let pos = lines[0].length + 1;
+                    for (let i = 1; i + 1 < lines.length; i++) {
+                        if (dlIsTerm(lines[i]) && DL_MARK_RE.test(lines[i + 1])) return pos;
+                        pos += lines[i].length + 1;
+                    }
+                    return undefined;
+                },
+                tokenizer(src) {
+                    const lines = src.split('\n');
+                    const scan = scanDefList(lines, 0);
+                    if (!scan) return;
+                    const token = {
+                        type: 'defList',
+                        raw: lines.slice(0, scan.end).join('\n') + (scan.end < lines.length ? '\n' : ''),
+                        loose: scan.loose,
+                        rows: []
+                    };
+                    // <dt> is inline-only: a term is a phrase, and block-parsing it
+                    // would wrap it in <p>. <dd> is block-parsed so lists, code
+                    // fences, images, nested ::: divs and multiple paragraphs work.
+                    // state.top is forced true around the recursion so a
+                    // single-paragraph body yields a `paragraph` token even when the
+                    // whole <dl> sits inside a list item (where top is false and
+                    // marked would emit a bare `text` token instead).
+                    const prevTop = this.lexer.state.top;
+                    this.lexer.state.top = true;
+                    scan.groups.forEach(g => {
+                        const dt = { kind: 'dt', tokens: [] };
+                        this.lexer.inlineTokens(g.term, dt.tokens);
+                        token.rows.push(dt);
+                        g.defs.forEach(d => {
+                            const dd = { kind: 'dd', tokens: [] };
+                            this.lexer.blockTokens(d + '\n', dd.tokens);
+                            token.rows.push(dd);
+                        });
+                    });
+                    this.lexer.state.top = prevTop;
+                    return token;
+                },
+                // Emits exactly ONE top-level element — stampLineNumbers() walks
+                // preview.children positionally, so the <dl> picks up its data-line
+                // (editor↔preview sync) for free. Don't add sibling wrappers here or
+                // every following block's data-line silently shifts.
+                renderer(token) {
+                    let html = '<dl' + (token.loose ? ' class="dl-loose"' : '') + '>\n';
+                    token.rows.forEach(r => {
+                        if (r.kind === 'dt') {
+                            html += '<dt>' + this.parser.parseInline(r.tokens) + '</dt>\n';
+                            return;
+                        }
+                        // Tight <dd> (a single paragraph) → bare inline HTML, no <p>.
+                        // Anything richer keeps its blocks.
+                        const only = r.tokens.length === 1 ? r.tokens[0] : null;
+                        html += (only && (only.type === 'paragraph' || only.type === 'text'))
+                            ? '<dd>' + this.parser.parseInline(only.tokens) + '</dd>\n'
+                            : '<dd>\n' + this.parser.parse(r.tokens) + '</dd>\n';
+                    });
+                    return html + '</dl>\n';
                 }
             }]
         });
@@ -4643,7 +5013,9 @@ ${previewClone.outerHTML}
                         const sup = occ > 1 ? '<sup>' + n + '</sup>' : '';
                         backlinks += '<a href="#fnref-' + sid + '-' + n + '" class="footnote-backref" aria-label="Back to reference">↩' + sup + '</a> ';
                     }
-                    html += '<li id="fn-' + sid + '" class="footnote-item">'
+                    // `data-fn-id` is the stable lookup hook for the hover tooltip.
+                    // The `id` stays the anchor target for `href="#fn-…"`.
+                    html += '<li id="fn-' + sid + '" data-fn-id="' + sid + '" class="footnote-item">'
                         + '<div class="footnote-content">' + rendered + '</div>'
                         + '<span class="footnote-backrefs">' + backlinks.trim() + '</span>'
                         + '</li>';
@@ -4658,8 +5030,16 @@ ${previewClone.outerHTML}
         // Compact per-slide footnote block for Marp mode: renders only the given
         // footnote ids (those referenced on one slide) at the bottom of that slide.
         // Numbering is global (matches the in-text <sup>), no heading / back-links.
-        function renderMarpSlideFootnotes(ids) {
+        //
+        // A footnote cited on N slides is rendered N times, so the canonical
+        // `id="fn-…"` anchor target is stamped only the FIRST time each footnote is
+        // emitted (tracked in the caller-owned `emitted` set) — otherwise the
+        // document would carry N duplicate ids. Every copy always carries
+        // `data-fn-id`, which is what the hover tooltip resolves against, so the
+        // tooltip can prefer the copy on the reader's own slide.
+        function renderMarpSlideFootnotes(ids, emitted) {
             if (!ids || ids.length === 0) return '';
+            const seen = emitted || new Set();
             let html = '<div class="marp-footnotes">';
             footnoteState.suspend = true;
             try {
@@ -4670,7 +5050,10 @@ ${previewClone.outerHTML}
                     const rendered = /\n/.test(body)
                         ? marked.parse(body)
                         : marked.parseInline(body);
-                    html += '<div class="marp-footnote-item" id="fn-' + sid + '">'
+                    const anchorId = seen.has(sid) ? '' : ' id="fn-' + sid + '"';
+                    seen.add(sid);
+                    html += '<div class="marp-footnote-item"' + anchorId
+                        + ' data-fn-id="' + sid + '">'
                         + '<sup class="marp-fn-num">' + num + '</sup> '
                         + '<span class="marp-fn-body">' + rendered + '</span>'
                         + '</div>';
@@ -4709,63 +5092,18 @@ ${previewClone.outerHTML}
             }, false);
         });
 
-        // Handle dropped files
-        dropZone.addEventListener('drop', handleDrop, false);
-        previewContainer.addEventListener('drop', handleDrop, false);
-
-        // Helper function to read file as data URL
-        function readFileAsDataURL(file) {
-            return new Promise((resolve, reject) => {
-                const reader = new FileReader();
-                reader.onload = (e) => resolve(e.target.result);
-                reader.onerror = reject;
-                reader.readAsDataURL(file);
-            });
-        }
-
-        function handleDrop(e) {
-            const dt = e.dataTransfer;
-            const files = Array.from(dt.files);
-
-            // Separate markdown and image files
-            const mdFile = files.find(f => f.name.match(/\.(md|markdown)$/i));
-            const imageFiles = files.filter(f => f.name.match(/\.(png|jpe?g|gif|svg|webp|ico|bmp|tiff?|avif)$/i));
-
-            if (mdFile) {
-                // Markdown drops are handled by the Rust host
-                // (WindowEvent::DroppedFile -> OpenFile), which sets up the
-                // watcher / current_file / editor pairing exactly like a
-                // double-click. Both tao and the WebView2 HTML5 drop fire for the
-                // same file, so do nothing here to avoid loading it twice.
-                return;
-            } else if (imageFiles.length > 0) {
-                // Single image viewing
-                handleImageFile(imageFiles[0]);
-            } else {
-                alert('Please drop a markdown file (.md, .markdown) or image files');
-            }
-        }
-
-        // Handle single image file
-        async function handleImageFile(file) {
-            const dataUrl = await readFileAsDataURL(file);
-            currentMarkdown = '';
-            currentMarkdownRaw = '';
-            currentFilePath = '';
-            preview.innerHTML = `<p><img src="${dataUrl}" alt="${file.name.replace(/"/g, '&quot;')}" style="max-width: 100%; display: block; margin: 0 auto;"></p>`;
-            dropZone.style.display = 'none';
-            appContainer.style.display = 'flex';
-            hideSplash();
-            setWindowTitle(file.name);
-            // Generate TOC for image (will show "No headings found")
-            generateTOC();
-        }
+        // NOTE: there is deliberately no JS `drop` handler. wry's file-drop
+        // handler revokes WebView2's own drop target (see `with_file_drop_handler`
+        // in src/main.rs), so a JS `drop` event never fires and never carries a
+        // usable path. Every drop — folder, .md, .mdx, image — is routed by the
+        // Rust host, which is also what sets up the watcher / current_file /
+        // editor pairing. The `preventDefaults` + `.drag-over` wiring above stays:
+        // it suppresses the browser's default "navigate to the dropped file"
+        // behavior and drives the drop-zone highlight.
 
         // Display a dropped image. The Rust file-drop handler routes single-image
         // drops here (it has already pointed `current_dir` at the image's folder,
-        // so the `/userfile/` route resolves the bare filename). This is the live
-        // path for image drops on Windows — `handleImageFile` above only runs if
-        // the webview's HTML5 drag-drop is ever active (fallback).
+        // so the `/userfile/` route resolves the bare filename).
         window.loadImageFromRust = function(name) {
             const url = toUserfileUrl(name);
             currentMarkdown = '';
@@ -5659,6 +5997,30 @@ ${previewClone.outerHTML}
         const __abcCache = new Map();
         const __DIAGRAM_CACHE_MAX = 200;
         function __diagKey(src) { return (darkMode ? 'd|' : 'l|') + src; }
+
+        // Read a diagram's original source from its percent-encoded `data-…-source`
+        // attribute, falling back to the element's text when absent or malformed.
+        function __diagSource(el, attr) {
+            try { return decodeURIComponent(el.getAttribute(attr) || ''); }
+            catch (e) { return el.textContent || ''; }
+        }
+
+        // Re-attach a memoized render if one exists. Returns true on a hit, so the
+        // caller can `return` immediately; false means "render it yourself".
+        //
+        // NOTE: there is deliberately no `__renderCached(el, cache, key, produce)`
+        // wrapper around the whole render. The markwhen renderer cannot supply its
+        // cache key up front — the calendar key depends on the parsed header's
+        // `country` and on the month-count fallback running first — and mermaid vs
+        // abc differ in *what* gets cached (mermaid caches the raw SVG string it
+        // was handed; abc must snapshot el.innerHTML because abcjs renders into the
+        // element and returns nothing). One wrapper would have to paper over both.
+        function __diagCacheHit(cache, key, el) {
+            const cached = cache.get(key);
+            if (cached === undefined) return false;
+            el.innerHTML = cached;
+            return true;
+        }
         function __diagCacheSet(cache, key, val) {
             if (cache.size >= __DIAGRAM_CACHE_MAX) {
                 cache.delete(cache.keys().next().value);
@@ -5714,8 +6076,7 @@ ${previewClone.outerHTML}
             await Promise.all(Array.from(els).map(async (el) => {
                 const src = el.textContent;
                 const key = __diagKey(src);
-                const cached = __mermaidCache.get(key);
-                if (cached !== undefined) { el.innerHTML = cached; return; }
+                if (__diagCacheHit(__mermaidCache, key, el)) return;
                 try {
                     const { scale, body } = parseMermaidScale(src);
                     let { svg } = await mermaid.render(el.id + '-svg', body);
@@ -5744,11 +6105,8 @@ ${previewClone.outerHTML}
         // slide is display:none (e.g. a non-active deck slide).
         function renderAbcCached(root) {
             root.querySelectorAll('[data-abc]').forEach((el) => {
-                let src;
-                try { src = decodeURIComponent(el.getAttribute('data-abc-source') || ''); }
-                catch (e) { src = el.textContent || ''; }
-                const cached = __abcCache.get(src);
-                if (cached !== undefined) { el.innerHTML = cached; return; }
+                const src = __diagSource(el, 'data-abc-source');
+                if (__diagCacheHit(__abcCache, src, el)) return;
                 try {
                     el.innerHTML = '';
                     window.ABCJS.renderAbc(el, src, {
@@ -5793,6 +6151,9 @@ ${previewClone.outerHTML}
         // colors differ between light/dark), mirroring the mermaid cache.
         const __markwhenCache = new Map();
 
+        // Deliberately NOT the shared `escapeHtml`: this one maps null/undefined
+        // to '' (relied on by the error path, which passes `error && error.message`)
+        // and leaves `'` alone, which is correct inside the SVG <text> it feeds.
         function __mwEscape(s) {
             return String(s == null ? '' : s)
                 .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -6128,9 +6489,7 @@ ${previewClone.outerHTML}
         }
 
         async function renderMarkwhenCached(el) {
-            let src;
-            try { src = decodeURIComponent(el.getAttribute('data-markwhen-source') || ''); }
-            catch (e) { src = el.textContent || ''; }
+            const src = __diagSource(el, 'data-markwhen-source');
             try {
                 const MW = window.Markwhen;
                 if (!MW || typeof MW.parse !== 'function') throw new Error('parser not loaded');
@@ -6172,8 +6531,7 @@ ${previewClone.outerHTML}
 
                     const online = navigator.onLine;
                     const calKey = __diagKey(src) + '|cal|' + country + '|' + (online ? 'on' : 'off');
-                    const cachedCal = __markwhenCalCache.get(calKey);
-                    if (cachedCal !== undefined) { el.innerHTML = cachedCal; return; }
+                    if (__diagCacheHit(__markwhenCalCache, calKey, el)) return;
 
                     const years = new Set();
                     for (let mi = 0; mi < monthCount; mi++) years.add(sM.getFullYear() + Math.floor((sM.getMonth() + mi) / 12));
@@ -6186,8 +6544,7 @@ ${previewClone.outerHTML}
 
                 // Timeline view (default).
                 const key = __diagKey(src);
-                const cached = __markwhenCache.get(key);
-                if (cached !== undefined) { el.innerHTML = cached; return; }
+                if (__diagCacheHit(__markwhenCache, key, el)) return;
                 el.innerHTML = titleHtml + __mwBuildTimeline(MW, mw, rows, events);
                 __diagCacheSet(__markwhenCache, key, el.innerHTML);
             } catch (error) {
@@ -6258,12 +6615,8 @@ ${previewClone.outerHTML}
             // re-applies it.
             const __userLink = document.getElementById('user-style');
             if (__userLink) __userLink.remove();
-            // Restore last view preference. Migrates the older boolean `deckMode` key
-            // (true → 'deck') on first read.
+            // Restore last view preference.
             let __savedView = localStorage.getItem('marpView');
-            if (!__savedView) {
-                __savedView = localStorage.getItem('deckMode') === 'true' ? 'deck' : 'scroll';
-            }
             if (__savedView !== 'scroll' && __savedView !== 'deck' && __savedView !== 'list') {
                 __savedView = 'scroll';
             }
@@ -6298,37 +6651,11 @@ ${previewClone.outerHTML}
             // / unrelated `{…}` are left verbatim. The inner text stays as Markdown
             // (marp renders **bold** etc. inside the injected span).
             {
-                const lines = markdown.split('\n');
-                const out = [];
-                let inFm = lines.length > 0 && /^---\s*$/.test(lines[0]);
-                let fmClosed = !inFm;
-                let inFence = false;
-                let fenceMarker = '';
                 const spanRe = /\[([^\]\n]+)\]\{([^}\n]*)\}/g;
-                for (let i = 0; i < lines.length; i++) {
-                    let ln = lines[i];
-                    if (inFm && !fmClosed) {
-                        out.push(ln);
-                        if (i > 0 && /^---\s*$/.test(ln)) fmClosed = true;
-                        continue;
-                    }
-                    const fenceMatch = ln.match(/^(\s*)(```+|~~~+)(.*)$/);
-                    if (fenceMatch) {
-                        const marker = fenceMatch[2][0];
-                        if (!inFence) { inFence = true; fenceMarker = marker; }
-                        else if (marker === fenceMarker) { inFence = false; fenceMarker = ''; }
-                        out.push(ln);
-                        continue;
-                    }
-                    if (!inFence) {
-                        ln = ln.replace(spanRe, (full, text, attr) => {
-                            const style = buildSpanStyle(attr);
-                            return style ? '<span style="' + style + '">' + text + '</span>' : full;
-                        });
-                    }
-                    out.push(ln);
-                }
-                markdown = out.join('\n');
+                markdown = __rewriteMdLines(markdown, ln => ln.replace(spanRe, (full, text, attr) => {
+                    const style = buildSpanStyle(attr);
+                    return style ? '<span style="' + style + '">' + text + '</span>' : full;
+                }));
             }
 
             // Split layout pre-pass — within slides that declare `<!-- _class: split -->`
@@ -6338,55 +6665,21 @@ ${previewClone.outerHTML}
             // Skips `+++` inside fenced code blocks so e.g. ```diff blocks stay intact.
             const COL_SENTINEL = '⦃COL⦄';
             {
-                const lines = markdown.split('\n');
-                const out = [];
-                let inFm = lines.length > 0 && /^---\s*$/.test(lines[0]);
-                let fmClosed = !inFm;
-                let inFence = false;
-                let fenceMarker = '';
                 let slideIsSplit = false;
-                for (let i = 0; i < lines.length; i++) {
-                    const ln = lines[i];
-                    if (inFm && !fmClosed) {
-                        out.push(ln);
-                        if (i > 0 && /^---\s*$/.test(ln)) fmClosed = true;
-                        continue;
-                    }
-                    // Track fenced code blocks (``` or ~~~ with matching marker).
-                    const fenceMatch = ln.match(/^(\s*)(```+|~~~+)(.*)$/);
-                    if (fenceMatch) {
-                        const marker = fenceMatch[2][0]; // ` or ~
-                        if (!inFence) { inFence = true; fenceMarker = marker; }
-                        else if (marker === fenceMarker) { inFence = false; fenceMarker = ''; }
-                        out.push(ln);
-                        continue;
-                    }
-                    if (!inFence) {
-                        // Slide separator resets the per-slide split flag.
-                        if (/^(---|\*\*\*|___)\s*$/.test(ln)) {
-                            slideIsSplit = false;
-                            out.push(ln);
-                            continue;
-                        }
-                        // Detect `<!-- _class: ... -->` directives on this slide.
-                        const classMatch = ln.match(/<!--\s*_class\s*:\s*(.+?)\s*-->/);
-                        if (classMatch) {
-                            const classes = classMatch[1].split(/\s+/);
-                            if (classes.some(c => c === 'split' || /^split-[234]$/.test(c))) {
-                                slideIsSplit = true;
-                            }
-                        }
-                        if (slideIsSplit && /^\s*\+\+\+\s*$/.test(ln)) {
-                            // Blank line padding ensures the sentinel becomes its own <p>.
-                            out.push('');
-                            out.push(COL_SENTINEL);
-                            out.push('');
-                            continue;
+                markdown = __rewriteMdLines(markdown, ln => {
+                    // Slide separator resets the per-slide split flag.
+                    if (SLIDE_SEP_RE.test(ln)) { slideIsSplit = false; return; }
+                    // Detect `<!-- _class: ... -->` directives on this slide.
+                    const classMatch = ln.match(/<!--\s*_class\s*:\s*(.+?)\s*-->/);
+                    if (classMatch) {
+                        const classes = classMatch[1].split(/\s+/);
+                        if (classes.some(c => c === 'split' || /^split-[234]$/.test(c))) {
+                            slideIsSplit = true;
                         }
                     }
-                    out.push(ln);
-                }
-                markdown = out.join('\n');
+                    // Blank line padding ensures the sentinel becomes its own <p>.
+                    if (slideIsSplit && COL_DIVIDER_RE.test(ln)) return ['', COL_SENTINEL, ''];
+                });
             }
 
             // Fenced-div pre-pass (alignment + inline columns) — convert the
@@ -6408,62 +6701,74 @@ ${previewClone.outerHTML}
             const ALIGN_OPEN = '⦃ALIGN:';
             const ALIGN_CLOSE = '⦃/ALIGN⦄';
             const COLS_CLOSE = '⦃/COLS⦄';
+            // Opening sentinels, matched by the post-passes below. Capture group 1
+            // is the column count / looseness flag the wrapper needs.
+            const COLS_SENTINEL_RE = /^⦃COLS(?::([234]))?⦄$/;
             {
-                const lines = markdown.split('\n');
-                const out = [];
-                let inFm = lines.length > 0 && /^---\s*$/.test(lines[0]);
-                let fmClosed = !inFm;
-                let inFence = false;
-                let fenceMarker = '';
                 const fenceStack = []; // 'align' | 'cols', innermost last
-                for (let i = 0; i < lines.length; i++) {
-                    const ln = lines[i];
-                    if (inFm && !fmClosed) {
-                        out.push(ln);
-                        if (i > 0 && /^---\s*$/.test(ln)) fmClosed = true;
-                        continue;
+                // Blank line padding ensures each sentinel becomes its own <p>.
+                markdown = __rewriteMdLines(markdown, ln => {
+                    const open = ln.match(ALIGN_OPEN_RE);
+                    if (open) {
+                        fenceStack.push('align');
+                        return ['', ALIGN_OPEN + normalizeAlignKeyword(open[1]) + '⦄', ''];
                     }
-                    const fenceMatch = ln.match(/^(\s*)(```+|~~~+)(.*)$/);
-                    if (fenceMatch) {
-                        const marker = fenceMatch[2][0];
-                        if (!inFence) { inFence = true; fenceMarker = marker; }
-                        else if (marker === fenceMarker) { inFence = false; fenceMarker = ''; }
-                        out.push(ln);
-                        continue;
+                    const openCols = ln.match(COLS_OPEN_RE);
+                    if (openCols) {
+                        fenceStack.push('cols');
+                        return ['', openCols[1] ? '⦃COLS:' + openCols[1] + '⦄' : '⦃COLS⦄', ''];
                     }
-                    if (!inFence) {
-                        const open = ln.match(/^:::+[ \t]*(center|centre|right|left|message|vcenter)[ \t]*$/i);
-                        if (open) {
-                            let a = open[1].toLowerCase();
-                            if (a === 'centre') a = 'center';
-                            fenceStack.push('align');
-                            // Blank line padding ensures the sentinel becomes its own <p>.
-                            out.push(''); out.push(ALIGN_OPEN + a + '⦄'); out.push('');
-                            continue;
-                        }
-                        const openCols = ln.match(/^:::+[ \t]*columns(?:-([234]))?[ \t]*$/i);
-                        if (openCols) {
-                            fenceStack.push('cols');
-                            const tok = openCols[1] ? '⦃COLS:' + openCols[1] + '⦄' : '⦃COLS⦄';
-                            out.push(''); out.push(tok); out.push('');
-                            continue;
-                        }
-                        if (/^:::+[ \t]*$/.test(ln)) {
-                            const kind = fenceStack.pop();
-                            out.push('');
-                            out.push(kind === 'cols' ? COLS_CLOSE : ALIGN_CLOSE);
-                            out.push('');
-                            continue;
-                        }
-                        if (fenceStack[fenceStack.length - 1] === 'cols' && /^\s*\+\+\+\s*$/.test(ln)) {
-                            out.push(''); out.push(COL_SENTINEL); out.push('');
-                            continue;
-                        }
+                    if (FENCED_DIV_CLOSE_RE.test(ln)) {
+                        const kind = fenceStack.pop();
+                        return ['', kind === 'cols' ? COLS_CLOSE : ALIGN_CLOSE, ''];
                     }
-                    out.push(ln);
-                }
-                markdown = out.join('\n');
+                    if (fenceStack[fenceStack.length - 1] === 'cols' && COL_DIVIDER_RE.test(ln)) {
+                        return ['', COL_SENTINEL, ''];
+                    }
+                });
             }
+
+            // Definition-list pre-pass (Pandoc `用語` / `: 説明`) — marp-core's
+            // markdown-it ships no deflist plugin, and it runs with `breaks: true`
+            // (verified against the bundled marp-core), so a `用語`/`: 説明` block
+            // would otherwise collapse into a single `<p>用語<br>: 説明</p>`. The
+            // grammar is therefore recognized here by the SAME shared scanner the
+            // normal pipeline's `defList` marked extension uses (scanDefList — one
+            // source of truth) and emitted as sentinel paragraphs that survive
+            // marp.render:  ⦃DL⦄ | ⦃DL:loose⦄ … ⦃DT⦄ … ⦃DD⦄ … ⦃/DL⦄
+            // Each sentinel is blank-line padded so it becomes its own <p>, while the
+            // term / definition bodies stay ordinary Markdown blocks — so **強調**,
+            // lists, code fences and images inside a definition all render normally.
+            // (Emitting raw <dl>/<dt>/<dd> instead is NOT an option even with
+            // html:true: those are CommonMark HTML-block tags, so markdown-it passes
+            // their content through verbatim and `**用語**` would show as literal
+            // asterisks.) Runs LAST among the pre-passes so every `:::` line is
+            // already an ⦃ALIGN…⦄ / ⦃COLS…⦄ sentinel; `⦃` is in DL_TERM_BAD_RE so
+            // those can never be misread as a term. Line shifts are harmless — the
+            // slide→source-line map is built from the untouched original markdown,
+            // and this pass neither adds nor removes `---` separators (a `---` /
+            // `***` / `___` line fails dlIsTerm, so a scan can't cross a slide break).
+            const DL_OPEN = '⦃DL⦄';
+            const DL_OPEN_LOOSE = '⦃DL:loose⦄';
+            const DT_SENTINEL = '⦃DT⦄';
+            const DD_SENTINEL = '⦃DD⦄';
+            const DL_CLOSE = '⦃/DL⦄';
+            const DL_SENTINEL_RE = /^⦃DL(:loose)?⦄$/;
+            markdown = __rewriteMdLines(markdown, (ln, i, lines) => {
+                const scan = scanDefList(lines, i);
+                if (!scan) return;
+                const out = ['', scan.loose ? DL_OPEN_LOOSE : DL_OPEN];
+                scan.groups.forEach(g => {
+                    out.push('', DT_SENTINEL, '', g.term);
+                    g.defs.forEach(d => {
+                        out.push('', DD_SENTINEL, '');
+                        d.split('\n').forEach(dline => out.push(dline));
+                    });
+                });
+                out.push('', DL_CLOSE, '');
+                // Consume the whole scanned run; its interior is never re-examined.
+                return { out, skip: scan.end - i };
+            });
 
             const marp = await getMarp();
 
@@ -6478,31 +6783,16 @@ ${previewClone.outerHTML}
             // slide boundary (which marp-core would never split on).
             const __lines = __sourceMarkdown.split('\n');
             const slideStartLines = [];
-            let __fmOpen = __lines.length > 0 && /^---\s*$/.test(__lines[0]);
-            let __fmClosed = !__fmOpen;
-            let __curStart = __fmOpen ? null : 1;
-            let __inFence = false;
-            let __fenceMarker = '';
+            const __scan = __makeMdLineScanner(__lines);
+            // 1-based source lines: the slide after a break at index i starts at i+2.
+            let __curStart = (__lines.length > 0 && MD_FM_DELIM_RE.test(__lines[0])) ? null : 1;
             for (let i = 0; i < __lines.length; i++) {
-                const ln = i + 1;
-                if (__fmOpen && !__fmClosed) {
-                    if (ln > 1 && /^---\s*$/.test(__lines[i])) {
-                        __fmClosed = true;
-                        __curStart = ln + 1;
-                    }
-                    continue;
-                }
-                const __fenceMatch = __lines[i].match(/^(\s*)(```+|~~~+)(.*)$/);
-                if (__fenceMatch) {
-                    const marker = __fenceMatch[2][0]; // ` or ~
-                    if (!__inFence) { __inFence = true; __fenceMarker = marker; }
-                    else if (marker === __fenceMarker) { __inFence = false; __fenceMarker = ''; }
-                    continue;
-                }
-                if (__inFence) continue;
-                if (/^(---|\*\*\*|___)\s*$/.test(__lines[i])) {
+                const kind = __scan.step(i);
+                if (kind === 'fm-close') { __curStart = i + 2; continue; }
+                if (kind !== 'body') continue;
+                if (SLIDE_SEP_RE.test(__lines[i])) {
                     if (__curStart != null) slideStartLines.push(__curStart);
-                    __curStart = ln + 1;
+                    __curStart = i + 2;
                 }
             }
             if (__curStart != null) slideStartLines.push(__curStart);
@@ -6616,6 +6906,8 @@ ${previewClone.outerHTML}
                 const buckets = [[]];
                 const children = Array.from(section.childNodes);
                 for (const node of children) {
+                    // Stricter than __isSentinelP on purpose: a section child is only
+                    // a boundary when the <p> is exactly one text node.
                     if (node.nodeType === 1 && node.tagName === 'P'
                             && node.childNodes.length === 1
                             && node.firstChild.nodeType === 3
@@ -6662,37 +6954,25 @@ ${previewClone.outerHTML}
             // Runs after the split post-pass and before the alignment post-pass so a
             // `::: center` inside a column is still wrapped, and before the mermaid /
             // csv substitution loop so diagrams land inside the column.
-            Array.from(preview.querySelectorAll('section p')).forEach(p => {
-                const m = /^⦃COLS(?::([234]))?⦄$/.exec(p.textContent.trim());
-                if (!m) return;
-                const wrap = document.createElement('div');
-                wrap.className = 'inline-cols';
-                p.parentNode.replaceChild(wrap, p);
-                const buckets = [[]];
-                let n = wrap.nextSibling;
-                while (n) {
-                    const next = n.nextSibling;
-                    if (n.nodeType === 1 && n.tagName === 'P' && n.textContent.trim() === COLS_CLOSE) {
-                        n.remove();
-                        break;
-                    }
-                    if (n.nodeType === 1 && n.tagName === 'P' && n.textContent.trim() === COL_SENTINEL) {
-                        n.remove();
-                        buckets.push([]);
-                        n = next;
-                        continue;
-                    }
-                    buckets[buckets.length - 1].push(n);
-                    n = next;
-                }
-                const count = Math.min(4, Math.max(2, m[1] ? +m[1] : buckets.length));
-                if (count >= 3) wrap.classList.add('inline-cols-' + count);
-                buckets.forEach(bucket => {
-                    const col = document.createElement('div');
-                    col.className = 'split-col';
-                    bucket.forEach(node => col.appendChild(node));
-                    wrap.appendChild(col);
-                });
+            __unwrapSentinelRegions(preview, {
+                open: COLS_SENTINEL_RE,
+                close: COLS_CLOSE,
+                marker: txt => txt === COL_SENTINEL ? 'col' : null,
+                wrap: () => {
+                    const wrap = document.createElement('div');
+                    wrap.className = 'inline-cols';
+                    return wrap;
+                },
+                fill: (wrap, buckets, m) => {
+                    const count = Math.min(4, Math.max(2, m[1] ? +m[1] : buckets.length));
+                    if (count >= 3) wrap.classList.add('inline-cols-' + count);
+                    buckets.forEach(bucket => {
+                        const col = document.createElement('div');
+                        col.className = 'split-col';
+                        bucket.nodes.forEach(node => col.appendChild(node));
+                        wrap.appendChild(col);
+                    });
+                },
             });
 
             // Alignment post-pass — convert ⦃ALIGN:…⦄ / ⦃/ALIGN⦄ sentinel paragraphs
@@ -6702,29 +6982,68 @@ ${previewClone.outerHTML}
             // after footnote restoration (so <sup> nodes are preserved) and the
             // split post-pass, and before the mermaid substitution loop
             // (so a centered diagram still gets substituted inside the wrapper).
-            Array.from(preview.querySelectorAll('section p')).forEach(p => {
-                const openM = /^⦃ALIGN:(center|right|left|message|vcenter)⦄$/.exec(p.textContent.trim());
-                if (!openM) return;
-                const div = document.createElement('div');
-                div.className = openM[1] === 'message' ? 'md-message'
-                    : openM[1] === 'vcenter' ? 'md-vcenter'
-                    : 'align-' + openM[1];
-                p.parentNode.replaceChild(div, p);
-                // vcenter fills the remaining slide space vertically; tag the
-                // enclosing <section> so the fit-body wrapper becomes a flex column
-                // (runs before the fit-body wrapper pass, so .md-vcenter is swept in).
-                if (openM[1] === 'vcenter') div.closest('section')?.classList.add('marp-has-vcenter');
-                let n = div.nextSibling;
-                while (n) {
-                    const next = n.nextSibling;
-                    if (n.nodeType === 1 && n.tagName === 'P'
-                            && n.textContent.trim() === '⦃/ALIGN⦄') {
-                        n.remove();
-                        break;
-                    }
-                    div.appendChild(n);
-                    n = next;
-                }
+            __unwrapSentinelRegions(preview, {
+                open: ALIGN_SENTINEL_RE,
+                close: ALIGN_CLOSE,
+                // No separators: the whole region is one bucket.
+                wrap: m => {
+                    const div = document.createElement('div');
+                    div.className = alignKeywordClass(m[1]);
+                    return div;
+                },
+                fill: (div, buckets, m) => {
+                    // vcenter fills the remaining slide space vertically; tag the
+                    // enclosing <section> so the fit-body wrapper becomes a flex column
+                    // (runs before the fit-body wrapper pass, so .md-vcenter is swept in).
+                    if (m[1] === 'vcenter') div.closest('section')?.classList.add('marp-has-vcenter');
+                    buckets[0].nodes.forEach(n => div.appendChild(n));
+                },
+            });
+
+            // Definition-list post-pass — turn the ⦃DL⦄ / ⦃DT⦄ / ⦃DD⦄ / ⦃/DL⦄
+            // sentinel paragraphs into a real <dl> with <dt>/<dd> children, matching
+            // the DOM the normal pipeline's `defList` marked extension emits so the
+            // shared `#preview dl / dt / dd` CSS styles both and it rides into HTML
+            // export. Same shape as the inline-columns pass: replace the open
+            // sentinel's <p> with the wrapper, walk nextSibling bucketing at each
+            // marker, stop at the close sentinel. Operating on the open sentinel's
+            // actual parent means it also works inside .split-col / .align-… /
+            // .md-vcenter. Position is load-bearing: AFTER the footnote sentinel →
+            // <sup> restore (so <sup> nodes survive being moved into a <dd>) and
+            // after the split / inline-columns / alignment passes (so a <dl> can live
+            // inside them), but BEFORE the code-block substitution below (so a
+            // diagram inside a <dd> is still substituted), before the figure-centering
+            // pass, and — critically — before the .marp-fit-body wrapper, which runs
+            // last and sweeps every body child (it would otherwise wrap the raw
+            // sentinel <p>s and leave the <dl> outside the autofit region).
+            __unwrapSentinelRegions(preview, {
+                open: DL_SENTINEL_RE,
+                close: DL_CLOSE,
+                marker: txt => txt === DT_SENTINEL ? 'dt' : txt === DD_SENTINEL ? 'dd' : null,
+                wrap: m => {
+                    const dl = document.createElement('dl');
+                    if (m[1]) dl.className = 'dl-loose';
+                    return dl;
+                },
+                fill: (dl, buckets) => {
+                    // buckets[0] holds anything before the first ⦃DT⦄ — stray, drop it.
+                    buckets.shift().nodes.forEach(n => { if (n.parentNode) n.remove(); });
+                    buckets.forEach(c => {
+                        const el = document.createElement(c.marker);
+                        c.nodes.forEach(x => { if (x.parentNode) x.parentNode.removeChild(x); });
+                        // Drop marp-core's inter-block whitespace text nodes so a
+                        // single-paragraph body is detected, then unwrap that lone <p> so
+                        // a tight <dt>/<dd> matches the normal pipeline's bare-inline
+                        // output. Multi-block bodies keep their nodes.
+                        const kids = c.nodes.filter(x => !(x.nodeType === 3 && !x.textContent.trim()));
+                        if (kids.length === 1 && kids[0].tagName === 'P') {
+                            while (kids[0].firstChild) el.appendChild(kids[0].firstChild);
+                        } else {
+                            kids.forEach(x => el.appendChild(x));
+                        }
+                        dl.appendChild(el);
+                    });
+                },
             });
 
             // Replace mermaid / csv / tsv code blocks inside each slide with
@@ -6819,6 +7138,10 @@ ${previewClone.outerHTML}
             // section's last child (its true bottom) without being swept into a
             // split column bucket.
             if (footnoteState.order.length > 0) {
+                // Shared across every slide so a footnote cited on several slides
+                // stamps its `id="fn-…"` anchor target exactly once (see
+                // renderMarpSlideFootnotes).
+                const __fnEmitted = new Set();
                 preview.querySelectorAll('svg[data-marpit-svg] section').forEach(section => {
                     const refs = section.querySelectorAll('sup.footnote-ref a[data-footnote-id]');
                     if (refs.length === 0) return;
@@ -6827,7 +7150,7 @@ ${previewClone.outerHTML}
                         const id = a.getAttribute('data-footnote-id');
                         if (id && !ids.includes(id)) ids.push(id);
                     });
-                    const fnHtml = renderMarpSlideFootnotes(ids);
+                    const fnHtml = renderMarpSlideFootnotes(ids, __fnEmitted);
                     if (!fnHtml) return;
                     const tpl = document.createElement('template');
                     tpl.innerHTML = fnHtml;
@@ -7330,9 +7653,21 @@ ${previewClone.outerHTML}
                 link.addEventListener('mouseenter', () => {
                     const id = link.getAttribute('data-footnote-id');
                     if (!id) return;
-                    const target = preview.querySelector('#fn-' + footnoteSafeId(id));
+                    // footnoteSafeId() reduces to [A-Za-z0-9_-], so `sid` never needs
+                    // attribute-selector escaping.
+                    const sid = footnoteSafeId(id);
+                    const sel = '[data-fn-id="' + sid + '"]';
+                    // In Marp a footnote cited on several slides is rendered once per
+                    // slide, so prefer the copy on the reader's own slide and fall
+                    // back to the document-wide one. `closest` is null in the normal
+                    // pipeline, which falls straight through to the old behavior.
+                    const slide = link.closest('svg[data-marpit-svg] section');
+                    const target = (slide && slide.querySelector(sel)) || preview.querySelector(sel);
                     if (!target) return;
-                    const content = target.querySelector('.footnote-content');
+                    // The two pipelines wrap the body differently: the normal <li>
+                    // uses <div class="footnote-content">, a slide's compact block
+                    // uses <span class="marp-fn-body">. Exactly one exists per target.
+                    const content = target.querySelector('.footnote-content, .marp-fn-body');
                     if (!content) return;
                     tip.__cancelHide();
                     tip.innerHTML = content.innerHTML;
@@ -7520,53 +7855,55 @@ ${previewClone.outerHTML}
         // Works for both the normal pipeline (output:'htmlAndMathml', see renderMathExpressions)
         // and Marp slides (marp-core's KaTeX also emits MathML); a format with no source in the
         // DOM (e.g. an html-only .katex) is shown disabled rather than copying empty text.
-        let __mathMenuWired = false;
-        function setupMathContextMenu() {
-            if (__mathMenuWired) return;
-            __mathMenuWired = true;
-
+        // ----- Floating right-click menu (shared factory) -----
+        // Both in-app context menus (KaTeX copy, file-tree collapse/expand) had a
+        // byte-identical viewport-clamp block and dismiss wiring. This owns exactly
+        // what was duplicated; each caller keeps its own `contextmenu` listener and
+        // target test, so a right-click elsewhere still falls through to WebView2's
+        // native menu.
+        //
+        // Returns { addItem, show, hide }:
+        //   addItem(label, onClick, opts)  opts.disabled → inert item.
+        //                                  onClick may return
+        //                                  { label, copied, delay } to flash a result
+        //                                  instead of closing immediately.
+        //   show(e, build)                 build() adds the items, then the menu is
+        //                                  positioned at e.clientX/Y and clamped.
+        //   hide()                         hide and clear.
+        function __createContextMenu() {
             const menu = document.createElement('div');
-            menu.className = 'math-context-menu';
+            menu.className = 'app-context-menu';
             menu.style.display = 'none';
             document.body.appendChild(menu);
 
-            const hideMenu = () => { menu.style.display = 'none'; menu.innerHTML = ''; };
+            const hide = () => { menu.style.display = 'none'; menu.innerHTML = ''; };
 
-            // Add an item; `value` null/empty → rendered disabled. `onCopy` flashes "Copied!".
-            const addItem = (label, value) => {
+            const addItem = (label, onClick, opts) => {
+                const disabled = !!(opts && opts.disabled);
                 const item = document.createElement('div');
-                item.className = 'math-menu-item' + (value ? '' : ' disabled');
+                item.className = 'app-menu-item' + (disabled ? ' disabled' : '');
                 item.textContent = label;
-                if (value) {
+                if (!disabled) {
                     item.addEventListener('click', (ev) => {
                         ev.stopPropagation();
-                        if (copyTextViaTextarea(value)) {
-                            item.textContent = 'Copied!';
-                            item.classList.add('copied');
-                            setTimeout(hideMenu, 600);
+                        const r = onClick();
+                        if (r && r.label) {
+                            // Keep the menu up briefly to show the outcome.
+                            item.textContent = r.label;
+                            if (r.copied) item.classList.add('copied');
+                            setTimeout(hide, r.delay || 600);
                         } else {
-                            item.textContent = 'Failed';
-                            setTimeout(hideMenu, 800);
+                            hide();
                         }
                     });
                 }
                 menu.appendChild(item);
             };
 
-            preview.addEventListener('contextmenu', (e) => {
-                const k = e.target.closest('.katex');
-                if (!k) { hideMenu(); return; } // let WebView2's native menu show elsewhere
-                e.preventDefault();
-
-                const mathEl = k.querySelector('.katex-mathml math');
-                const mathml = mathEl ? new XMLSerializer().serializeToString(mathEl) : '';
-                const latex = (k.querySelector('annotation[encoding="application/x-tex"]')?.textContent || '').trim();
-
+            const show = (e, build) => {
                 menu.innerHTML = '';
-                addItem('Copy MathML', mathml);
-                addItem('Copy LaTeX', latex);
-
-                // Position at the cursor, clamped to the viewport.
+                build();
+                // display must precede getBoundingClientRect — a hidden element is 0x0.
                 menu.style.display = 'block';
                 const m = menu.getBoundingClientRect();
                 const margin = 4;
@@ -7576,14 +7913,44 @@ ${previewClone.outerHTML}
                 if (top + m.height > window.innerHeight - margin) top = window.innerHeight - m.height - margin;
                 menu.style.left = Math.max(margin, left) + 'px';
                 menu.style.top = Math.max(margin, top) + 'px';
-            });
+            };
 
             // Dismiss on outside click, Esc, or scroll.
             document.addEventListener('click', (e) => {
-                if (menu.style.display !== 'none' && !menu.contains(e.target)) hideMenu();
+                if (menu.style.display !== 'none' && !menu.contains(e.target)) hide();
             });
-            document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hideMenu(); });
-            window.addEventListener('scroll', hideMenu, true);
+            document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hide(); });
+            window.addEventListener('scroll', hide, true);
+
+            return { addItem, show, hide };
+        }
+
+        let __mathMenuWired = false;
+        function setupMathContextMenu() {
+            if (__mathMenuWired) return;
+            __mathMenuWired = true;
+            const { addItem, show, hide } = __createContextMenu();
+
+            // A copy item: `value` null/empty → disabled; on click, flash the result.
+            const addCopyItem = (label, value) => addItem(label, () => {
+                const ok = copyTextViaTextarea(value);
+                return { label: ok ? 'Copied!' : 'Failed', copied: ok, delay: ok ? 600 : 800 };
+            }, { disabled: !value });
+
+            preview.addEventListener('contextmenu', (e) => {
+                const k = e.target.closest('.katex');
+                if (!k) { hide(); return; } // let WebView2's native menu show elsewhere
+                e.preventDefault();
+
+                const mathEl = k.querySelector('.katex-mathml math');
+                const mathml = mathEl ? new XMLSerializer().serializeToString(mathEl) : '';
+                const latex = (k.querySelector('annotation[encoding="application/x-tex"]')?.textContent || '').trim();
+
+                show(e, () => {
+                    addCopyItem('Copy MathML', mathml);
+                    addCopyItem('Copy LaTeX', latex);
+                });
+            });
         }
         setupMathContextMenu();
 
@@ -7597,12 +7964,7 @@ ${previewClone.outerHTML}
             if (!ftEl) return;
             __ftMenuWired = true;
 
-            const menu = document.createElement('div');
-            menu.className = 'ft-context-menu';
-            menu.style.display = 'none';
-            document.body.appendChild(menu);
-
-            const hideMenu = () => { menu.style.display = 'none'; menu.innerHTML = ''; };
+            const { addItem, show, hide } = __createContextMenu();
 
             const setAllDetails = (open) => {
                 // Setting .open fires each <details>'s persistDetails 'toggle' listener,
@@ -7610,44 +7972,16 @@ ${previewClone.outerHTML}
                 ftEl.querySelectorAll('details').forEach((d) => { d.open = open; });
             };
 
-            const addItem = (label, onClick) => {
-                const item = document.createElement('div');
-                item.className = 'ft-menu-item';
-                item.textContent = label;
-                item.addEventListener('click', (ev) => {
-                    ev.stopPropagation();
-                    onClick();
-                    hideMenu();
-                });
-                menu.appendChild(item);
-            };
-
             ftEl.addEventListener('contextmenu', (e) => {
                 // Only act when the tree actually has collapsible nodes.
-                if (!ftEl.querySelector('details')) { hideMenu(); return; }
+                if (!ftEl.querySelector('details')) { hide(); return; }
                 e.preventDefault();
-
-                menu.innerHTML = '';
-                addItem('すべて閉じる', () => setAllDetails(false));
-                addItem('すべて開く', () => setAllDetails(true));
-
-                // Position at the cursor, clamped to the viewport.
-                menu.style.display = 'block';
-                const m = menu.getBoundingClientRect();
-                const margin = 4;
-                let left = e.clientX;
-                let top = e.clientY;
-                if (left + m.width > window.innerWidth - margin) left = window.innerWidth - m.width - margin;
-                if (top + m.height > window.innerHeight - margin) top = window.innerHeight - m.height - margin;
-                menu.style.left = Math.max(margin, left) + 'px';
-                menu.style.top = Math.max(margin, top) + 'px';
+                show(e, () => {
+                    addItem('すべて閉じる', () => setAllDetails(false));
+                    addItem('すべて開く', () => setAllDetails(true));
+                });
             });
-
-            document.addEventListener('click', (e) => {
-                if (menu.style.display !== 'none' && !menu.contains(e.target)) hideMenu();
-            });
-            document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hideMenu(); });
-            window.addEventListener('scroll', hideMenu, true);
+            // Outside-click / Esc / scroll dismissal is wired by __createContextMenu.
         }
         setupFileTreeContextMenu();
 

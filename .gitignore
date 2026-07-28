@@ -43,3 +43,7 @@ tools/build-markwhen/node_modules/
 tools/build-markwhen/package-lock.json
 
 *.skill
+# preview-harness working output (domdump.py digests / shoot.py pixels)
+_dom/
+_shots/
+_smoke/

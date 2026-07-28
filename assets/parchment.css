@@ -56,6 +56,14 @@ body {
     color: #5a4530;
 }
 
+/* 定義リスト — 罫線を古紙の金茶に、用語を焦茶に寄せる。
+   幾何は index.html のベースラインに任せ、色だけを差し替える。 */
+#preview dl {
+    --md-dl-accent: #d8c8a8;
+    --md-dl-term-color: #5a3a1b;
+    --md-dl-desc-color: #5a4530;
+}
+
 #preview code {
     background: rgba(184, 150, 95, 0.18);
     color: #5a3a1b;
