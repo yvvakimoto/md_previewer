@@ -274,6 +274,95 @@ fn format_title(filename: Option<&str>) -> String {
 // Thread-safe storage for the current markdown file's parent directory
 pub(crate) type CurrentDir = Arc<Mutex<Option<PathBuf>>>;
 
+/// Paths we wrote ourselves, whose next `notify` event must be ignored so a save
+/// does not bounce back as an external change and re-render (or loop).
+pub(crate) type SuppressedSaves = Arc<Mutex<HashSet<PathBuf>>>;
+
+/// How long a self-written path stays suppressed. A safety net rather than a
+/// handshake: if the watcher event never arrives, the entry simply expires.
+const SAVE_SUPPRESS_MS: u64 = 1500;
+
+/// Mark `path` as self-written and schedule the mark's removal on a detached
+/// thread. Idempotent and non-blocking; call it *before* writing so the watcher
+/// can never observe a partial write.
+pub(crate) fn suppress_watcher(path: &Path, suppressed: &SuppressedSaves) {
+    suppressed.lock().unwrap().insert(path.to_path_buf());
+    let suppressed = suppressed.clone();
+    let path = path.to_path_buf();
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(SAVE_SUPPRESS_MS));
+        suppressed.lock().unwrap().remove(&path);
+    });
+}
+
+/// [`suppress_watcher`] followed by `fs::write`. Returns the write's result
+/// unchanged so each caller keeps its own error message and follow-up work.
+pub(crate) fn write_suppressed(
+    path: &Path,
+    content: &[u8],
+    suppressed: &SuppressedSaves,
+) -> std::io::Result<()> {
+    suppress_watcher(path, suppressed);
+    fs::write(path, content)
+}
+
+/// Parent directory of the currently-previewed file, if any. Used to seed native
+/// Save-As dialogs and to resolve document-relative paths off the IPC thread.
+fn current_file_dir(current_file: &CurrentFile) -> Option<PathBuf> {
+    current_file
+        .lock()
+        .unwrap()
+        .as_ref()
+        .and_then(|p| p.parent().map(|d| d.to_path_buf()))
+}
+
+/// Apply `dir` as the dialog's starting directory when one is known.
+fn with_initial_dir(dialog: rfd::FileDialog, dir: Option<PathBuf>) -> rfd::FileDialog {
+    match dir {
+        Some(d) => dialog.set_directory(d),
+        None => dialog,
+    }
+}
+
+/// Build `if (typeof window.<f> === 'function') { window.<f>(<args…>); }`.
+///
+/// The guard matters because the host can push before `index.html`'s script has
+/// run. `args` are already-serialized JS expressions (`serde_json` output, or a
+/// number / bool rendered with `to_string()`) and are inserted verbatim — this
+/// does no escaping, so never pass unsanitized text.
+pub(crate) fn js_call(f: &str, args: &[&str]) -> String {
+    format!(
+        "if (typeof window.{f} === 'function') {{ window.{f}({}); }}",
+        args.join(", ")
+    )
+}
+
+/// [`js_call`] + `evaluate_script`, discarding the always-ignored result. Takes
+/// `&WebView` (not the `Arc<Mutex<…>>`) so both the preview and the editor
+/// registry can use it after their own locking.
+pub(crate) fn eval_js_fn(webview: &wry::webview::WebView, f: &str, args: &[&str]) {
+    let _ = webview.evaluate_script(&js_call(f, args));
+}
+
+/// Serialize a [`FileData`] and wrap it in the guarded `loadFileFromRust(...)`
+/// call — the one step every render path shares. `raw` is set equal to
+/// `content`; the two stay distinct fields so the webview's save channel
+/// (`currentMarkdownRaw` → `savefile:`) keeps its own source of truth.
+///
+/// Callers keep what actually differs between them: where the content came
+/// from, and whether they also set the title / `current_file` / `current_dir`
+/// or push to the paired editor.
+fn build_load_file_script(filename: &str, filepath: &str, content: &str) -> String {
+    let file_data = FileData {
+        filename: filename.to_string(),
+        filepath: filepath.to_string(),
+        content: content.to_string(),
+        raw: content.to_string(),
+    };
+    let json = serde_json::to_string(&file_data).unwrap_or_else(|_| "null".into());
+    js_call("loadFileFromRust", &[&json])
+}
+
 // Compare two filesystem paths for equality. Case-insensitive on Windows
 // to match the OS, so editors using a different drive-letter case still match.
 pub(crate) fn paths_equal(a: &Path, b: &Path) -> bool {
@@ -858,15 +947,11 @@ fn load_and_render_named(
                 .or_else(|| path.file_name().map(|n| n.to_string_lossy().to_string()))
                 .unwrap_or_else(|| "Unknown".to_string());
             let filepath = path.to_string_lossy().to_string();
-            let file_data = FileData { filename, filepath: filepath.clone(), content: content.clone(), raw: content.clone() };
-            let json_data = serde_json::to_string(&file_data).unwrap();
-            let script = format!(
-                "if (typeof window.loadFileFromRust === 'function') {{ window.loadFileFromRust({}); }}",
-                json_data
-            );
+            // Not `eval_js_fn`: this is the one site that surfaces the error.
+            let script = build_load_file_script(&filename, &filepath, &content);
 
             if let Ok(webview_guard) = webview.lock() {
-                webview_guard.window().set_title(&format_title(Some(&file_data.filename)));
+                webview_guard.window().set_title(&format_title(Some(&filename)));
                 if let Err(e) = webview_guard.evaluate_script(&script) {
                     eprintln!("Failed to update webview: {}", e);
                 }
@@ -889,7 +974,7 @@ fn load_and_render_named(
 fn maybe_repack_mdx(
     saved_path: &Path,
     mdx_session: &Arc<Mutex<Option<mdx::MdxSession>>>,
-    suppressed_saves: &Arc<Mutex<HashSet<PathBuf>>>,
+    suppressed_saves: &SuppressedSaves,
 ) {
     let (temp_dir, mdx_path) = {
         let guard = mdx_session.lock().unwrap();
@@ -903,16 +988,8 @@ fn maybe_repack_mdx(
             _ => return,
         }
     };
-    {
-        let mut s = suppressed_saves.lock().unwrap();
-        s.insert(mdx_path.clone());
-    }
-    let supp = suppressed_saves.clone();
-    let mdx_for_timer = mdx_path.clone();
-    std::thread::spawn(move || {
-        std::thread::sleep(Duration::from_millis(1500));
-        supp.lock().unwrap().remove(&mdx_for_timer);
-    });
+    // Suppress-only: the write itself is `repack_mdx`, not `fs::write`.
+    suppress_watcher(&mdx_path, suppressed_saves);
     if let Err(e) = mdx::repack_mdx(&temp_dir, &mdx_path) {
         eprintln!("mdx: repack failed for {:?}: {}", mdx_path, e);
     }
@@ -1447,7 +1524,7 @@ fn main() -> wry::Result<()> {
     // we just wrote them ourselves (from the editor's Ctrl+S). Entries are
     // checked by the watcher thread and cleared on use; we also clear stale
     // entries on a 1.5s timeout to avoid lockout if the OS event never arrives.
-    let suppressed_saves: Arc<Mutex<HashSet<PathBuf>>> = Arc::new(Mutex::new(HashSet::new()));
+    let suppressed_saves: SuppressedSaves = Arc::new(Mutex::new(HashSet::new()));
 
     // Capture-loop progress for `--export-png` mode; owned by the event loop.
     let capture_state: Arc<Mutex<Option<CaptureState>>> = Arc::new(Mutex::new(None));
@@ -1545,11 +1622,7 @@ fn main() -> wry::Result<()> {
             }
             match serde_json::from_str::<ExportPayload>(payload) {
                 Ok(p) => {
-                    let initial_dir = ipc_current_file
-                        .lock()
-                        .unwrap()
-                        .as_ref()
-                        .and_then(|p| p.parent().map(|d| d.to_path_buf()));
+                    let initial_dir = current_file_dir(&ipc_current_file);
                     let export_proxy = ipc_event_proxy.clone();
                     // rfd's save_file() blocks; run on a worker thread so we don't tie up
                     // the IPC handler and (more importantly) so dialog errors don't
@@ -1558,13 +1631,13 @@ fn main() -> wry::Result<()> {
                         // Two filters so the user picks the format in the Save dialog.
                         // If the chosen path is `.pdf` we print the live webview to
                         // PDF instead (the pre-built HTML artifact is discarded).
-                        let mut dialog = rfd::FileDialog::new()
-                            .add_filter("HTML", &["html"])
-                            .add_filter("PDF", &["pdf"])
-                            .set_file_name(&p.suggested_name);
-                        if let Some(dir) = initial_dir {
-                            dialog = dialog.set_directory(dir);
-                        }
+                        let dialog = with_initial_dir(
+                            rfd::FileDialog::new()
+                                .add_filter("HTML", &["html"])
+                                .add_filter("PDF", &["pdf"])
+                                .set_file_name(&p.suggested_name),
+                            initial_dir,
+                        );
                         if let Some(path) = dialog.save_file() {
                             let is_pdf = path
                                 .extension()
@@ -1639,21 +1712,17 @@ fn main() -> wry::Result<()> {
         } else if message == "newfile:" {
             // New document (Ctrl+N) — pick a save location via a native dialog,
             // create a blank `.md`, then open it through the normal OpenFile flow.
-            let initial_dir = ipc_current_file
-                .lock()
-                .unwrap()
-                .as_ref()
-                .and_then(|p| p.parent().map(|d| d.to_path_buf()));
+            let initial_dir = current_file_dir(&ipc_current_file);
             let proxy = ipc_event_proxy.clone();
             // rfd's save_file() blocks; run it off the IPC thread (same pattern as
             // the `exporthtml:` / `exportdir:` handlers).
             std::thread::spawn(move || {
-                let mut dialog = rfd::FileDialog::new()
-                    .add_filter("Markdown", &["md", "markdown"])
-                    .set_file_name("untitled.md");
-                if let Some(dir) = initial_dir {
-                    dialog = dialog.set_directory(dir);
-                }
+                let dialog = with_initial_dir(
+                    rfd::FileDialog::new()
+                        .add_filter("Markdown", &["md", "markdown"])
+                        .set_file_name("untitled.md"),
+                    initial_dir,
+                );
                 if let Some(mut path) = dialog.save_file() {
                     // Ensure a markdown extension so the OpenFile handler accepts it.
                     let ok_ext = path
@@ -1698,17 +1767,7 @@ fn main() -> wry::Result<()> {
             match serde_json::from_str::<SavePayload>(payload) {
                 Ok(p) => {
                     let path = PathBuf::from(&p.path);
-                    {
-                        let mut s = ipc_suppressed_saves.lock().unwrap();
-                        s.insert(path.clone());
-                    }
-                    let suppressed = ipc_suppressed_saves.clone();
-                    let path_for_clear = path.clone();
-                    std::thread::spawn(move || {
-                        std::thread::sleep(Duration::from_millis(1500));
-                        suppressed.lock().unwrap().remove(&path_for_clear);
-                    });
-                    match std::fs::write(&path, p.content.as_bytes()) {
+                    match write_suppressed(&path, p.content.as_bytes(), &ipc_suppressed_saves) {
                         Ok(()) => {
                             let _ = ipc_event_proxy.send_event(CustomEvent::EditorSavedContent {
                                 path,
@@ -1731,17 +1790,7 @@ fn main() -> wry::Result<()> {
             match serde_json::from_str::<SaveFilePayload>(payload) {
                 Ok(p) => {
                     let path = PathBuf::from(&p.path);
-                    {
-                        let mut s = ipc_suppressed_saves.lock().unwrap();
-                        s.insert(path.clone());
-                    }
-                    let suppressed = ipc_suppressed_saves.clone();
-                    let path_for_clear = path.clone();
-                    std::thread::spawn(move || {
-                        std::thread::sleep(Duration::from_millis(1500));
-                        suppressed.lock().unwrap().remove(&path_for_clear);
-                    });
-                    match std::fs::write(&path, p.content.as_bytes()) {
+                    match write_suppressed(&path, p.content.as_bytes(), &ipc_suppressed_saves) {
                         Ok(()) => {
                             ipc_editor_registry.push_file_to_editor(&path, &p.content);
                             let _ = ipc_event_proxy.send_event(CustomEvent::EditorSavedContent {
@@ -1769,11 +1818,7 @@ fn main() -> wry::Result<()> {
             let abs = if raw.is_absolute() {
                 Some(raw)
             } else {
-                ipc_current_file
-                    .lock()
-                    .unwrap()
-                    .as_ref()
-                    .and_then(|p| p.parent().map(|d| d.join(&raw)))
+                current_file_dir(&ipc_current_file).map(|d| d.join(&raw))
             };
             if let Some(p) = abs {
                 let _ = ipc_event_proxy.send_event(CustomEvent::CsvWatch(p));
@@ -2336,12 +2381,8 @@ fn main() -> wry::Result<()> {
             }
             Event::UserEvent(CustomEvent::EditorCursorMoved { line }) => {
                 // Editor → preview: scroll preview to mirror cursor line.
-                let script = format!(
-                    "if (typeof window.applyEditorScroll === 'function') {{ window.applyEditorScroll({}); }}",
-                    line
-                );
                 if let Ok(wv) = webview.lock() {
-                    let _ = wv.evaluate_script(&script);
+                    eval_js_fn(&wv, "applyEditorScroll", &[&line.to_string()]);
                 }
             }
             Event::UserEvent(CustomEvent::EditorSavedContent { path, content }) => {
@@ -2364,16 +2405,8 @@ fn main() -> wry::Result<()> {
                 let filename = mdx_name
                     .or_else(|| path.file_name().map(|n| n.to_string_lossy().to_string()))
                     .unwrap_or_else(|| "Unknown".to_string());
-                let file_data = FileData {
-                    filename: filename.clone(),
-                    filepath: path.to_string_lossy().to_string(),
-                    content: content.clone(),
-                    raw: content.clone(),
-                };
-                let json = serde_json::to_string(&file_data).unwrap();
-                let script = format!(
-                    "if (typeof window.loadFileFromRust === 'function') {{ window.loadFileFromRust({}); }}",
-                    json
+                let script = build_load_file_script(
+                    &filename, &path.to_string_lossy(), &content,
                 );
                 if let Ok(wv) = webview.lock() {
                     wv.window().set_title(&format_title(Some(&filename)));
@@ -2390,16 +2423,12 @@ fn main() -> wry::Result<()> {
                 let filename = path.file_name()
                     .map(|n| n.to_string_lossy().to_string())
                     .unwrap_or_else(|| "Unknown".to_string());
-                let file_data = FileData {
-                    filename,
-                    filepath: path.to_string_lossy().to_string(),
-                    content: content.clone(),
-                    raw: content.clone(),
-                };
-                let json = serde_json::to_string(&file_data).unwrap();
+                // One script, so the re-render and the scroll re-anchor land in
+                // the same evaluation and the preview never paints in between.
                 let script = format!(
-                    "if (typeof window.loadFileFromRust === 'function') {{ window.loadFileFromRust({}); }} if (typeof window.applyEditorScroll === 'function') {{ window.applyEditorScroll({}); }}",
-                    json, line
+                    "{} {}",
+                    build_load_file_script(&filename, &path.to_string_lossy(), &content),
+                    js_call("applyEditorScroll", &[&line.to_string()]),
                 );
                 if let Ok(wv) = webview.lock() {
                     let _ = wv.evaluate_script(&script);
@@ -2487,12 +2516,8 @@ fn main() -> wry::Result<()> {
                 if in_workspace {
                     let abs_str = serde_json::to_string(&abs_path.to_string_lossy().to_string())
                         .unwrap_or_else(|_| "\"\"".into());
-                    let script = format!(
-                        "if (typeof window.__setActiveFile === 'function') {{ window.__setActiveFile({}); }}",
-                        abs_str
-                    );
                     if let Ok(wv) = webview.lock() {
-                        let _ = wv.evaluate_script(&script);
+                        eval_js_fn(&wv, "__setActiveFile", &[&abs_str]);
                     }
                 }
             }
@@ -2515,13 +2540,9 @@ fn main() -> wry::Result<()> {
                     .map(|n| n.to_string_lossy().to_string())
                     .unwrap_or_default();
                 let name_json = serde_json::to_string(&name).unwrap_or_else(|_| "\"\"".into());
-                let script = format!(
-                    "if (typeof window.loadImageFromRust === 'function') {{ window.loadImageFromRust({}); }}",
-                    name_json
-                );
                 if let Ok(wv) = webview.lock() {
                     wv.window().set_title(&format_title(Some(&name)));
-                    let _ = wv.evaluate_script(&script);
+                    eval_js_fn(&wv, "loadImageFromRust", &[&name_json]);
                 }
             }
             Event::UserEvent(CustomEvent::OpenDirectory(path)) => {
@@ -2551,12 +2572,8 @@ fn main() -> wry::Result<()> {
 
                 // Push workspace to the webview.
                 let json = serde_json::to_string(&ws).unwrap_or_else(|_| "null".into());
-                let script = format!(
-                    "if (typeof window.loadDirectoryFromRust === 'function') {{ window.loadDirectoryFromRust({}); }}",
-                    json
-                );
                 if let Ok(wv) = webview.lock() {
-                    let _ = wv.evaluate_script(&script);
+                    eval_js_fn(&wv, "loadDirectoryFromRust", &[&json]);
                 }
 
                 if let Some(first) = first {
@@ -2564,12 +2581,8 @@ fn main() -> wry::Result<()> {
                     load_and_render(&p, &webview, &current_dir, &current_file, &editor_registry);
                     let abs_str = serde_json::to_string(&p.to_string_lossy().to_string())
                         .unwrap_or_else(|_| "\"\"".into());
-                    let script = format!(
-                        "if (typeof window.__setActiveFile === 'function') {{ window.__setActiveFile({}); }}",
-                        abs_str
-                    );
                     if let Ok(wv) = webview.lock() {
-                        let _ = wv.evaluate_script(&script);
+                        eval_js_fn(&wv, "__setActiveFile", &[&abs_str]);
                     }
                 }
             }
@@ -2581,12 +2594,8 @@ fn main() -> wry::Result<()> {
                         let ws = build_workspace(&root);
                         *workspace.lock().unwrap() = Some(ws.clone());
                         let json = serde_json::to_string(&ws).unwrap_or_else(|_| "null".into());
-                        let script = format!(
-                            "if (typeof window.refreshFileTree === 'function') {{ window.refreshFileTree({}); }}",
-                            json
-                        );
                         if let Ok(wv) = webview.lock() {
-                            let _ = wv.evaluate_script(&script);
+                            eval_js_fn(&wv, "refreshFileTree", &[&json]);
                         }
                     }
                 }
@@ -2719,6 +2728,40 @@ mod tests {
     #[test]
     fn byte_range_uses_only_the_first_of_a_multi_range() {
         assert_eq!(parse_byte_range("bytes=0-1,5-6", 10), Some((0, 1)));
+    }
+
+    // ---- js_call / build_load_file_script ----------------------------------
+
+    #[test]
+    fn js_call_reproduces_the_hand_written_guard_strings_byte_for_byte() {
+        // These are the exact strings the call sites used before extraction; the
+        // spacing (incl. ", " between args) must not drift.
+        assert_eq!(
+            js_call("loadFileFromRust", &["X"]),
+            "if (typeof window.loadFileFromRust === 'function') { window.loadFileFromRust(X); }"
+        );
+        assert_eq!(
+            js_call("__listDirResult", &["7", "[]"]),
+            "if (typeof window.__listDirResult === 'function') { window.__listDirResult(7, []); }"
+        );
+        assert_eq!(
+            js_call("__showDropZone", &[]),
+            "if (typeof window.__showDropZone === 'function') { window.__showDropZone(); }"
+        );
+    }
+
+    #[test]
+    fn load_file_script_sets_raw_equal_to_content_and_escapes_json() {
+        let script = build_load_file_script("a\"b.md", r"C:\d\a.md", "# Hi\n");
+        assert!(script.starts_with(
+            "if (typeof window.loadFileFromRust === 'function') { window.loadFileFromRust({"
+        ));
+        assert!(script.ends_with("); }"));
+        // Quotes / backslashes / newlines must arrive as valid JSON, not raw text.
+        assert!(script.contains(r#"\"b.md"#), "{script}");
+        assert!(script.contains(r"C:\\d\\a.md"), "{script}");
+        assert!(script.contains(r##""content":"# Hi\n""##), "{script}");
+        assert!(script.contains(r##""raw":"# Hi\n""##), "{script}");
     }
 
     // ---- slugify -----------------------------------------------------------

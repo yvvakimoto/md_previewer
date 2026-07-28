@@ -5,7 +5,6 @@
 // "another file's events leaking in" — the bug we had with the WebSocket sync
 // server when multiple VSCode windows were open — cannot happen by construction.
 
-use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
@@ -148,11 +147,7 @@ impl EditorRegistry {
                 "path": path.to_string_lossy().to_string(),
                 "content": raw_content,
             });
-            let script = format!(
-                "if (typeof window.__loadFile === 'function') {{ window.__loadFile({}); }}",
-                payload
-            );
-            let _ = state.webview.evaluate_script(&script);
+            crate::eval_js_fn(&state.webview, "__loadFile", &[&payload.to_string()]);
             let filename = path.file_name()
                 .map(|n| n.to_string_lossy().to_string())
                 .unwrap_or_else(|| "Untitled".into());
@@ -167,11 +162,7 @@ impl EditorRegistry {
     pub fn push_ime_status(&self, open: bool) {
         let guard = self.inner.lock().unwrap();
         if let Some(state) = guard.as_ref() {
-            let script = format!(
-                "if (typeof window.__setImeOpen === 'function') {{ window.__setImeOpen({}); }}",
-                open
-            );
-            let _ = state.webview.evaluate_script(&script);
+            crate::eval_js_fn(&state.webview, "__setImeOpen", &[&open.to_string()]);
         }
     }
 
@@ -181,11 +172,7 @@ impl EditorRegistry {
         if let Some(state) = guard.as_ref() {
             // Strict filter: only deliver if the editor is editing this file.
             if !crate::paths_equal(&state.file, path) { return; }
-            let script = format!(
-                "if (typeof window.__previewScrolledTo === 'function') {{ window.__previewScrolledTo({}); }}",
-                line
-            );
-            let _ = state.webview.evaluate_script(&script);
+            crate::eval_js_fn(&state.webview, "__previewScrolledTo", &[&line.to_string()]);
         }
     }
 
@@ -202,7 +189,7 @@ pub fn spawn_editor_window(
     event_proxy: EventLoopProxy<CustomEvent>,
     registry: EditorRegistry,
     current_file: CurrentFile,
-    suppressed_saves: Arc<Mutex<HashSet<PathBuf>>>,
+    suppressed_saves: crate::SuppressedSaves,
     initial_file: &Path,
     initial_line: u32,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -293,17 +280,9 @@ pub fn spawn_editor_window(
                         eprintln!("editor:save: rejected (path mismatch): {:?}", path);
                         return;
                     }
-                    {
-                        let mut s = suppressed_for_ipc.lock().unwrap();
-                        s.insert(path.clone());
-                    }
-                    let suppressed_clear = suppressed_for_ipc.clone();
-                    let path_clear = path.clone();
-                    std::thread::spawn(move || {
-                        std::thread::sleep(std::time::Duration::from_millis(1500));
-                        suppressed_clear.lock().unwrap().remove(&path_clear);
-                    });
-                    if let Err(e) = std::fs::write(&path, p.content.as_bytes()) {
+                    if let Err(e) = crate::write_suppressed(
+                        &path, p.content.as_bytes(), &suppressed_for_ipc,
+                    ) {
                         eprintln!("editor:save: write failed: {}", e);
                         return;
                     }
@@ -366,12 +345,10 @@ pub fn spawn_editor_window(
                         .and_then(|f| f.parent().map(|d| crate::paths_equal(d, &base)))
                         .unwrap_or(false);
                     if !allowed {
-                        let script = format!(
-                            "if (typeof window.__listDirResult === 'function') {{ window.__listDirResult({}, []); }}",
-                            p.id
-                        );
                         if let Some(s) = registry_for_ipc.inner.lock().unwrap().as_ref() {
-                            let _ = s.webview.evaluate_script(&script);
+                            crate::eval_js_fn(
+                                &s.webview, "__listDirResult", &[&p.id.to_string(), "[]"],
+                            );
                         }
                         return;
                     }
@@ -397,12 +374,12 @@ pub fn spawn_editor_window(
                         .map(|(name, is_dir)| serde_json::json!({ "name": name, "isDir": is_dir }))
                         .collect();
                     let entries_json = serde_json::Value::Array(json_entries);
-                    let script = format!(
-                        "if (typeof window.__listDirResult === 'function') {{ window.__listDirResult({}, {}); }}",
-                        p.id, entries_json
-                    );
                     if let Some(s) = registry_for_ipc.inner.lock().unwrap().as_ref() {
-                        let _ = s.webview.evaluate_script(&script);
+                        crate::eval_js_fn(
+                            &s.webview,
+                            "__listDirResult",
+                            &[&p.id.to_string(), &entries_json.to_string()],
+                        );
                     }
                 }
                 return;
@@ -466,12 +443,12 @@ pub fn spawn_editor_window(
                         { String::new() }
                     };
                     let text_json = serde_json::Value::String(text);
-                    let script = format!(
-                        "if (typeof window.__clipboardResult === 'function') {{ window.__clipboardResult({}, {}); }}",
-                        id, text_json
-                    );
                     if let Some(s) = registry_for_ipc.inner.lock().unwrap().as_ref() {
-                        let _ = s.webview.evaluate_script(&script);
+                        crate::eval_js_fn(
+                            &s.webview,
+                            "__clipboardResult",
+                            &[&id.to_string(), &text_json.to_string()],
+                        );
                     }
                 }
                 return;
