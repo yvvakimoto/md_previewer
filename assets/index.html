@@ -4566,6 +4566,49 @@ ${previewClone.outerHTML}
             }]
         });
 
+        // ----- Fenced-div grammar (single source of truth) -----
+        // The `:::` family is recognized in TWO places — the `alignDiv` /
+        // `columnsDiv` marked extensions below (normal pipeline) and the sentinel
+        // pre-pass in renderMarp() (Marp) — so the patterns live here rather than
+        // being retyped. They previously drifted; keep adding keywords HERE only.
+        //
+        // Mirrored (by necessity, different bundle) in
+        // tools/build-editor/fencedDivComplete.js — keep the two in sync.
+        //
+        // None carry /g, so hoisting introduces no `lastIndex` state; the *_RE
+        // forms are used inside per-line loops and must stay hoisted.
+        const ALIGN_KW_SRC = 'center|centre|right|left|message|vcenter';
+        const ALIGN_OPEN_RE = new RegExp('^:::+[ \\t]*(' + ALIGN_KW_SRC + ')[ \\t]*$', 'i');
+        const ALIGN_OPEN_SEEK_RE = new RegExp('^:::+[ \\t]*(' + ALIGN_KW_SRC + ')[ \\t]*$', 'im');
+        const ALIGN_BLOCK_RE = new RegExp(
+            '^:::+[ \\t]*(' + ALIGN_KW_SRC + ')[ \\t]*\\n([\\s\\S]*?)\\n:::+[ \\t]*(?:\\n|$)', 'i');
+        const COLS_OPEN_RE = /^:::+[ \t]*columns(?:-([234]))?[ \t]*$/i;
+        const COLS_OPEN_SEEK_RE = /^:::+[ \t]*columns(?:-([234]))?[ \t]*$/im;
+        const COLS_BLOCK_RE = /^:::+[ \t]*columns(?:-([234]))?[ \t]*\n([\s\S]*?)\n:::+[ \t]*(?:\n|$)/i;
+        const FENCED_DIV_CLOSE_RE = /^:::+[ \t]*$/;
+        // Matches the sentinel the Marp pre-pass emits, NOT source syntax. Its
+        // keyword has already been through normalizeAlignKeyword, which is why
+        // there is deliberately no `centre` branch — do not "unify" it with
+        // ALIGN_KW_SRC above.
+        const ALIGN_SENTINEL_RE = /^⦃ALIGN:(center|right|left|message|vcenter)⦄$/;
+
+        // `centre` → `center`; every other keyword passes through lowercased.
+        // Downstream (class names, Marp sentinels) only ever sees the normalized
+        // form — which is why the sentinel regex below has no `centre` branch.
+        function normalizeAlignKeyword(kw) {
+            const a = String(kw).toLowerCase();
+            return a === 'centre' ? 'center' : a;
+        }
+
+        // Map a normalized keyword to the class the renderer emits. `message` →
+        // emphasized centered message box; `vcenter` → vertical(+horizontal)
+        // centering box; the rest → plain text-align.
+        function alignKeywordClass(kw) {
+            return kw === 'message' ? 'md-message'
+                : kw === 'vcenter' ? 'md-vcenter'
+                : 'align-' + kw;
+        }
+
         // Block-level marked extension for Pandoc-style alignment fences:
         //   ::: center        ::: right         ::: left
         //   ...content...     ...content...     ...content...
@@ -4578,24 +4621,19 @@ ${previewClone.outerHTML}
                 name: 'alignDiv',
                 level: 'block',
                 start(src) {
-                    const i = src.search(/^:::+[ \t]*(center|centre|right|left|message|vcenter)[ \t]*$/im);
+                    const i = src.search(ALIGN_OPEN_SEEK_RE);
                     return i < 0 ? undefined : i;
                 },
                 tokenizer(src) {
-                    const m = /^:::+[ \t]*(center|centre|right|left|message|vcenter)[ \t]*\n([\s\S]*?)\n:::+[ \t]*(?:\n|$)/i.exec(src);
+                    const m = ALIGN_BLOCK_RE.exec(src);
                     if (!m) return;
-                    let align = m[1].toLowerCase();
-                    if (align === 'centre') align = 'center';
+                    const align = normalizeAlignKeyword(m[1]);
                     const token = { type: 'alignDiv', raw: m[0], align, text: m[2], tokens: [] };
                     this.lexer.blockTokens(token.text, token.tokens);
                     return token;
                 },
                 renderer(token) {
-                    // `message` → emphasized centered message box; `vcenter` →
-                    // vertical(+horizontal) centering box; others → text-align.
-                    const cls = token.align === 'message' ? 'md-message'
-                        : token.align === 'vcenter' ? 'md-vcenter'
-                        : 'align-' + token.align;
+                    const cls = alignKeywordClass(token.align);
                     return '<div class="' + cls + '">\n'
                         + this.parser.parse(token.tokens) + '</div>\n';
                 }
@@ -4624,11 +4662,11 @@ ${previewClone.outerHTML}
                 name: 'columnsDiv',
                 level: 'block',
                 start(src) {
-                    const i = src.search(/^:::+[ \t]*columns(?:-[234])?[ \t]*$/im);
+                    const i = src.search(COLS_OPEN_SEEK_RE);
                     return i < 0 ? undefined : i;
                 },
                 tokenizer(src) {
-                    const m = /^:::+[ \t]*columns(?:-([234]))?[ \t]*\n([\s\S]*?)\n:::+[ \t]*(?:\n|$)/i.exec(src);
+                    const m = COLS_BLOCK_RE.exec(src);
                     if (!m) return;
                     const parts = m[2].split(/^[ \t]*\+\+\+[ \t]*$/m);
                     const cols = parts.map(p => {
@@ -6619,23 +6657,22 @@ ${previewClone.outerHTML}
                         continue;
                     }
                     if (!inFence) {
-                        const open = ln.match(/^:::+[ \t]*(center|centre|right|left|message|vcenter)[ \t]*$/i);
+                        const open = ln.match(ALIGN_OPEN_RE);
                         if (open) {
-                            let a = open[1].toLowerCase();
-                            if (a === 'centre') a = 'center';
+                            const a = normalizeAlignKeyword(open[1]);
                             fenceStack.push('align');
                             // Blank line padding ensures the sentinel becomes its own <p>.
                             out.push(''); out.push(ALIGN_OPEN + a + '⦄'); out.push('');
                             continue;
                         }
-                        const openCols = ln.match(/^:::+[ \t]*columns(?:-([234]))?[ \t]*$/i);
+                        const openCols = ln.match(COLS_OPEN_RE);
                         if (openCols) {
                             fenceStack.push('cols');
                             const tok = openCols[1] ? '⦃COLS:' + openCols[1] + '⦄' : '⦃COLS⦄';
                             out.push(''); out.push(tok); out.push('');
                             continue;
                         }
-                        if (/^:::+[ \t]*$/.test(ln)) {
+                        if (FENCED_DIV_CLOSE_RE.test(ln)) {
                             const kind = fenceStack.pop();
                             out.push('');
                             out.push(kind === 'cols' ? COLS_CLOSE : ALIGN_CLOSE);
@@ -6956,12 +6993,10 @@ ${previewClone.outerHTML}
             // split post-pass, and before the mermaid substitution loop
             // (so a centered diagram still gets substituted inside the wrapper).
             Array.from(preview.querySelectorAll('section p')).forEach(p => {
-                const openM = /^⦃ALIGN:(center|right|left|message|vcenter)⦄$/.exec(p.textContent.trim());
+                const openM = ALIGN_SENTINEL_RE.exec(p.textContent.trim());
                 if (!openM) return;
                 const div = document.createElement('div');
-                div.className = openM[1] === 'message' ? 'md-message'
-                    : openM[1] === 'vcenter' ? 'md-vcenter'
-                    : 'align-' + openM[1];
+                div.className = alignKeywordClass(openM[1]);
                 p.parentNode.replaceChild(div, p);
                 // vcenter fills the remaining slide space vertically; tag the
                 // enclosing <section> so the fit-body wrapper becomes a flex column
