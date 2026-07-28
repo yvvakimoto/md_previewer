@@ -393,7 +393,13 @@ This prints the computed bump, the commit range, and the exact bullets it would 
 git add HISTORY.md && git commit --amend --no-edit && git tag -f v0.18.0
 ```
 
-6. **Publish** only once `HISTORY.md` reads the way you want a user to read it:
+6. **Rebuild the installer.** `installer/md-previewer.iss` bundles `HISTORY.md` into `{app}` and its `[Run]` entry **auto-opens it after install**, so the artifact the hook already built in `dist/` still contains the *unedited* raw-commit-subject notes. Editing the file in git is not enough — rebuild so the shipped release notes match what you just wrote (the exe and licenses are already current at this point, so both steps can be skipped):
+
+```bash
+pwsh -NoProfile -File build-installer.ps1 -SkipBuild -SkipLicenses
+```
+
+7. **Publish** only once `HISTORY.md` reads the way you want a user to read it:
 
 ```bash
 git push origin main && git push origin v0.18.0
