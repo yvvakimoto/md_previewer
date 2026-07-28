@@ -52,6 +52,30 @@ needed** — only the `playwright` Python module plus an installed Edge or Chrom
 browser paints normally, fonts / `/userfile/` images / KaTeX / mermaid / Marp autofit all render
 exactly as in the app.
 
+## Structural regression net — `domdump.py`
+
+`shoot.py` gives pixels; `domdump.py` gives **structure**. It renders each document the same way
+and writes a normalized, diffable digest of the `#preview` tree — one line per element
+(`tag.class attr=value |text`). Use it to prove a refactor of the render pipeline changed nothing:
+
+```powershell
+# before the change
+python tools/preview-harness/domdump.py samples/*.md --out _dom/base --modes scroll,deck,list --dark
+# ... refactor ...
+python tools/preview-harness/domdump.py samples/*.md --out _dom/after --modes scroll,deck,list --dark
+git diff --no-index _dom/base _dom/after      # empty == behavior preserved
+```
+
+The digest is byte-stable across runs because it normalizes the things that legitimately vary:
+generated-graphics subtrees (`<svg>` / `<canvas>` from mermaid / KaTeX / abcjs / markwhen / plotly)
+collapse to one opaque node, render-counter and Plotly `modebar-` ids are elided, whitespace is
+collapsed, numbers inside `style=` are rounded (`--round`, default 2 dp) so sub-pixel layout jitter
+is not a diff, and over-long attribute values / text are replaced by a length+hash stand-in.
+
+Marp's own `svg[data-marpit-svg]` is deliberately **not** collapsed — it is a layout container, and
+every slide's content lives under it. `--modes` dumps each Marp view (`scroll` / `deck` / `list`);
+`--dark` additionally dumps each document in dark mode. Output goes to `_dom/` (git-ignored).
+
 ## Fidelity & intentional no-ops
 
 The Browser pane is Chromium and WebView2 is Edge/Chromium on the same machine (same system fonts), so
