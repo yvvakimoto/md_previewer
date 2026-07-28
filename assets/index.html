@@ -3773,6 +3773,9 @@ ${previewClone.outerHTML}
         // caller can decline to emit a span (leaving links / refs / unrelated `{…}`
         // untouched). Keys (case-insensitive, with short forms):
         //   color/c  size/s  font/f  bg/background  weight/w  valign/v
+        // Keyword tables for the `[text]{key=value}` syntax. The editor's value
+        // completion mirrors these in tools/build-editor/spanStyleComplete.js
+        // (a separate esbuild bundle) — add a keyword to both.
         const SPAN_SIZE_KW = { xs:'0.7em', sm:'0.85em', small:'0.85em', md:'1em', normal:'1em',
             lg:'1.4em', large:'1.4em', xl:'1.8em', xxl:'2.4em', '2xl':'2.4em' };
         const SPAN_WEIGHT_KW = { thin:'100', light:'300', normal:'400', medium:'500',
@@ -4668,7 +4671,8 @@ ${previewClone.outerHTML}
         // being retyped. They previously drifted; keep adding keywords HERE only.
         //
         // Mirrored (by necessity, different bundle) in
-        // tools/build-editor/fencedDivComplete.js — keep the two in sync.
+        // tools/build-editor/fencedDivComplete.js — keep the two in sync. That file
+        // deliberately does not offer `centre` in its menu; see the note there.
         //
         // None carry /g, so hoisting introduces no `lastIndex` state; the *_RE
         // forms are used inside per-line loops and must stay hoisted.

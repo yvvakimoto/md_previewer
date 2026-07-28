@@ -21,8 +21,9 @@ const SEP_RE = /^(---|\*\*\*|___)\s*$/;
 const FENCE_RE = /^\s*(```|~~~)/;
 const FM_RE = /^---\s*\n([\s\S]*?)\n---\s*(\n|$)/;
 
-// Classes offered in the insert picker (split-3 / split-4 omitted for brevity —
-// authors can edit the `_class` line by hand when they need them).
+// Classes offered in the insert picker. split-2/3/4 are deliberately omitted to
+// keep the grid small; the renderer supports them, and frontMatterComplete.js
+// already offers the full set for a hand-typed `_class:` line.
 export const SLIDE_CLASSES = ['none', 'title', 'section', 'lead', 'invert', 'split'];
 
 // Mirror of isMarpDocument() in assets/index.html — keep the two in sync.

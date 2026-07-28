@@ -42,12 +42,20 @@ function values(list, type) {
 
 // Representative value menus (the syntax also accepts raw values like #e91e63,
 // 1.4em, 120%, or any font-family name — those are just typed directly).
+//
+// The keyword lists must stay a subset of what buildSpanStyle() accepts —
+// SPAN_SIZE_KW / SPAN_WEIGHT_KW / SPAN_FONT_STACK / SPAN_VALIGN_KW in
+// assets/index.html. This bundle is a separate esbuild artifact and cannot import
+// from there, so: when adding a keyword to buildSpanStyle, add it here too.
+// `2xl` is listed alongside its `xxl` synonym because it is the Tailwind-style
+// name a user is likely to *try* typing, so prefix-completing it is worth the
+// duplicate row.
 const VALUE_OPTIONS = {
   color: values(['red', 'crimson', 'orange', 'gold', 'green', 'teal', 'blue',
     'navy', 'purple', 'magenta', 'gray', 'black', 'white']),
   bg: values(['yellow', 'lightyellow', 'lightblue', 'lightgreen', 'pink',
     'lavender', 'gold', 'gray', 'black', 'white']),
-  size: values(['xs', 'sm', 'small', 'md', 'normal', 'lg', 'large', 'xl', 'xxl'], 'keyword'),
+  size: values(['xs', 'sm', 'small', 'md', 'normal', 'lg', 'large', 'xl', 'xxl', '2xl'], 'keyword'),
   font: values(['serif', 'sans', 'mono'], 'keyword'),
   weight: values(['thin', 'light', 'normal', 'medium', 'semibold', 'bold', 'black'], 'keyword'),
   valign: values(['middle', 'center', 'bottom', 'top', 'baseline', 'sub', 'super'], 'keyword'),
