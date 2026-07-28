@@ -362,50 +362,71 @@ Assets are **read at runtime**, not embedded in the binary, so they must be pres
 Releases are automated by a tracked git hook that fires when the **`main`** branch is updated via a merge (`git merge` / `git pull`). The pieces:
 
 - `tools/hooks/post-merge` — tiny POSIX-`sh` shim (Git for Windows runs hooks via its bundled `sh`). It only invokes `pwsh -NoProfile -File tools/release-on-main.ps1`, and short-circuits if `MDP_IN_RELEASE=1` is already set (re-entrancy guard). It always `exit 0`s so a failed release never blocks the merge.
-- `tools/release-on-main.ps1` — the orchestrator. **Guards**: no-ops unless the current branch is `main` and the working tree is clean (override both with `-Force`). It finds the previous release tag via `git describe --tags --abbrev=0 --match "v*"`, collects `git log --no-merges` subjects in `<lastTag>..HEAD`, and **exits silently when that range is empty** (so it never re-fires after its own release commit — the new tag sits at HEAD). **Bump heuristic** (commits aren't Conventional Commits — they're free-form Japanese): breaking (`破壊的`/`BREAKING`/`!:`) → major, feature-ish (`追加`/`機能`/`対応`/`実装`/`新規`/`feat`) → minor, else patch; override with `-Bump major|minor|patch`. It then rewrites the version in **three places** — `Cargo.toml` `version =`, `installer/md-previewer.iss` `#define AppVersion`, and a new `## v<X.Y.Z>` section prepended to `HISTORY.md` (bullets = the range's commit subjects, chore commits like "バージョン変更"/"リリース"/merges filtered out) — **then** runs `build-installer.ps1` (with `MDP_IN_RELEASE=1`). **Only on a successful build** does it stage just those files (`Cargo.toml` / `Cargo.lock` / `installer/md-previewer.iss` / `HISTORY.md`), commit `リリース v<X.Y.Z>`, and `git tag v<X.Y.Z>` — the commit is an ordinary commit (fires `post-commit`, not `post-merge`, so no loop). It does **not** push by default (set `MDP_RELEASE_PUSH=1` to opt in); otherwise it prints the `git push origin main; git push origin v<X.Y.Z>` reminder so `HISTORY.md` can be hand-polished (and the commit `--amend`ed / tag re-pointed) before publishing. Flags: `-DryRun` (report only — no writes/build/commit), `-SkipBuild` (skip the installer build), `-Bump`, `-Force`.
+- `tools/release-on-main.ps1` — the orchestrator, split into **two phases** so the release notes cannot be published unreviewed. It finds the previous release tag via `git describe --tags --abbrev=0 --match "v*"`, collects `git log --no-merges` subjects in `<lastTag>..HEAD`, and **exits silently when that range is empty** (so it never re-fires after its own release commit — the new tag sits at HEAD).
+
+  **Phase 1 (default, what the hook runs)** — rewrites the version in **three places** (`Cargo.toml` `version =`, `installer/md-previewer.iss` `#define AppVersion`, and a new `## v<X.Y.Z>` section prepended to `HISTORY.md`) and then **stops**. No build, no commit, no tag. The generated section carries a `TODO(release-notes)` review marker.
+  - **Commit classification.** Subjects are split by Conventional-Commit prefix: `feat:`/`fix:`/`perf:` and un-prefixed free-form subjects become **user-facing bullet candidates** (prefix stripped, so they read sensibly even unedited); `refactor:`/`test:`/`docs:`/`chore:`/`build:`/`ci:`/`style:` become **internal work**, listed inside the review comment as reference rather than as shippable bullets. The skip regex (this script's own `リリース v…` commits, `WIP`, `Merge`, …) is **anchored at the start** of the subject — it used to match `version`/`release` anywhere, which could silently drop a legitimate `feat: リリースノート生成に対応`.
+  - **Bump heuristic.** Breaking (`破壊的`/`BREAKING`/`!:`) → major; a **user-facing** subject matching `追加`/`機能`/`対応`/`実装`/`新規`/`^feat` → minor; else patch. Internal commits no longer count toward minor — a refactor- or docs-only range is now correctly a patch. Override with `-Bump major|minor|patch`.
+  - **`## 未リリース` folding.** A hand-written `## 未リリース` (or `Unreleased`) section is absorbed: its bullets are carried into the new version section *first*, and the heading is removed. Without this the script's insertion point (the first `^## v`) leaves that section stranded above the release with duplicate content.
+  - **Re-run guard.** If a draft is still pending (marker present), phase 1 refuses — **even with `-Force`** — so the version can never be double-bumped. `-Force` means "I know the tree is dirty", not "bump me twice".
+
+  **Phase 2 (`-Finalize`)** — refuses while the review marker or a `## 未リリース` heading remains, checks the three version sites agree and that the tag doesn't already exist, **then** runs `build-installer.ps1` (with `MDP_IN_RELEASE=1`) and, only on a successful build, stages just those files, commits `リリース v<X.Y.Z>`, and `git tag v<X.Y.Z>` — an ordinary commit (fires `post-commit`, not `post-merge`, so no loop). Building here rather than in phase 1 is the point: `installer/md-previewer.iss` bundles `HISTORY.md` and auto-opens it after install, so an installer built before the notes were edited would ship the raw draft.
+
+  **`-Verify`** — mechanical pre-publish check, runnable any time: the three version sites agree, `## v<X.Y.Z>` exists, no review marker, no leftover `## 未リリース`, the tag is HEAD or an ancestor, and **the installer is newer than `HISTORY.md`** (i.e. the bundled notes are not stale).
+
+  Push is never automatic unless `MDP_RELEASE_PUSH=1`. Other flags: `-DryRun` (phase-1 report only), `-SkipBuild` (`-Finalize` without the installer build), `-Force`.
 - `tools/install-hooks.ps1` — sets `git config core.hooksPath tools/hooks`. This is **per-clone local config**, so it must run once after cloning; `install-deps.ps1` calls it automatically (right after `fetch-libs.ps1`, so even `-SkipNode` enables the hook).
 
-#### After the merge — reviewing and editing `HISTORY.md`
+#### The release flow in practice — merge, review, finalize
 
-The hook leaves the release **local and unpushed on purpose**, because the `HISTORY.md` section it generated is *not* publishable as-is: its bullets are **raw commit subjects**, and `HISTORY.md` is the file the installer bundles and auto-opens for end users. Reviewing it is a required step, not an optional polish. The only automatic filtering is a chore regex (`バージョン|リリース|^WIP|^Merge|version|release`) — it does **not** strip `refactor:` / `test:` / `docs:` commits.
+`HISTORY.md` is bundled into the installer and **auto-opened after install**, so a generated draft must never reach a user. The script therefore refuses to finalize while the draft is unreviewed; the steps below are what that gate expects, not a checklist you have to remember.
 
-**Before merging** (cheapest place to catch a wrong version bump — it gets written to three files):
+**1. (optional) Preview before merging.** Cheapest place to catch a wrong bump, since the version lands in three files:
 
 ```bash
 pwsh -NoProfile -File tools/release-on-main.ps1 -DryRun -Force
 ```
 
-This prints the computed bump, the commit range, and the exact bullets it would insert, without touching anything. If the heuristic guessed wrong, plan to merge and then pass `-Bump major|minor|patch`.
-
-**After the merge**, work through these in order:
-
-1. **Confirm what the hook actually did.** `git log --oneline -3` should show a `リリース v<X.Y.Z>` commit at `HEAD`, and `git tag --points-at HEAD` should list `v<X.Y.Z>`. If the installer build failed, there is **no commit and no tag** and the version edits are sitting uncommitted in the working tree — fix the build, then re-run `tools/release-on-main.ps1` rather than hand-committing.
-2. **Check the version is consistent in all three places**: `Cargo.toml` `version =`, `installer/md-previewer.iss` `#define AppVersion`, and the new `## v<X.Y.Z>` heading. If the bump level was wrong, the cleanest fix is `git reset --hard HEAD~1 && git tag -d v<X.Y.Z>` and re-run the script with `-Bump`.
-3. **Rewrite the generated bullets for end users.** The generated section is a starting list, not the deliverable. Concretely:
-   - **Delete** anything a user cannot observe — `refactor:`, `test:`, internal tooling, doc-only commits. A release whose work was entirely internal gets one honest line (e.g. 「内部改善（動作の変更はありません）」), not fifteen `refactor:` bullets.
-   - **Rewrite each surviving line as the user-visible change**, not the implementation: strip the `feat:` / `fix:` prefix, lead with a bold feature name, then what changed for the reader. Match the existing sections' voice — 「**定義リストに対応** — `用語` の次の行に `: 説明` と書くと…」.
-   - **Merge commits that were one feature** into a single bullet, and drop anything added and then removed again within the same range.
-   - Keep newest-first ordering and the `- **名前** — 説明。` shape used throughout the file.
-4. **Fold in any hand-written `## 未リリース` section.** If work-in-progress notes were kept under a `## 未リリース` heading, the script inserts its new section **below** it — the insertion point is the first `^## v` heading, which `## 未リリース` does not match. Left alone you ship a stale 未リリース heading duplicating the release's own content. Move those bullets into the `## v<X.Y.Z>` section and delete the heading.
-5. **Amend the release commit and re-point the tag.** The tag was created pointing at the pre-amend commit, so amending alone leaves it on an orphaned object — `-f` is required:
+**2. Merge into `main`.** The hook runs phase 1: versions bumped, a `## v<X.Y.Z>` draft written to `HISTORY.md`, nothing built, committed or tagged. It prints the next command. If the bump is wrong, discard and redo with `-Bump`:
 
 ```bash
-git add HISTORY.md && git commit --amend --no-edit && git tag -f v0.18.0
+git checkout -- Cargo.toml installer/md-previewer.iss HISTORY.md
+pwsh -NoProfile -File tools/release-on-main.ps1 -Bump patch
 ```
 
-6. **Rebuild the installer.** `installer/md-previewer.iss` bundles `HISTORY.md` into `{app}` and its `[Run]` entry **auto-opens it after install**, so the artifact the hook already built in `dist/` still contains the *unedited* raw-commit-subject notes. Editing the file in git is not enough — rebuild so the shipped release notes match what you just wrote (the exe and licenses are already current at this point, so both steps can be skipped):
+**3. Write the release notes.** Open the `## v<X.Y.Z>` section. The draft gives you user-facing candidates as bullets and the internal commits as reference inside the `TODO(release-notes)` comment. Turn it into something a user benefits from reading:
+
+- **Delete what a user cannot observe.** A range that was entirely internal gets one honest line — 「内部改善（動作の変更はありません）」— not fifteen `refactor:` bullets. Phase 1 already pre-fills exactly that when it finds no user-facing commits.
+- **Describe the change, not the implementation.** Lead with a bold feature name, then what changed for the reader: 「**定義リストに対応** — `用語` の次の行に `: 説明` と書くと…」. Keep the `- **名前** — 説明。` shape and newest-first ordering used throughout the file.
+- **Merge several commits that were one feature** into one bullet, and drop anything added and then reverted inside the same range.
+- **Check the internal list for buried user-facing fixes.** Prefix-based classification is a heuristic: in v0.18.0 a workspace `_toc.md` bug fix sat under a `test:` commit and would have been dropped on prefix alone.
+- Optionally summarize the internal work as a single `> 開発者向け:` line (v0.15.0 and v0.18.0 do this).
+
+Then **delete the `TODO(release-notes)` comment block**.
+
+**4. Finalize.** This is the gate: it refuses while the marker (or a leftover `## 未リリース` heading) remains, verifies the three version sites agree and the tag is free, then builds the installer — with your edited notes inside it — and creates the commit and tag:
 
 ```bash
-pwsh -NoProfile -File build-installer.ps1 -SkipBuild -SkipLicenses
+pwsh -NoProfile -File tools/release-on-main.ps1 -Finalize
 ```
 
-7. **Publish** only once `HISTORY.md` reads the way you want a user to read it:
+**5. Verify and publish.**
 
 ```bash
+pwsh -NoProfile -File tools/release-on-main.ps1 -Verify
 git push origin main && git push origin v0.18.0
 ```
 
-Set `MDP_RELEASE_PUSH=1` to have the hook push automatically — but that skips this whole review, so only do it for a release whose notes you have already written by hand.
+`-Verify` is mechanical and re-runnable; it also catches the case where you edited `HISTORY.md` *after* finalizing, which leaves the built installer bundling stale notes. If it reports that, rebuild and amend:
+
+```bash
+pwsh -NoProfile -File build-installer.ps1 -SkipBuild -SkipLicenses
+git add HISTORY.md && git commit --amend --no-edit && git tag -f v0.18.0
+```
+
+(`git tag -f` is required — the tag still points at the pre-amend commit otherwise.)
+
+**If the installer build fails during `-Finalize`**, there is no commit and no tag and the version edits stay in the working tree. Fix the build and re-run `-Finalize`; do not hand-commit.
 
 ### Samples & logs
 
@@ -501,6 +522,6 @@ At the end of every task, review whether this `CLAUDE.md` and `README.md` still 
 
 Also review the `samples/` directory: when a feature is added, changed, or removed, update the relevant sample so it continues to demonstrate the current behavior. Keep samples concise — one focused file per feature area, no duplicated content.
 
-Cutting a new release is **automated** by the `main`-branch `post-merge` hook: merging into `main` auto-bumps the version in all three places, prepends a `## v<X.Y.Z>` section to repo-root **`HISTORY.md`**, builds the installer, and commits + tags `v<X.Y.Z>` locally (no auto-push). The release is deliberately left unpushed because the generated `HISTORY.md` bullets are raw commit subjects and **must be rewritten for end users before publishing** — the full step-by-step is *Architecture → Release automation → After the merge — reviewing and editing `HISTORY.md`*, and it is a required step, not optional polish. To release manually instead (or to test), run `tools/release-on-main.ps1` directly (`-DryRun` to preview, `-Bump` to force the bump, `-Force` off `main`).
+Cutting a new release is **automated** by the `main`-branch `post-merge` hook: merging into `main` auto-bumps the version in all three places and prepends a draft `## v<X.Y.Z>` section to repo-root **`HISTORY.md`**; the installer build, commit and tag happen afterwards via `-Finalize` (no auto-push). The release is **two-phase**: the merge only writes a draft, and `-Finalize` refuses to build/commit/tag while that draft is unreviewed — so raw commit subjects cannot reach a user. See *Architecture → Release automation → The release flow in practice*. To release manually instead (or to test), run `tools/release-on-main.ps1` directly (`-DryRun` to preview, `-Bump` to force the bump, `-Force` off `main`).
 
 After updating any bundled third-party library — adding/removing/upgrading a dep in `tools/build-marp/` or `tools/build-editor/`, or replacing one of the directly bundled files under `assets/libs/` — rerun `pwsh -File tools/collect-licenses.ps1` to regenerate `assets/THIRD_PARTY_LICENSES.txt` locally before building the installer. The file is git-ignored so there is no commit step.
