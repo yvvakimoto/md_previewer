@@ -185,18 +185,34 @@ function Invoke-Verify {
         }
     }
 
-    # インストーラーが HISTORY.md より古ければ、同梱されるリリースノートが古い。
-    # (installer/md-previewer.iss が HISTORY.md を {app} に同梱し、[Run] で自動表示する)
+    # インストーラーに同梱されたリリースノートが現在の HISTORY.md と一致するか。
+    # (installer/md-previewer.iss が HISTORY.md を {app} に同梱し、[Run] で自動表示する
+    #  ため、ビルド後に HISTORY.md を編集すると成果物だけ古いままになる)
+    # タイムスタンプ比較ではなく内容ハッシュで判定する — git checkout などで
+    # 内容が同一のまま mtime だけ動くケースを誤検知しないため。
+    # ハッシュは build-installer.ps1 がビルド成功時に .notes.sha256 として記録する。
     $artifact = Join-Path $RepoRoot "dist\MdPreviewer-Setup-$cargoVer.exe"
+    $stamp    = "$artifact.notes.sha256"
+    $rebuild  = "       pwsh -NoProfile -File build-installer.ps1 -SkipBuild -SkipLicenses"
     if (-not (Test-Path -LiteralPath $artifact)) {
         Write-Ng "インストーラー $artifact が無い"; $ok = $false
-    } else {
+    } elseif (-not (Test-Path -LiteralPath $stamp)) {
+        # 記録が無い (このスタンプ機構より前に作られた成果物)。timestamp に退避。
         $exeTime  = (Get-Item -LiteralPath $artifact).LastWriteTimeUtc
         $histTime = (Get-Item -LiteralPath $HistoryMd).LastWriteTimeUtc
         if ($exeTime -ge $histTime) {
-            Write-Ok "インストーラーは HISTORY.md より新しい (同梱ノートは最新)"
+            Write-Ok "インストーラーは HISTORY.md より新しい (同梱ノート記録なし: 時刻で判定)"
         } else {
-            Write-Ng "インストーラーが HISTORY.md より古い — 同梱されるリリースノートが古いままです。`n       pwsh -NoProfile -File build-installer.ps1 -SkipBuild -SkipLicenses"
+            Write-Ng "インストーラーが HISTORY.md より古い — 同梱ノートが古い可能性。`n$rebuild"
+            $ok = $false
+        }
+    } else {
+        $want = (Get-Content -LiteralPath $stamp -Raw).Trim()
+        $have = (Get-FileHash -LiteralPath $HistoryMd -Algorithm SHA256).Hash
+        if ($want -eq $have) {
+            Write-Ok "インストーラー同梱のリリースノートが現在の HISTORY.md と一致"
+        } else {
+            Write-Ng "インストーラー同梱のリリースノートが古い (HISTORY.md がビルド後に変更されています)。`n$rebuild"
             $ok = $false
         }
     }

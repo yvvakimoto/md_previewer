@@ -372,7 +372,7 @@ Releases are automated by a tracked git hook that fires when the **`main`** bran
 
   **Phase 2 (`-Finalize`)** — refuses while the review marker or a `## 未リリース` heading remains, checks the three version sites agree and that the tag doesn't already exist, **then** runs `build-installer.ps1` (with `MDP_IN_RELEASE=1`) and, only on a successful build, stages just those files, commits `リリース v<X.Y.Z>`, and `git tag v<X.Y.Z>` — an ordinary commit (fires `post-commit`, not `post-merge`, so no loop). Building here rather than in phase 1 is the point: `installer/md-previewer.iss` bundles `HISTORY.md` and auto-opens it after install, so an installer built before the notes were edited would ship the raw draft.
 
-  **`-Verify`** — mechanical pre-publish check, runnable any time: the three version sites agree, `## v<X.Y.Z>` exists, no review marker, no leftover `## 未リリース`, the tag is HEAD or an ancestor, and **the installer is newer than `HISTORY.md`** (i.e. the bundled notes are not stale).
+  **`-Verify`** — mechanical pre-publish check, runnable any time: the three version sites agree, `## v<X.Y.Z>` exists, no review marker, no leftover `## 未リリース`, the tag is HEAD or an ancestor, and **the release notes bundled into the installer match the current `HISTORY.md`**. That last one compares a SHA-256 recorded by `build-installer.ps1` (`dist/…exe.notes.sha256`) rather than timestamps, so a `git checkout` that rewrites `HISTORY.md` byte-identically doesn't raise a false alarm; artifacts predating the stamp fall back to an mtime comparison.
 
   Push is never automatic unless `MDP_RELEASE_PUSH=1`. Other flags: `-DryRun` (phase-1 report only), `-SkipBuild` (`-Finalize` without the installer build), `-Force`.
 - `tools/install-hooks.ps1` — sets `git config core.hooksPath tools/hooks`. This is **per-clone local config**, so it must run once after cloning; `install-deps.ps1` calls it automatically (right after `fetch-libs.ps1`, so even `-SkipNode` enables the hook).
@@ -417,7 +417,7 @@ pwsh -NoProfile -File tools/release-on-main.ps1 -Verify
 git push origin main && git push origin v0.18.0
 ```
 
-`-Verify` is mechanical and re-runnable; it also catches the case where you edited `HISTORY.md` *after* finalizing, which leaves the built installer bundling stale notes. If it reports that, rebuild and amend:
+`-Verify` is mechanical and re-runnable; it also catches the case where you edited `HISTORY.md` *after* finalizing, which leaves the built installer bundling stale notes (it compares the notes hash `build-installer.ps1` recorded at build time). If it reports that, rebuild and amend:
 
 ```bash
 pwsh -NoProfile -File build-installer.ps1 -SkipBuild -SkipLicenses

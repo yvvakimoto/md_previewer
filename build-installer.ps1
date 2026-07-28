@@ -86,6 +86,18 @@ $artifact = Join-Path $DistDir "MdPreviewer-Setup-$version.exe"
 Write-Host ''
 if (Test-Path -LiteralPath $artifact) {
     Write-Host "Installer built: $artifact" -ForegroundColor Green
+
+    # Record which release notes went INTO this installer. The .iss bundles
+    # HISTORY.md and auto-opens it after install, so editing HISTORY.md after a
+    # build silently leaves the artifact shipping stale notes.
+    # `release-on-main.ps1 -Verify` compares this hash against the current file;
+    # a content hash rather than a timestamp so a git checkout that rewrites
+    # HISTORY.md byte-identically doesn't raise a false alarm.
+    $historyMd = Join-Path $PSScriptRoot 'HISTORY.md'
+    if (Test-Path -LiteralPath $historyMd) {
+        $hash = (Get-FileHash -LiteralPath $historyMd -Algorithm SHA256).Hash
+        Set-Content -LiteralPath "$artifact.notes.sha256" -Value $hash -NoNewline -Encoding ascii
+    }
 } else {
     Write-Warning "Expected installer at $artifact but it was not found. Check ISCC output above."
 }
