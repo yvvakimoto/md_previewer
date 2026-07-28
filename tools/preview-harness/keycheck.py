@@ -292,6 +292,36 @@ def main():
             check("the menu is clamped inside the viewport", fits, True)
             press(page, "Escape")
 
+            # ---------- diagram memoization (__diagCacheHit / __diagSource) ----------
+            # The DOM digest only proves the FIRST render. These caches are keyed by
+            # (theme-salt + source), so a dark→light round trip must miss on the dark
+            # key and then HIT the original light key, landing back on identical DOM.
+            for doc, sel in [("samples/sample.md", ".mermaid"),
+                             ("samples/abcjs.md", ".abc-notation"),
+                             ("samples/markwhen.md", ".markwhen-timeline")]:
+                load(doc)
+                snap = ("(s) => [...document.querySelectorAll(s)]"
+                        ".map(e => e.innerHTML).join('\\u0000')")
+                before = page.evaluate(snap, sel)
+                check("%s renders content" % sel, len(before) > 100, True)
+                press(page, "m")          # -> dark: fresh key, cache miss
+                page.wait_for_timeout(500)
+                shoot.wait_for_render(page)
+                dark = page.evaluate(snap, sel)
+                press(page, "m")          # -> light: must HIT the original key
+                page.wait_for_timeout(500)
+                shoot.wait_for_render(page)
+                after = page.evaluate(snap, sel)
+                check("%s is byte-identical after a dark/light round trip" % sel,
+                      after, before)
+                if sel == ".abc-notation":
+                    # abc's key is deliberately un-salted (its SVG is recoloured by
+                    # CSS only), so the dark render must be the SAME cached bytes.
+                    check("abc cache is theme-independent", dark, before)
+                elif sel == ".mermaid":
+                    # mermaid re-renders per theme, so dark must actually differ.
+                    check("mermaid cache is theme-salted", dark != before, True)
+
             errors = page.evaluate("() => (window.__kcErrors || [])")
             check("no uncaught page errors recorded", errors, [])
 

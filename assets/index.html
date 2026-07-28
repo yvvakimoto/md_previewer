@@ -5980,6 +5980,30 @@ ${previewClone.outerHTML}
         const __abcCache = new Map();
         const __DIAGRAM_CACHE_MAX = 200;
         function __diagKey(src) { return (darkMode ? 'd|' : 'l|') + src; }
+
+        // Read a diagram's original source from its percent-encoded `data-…-source`
+        // attribute, falling back to the element's text when absent or malformed.
+        function __diagSource(el, attr) {
+            try { return decodeURIComponent(el.getAttribute(attr) || ''); }
+            catch (e) { return el.textContent || ''; }
+        }
+
+        // Re-attach a memoized render if one exists. Returns true on a hit, so the
+        // caller can `return` immediately; false means "render it yourself".
+        //
+        // NOTE: there is deliberately no `__renderCached(el, cache, key, produce)`
+        // wrapper around the whole render. The markwhen renderer cannot supply its
+        // cache key up front — the calendar key depends on the parsed header's
+        // `country` and on the month-count fallback running first — and mermaid vs
+        // abc differ in *what* gets cached (mermaid caches the raw SVG string it
+        // was handed; abc must snapshot el.innerHTML because abcjs renders into the
+        // element and returns nothing). One wrapper would have to paper over both.
+        function __diagCacheHit(cache, key, el) {
+            const cached = cache.get(key);
+            if (cached === undefined) return false;
+            el.innerHTML = cached;
+            return true;
+        }
         function __diagCacheSet(cache, key, val) {
             if (cache.size >= __DIAGRAM_CACHE_MAX) {
                 cache.delete(cache.keys().next().value);
@@ -6035,8 +6059,7 @@ ${previewClone.outerHTML}
             await Promise.all(Array.from(els).map(async (el) => {
                 const src = el.textContent;
                 const key = __diagKey(src);
-                const cached = __mermaidCache.get(key);
-                if (cached !== undefined) { el.innerHTML = cached; return; }
+                if (__diagCacheHit(__mermaidCache, key, el)) return;
                 try {
                     const { scale, body } = parseMermaidScale(src);
                     let { svg } = await mermaid.render(el.id + '-svg', body);
@@ -6065,11 +6088,8 @@ ${previewClone.outerHTML}
         // slide is display:none (e.g. a non-active deck slide).
         function renderAbcCached(root) {
             root.querySelectorAll('[data-abc]').forEach((el) => {
-                let src;
-                try { src = decodeURIComponent(el.getAttribute('data-abc-source') || ''); }
-                catch (e) { src = el.textContent || ''; }
-                const cached = __abcCache.get(src);
-                if (cached !== undefined) { el.innerHTML = cached; return; }
+                const src = __diagSource(el, 'data-abc-source');
+                if (__diagCacheHit(__abcCache, src, el)) return;
                 try {
                     el.innerHTML = '';
                     window.ABCJS.renderAbc(el, src, {
@@ -6452,9 +6472,7 @@ ${previewClone.outerHTML}
         }
 
         async function renderMarkwhenCached(el) {
-            let src;
-            try { src = decodeURIComponent(el.getAttribute('data-markwhen-source') || ''); }
-            catch (e) { src = el.textContent || ''; }
+            const src = __diagSource(el, 'data-markwhen-source');
             try {
                 const MW = window.Markwhen;
                 if (!MW || typeof MW.parse !== 'function') throw new Error('parser not loaded');
@@ -6496,8 +6514,7 @@ ${previewClone.outerHTML}
 
                     const online = navigator.onLine;
                     const calKey = __diagKey(src) + '|cal|' + country + '|' + (online ? 'on' : 'off');
-                    const cachedCal = __markwhenCalCache.get(calKey);
-                    if (cachedCal !== undefined) { el.innerHTML = cachedCal; return; }
+                    if (__diagCacheHit(__markwhenCalCache, calKey, el)) return;
 
                     const years = new Set();
                     for (let mi = 0; mi < monthCount; mi++) years.add(sM.getFullYear() + Math.floor((sM.getMonth() + mi) / 12));
@@ -6510,8 +6527,7 @@ ${previewClone.outerHTML}
 
                 // Timeline view (default).
                 const key = __diagKey(src);
-                const cached = __markwhenCache.get(key);
-                if (cached !== undefined) { el.innerHTML = cached; return; }
+                if (__diagCacheHit(__markwhenCache, key, el)) return;
                 el.innerHTML = titleHtml + __mwBuildTimeline(MW, mw, rows, events);
                 __diagCacheSet(__markwhenCache, key, el.innerHTML);
             } catch (error) {
