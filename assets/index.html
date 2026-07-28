@@ -4566,6 +4566,81 @@ ${previewClone.outerHTML}
             }]
         });
 
+        // ----- Front-matter / fence–aware line scanning (single source of truth) -----
+        // Every renderMarp() pre-pass has to walk the source line by line while
+        // ignoring YAML front-matter and fenced code. That state machine used to be
+        // hand-written five times, i.e. five independent chances for the fence
+        // rules to drift. It lives here once now.
+        //
+        // A fence marker line: ```-or-more / ~~~-or-more, optionally indented. The
+        // *first character* is the marker kind, so ``` never closes a ~~~ block.
+        const MD_FENCE_RE = /^(\s*)(```+|~~~+)(.*)$/;
+        const MD_FM_DELIM_RE = /^---\s*$/;
+        // Marp's slide separator (a thematic break on its own line).
+        const SLIDE_SEP_RE = /^(---|\*\*\*|___)\s*$/;
+        // Column divider inside a `split` slide or a `::: columns` region.
+        const COL_DIVIDER_RE = /^\s*\+\+\+\s*$/;
+
+        // Stateful single-forward-pass classifier over `lines`. Call `step(i)` at
+        // the cursor, in increasing order; lines you SKIP are never examined —
+        // which is exactly what the definition-list pre-pass relies on.
+        // Returns 'fm' | 'fm-close' | 'fence' | 'code' | 'body'.
+        function __makeMdLineScanner(lines) {
+            let inFm = lines.length > 0 && MD_FM_DELIM_RE.test(lines[0]);
+            let fmClosed = !inFm;
+            let inFence = false;
+            let fenceMarker = '';
+            return {
+                step(i) {
+                    const ln = lines[i];
+                    if (inFm && !fmClosed) {
+                        // i > 0: line 0 is the OPENING delimiter, not the close.
+                        if (i > 0 && MD_FM_DELIM_RE.test(ln)) { fmClosed = true; return 'fm-close'; }
+                        return 'fm';
+                    }
+                    const m = ln.match(MD_FENCE_RE);
+                    if (m) {
+                        const marker = m[2][0]; // ` or ~
+                        if (!inFence) { inFence = true; fenceMarker = marker; }
+                        else if (marker === fenceMarker) { inFence = false; fenceMarker = ''; }
+                        return 'fence';
+                    }
+                    return inFence ? 'code' : 'body';
+                }
+            };
+        }
+
+        // Rewrite a markdown document line by line, front-matter- and fence-aware.
+        // `visit(line, i, lines)` is called ONLY for 'body' lines; front-matter,
+        // fence markers and in-fence code are copied verbatim and never visited.
+        // It may return:
+        //   undefined / null       → copy the line, advance 1
+        //   string                 → emit that instead, advance 1
+        //   string[]               → emit those, advance 1
+        //   { out: string[], skip } → emit `out`, advance `skip`. Skipped lines are
+        //                             NOT re-examined for fences — reproducing the
+        //                             definition-list pre-pass exactly (a scanned
+        //                             <dd> body may contain an indented fence that
+        //                             the scanner likewise never sees).
+        function __rewriteMdLines(md, visit) {
+            const lines = md.split('\n');
+            const scan = __makeMdLineScanner(lines);
+            const out = [];
+            let i = 0;
+            while (i < lines.length) {
+                if (scan.step(i) !== 'body') { out.push(lines[i]); i++; continue; }
+                const r = visit(lines[i], i, lines);
+                if (r === undefined || r === null) { out.push(lines[i]); i++; }
+                else if (typeof r === 'string') { out.push(r); i++; }
+                else if (Array.isArray(r)) { for (const l of r) out.push(l); i++; }
+                else {
+                    for (const l of (r.out || [])) out.push(l);
+                    i += Math.max(1, r.skip || 1);
+                }
+            }
+            return out.join('\n');
+        }
+
         // ----- Fenced-div grammar (single source of truth) -----
         // The `:::` family is recognized in TWO places — the `alignDiv` /
         // `columnsDiv` marked extensions below (normal pipeline) and the sentinel
@@ -6523,37 +6598,11 @@ ${previewClone.outerHTML}
             // / unrelated `{…}` are left verbatim. The inner text stays as Markdown
             // (marp renders **bold** etc. inside the injected span).
             {
-                const lines = markdown.split('\n');
-                const out = [];
-                let inFm = lines.length > 0 && /^---\s*$/.test(lines[0]);
-                let fmClosed = !inFm;
-                let inFence = false;
-                let fenceMarker = '';
                 const spanRe = /\[([^\]\n]+)\]\{([^}\n]*)\}/g;
-                for (let i = 0; i < lines.length; i++) {
-                    let ln = lines[i];
-                    if (inFm && !fmClosed) {
-                        out.push(ln);
-                        if (i > 0 && /^---\s*$/.test(ln)) fmClosed = true;
-                        continue;
-                    }
-                    const fenceMatch = ln.match(/^(\s*)(```+|~~~+)(.*)$/);
-                    if (fenceMatch) {
-                        const marker = fenceMatch[2][0];
-                        if (!inFence) { inFence = true; fenceMarker = marker; }
-                        else if (marker === fenceMarker) { inFence = false; fenceMarker = ''; }
-                        out.push(ln);
-                        continue;
-                    }
-                    if (!inFence) {
-                        ln = ln.replace(spanRe, (full, text, attr) => {
-                            const style = buildSpanStyle(attr);
-                            return style ? '<span style="' + style + '">' + text + '</span>' : full;
-                        });
-                    }
-                    out.push(ln);
-                }
-                markdown = out.join('\n');
+                markdown = __rewriteMdLines(markdown, ln => ln.replace(spanRe, (full, text, attr) => {
+                    const style = buildSpanStyle(attr);
+                    return style ? '<span style="' + style + '">' + text + '</span>' : full;
+                }));
             }
 
             // Split layout pre-pass — within slides that declare `<!-- _class: split -->`
@@ -6563,55 +6612,21 @@ ${previewClone.outerHTML}
             // Skips `+++` inside fenced code blocks so e.g. ```diff blocks stay intact.
             const COL_SENTINEL = '⦃COL⦄';
             {
-                const lines = markdown.split('\n');
-                const out = [];
-                let inFm = lines.length > 0 && /^---\s*$/.test(lines[0]);
-                let fmClosed = !inFm;
-                let inFence = false;
-                let fenceMarker = '';
                 let slideIsSplit = false;
-                for (let i = 0; i < lines.length; i++) {
-                    const ln = lines[i];
-                    if (inFm && !fmClosed) {
-                        out.push(ln);
-                        if (i > 0 && /^---\s*$/.test(ln)) fmClosed = true;
-                        continue;
-                    }
-                    // Track fenced code blocks (``` or ~~~ with matching marker).
-                    const fenceMatch = ln.match(/^(\s*)(```+|~~~+)(.*)$/);
-                    if (fenceMatch) {
-                        const marker = fenceMatch[2][0]; // ` or ~
-                        if (!inFence) { inFence = true; fenceMarker = marker; }
-                        else if (marker === fenceMarker) { inFence = false; fenceMarker = ''; }
-                        out.push(ln);
-                        continue;
-                    }
-                    if (!inFence) {
-                        // Slide separator resets the per-slide split flag.
-                        if (/^(---|\*\*\*|___)\s*$/.test(ln)) {
-                            slideIsSplit = false;
-                            out.push(ln);
-                            continue;
-                        }
-                        // Detect `<!-- _class: ... -->` directives on this slide.
-                        const classMatch = ln.match(/<!--\s*_class\s*:\s*(.+?)\s*-->/);
-                        if (classMatch) {
-                            const classes = classMatch[1].split(/\s+/);
-                            if (classes.some(c => c === 'split' || /^split-[234]$/.test(c))) {
-                                slideIsSplit = true;
-                            }
-                        }
-                        if (slideIsSplit && /^\s*\+\+\+\s*$/.test(ln)) {
-                            // Blank line padding ensures the sentinel becomes its own <p>.
-                            out.push('');
-                            out.push(COL_SENTINEL);
-                            out.push('');
-                            continue;
+                markdown = __rewriteMdLines(markdown, ln => {
+                    // Slide separator resets the per-slide split flag.
+                    if (SLIDE_SEP_RE.test(ln)) { slideIsSplit = false; return; }
+                    // Detect `<!-- _class: ... -->` directives on this slide.
+                    const classMatch = ln.match(/<!--\s*_class\s*:\s*(.+?)\s*-->/);
+                    if (classMatch) {
+                        const classes = classMatch[1].split(/\s+/);
+                        if (classes.some(c => c === 'split' || /^split-[234]$/.test(c))) {
+                            slideIsSplit = true;
                         }
                     }
-                    out.push(ln);
-                }
-                markdown = out.join('\n');
+                    // Blank line padding ensures the sentinel becomes its own <p>.
+                    if (slideIsSplit && COL_DIVIDER_RE.test(ln)) return ['', COL_SENTINEL, ''];
+                });
             }
 
             // Fenced-div pre-pass (alignment + inline columns) — convert the
@@ -6634,59 +6649,27 @@ ${previewClone.outerHTML}
             const ALIGN_CLOSE = '⦃/ALIGN⦄';
             const COLS_CLOSE = '⦃/COLS⦄';
             {
-                const lines = markdown.split('\n');
-                const out = [];
-                let inFm = lines.length > 0 && /^---\s*$/.test(lines[0]);
-                let fmClosed = !inFm;
-                let inFence = false;
-                let fenceMarker = '';
                 const fenceStack = []; // 'align' | 'cols', innermost last
-                for (let i = 0; i < lines.length; i++) {
-                    const ln = lines[i];
-                    if (inFm && !fmClosed) {
-                        out.push(ln);
-                        if (i > 0 && /^---\s*$/.test(ln)) fmClosed = true;
-                        continue;
+                // Blank line padding ensures each sentinel becomes its own <p>.
+                markdown = __rewriteMdLines(markdown, ln => {
+                    const open = ln.match(ALIGN_OPEN_RE);
+                    if (open) {
+                        fenceStack.push('align');
+                        return ['', ALIGN_OPEN + normalizeAlignKeyword(open[1]) + '⦄', ''];
                     }
-                    const fenceMatch = ln.match(/^(\s*)(```+|~~~+)(.*)$/);
-                    if (fenceMatch) {
-                        const marker = fenceMatch[2][0];
-                        if (!inFence) { inFence = true; fenceMarker = marker; }
-                        else if (marker === fenceMarker) { inFence = false; fenceMarker = ''; }
-                        out.push(ln);
-                        continue;
+                    const openCols = ln.match(COLS_OPEN_RE);
+                    if (openCols) {
+                        fenceStack.push('cols');
+                        return ['', openCols[1] ? '⦃COLS:' + openCols[1] + '⦄' : '⦃COLS⦄', ''];
                     }
-                    if (!inFence) {
-                        const open = ln.match(ALIGN_OPEN_RE);
-                        if (open) {
-                            const a = normalizeAlignKeyword(open[1]);
-                            fenceStack.push('align');
-                            // Blank line padding ensures the sentinel becomes its own <p>.
-                            out.push(''); out.push(ALIGN_OPEN + a + '⦄'); out.push('');
-                            continue;
-                        }
-                        const openCols = ln.match(COLS_OPEN_RE);
-                        if (openCols) {
-                            fenceStack.push('cols');
-                            const tok = openCols[1] ? '⦃COLS:' + openCols[1] + '⦄' : '⦃COLS⦄';
-                            out.push(''); out.push(tok); out.push('');
-                            continue;
-                        }
-                        if (FENCED_DIV_CLOSE_RE.test(ln)) {
-                            const kind = fenceStack.pop();
-                            out.push('');
-                            out.push(kind === 'cols' ? COLS_CLOSE : ALIGN_CLOSE);
-                            out.push('');
-                            continue;
-                        }
-                        if (fenceStack[fenceStack.length - 1] === 'cols' && /^\s*\+\+\+\s*$/.test(ln)) {
-                            out.push(''); out.push(COL_SENTINEL); out.push('');
-                            continue;
-                        }
+                    if (FENCED_DIV_CLOSE_RE.test(ln)) {
+                        const kind = fenceStack.pop();
+                        return ['', kind === 'cols' ? COLS_CLOSE : ALIGN_CLOSE, ''];
                     }
-                    out.push(ln);
-                }
-                markdown = out.join('\n');
+                    if (fenceStack[fenceStack.length - 1] === 'cols' && COL_DIVIDER_RE.test(ln)) {
+                        return ['', COL_SENTINEL, ''];
+                    }
+                });
             }
 
             // Definition-list pre-pass (Pandoc `用語` / `: 説明`) — marp-core's
@@ -6714,46 +6697,21 @@ ${previewClone.outerHTML}
             const DT_SENTINEL = '⦃DT⦄';
             const DD_SENTINEL = '⦃DD⦄';
             const DL_CLOSE = '⦃/DL⦄';
-            {
-                const lines = markdown.split('\n');
-                const out = [];
-                let inFm = lines.length > 0 && /^---\s*$/.test(lines[0]);
-                let fmClosed = !inFm;
-                let inFence = false;
-                let fenceMarker = '';
-                let i = 0;
-                while (i < lines.length) {
-                    const ln = lines[i];
-                    if (inFm && !fmClosed) {
-                        out.push(ln);
-                        if (i > 0 && /^---\s*$/.test(ln)) fmClosed = true;
-                        i++;
-                        continue;
-                    }
-                    const fenceMatch = ln.match(/^(\s*)(```+|~~~+)(.*)$/);
-                    if (fenceMatch) {
-                        const marker = fenceMatch[2][0];
-                        if (!inFence) { inFence = true; fenceMarker = marker; }
-                        else if (marker === fenceMarker) { inFence = false; fenceMarker = ''; }
-                        out.push(ln);
-                        i++;
-                        continue;
-                    }
-                    const scan = inFence ? null : scanDefList(lines, i);
-                    if (!scan) { out.push(ln); i++; continue; }
-                    out.push('', scan.loose ? DL_OPEN_LOOSE : DL_OPEN);
-                    scan.groups.forEach(g => {
-                        out.push('', DT_SENTINEL, '', g.term);
-                        g.defs.forEach(d => {
-                            out.push('', DD_SENTINEL, '');
-                            d.split('\n').forEach(dline => out.push(dline));
-                        });
+            markdown = __rewriteMdLines(markdown, (ln, i, lines) => {
+                const scan = scanDefList(lines, i);
+                if (!scan) return;
+                const out = ['', scan.loose ? DL_OPEN_LOOSE : DL_OPEN];
+                scan.groups.forEach(g => {
+                    out.push('', DT_SENTINEL, '', g.term);
+                    g.defs.forEach(d => {
+                        out.push('', DD_SENTINEL, '');
+                        d.split('\n').forEach(dline => out.push(dline));
                     });
-                    out.push('', DL_CLOSE, '');
-                    i = scan.end;
-                }
-                markdown = out.join('\n');
-            }
+                });
+                out.push('', DL_CLOSE, '');
+                // Consume the whole scanned run; its interior is never re-examined.
+                return { out, skip: scan.end - i };
+            });
 
             const marp = await getMarp();
 
@@ -6768,31 +6726,16 @@ ${previewClone.outerHTML}
             // slide boundary (which marp-core would never split on).
             const __lines = __sourceMarkdown.split('\n');
             const slideStartLines = [];
-            let __fmOpen = __lines.length > 0 && /^---\s*$/.test(__lines[0]);
-            let __fmClosed = !__fmOpen;
-            let __curStart = __fmOpen ? null : 1;
-            let __inFence = false;
-            let __fenceMarker = '';
+            const __scan = __makeMdLineScanner(__lines);
+            // 1-based source lines: the slide after a break at index i starts at i+2.
+            let __curStart = (__lines.length > 0 && MD_FM_DELIM_RE.test(__lines[0])) ? null : 1;
             for (let i = 0; i < __lines.length; i++) {
-                const ln = i + 1;
-                if (__fmOpen && !__fmClosed) {
-                    if (ln > 1 && /^---\s*$/.test(__lines[i])) {
-                        __fmClosed = true;
-                        __curStart = ln + 1;
-                    }
-                    continue;
-                }
-                const __fenceMatch = __lines[i].match(/^(\s*)(```+|~~~+)(.*)$/);
-                if (__fenceMatch) {
-                    const marker = __fenceMatch[2][0]; // ` or ~
-                    if (!__inFence) { __inFence = true; __fenceMarker = marker; }
-                    else if (marker === __fenceMarker) { __inFence = false; __fenceMarker = ''; }
-                    continue;
-                }
-                if (__inFence) continue;
-                if (/^(---|\*\*\*|___)\s*$/.test(__lines[i])) {
+                const kind = __scan.step(i);
+                if (kind === 'fm-close') { __curStart = i + 2; continue; }
+                if (kind !== 'body') continue;
+                if (SLIDE_SEP_RE.test(__lines[i])) {
                     if (__curStart != null) slideStartLines.push(__curStart);
-                    __curStart = ln + 1;
+                    __curStart = i + 2;
                 }
             }
             if (__curStart != null) slideStartLines.push(__curStart);
