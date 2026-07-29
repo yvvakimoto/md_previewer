@@ -2375,14 +2375,18 @@
         // suppress the banner on this machine via "今後表示しない".
         (function () {
             const OPTOUT_KEY = 'autoUpdate:optout';
+            // The host fires UpdateAvailable from a thread started before the
+            // webview exists, so the call routinely arrives while this document
+            // is still parsing — #update-banner lives ~6000 lines below this
+            // script. Anything that arrives early is parked here and drained on
+            // DOMContentLoaded; dropping it would mean no banner until the next
+            // launch, which is exactly how this went unnoticed.
+            let pending = null;
             function hideBanner() {
                 const b = document.getElementById('update-banner');
                 if (b) b.classList.remove('visible');
             }
-            window.__updateAvailable = function (info) {
-                try {
-                    if (localStorage.getItem(OPTOUT_KEY) === 'true') return;
-                } catch (e) { /* localStorage unavailable — still show */ }
+            function showBanner(info) {
                 const b = document.getElementById('update-banner');
                 const msg = document.getElementById('update-banner-msg');
                 if (!b || !msg) return;
@@ -2392,6 +2396,21 @@
                 if (notes) html += '<span class="notes">' + escapeHtml(notes) + '</span>';
                 msg.innerHTML = html;
                 b.classList.add('visible');
+                __dbgLog('update banner shown v' + ver);
+            }
+            window.__updateAvailable = function (info) {
+                try {
+                    if (localStorage.getItem(OPTOUT_KEY) === 'true') {
+                        __dbgLog('update banner suppressed by optout');
+                        return;
+                    }
+                } catch (e) { /* localStorage unavailable — still show */ }
+                if (document.readyState === 'loading' || !document.getElementById('update-banner')) {
+                    pending = info;
+                    __dbgLog('update banner deferred (dom not ready)');
+                    return;
+                }
+                showBanner(info);
             };
             // `escapeHtml` is the hoisted top-level one; `ver` / `notes` are
             // already String()-coerced above, so its extra coercion is moot and
@@ -2413,6 +2432,15 @@
                     try { localStorage.setItem(OPTOUT_KEY, 'true'); } catch (e) { /* ignore */ }
                     hideBanner();
                 });
+                // Drain whatever arrived before the DOM was ready: `pending` if
+                // this function was already defined, `__pendingUpdate` if the
+                // host had to stash it because it wasn't (see main.rs).
+                const early = pending || window.__pendingUpdate;
+                if (early) {
+                    pending = null;
+                    window.__pendingUpdate = null;
+                    window.__updateAvailable(early);
+                }
             });
         })();
 

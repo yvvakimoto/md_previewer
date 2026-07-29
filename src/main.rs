@@ -2208,14 +2208,21 @@ fn main() -> wry::Result<()> {
             Event::UserEvent(CustomEvent::UpdateAvailable { version, notes }) => {
                 // Background startup check found a newer version → show the
                 // preview's update banner (the JS gates on its own opt-out flag).
+                dbg_log_write(&format!("updater: banner dispatched (version={})", version));
                 let info = serde_json::to_string(&serde_json::json!({
                     "version": version,
                     "notes": notes,
                 }))
                 .unwrap_or_else(|_| "{}".to_string());
+                // The check runs on a thread spawned *before* the webview is
+                // created, and finishes in well under a second, so this lands
+                // mid-page-load: `__updateAvailable` may not be defined yet.
+                // Stash it in that case and let the page drain it on
+                // DOMContentLoaded — same pattern as `__pendingWorkspace`.
+                // A bare guarded call would be silently dropped instead.
                 let script = format!(
-                    "window.__updateAvailable && window.__updateAvailable({});",
-                    info
+                    "if (typeof window.__updateAvailable === 'function') {{ window.__updateAvailable({info}); }} else {{ window.__pendingUpdate = {info}; }}",
+                    info = info
                 );
                 if let Ok(wv) = webview.lock() {
                     let _ = wv.evaluate_script(&script);
