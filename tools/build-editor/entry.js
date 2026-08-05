@@ -41,6 +41,9 @@ import {
   isMarpDocument, insertSlideAfter, copySlide, cutSlide,
   marpSlideKeymap, SLIDE_CLASSES,
 } from './marpSlides.js';
+import {
+  insertTable, tableColumnHighlight, mdTableKeymap, TABLE_ALIGNS,
+} from './mdTable.js';
 
 // ---------- ATX heading fold service ----------
 function headingLevel(line) {
@@ -171,6 +174,20 @@ export function create(root, opts = {}) {
   btnLive.className = 'status-btn';
   btnLive.type = 'button';
   btnLive.title = 'Toggle live preview (off = preview updates on save only)';
+  // Markdown table helpers. Unlike the Marp trio these stay visible in every
+  // document: inserting a table is meaningful anywhere, and the column highlight
+  // is a preference rather than a document-dependent action (hiding it would make
+  // it unsettable in a document that has no table yet — exactly when you are
+  // about to insert one).
+  const btnTable = document.createElement('button');
+  btnTable.className = 'status-btn';
+  btnTable.type = 'button';
+  btnTable.title = 'Insert a Markdown table (rows × columns)  ·  :table [R C] / gti / Ctrl+Alt+T';
+  btnTable.textContent = '⊞ Table';
+  const btnTableCol = document.createElement('button');
+  btnTableCol.className = 'status-btn';
+  btnTableCol.type = 'button';
+  btnTableCol.title = "Highlight the cursor's table column  ·  :tablecol / gtc / Ctrl+Alt+H";
   // Marp slide helpers — only shown for Marp documents (see updateMarpButtons).
   const btnSlideAdd = document.createElement('button');
   btnSlideAdd.className = 'status-btn';
@@ -190,7 +207,8 @@ export function create(root, opts = {}) {
   btnSlideCut.title = 'Cut the current slide  ·  :slidecut / gsd / Ctrl+Alt+X';
   btnSlideCut.textContent = '✂ Slide';
   btnSlideCut.style.display = 'none';
-  statusCtrls.append(btnLn, btnVim, btnTheme, btnLive, btnSlideAdd, btnSlideCopy, btnSlideCut);
+  statusCtrls.append(btnLn, btnVim, btnTheme, btnLive, btnTable, btnTableCol,
+                     btnSlideAdd, btnSlideCopy, btnSlideCut);
   statusRight.append(statusInfo, statusCtrls);
   status.appendChild(statusFile);
   status.appendChild(statusRight);
@@ -207,7 +225,9 @@ export function create(root, opts = {}) {
   root.appendChild(hotzone);
   root.appendChild(status);
 
-  // Modal for character count (opened with C in Vim NORMAL).
+  // Modal for character count (opened by clicking the status bar — `C` is Vim's
+  // change-to-EOL operator, so it is deliberately not bound; see the note next to
+  // the Vim mapping block below).
   const modal = document.createElement('div');
   modal.className = 'cc-modal';
   modal.style.display = 'none';
@@ -291,7 +311,67 @@ export function create(root, opts = {}) {
     setTimeout(() => view.focus(), 0);
   }
 
+  // Table size picker (mirrors the cc-modal pattern). "Rows" counts the header
+  // row; the delimiter row is structural and never counted.
+  const tableModal = document.createElement('div');
+  tableModal.className = 'cc-modal';
+  tableModal.style.display = 'none';
+  tableModal.innerHTML = `
+    <div class="cc-panel" role="dialog" aria-modal="true">
+      <button class="cc-close" type="button" aria-label="Close">&times;</button>
+      <h2>Insert Table</h2>
+      <div class="table-size-form">
+        <label>Rows (incl. header)<input type="number" class="tbl-rows" min="1" max="50" value="3"></label>
+        <label>Columns<input type="number" class="tbl-cols" min="1" max="20" value="3"></label>
+        <label>Align<select class="tbl-align">
+          <option value="">default</option>
+          ${TABLE_ALIGNS.map((a) => `<option value="${a}">${a}</option>`).join('')}
+        </select></label>
+      </div>
+      <div class="cc-actions"><button class="cc-btn tbl-insert" type="button">Insert</button></div>
+      <div class="cc-hint"><kbd>Enter</kbd> to insert · <kbd>Esc</kbd> to cancel · <kbd>:table 3 4</kbd> for any size</div>
+    </div>`;
+  document.body.appendChild(tableModal);
+  const tblRows = tableModal.querySelector('.tbl-rows');
+  const tblCols = tableModal.querySelector('.tbl-cols');
+  const tblAlign = tableModal.querySelector('.tbl-align');
+  tableModal.querySelector('.cc-close').addEventListener('click', () => closeTableModal());
+  tableModal.addEventListener('click', (e) => { if (e.target === tableModal) closeTableModal(); });
+  tableModal.querySelector('.tbl-insert').addEventListener('click', () => commitTableModal());
+  // Enter submits from any field. Escape is deliberately NOT handled here so it
+  // bubbles to the global modal-Esc chain below.
+  tableModal.querySelector('.table-size-form').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); commitTableModal(); }
+  });
+  function commitTableModal() {
+    const r = parseInt(tblRows.value, 10);
+    const c = parseInt(tblCols.value, 10);
+    closeTableModal();
+    insertTable(view, Number.isFinite(r) ? r : 3, Number.isFinite(c) ? c : 3,
+                { align: tblAlign.value || null });
+  }
+  function openTableModal(rows, cols, align) {
+    if (Number.isFinite(rows)) tblRows.value = String(rows);
+    if (Number.isFinite(cols)) tblCols.value = String(cols);
+    if (align) tblAlign.value = align;
+    document.body.classList.add('status-pinned');
+    tableModal.style.display = 'flex';
+    setTimeout(() => { tblRows.focus(); tblRows.select(); }, 0);
+  }
+  function closeTableModal() {
+    tableModal.style.display = 'none';
+    document.body.classList.remove('status-pinned');
+    setTimeout(() => view.focus(), 0);
+  }
+
   document.addEventListener('keydown', (e) => {
+    // Newest modal first (same ordering rule that put slideModal ahead of the
+    // char-count modal). This chain is hard-coded, so a new modal must be added.
+    if (e.key === 'Escape' && tableModal.style.display === 'flex') {
+      e.preventDefault();
+      closeTableModal();
+      return;
+    }
     if (e.key === 'Escape' && slideModal.style.display === 'flex') {
       e.preventDefault();
       closeSlideModal();
@@ -349,6 +429,7 @@ export function create(root, opts = {}) {
   const LS_LN = 'editor:lineNumbers';
   const LS_THEME = 'editor:theme';
   const LS_LIVE = 'editor:livePreview';
+  const LS_TABLECOL = 'editor:tableColHighlight';
   function readPref(key, valid, fallback) {
     try {
       const v = localStorage.getItem(key);
@@ -360,10 +441,17 @@ export function create(root, opts = {}) {
   let lineNoState = readPref(LS_LN, ['absolute', 'relative', 'off'], 'absolute');
   let themeState = readPref(LS_THEME, ['light', 'dark'], 'light');
   let liveState = readPref(LS_LIVE, ['on', 'off'], 'on') === 'on';
+  let tableColState = readPref(LS_TABLECOL, ['on', 'off'], 'on') === 'on';
 
   const vimComp = new Compartment();
   const lineNoComp = new Compartment();
   const themeComp = new Compartment();
+  // A Compartment is required, not optional: the highlight's ViewPlugin only
+  // recomputes on doc / selection / syntax-tree change, so gating it behind a
+  // plain flag would leave stale decorations on screen until the next edit.
+  // Reconfiguring to [] destroys the plugin and drops its marks in the same
+  // transaction.
+  const tableColComp = new Compartment();
 
   // Apply chrome theme class on initial paint (before any toggle click).
   document.body.classList.toggle('theme-dark', themeState === 'dark');
@@ -391,6 +479,8 @@ export function create(root, opts = {}) {
     btnTheme.classList.toggle('active', themeState === 'dark');
     btnLive.textContent = liveState ? 'Live: ON' : 'Live: OFF';
     btnLive.classList.toggle('active', liveState);
+    btnTableCol.textContent = tableColState ? 'Col: ON' : 'Col: OFF';
+    btnTableCol.classList.toggle('active', tableColState);
   }
   function setVim(on) {
     vimState = !!on;
@@ -440,10 +530,21 @@ export function create(root, opts = {}) {
     updateToolbar();
     setTimeout(() => view.focus(), 0);
   }
+  function setTableCol(on) {
+    tableColState = !!on;
+    try { localStorage.setItem(LS_TABLECOL, tableColState ? 'on' : 'off'); } catch (_) {}
+    view.dispatch({
+      effects: tableColComp.reconfigure(tableColState ? tableColumnHighlight() : []),
+    });
+    updateToolbar();
+    setTimeout(() => view.focus(), 0);
+  }
   btnVim.addEventListener('click', () => setVim(!vimState));
   btnLn.addEventListener('click', cycleLineNo);
   btnTheme.addEventListener('click', () => setTheme(themeState === 'dark' ? 'light' : 'dark'));
   btnLive.addEventListener('click', () => setLive(!liveState));
+  btnTable.addEventListener('click', () => openTableModal());
+  btnTableCol.addEventListener('click', () => setTableCol(!tableColState));
   btnSlideAdd.addEventListener('click', () => openSlideModal());
   btnSlideCopy.addEventListener('click', () => copySlide(view));
   btnSlideCut.addEventListener('click', () => cutSlide(view));
@@ -510,6 +611,38 @@ export function create(root, opts = {}) {
       pushLiveNow();
     }, 150);
   }
+  // `:table` / `:tbl` argument forms:
+  //   (none)          -> open the modal
+  //   3 4             -> 3 rows x 4 cols
+  //   3x4             -> same (also X / * / ,)
+  //   4               -> 4x4 (square — unambiguous to explain)
+  //   ... center|c|l|r -> alignment as the last argument
+  // The two size forms consume a different number of arguments, so the alignment
+  // argument's index differs — parse explicitly rather than joining, which is what
+  // made `:table 3 4` silently mean 3x3.
+  // Unparseable args open the modal instead of erroring, so no Vim error-message
+  // plumbing is needed (no existing handler reports errors either).
+  const TBL_NUM = /^\d+$/;
+  const TBL_PAIR = /^(\d+)[x×*,](\d+)$/i;
+  function parseAlignArg(a) {
+    const s = String(a || '').trim().toLowerCase();
+    if (!s) return null;
+    return TABLE_ALIGNS.find((x) => x === s || x[0] === s) || null;
+  }
+  function runTableEx(_cm, params) {
+    const args = ((params && params.args) || []).map((a) => String(a).trim()).filter(Boolean);
+    const pair = TBL_PAIR.exec(args[0] || '');
+    if (pair) {
+      insertTable(view, +pair[1], +pair[2], { align: parseAlignArg(args[1]) });
+    } else if (TBL_NUM.test(args[0] || '') && TBL_NUM.test(args[1] || '')) {
+      insertTable(view, +args[0], +args[1], { align: parseAlignArg(args[2]) });
+    } else if (TBL_NUM.test(args[0] || '')) {
+      insertTable(view, +args[0], +args[0], { align: parseAlignArg(args[1]) });
+    } else {
+      openTableModal();
+    }
+  }
+
   // Hook Vim :w / :wq to save.
   try {
     Vim.defineEx('write', 'w', doSave);
@@ -522,6 +655,8 @@ export function create(root, opts = {}) {
         case 'nonumber': case 'nonu':          setLineNo('off');      break;
         case 'relativenumber': case 'rnu':     setLineNo('relative'); break;
         case 'norelativenumber': case 'nornu': setLineNo('absolute'); break;
+        case 'tablecolumn': case 'tcol':       setTableCol(true);     break;
+        case 'notablecolumn': case 'notcol':   setTableCol(false);    break;
         default: break;
       }
     });
@@ -529,6 +664,17 @@ export function create(root, opts = {}) {
     Vim.defineEx('slide',     undefined, () => openSlideModal());
     Vim.defineEx('slideyank', undefined, () => copySlide(view));
     Vim.defineEx('slidecut',  undefined, () => cutSlide(view));
+    // Table helpers. No 1-letter shortName (`:t` is real Vim's :copy). The
+    // package matches ex-commands with
+    //   name.indexOf(input) === 0 && input.indexOf(shortName) === 0
+    // so `:tab` does not reach `table` and `:table` is not ambiguous with
+    // `tablecol`.
+    Vim.defineEx('table',    undefined, runTableEx);
+    Vim.defineEx('tbl',      undefined, runTableEx);
+    Vim.defineEx('tablecol', undefined, (_cm, params) => {
+      const a = ((params && params.args && params.args[0]) || '').toLowerCase();
+      setTableCol(a === 'on' ? true : a === 'off' ? false : !tableColState);
+    });
   } catch (_) {}
 
   // Heading navigation + section folding (NORMAL mode).
@@ -554,6 +700,19 @@ export function create(root, opts = {}) {
     Vim.mapCommand('gsi', 'action', 'marpSlideInsert', {}, { context: 'normal' });
     Vim.mapCommand('gsy', 'action', 'marpSlideYank',   {}, { context: 'normal' });
     Vim.mapCommand('gsd', 'action', 'marpSlideCut',    {}, { context: 'normal' });
+  } catch (_) {}
+
+  // Table helpers — NORMAL-mode `gt` leader (gti insert / gtc column highlight).
+  // Same rationale as `gs*` above: `gt*` (and `gm*`, kept free for a future
+  // feature) is unused by @replit/codemirror-vim's default keymap — real Vim's
+  // gt/gT tab-switching is not bound here — and is not bracket-prefixed. No digit
+  // after `gt`, which would fight Vim's count parsing. `C` remains unbound
+  // throughout: it is Vim's change-to-EOL operator.
+  try {
+    Vim.defineAction('mdTableInsert',    () => openTableModal());
+    Vim.defineAction('mdTableColToggle', () => setTableCol(!tableColState));
+    Vim.mapCommand('gti', 'action', 'mdTableInsert',    {}, { context: 'normal' });
+    Vim.mapCommand('gtc', 'action', 'mdTableColToggle', {}, { context: 'normal' });
   } catch (_) {}
 
   // Japanese-aware w/b/e/W/B/E (and dw/cw/yw/daw/...) — segment by
@@ -639,6 +798,9 @@ export function create(root, opts = {}) {
       drawSelection(),
       highlightActiveLine(),
       highlightActiveLineGutter(),
+      // Tints only `background`, so it composes with highlightActiveLine's line
+      // background and leaves syntaxHighlighting's colors alone.
+      tableColComp.of(tableColState ? tableColumnHighlight() : []),
       indentOnInput(),
       bracketMatching(),
       syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
@@ -664,6 +826,10 @@ export function create(root, opts = {}) {
           onInsert: () => openSlideModal(),
           onCopy: () => copySlide(view),
           onCut: () => cutSlide(view),
+        }),
+        ...mdTableKeymap({
+          onInsert: () => openTableModal(),
+          onToggleColumn: () => setTableCol(!tableColState),
         }),
         indentWithTab,
         ...searchKeymap,

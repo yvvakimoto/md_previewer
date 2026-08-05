@@ -258,14 +258,69 @@
             border-color: #28a745;
         }
 
-        /* Per-table "Copy table" button (rich-HTML copy for PowerPoint; see addTableCopyButtons).
-           Reuses .copy-button base styling + dark-mode variants; only needs a positioning context. */
+        /* Per-table hover buttons — "Copy table" (rich-HTML copy for PowerPoint) and, for an
+           editable GFM table, "Edit table" / "Cancel" / "Save". See addTableCopyButtons().
+           They reuse the .copy-button base styling + dark-mode variants; the wrapper only
+           needs to be a positioning context for .table-btn-bar. */
         .table-block-wrapper {
             position: relative;
         }
 
-        .table-block-wrapper:hover .table-copy-button {
+        .table-block-wrapper:hover .table-copy-button,
+        .table-block-wrapper:hover .table-edit-button {
             opacity: 1;
+        }
+
+        /* The table buttons share one flex bar rather than each carrying its own `right`
+           offset: the labels are Japanese (and re-wordable), so hard-coded pixel offsets
+           would silently overlap the moment a label's width changes. Hidden buttons take
+           no space in flex, so the browse pair and the edit pair both lay out correctly. */
+        .table-btn-bar {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            display: flex;
+            gap: 6px;
+            z-index: 1;
+        }
+
+        .table-btn-bar .copy-button {
+            position: static;
+            top: auto;
+            right: auto;
+        }
+
+        .table-commit-button,
+        .table-cancel-button {
+            opacity: 1;
+        }
+
+        /* While editing, reserve a band above the table for the Cancel / Save buttons.
+           Overlapping the table is fine for the browse-mode buttons, but here it would
+           cover a header cell the user needs to click into. 44px = the bar's 8px offset
+           plus its ~31px height plus a small gap. */
+        .table-block-wrapper.table-editing {
+            padding-top: 44px;
+        }
+
+        /* Edit mode: cells hold the table's Markdown SOURCE, so they are shown monospaced
+           to make pipes / backticks / math legible while typing. */
+        .table-block-wrapper.table-editing table {
+            outline: 2px solid #0366d6;
+            outline-offset: 2px;
+        }
+        .table-block-wrapper.table-editing th,
+        .table-block-wrapper.table-editing td {
+            font-family: 'Cascadia Code', 'Source Han Code JP', Consolas, monospace;
+            font-size: 0.9em;
+            white-space: pre-wrap;
+            min-width: 3em;
+        }
+        .table-block-wrapper.table-editing th:focus,
+        .table-block-wrapper.table-editing td:focus {
+            outline: 2px solid #0366d6;
+            outline-offset: -2px;
+            background: rgba(3, 102, 214, 0.06);
         }
 
         /* Floating right-click menu, shared by every in-app context menu built with
@@ -1092,6 +1147,16 @@
             background: #238636;
             border-color: #238636;
             color: #ffffff;
+        }
+
+        body.dark-mode .table-block-wrapper.table-editing table {
+            outline-color: #58a6ff;
+        }
+
+        body.dark-mode .table-block-wrapper.table-editing th:focus,
+        body.dark-mode .table-block-wrapper.table-editing td:focus {
+            outline-color: #58a6ff;
+            background: rgba(88, 166, 255, 0.12);
         }
 
         body.dark-mode .app-context-menu {
@@ -2662,6 +2727,11 @@
         // saves (e.g. the Marp theme picker) never write data URIs to disk.
         let currentMarkdownRaw = '';
         let currentFilePath = '';
+        // Last render's top-level block tokens ([{line, token}] from
+        // computeBlockLineNumbers). Retained so the table editor can look up a
+        // table's token by its stamped data-line and derive the block's source
+        // line span without re-lexing or touching stampLineNumbers().
+        let __blockTokens = [];
         let suppressHistoryPush = false;
         // Back/forward (Alt+←/→) view-position restore: the current slide (Marp) or
         // scroll position (plain doc / Marp scroll mode) is persisted per history
@@ -3142,6 +3212,12 @@
             // Strip preview-only artifacts that don't belong in a static artifact.
             previewClone.querySelectorAll('[data-line]').forEach(el => el.removeAttribute('data-line'));
             previewClone.querySelectorAll('.copy-button').forEach(el => el.remove());
+            // The table button bar is left empty once its .copy-buttons are gone.
+            previewClone.querySelectorAll('.table-btn-bar').forEach(el => el.remove());
+            // Table edit mode must never leak into an artifact (a commit or cancel clears
+            // it, but an export while editing would otherwise ship editable cells).
+            previewClone.querySelectorAll('.table-editing').forEach(el => el.classList.remove('table-editing'));
+            previewClone.querySelectorAll('[contenteditable]').forEach(el => el.removeAttribute('contenteditable'));
             // PDF-only frame hint — irrelevant to the (playable) HTML artifact.
             previewClone.querySelectorAll('[data-pdf-frame-time]').forEach(el => el.removeAttribute('data-pdf-frame-time'));
             // Unwrap .code-block-wrapper (it only existed to host the copy button).
@@ -4489,6 +4565,7 @@ ${previewClone.outerHTML}
                 const m = lines[i].match(/^\[\^([^\]\s]+)\]:[ \t]+(.*)$/);
                 if (m) {
                     const id = m[1];
+                    const defStart = i;
                     const bodyLines = [m[2]];
                     i++;
                     while (i < lines.length) {
@@ -4512,6 +4589,13 @@ ${previewClone.outerHTML}
                         }
                     }
                     footnoteState.defs[id] = bodyLines.join('\n').replace(/\s+$/, '');
+                    // Replace the consumed definition lines with the SAME number of blank
+                    // lines instead of deleting them (mirrors stripFrontMatterKeepingLines).
+                    // Deleting them shifted every following block's [data-line] earlier by
+                    // the number of removed lines, which silently broke editor↔preview sync
+                    // for anything after a footnote definition — and would make the table
+                    // editor splice the wrong source lines.
+                    for (let k = defStart; k < i; k++) out.push('');
                     continue;
                 }
                 out.push(lines[i]);
@@ -5168,8 +5252,14 @@ ${previewClone.outerHTML}
                 const placeholder = `MDFENCE${codeCounter}Z`;
                 codeCounter++;
                 codeMap.set(placeholder, match);
-                const newlineCount = (match.match(/\n/g) || []).length;
-                return placeholder + '\n'.repeat(newlineCount);
+                // NO newline padding here. Unlike the math placeholders below, a masked
+                // fence is restored *verbatim* at the end of this function, so padding
+                // would be added on top of the fence's own newlines and inflate the line
+                // count by (fence lines - 1) per block. That made every [data-line] after
+                // a code block point too far down — e.g. samples/sample.md (153 lines)
+                // stamped a heading as data-line=176 — silently breaking editor↔preview
+                // sync and making any source splice keyed on data-line unsafe.
+                return placeholder;
             });
             text = text.replace(/(`+)(?!`)[\s\S]+?\1(?!`)/g, (match) => {
                 const placeholder = `MDCODE${codeCounter}Z`;
@@ -7421,6 +7511,19 @@ ${previewClone.outerHTML}
         async function renderMarkdown(markdown) {
             mermaidCounter = 0;
 
+            // A render replaces #preview wholesale, so an in-flight table edit cannot
+            // survive it. Abandon the session and tell the user rather than letting the
+            // grid vanish silently. Renders arrive from the watcher, link navigation, the
+            // M/S toggles, csvwatch, and — most often — the companion editor's live
+            // channel on every keystroke; that inbound content is authoritative, so we
+            // never skip the render (a stale preview would be worse).
+            if (__tableEdit) {
+                const st = __tableEdit;
+                __tableEdit = null;
+                if (st.wrapper) st.wrapper.classList.remove('table-editing');
+                showToast('Table editing cancelled');
+            }
+
             // Normalize line endings: Windows files reach us as CRLF, and several
             // line-anchored regexes (notably the footnote-definition matcher) rely on
             // `$` sitting flush at end-of-line, which fails when a `\r` is in the way.
@@ -7498,6 +7601,7 @@ ${previewClone.outerHTML}
             // Compute source-line mapping from the original markdown (before math placeholder substitution
             // — math blocks remain on the same source lines, so line counts still match)
             const blockLineNumbers = computeBlockLineNumbers(processedMarkdown);
+            __blockTokens = blockLineNumbers;
 
             // Parse markdown to HTML
             let html = marked.parse(processedMarkdown);
@@ -7743,6 +7847,272 @@ ${previewClone.outerHTML}
             }
         }
 
+        // ===== GFM pipe-table source model (pure — no DOM, no IPC) =====================
+        // Backs the preview's "Edit table" mode: parse a table's source lines into a cell
+        // matrix, mutate rows/columns/cells, then emit Markdown again.
+        //
+        // The emitter deliberately DETECTS AND PRESERVES the source's own formatting
+        // (indent, optional outer pipes, `| a |` vs `|a|` padding, hand-aligned column
+        // widths). Re-normalizing every table on save would rewrite lines the user did
+        // not touch and bloat the git diff. The property that matters is idempotency:
+        //     emitGfmTable(parseGfmTable(lines)) === lines   for an untouched table.
+        //
+        // Widths are measured in DISPLAY columns, not code units: this repo's documents
+        // are mostly Japanese and `.length` would misalign every CJK column.
+        const TBL_WIDE_RE = /[ᄀ-ᅟ⺀-꓏ꥠ-꥿가-힣豈-﫿︐-︙︰-﹯＀-｠￠-￦]/;
+        const TBL_MIN_DASH = 3;
+
+        function tblDisplayWidth(s) {
+            let w = 0;
+            for (const ch of String(s)) w += TBL_WIDE_RE.test(ch) ? 2 : 1;
+            return w;
+        }
+
+        // Split one row into raw cell texts. Only an UNESCAPED `|` separates cells; a
+        // `\|` belongs to the cell (GFM). A `|` inside a code span DOES split — that is
+        // spec behaviour and matches what marked renders, so it must not be "fixed".
+        function tblSplitRow(line) {
+            const s = String(line);
+            const cells = [];
+            let cur = '';
+            for (let i = 0; i < s.length; i++) {
+                const ch = s[i];
+                if (ch === '\\' && i + 1 < s.length) { cur += ch + s[i + 1]; i++; continue; }
+                if (ch === '|') { cells.push(cur); cur = ''; continue; }
+                cur += ch;
+            }
+            cells.push(cur);
+            return cells;
+        }
+
+        // Cell texts of a row, honouring GFM's optional outer pipes.
+        function tblRowCells(line) {
+            const parts = tblSplitRow(line);
+            const lead = /^[ \t]*\|/.test(line);
+            const trail = /\|[ \t]*$/.test(line);
+            if (lead) parts.shift();
+            if (trail) parts.pop();
+            return parts.map((c) => c.trim());
+        }
+
+        function tblIsDelimRow(line) {
+            if (typeof line !== 'string' || line.indexOf('-') < 0) return false;
+            const cells = tblRowCells(line);
+            return cells.length > 0 && cells.every((c) => /^:?-+:?$/.test(c));
+        }
+
+        function tblParseAlign(line) {
+            return tblRowCells(line).map(tblCellAlign);
+        }
+
+        // `|` must be re-escaped on the way out (tblRowCells keeps the backslash, but a
+        // cell edited in the UI may contain a bare pipe). A cell can never span lines.
+        function tblEscapeCell(text) {
+            return String(text)
+                .replace(/\r?\n/g, ' ')
+                .replace(/\\\|/g, '|')      // normalise first so we don't double-escape
+                .replace(/\|/g, '\\|')
+                .trim();
+        }
+
+        // Per-column display width: the widest of the content cells and the source's
+        // own delimiter cell (a hand-aligned table often pads columns wider than their
+        // content, and the delimiter row is what records that).
+        function tblColWidths(cellRows, delimSrc) {
+            const n = Math.max(
+                cellRows.reduce((m, r) => Math.max(m, r.length), 0),
+                (delimSrc || []).length
+            );
+            const w = new Array(n).fill(0);
+            cellRows.forEach((r) => r.forEach((c, i) => {
+                w[i] = Math.max(w[i], tblDisplayWidth(tblEscapeCell(c)));
+            }));
+            (delimSrc || []).forEach((d, i) => {
+                // A null entry is a column inserted after parsing — give it the
+                // conventional 3-dash width so it doesn't collapse to `-` next to its
+                // neighbours.
+                w[i] = Math.max(w[i], d == null ? TBL_MIN_DASH : tblDisplayWidth(d));
+            });
+            return w;
+        }
+
+        // Two padding conventions are in the wild and both must round-trip:
+        //   'left'  — every column padded on the right (what most people type by hand)
+        //   'align' — padding follows the column's alignment marker (what Prettier and
+        //             VS Code's formatter emit: `--:` columns are padded on the LEFT)
+        // 'none' means the source is not padded at all.
+        function tblPadCell(s, width, align, mode) {
+            const gap = Math.max(0, width - tblDisplayWidth(s));
+            if (!gap || mode === 'none') return s;
+            if (mode === 'align') {
+                if (align === 'right') return ' '.repeat(gap) + s;
+                if (align === 'center') {
+                    const l = Math.floor(gap / 2);
+                    return ' '.repeat(l) + s + ' '.repeat(gap - l);
+                }
+            }
+            return s + ' '.repeat(gap);
+        }
+
+        function tblEmitRow(cells, st, padWidths, align, mode) {
+            const sep = st.pad ? ' | ' : '|';
+            const parts = cells.map((c, i) => {
+                const s = tblEscapeCell(c);
+                return padWidths
+                    ? tblPadCell(s, padWidths[i], align ? align[i] : null, mode || 'left')
+                    : s;
+            });
+            return st.indent
+                + (st.lead ? (st.pad ? '| ' : '|') : '')
+                + parts.join(sep)
+                + (st.trail ? (st.pad ? ' |' : '|') : '');
+        }
+
+        function tblDelimCell(align, width) {
+            const l = align === 'left' || align === 'center' ? ':' : '';
+            const r = align === 'right' || align === 'center' ? ':' : '';
+            return l + '-'.repeat(Math.max(1, width - l.length - r.length)) + r;
+        }
+
+        // Delimiter row. When the source padded it to the column widths we reproduce
+        // that; otherwise each column's ORIGINAL dash run is reused so `|-|-|` does not
+        // silently become `| --- | --- |`. A column whose alignment changed, or that was
+        // just inserted, is synthesized at the conventional 3 dashes.
+        function tblEmitDelim(model, widths) {
+            const st = model.style;
+            const cells = model.align.map((a, i) => {
+                if (st.padDelim) return tblDelimCell(a, widths[i]);
+                const src = model.delimSrc[i];
+                if (src != null && tblCellAlign(src) === a) return src;
+                return tblDelimCell(a, TBL_MIN_DASH);
+            });
+            return tblEmitRow(cells, st, null);
+        }
+
+        function tblCellAlign(cell) {
+            const l = String(cell).startsWith(':');
+            const r = String(cell).endsWith(':');
+            if (l && r) return 'center';
+            if (l) return 'left';
+            if (r) return 'right';
+            return null;
+        }
+
+        // lines -> model, or null when `lines` is not a well-formed pipe table.
+        function tblParse(lines) {
+            if (!Array.isArray(lines) || lines.length < 2) return null;
+            const head = lines[0];
+            if (!/\|/.test(head) || !tblIsDelimRow(lines[1])) return null;
+            const align = tblParseAlign(lines[1]);
+            const header = tblRowCells(head);
+            if (!header.length || header.length !== align.length) return null;
+            const st = {
+                indent: (head.match(/^[ \t]*/) || [''])[0],
+                lead: /^[ \t]*\|/.test(head),
+                trail: /\|[ \t]*$/.test(head),
+                pad: !/^[ \t]*\|\S/.test(head),
+            };
+            // Body rows are padded / truncated to the header width, matching how the
+            // renderer squares the table off, so the model is always rectangular.
+            const rows = lines.slice(2).map((l) => {
+                const c = tblRowCells(l);
+                while (c.length < header.length) c.push('');
+                return c.slice(0, header.length);
+            });
+            const delimSrc = tblRowCells(lines[1]);
+            const model = { align, delimSrc, header, rows, style: st };
+            // Two INDEPENDENT formatting questions — a source can pad its content but not
+            // its delimiter row (or the reverse), and conflating them made the round trip
+            // lossy for `|a|bb|` / `|-|-|`:
+            //   padContent — are the header and body padded to the column widths?
+            //   padDelim   — is the delimiter row padded to them?
+            const widths = tblColWidths([header].concat(rows), delimSrc);
+            st.padMode = 'none';
+            for (const mode of ['left', 'align']) {
+                if (tblEmitRow(header, st, widths, align, mode) === head
+                    && (rows.length === 0 || tblEmitRow(rows[0], st, widths, align, mode) === lines[2])) {
+                    st.padMode = mode;
+                    break;
+                }
+            }
+            st.padDelim = tblEmitRow(align.map((a, i) => tblDelimCell(a, widths[i])), st, null) === lines[1];
+            return model;
+        }
+
+        // model -> lines. Mirrors the detected style so an untouched table round-trips
+        // byte-for-byte (the property the tests assert).
+        function tblEmit(model) {
+            const st = model.style;
+            const widths = tblColWidths([model.header].concat(model.rows), model.delimSrc);
+            const pad = st.padMode === 'none' ? null : widths;
+            const row = (cells) => tblEmitRow(cells, st, pad, model.align, st.padMode);
+            const out = [row(model.header), tblEmitDelim(model, widths)];
+            for (const r of model.rows) out.push(row(r));
+            return out;
+        }
+
+        // ----- structural operations (mutate the model in place) -----
+        function tblInsertRow(model, at) {
+            const i = Math.max(0, Math.min(model.rows.length, at));
+            model.rows.splice(i, 0, new Array(model.header.length).fill(''));
+        }
+        function tblDeleteRow(model, at) {
+            if (model.rows.length <= 1) return false;
+            if (at < 0 || at >= model.rows.length) return false;
+            model.rows.splice(at, 1);
+            return true;
+        }
+        function tblInsertCol(model, at) {
+            const i = Math.max(0, Math.min(model.header.length, at));
+            model.header.splice(i, 0, '');
+            model.align.splice(i, 0, null);
+            model.delimSrc.splice(i, 0, null);   // null → synthesized by tblEmitDelim
+            model.rows.forEach((r) => r.splice(i, 0, ''));
+        }
+        function tblDeleteCol(model, at) {
+            if (model.header.length <= 1) return false;
+            if (at < 0 || at >= model.header.length) return false;
+            model.header.splice(at, 1);
+            model.align.splice(at, 1);
+            model.delimSrc.splice(at, 1);
+            model.rows.forEach((r) => r.splice(at, 1));
+            return true;
+        }
+        function tblSetAlign(model, at, align) {
+            if (at < 0 || at >= model.align.length) return false;
+            model.align[at] = align;
+            return true;
+        }
+
+        // ----- source splicing (offset-based, so the file's EOLs are never rewritten) --
+        // A line/join round-trip would normalise every EOL in the document; only the
+        // replaced span may change.
+        function tblLineStarts(src) {
+            const offs = [0];
+            const re = /\r\n|\n|\r/g;
+            let m;
+            while ((m = re.exec(src))) offs.push(m.index + m[0].length);
+            return offs;
+        }
+        function tblReadLines(src, startLine, endLine) {
+            const offs = tblLineStarts(src);
+            if (startLine < 1 || endLine < startLine || endLine > offs.length) return null;
+            const from = offs[startLine - 1];
+            const to = endLine < offs.length ? offs[endLine] : src.length;
+            return src.slice(from, to).replace(/(\r\n|\n|\r)$/, '').split(/\r\n|\n|\r/);
+        }
+        function tblReplaceLines(src, startLine, endLine, newLines) {
+            const offs = tblLineStarts(src);
+            if (startLine < 1 || endLine < startLine || endLine > offs.length) return null;
+            const from = offs[startLine - 1];
+            const hasTail = endLine < offs.length;
+            const to = hasTail ? offs[endLine] : src.length;
+            const firstEnd = offs[startLine] != null ? offs[startLine] : src.length;
+            const eol = (src.slice(from, firstEnd).match(/(\r\n|\n|\r)$/) || [])[1]
+                || (/\r\n/.test(src) ? '\r\n' : '\n');
+            return src.slice(0, from) + newLines.join(eol) + (hasTail ? eol : '') + src.slice(to);
+        }
+
         // Rich-HTML copy counterpart to copyTextViaTextarea: select a real DOM node and
         // execCommand('copy') so WebView2 serializes the selection to BOTH text/html (→ CF_HTML)
         // and text/plain. CF_HTML is what PowerPoint / Word / Excel turn into a native table.
@@ -7832,7 +8202,34 @@ ${previewClone.outerHTML}
                     }
                 });
 
-                wrapper.appendChild(copyButton);
+                // All buttons live in one flex bar so their widths lay themselves out (see
+                // .table-btn-bar). They keep the .copy-button class, so the existing
+                // hover-reveal, .copied flash, dark-mode variants, print CSS and
+                // HTML-export strip all apply unchanged.
+                const bar = document.createElement('div');
+                bar.className = 'table-btn-bar';
+                bar.appendChild(copyButton);
+                wrapper.appendChild(bar);
+
+                // Editing is offered only for a top-level GFM table: a csv/tsv block's
+                // table has no round-trippable source mapping, and Marp is out of scope.
+                const editable = !wrapper.classList.contains('csv-table')
+                    && !document.body.classList.contains('marp');
+                if (editable) {
+                    const mkButton = (cls, label, onClick, hidden) => {
+                        const b = document.createElement('button');
+                        b.className = 'copy-button ' + cls;
+                        b.textContent = label;
+                        if (hidden) b.style.display = 'none';
+                        b.addEventListener('click', onClick);
+                        bar.appendChild(b);
+                        return b;
+                    };
+                    // Order in the bar = left-to-right on screen.
+                    mkButton('table-edit-button', 'Edit table', () => __tableEnterEdit(table), false);
+                    mkButton('table-cancel-button', 'Cancel', () => __tableExitEdit(true), true);
+                    mkButton('table-commit-button', 'Save', () => __tableCommit(), true);
+                }
             });
         }
 
@@ -8013,6 +8410,230 @@ ${previewClone.outerHTML}
         }
         setupFileTreeContextMenu();
 
+        // ===== Table edit mode ("Edit table") ============================================
+        // Turns a rendered GFM pipe table into an editable grid, writes the result back
+        // to the source .md via the existing generic `savefile:` IPC (no Rust change).
+        //
+        // Cells show the table's MARKDOWN SOURCE while editing, not the rendered HTML.
+        // Reading text back out of rendered cells would silently discard `**bold**`,
+        // `` `code` ``, links and math, so edit mode is a source view of that one table;
+        // committing re-renders and the markup comes back.
+        //
+        // Only ONE table is editable at a time, and the session holds line numbers +
+        // text, never DOM nodes — #preview is rebuilt wholesale by every render (the
+        // companion editor's live channel re-renders on each keystroke), so a session
+        // must survive, or be cleanly abandoned, when that happens.
+        let __tableEdit = null;   // { path, startLine, endLine, sourceText, model, colCount }
+
+        // Resolve a rendered <table> back to its source span. Refuse-first: anything we
+        // cannot prove is returned as an error so a bad data-line can never splice.
+        function __tableLocate(tableEl) {
+            if (document.body.classList.contains('marp')) return { error: "Marp slide tables can't be edited" };
+            if (!currentFilePath) return { error: 'No file is currently open' };
+            const lineEl = tableEl.closest('[data-line]');
+            // The stamped element must be the table itself (GFM) or its own wrapper.
+            // A table nested in a blockquote / list / column resolves to that ancestor
+            // instead, and its real span is unknown — refuse rather than guess.
+            const own = lineEl === tableEl
+                || (lineEl && lineEl.contains(tableEl) && lineEl.classList.contains('table-block-wrapper'));
+            if (!lineEl || !own) return { error: "This table can't be edited (nested tables are unsupported)" };
+            if (lineEl.classList.contains('csv-table')) return { error: "csv / tsv block tables can't be edited" };
+            const startLine = parseInt(lineEl.getAttribute('data-line'), 10);
+            if (!Number.isFinite(startLine)) return { error: "Can't locate this table in the source" };
+            const entry = __blockTokens.find((b) => b.line === startLine && b.token && b.token.type === 'table');
+            if (!entry) return { error: "Can't parse this table's source" };
+            const span = (entry.token.raw || '').replace(/\n+$/, '');
+            const endLine = startLine + (span.match(/\n/g) || []).length;
+            const lines = tblReadLines(currentMarkdownRaw, startLine, endLine);
+            if (!lines) return { error: "Can't locate this table in the source" };
+            const model = tblParse(lines);
+            if (!model) return { error: "Can't parse this table's source" };
+            // Final cross-check: the parsed source must have the same shape as what is
+            // actually on screen. Catches a data-line that drifted for any reason.
+            const domCols = tableEl.tHead ? (tableEl.tHead.rows[0] || { cells: [] }).cells.length : 0;
+            const domRows = tableEl.tBodies[0] ? tableEl.tBodies[0].rows.length : 0;
+            if (domCols !== model.header.length || domRows !== model.rows.length) {
+                return { error: "Table source and rendering don't match" };
+            }
+            return { startLine, endLine, lines, model };
+        }
+
+        function __tableCellHtml(tag, text, align) {
+            const a = align ? ' style="text-align:' + align + '"' : '';
+            return '<' + tag + ' contenteditable="plaintext-only"' + a + '>'
+                + escapeHtml(text) + '</' + tag + '>';
+        }
+
+        // Rebuild the live <table> as the edit grid from the model.
+        function __tableRenderGrid() {
+            const st = __tableEdit;
+            if (!st || !st.tableEl) return;
+            const m = st.model;
+            const head = '<thead><tr>'
+                + m.header.map((c, i) => __tableCellHtml('th', c, m.align[i])).join('')
+                + '</tr></thead>';
+            const body = '<tbody>'
+                + m.rows.map((r) => '<tr>'
+                    + r.map((c, i) => __tableCellHtml('td', c, m.align[i])).join('')
+                    + '</tr>').join('')
+                + '</tbody>';
+            st.tableEl.innerHTML = head + body;
+        }
+
+        function __tableEnterEdit(tableEl) {
+            if (__tableEdit) __tableExitEdit(false);
+            const loc = __tableLocate(tableEl);
+            if (loc.error) { showToast(loc.error); return false; }
+            const wrapper = tableEl.closest('.table-block-wrapper') || tableEl.parentElement;
+            __tableEdit = {
+                path: currentFilePath,
+                startLine: loc.startLine,
+                endLine: loc.endLine,
+                sourceText: loc.lines.join('\n'),
+                model: loc.model,
+                tableEl: tableEl,
+                wrapper: wrapper,
+            };
+            if (wrapper) wrapper.classList.add('table-editing');
+            __tableRenderGrid();
+            __tableSetButtons(wrapper, true);
+            showToast('Editing table — edit cells directly, right-click for row / column actions');
+            return true;
+        }
+
+        // `rerender` restores the normal rendering; skipped when the caller is itself a
+        // render (the abort path) or when a commit will trigger one via the save round trip.
+        function __tableExitEdit(rerender) {
+            const st = __tableEdit;
+            __tableEdit = null;
+            if (!st) return;
+            if (st.wrapper) {
+                st.wrapper.classList.remove('table-editing');
+                __tableSetButtons(st.wrapper, false);
+            }
+            // After a commit we deliberately do NOT re-render: currentMarkdown is still
+            // the pre-edit text, so rendering it would flash the old table until the
+            // savefile: round trip lands. The grid already shows the new values — just
+            // make it inert so it can't be typed into (or exported) while we wait.
+            if (!rerender && st.tableEl) {
+                st.tableEl.querySelectorAll('[contenteditable]')
+                    .forEach((c) => c.removeAttribute('contenteditable'));
+            }
+            if (rerender) renderMarkdown(currentMarkdown);
+        }
+
+        // Swap the wrapper's hover buttons: copy + edit while browsing, commit + cancel
+        // while editing.
+        function __tableSetButtons(wrapper, editing) {
+            if (!wrapper) return;
+            const set = (sel, shown) => wrapper.querySelectorAll(sel)
+                .forEach((b) => { b.style.display = shown ? '' : 'none'; });
+            set('.table-copy-button, .table-edit-button', !editing);
+            set('.table-commit-button, .table-cancel-button', editing);
+        }
+
+        // Pull the edited cell text out of the grid and back into the model.
+        function __tableSyncFromDom() {
+            const st = __tableEdit;
+            if (!st || !st.tableEl) return;
+            const th = st.tableEl.querySelectorAll('thead th');
+            st.model.header = st.model.header.map((_, i) => (th[i] ? th[i].textContent : ''));
+            const trs = st.tableEl.querySelectorAll('tbody tr');
+            st.model.rows = st.model.rows.map((row, r) => {
+                const cells = trs[r] ? trs[r].querySelectorAll('td') : [];
+                return row.map((_, c) => (cells[c] ? cells[c].textContent : ''));
+            });
+        }
+
+        function __tableCommit() {
+            const st = __tableEdit;
+            if (!st) return;
+            __tableSyncFromDom();
+            if (st.path !== currentFilePath) { showToast('The file changed'); __tableExitEdit(true); return; }
+            // Optimistic concurrency: refuse if the span changed under us (an external
+            // edit, or the companion editor's live buffer) instead of clobbering it.
+            const now = tblReadLines(currentMarkdownRaw, st.startLine, st.endLine);
+            if (!now || now.join('\n') !== st.sourceText) {
+                showToast('The table changed — reopen it to edit');
+                __tableExitEdit(true);
+                return;
+            }
+            const next = tblReplaceLines(currentMarkdownRaw, st.startLine, st.endLine, tblEmit(st.model));
+            if (next == null) { showToast('Failed to save the table'); __tableExitEdit(true); return; }
+            if (next === currentMarkdownRaw) { showToast('No changes'); __tableExitEdit(true); return; }
+            try {
+                // One write per commit. Each savefile: costs a 1.5s watcher-suppression
+                // entry plus a full re-render, so per-keystroke saving is not an option.
+                window.ipc.postMessage('savefile:' + JSON.stringify({ path: st.path, content: next }));
+                showToast('Table saved');
+                // No local re-render: the savefile: round trip (EditorSavedContent →
+                // loadFileFromRust) re-renders from the saved content, as applyMarpTheme does.
+                __tableExitEdit(false);
+            } catch (e) {
+                console.warn('__tableCommit: postMessage failed', e);
+                showToast('Failed to save the table');
+                __tableExitEdit(true);
+            }
+        }
+
+        // Row / column operations. Mutate the model, redraw the grid; no write.
+        function __tableOp(op, rowIdx, colIdx) {
+            const st = __tableEdit;
+            if (!st) return;
+            __tableSyncFromDom();
+            const m = st.model;
+            let ok = true;
+            switch (op) {
+                case 'rowAbove': tblInsertRow(m, rowIdx); break;
+                case 'rowBelow': tblInsertRow(m, rowIdx + 1); break;
+                case 'rowDelete': ok = tblDeleteRow(m, rowIdx); break;
+                case 'colLeft': tblInsertCol(m, colIdx); break;
+                case 'colRight': tblInsertCol(m, colIdx + 1); break;
+                case 'colDelete': ok = tblDeleteCol(m, colIdx); break;
+                case 'alignLeft': ok = tblSetAlign(m, colIdx, 'left'); break;
+                case 'alignCenter': ok = tblSetAlign(m, colIdx, 'center'); break;
+                case 'alignRight': ok = tblSetAlign(m, colIdx, 'right'); break;
+                case 'alignNone': ok = tblSetAlign(m, colIdx, null); break;
+                default: ok = false;
+            }
+            if (!ok) { showToast("That operation isn't available"); return; }
+            __tableRenderGrid();
+        }
+
+        // Right-click menu, active only inside a table that is in edit mode. Scoping it
+        // that way also avoids colliding with setupMathContextMenu(): an editing cell
+        // shows source text, so it never contains a .katex for both menus to match.
+        let __tableMenuWired = false;
+        function setupTableContextMenu() {
+            if (__tableMenuWired) return;
+            __tableMenuWired = true;
+            const { addItem, show, hide } = __createContextMenu();
+
+            preview.addEventListener('contextmenu', (e) => {
+                const cell = e.target.closest('.table-editing th, .table-editing td');
+                if (!cell || !__tableEdit) { hide(); return; }  // fall through to WebView2's menu
+                e.preventDefault();
+                const isHeader = cell.tagName === 'TH';
+                const rowIdx = isHeader ? -1 : cell.parentElement.sectionRowIndex;
+                const colIdx = cell.cellIndex;
+                const m = __tableEdit.model;
+                show(e, () => {
+                    addItem('Insert row above', () => __tableOp('rowAbove', rowIdx, colIdx), { disabled: isHeader });
+                    addItem('Insert row below', () => __tableOp('rowBelow', rowIdx, colIdx), { disabled: isHeader });
+                    addItem('Delete row', () => __tableOp('rowDelete', rowIdx, colIdx),
+                            { disabled: isHeader || m.rows.length <= 1 });
+                    addItem('Insert column left', () => __tableOp('colLeft', rowIdx, colIdx));
+                    addItem('Insert column right', () => __tableOp('colRight', rowIdx, colIdx));
+                    addItem('Delete column', () => __tableOp('colDelete', rowIdx, colIdx),
+                            { disabled: m.header.length <= 1 });
+                    addItem('Align column left', () => __tableOp('alignLeft', rowIdx, colIdx));
+                    addItem('Align column center', () => __tableOp('alignCenter', rowIdx, colIdx));
+                    addItem('Align column right', () => __tableOp('alignRight', rowIdx, colIdx));
+                });
+            });
+        }
+        setupTableContextMenu();
+
         // Editor sync — reverse jump: clicking on a rendered block emits a
         // jumpTo over the localhost WS so the editor can move its cursor.
         // We piggy-back on the existing data-line stamping (see stampLineNumbers).
@@ -8021,7 +8642,9 @@ ${previewClone.outerHTML}
         let suppressJumpUntil = 0;
         preview.addEventListener('click', (e) => {
             // Don't emit for link/button/copy clicks — those are interactive UI.
-            if (e.target.closest('a, button, .copy-button')) return;
+            // Also skip editable table cells: clicking one to place the caret must not
+            // fire a spurious editor jump.
+            if (e.target.closest('a, button, .copy-button, [contenteditable]')) return;
             if (Date.now() < suppressJumpUntil) return;
             const block = e.target.closest('[data-line]');
             if (!block) return;
