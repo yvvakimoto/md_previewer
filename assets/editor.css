@@ -259,3 +259,72 @@ body.theme-dark.ime-open .cm-editor.cm-focused .cm-fat-cursor {
     border-color: var(--fg);
     outline: none;
 }
+
+/* Pipe-table column highlight — the cell of the cursor's column in every row of
+ * the table under the cursor. Only `background` is set (never color / display /
+ * padding) so syntax highlighting survives and CodeMirror's position
+ * measurement is unaffected. Same body.theme-dark pattern as the IME-caret
+ * rules above; the classes are emitted by tools/build-editor/mdTable.js. */
+.cm-editor .cm-md-table-col {
+    background: rgba(37, 99, 235, 0.10);
+}
+.cm-editor .cm-md-table-col-head {
+    background: rgba(37, 99, 235, 0.18);
+}
+body.theme-dark .cm-editor .cm-md-table-col {
+    background: rgba(96, 165, 250, 0.16);
+}
+body.theme-dark .cm-editor .cm-md-table-col-head {
+    background: rgba(96, 165, 250, 0.26);
+}
+
+/* Table size picker (reuses the .cc-modal / .cc-panel shell). */
+.table-size-form {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    margin: 4px 0 2px;
+}
+.table-size-form label {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 12px;
+    color: var(--muted);
+}
+.table-size-form input,
+.table-size-form select {
+    font: inherit;
+    font-size: 13px;
+    padding: 4px 6px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--bg);
+    color: var(--fg);
+}
+.table-size-form input:focus,
+.table-size-form select:focus {
+    border-color: var(--fg);
+    outline: none;
+}
+.cc-actions {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 12px;
+}
+.cc-btn {
+    font: inherit;
+    font-size: 13px;
+    padding: 6px 16px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--status-bg);
+    color: var(--fg);
+    cursor: pointer;
+}
+.cc-btn:hover,
+.cc-btn:focus {
+    background: var(--panel-bg);
+    border-color: var(--fg);
+    outline: none;
+}

@@ -12,7 +12,10 @@
         document.addEventListener('DOMContentLoaded', () => {
             const root = document.getElementById('root');
             try {
-                window.MdEditor.create(root);
+                // Exposed so the editor can be driven from the console / a headless
+                // browser without a Rust host (same forensic-debugging posture as the
+                // `editor:log:` IPC bridge). Not used by the app itself.
+                window.__editorView = window.MdEditor.create(root);
             } catch (e) {
                 root.textContent = 'Editor init failed: ' + (e && e.message || e);
                 try { fetch('/__log/editor%20init%20failed:%20' + encodeURIComponent(e && e.message || e)); } catch (_) {}

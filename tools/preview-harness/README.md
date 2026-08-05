@@ -76,6 +76,27 @@ Marp's own `svg[data-marpit-svg]` is deliberately **not** collapsed — it is a 
 every slide's content lives under it. `--modes` dumps each Marp view (`scroll` / `deck` / `list`);
 `--dark` additionally dumps each document in dark mode. Output goes to `_dom/` (git-ignored).
 
+## Table edit mode — `tablecheck.py` and `table-model.test.cjs`
+
+The preview's "表を編集" mode writes back to the source `.md` through the `savefile:` IPC, and the
+harness's IPC shim makes that **fully testable without a Rust host** — the payload never reaches disk,
+it just lands in an array the test can assert against:
+
+```powershell
+node tools/preview-harness/table-model.test.cjs     # pure model layer, no browser
+python tools/preview-harness/tablecheck.py          # end-to-end, Playwright
+```
+
+`table-model.test.cjs` extracts the `tbl*` functions out of `assets/index.html` and runs them under
+plain `node`. Its centrepiece is **idempotency** — `tblEmit(tblParse(lines)) === lines` byte for byte —
+which is what guarantees that saving a table never reformats lines the user did not touch.
+
+`tablecheck.py` enters edit mode, drives the right-click row/column menu, and asserts the **exact**
+`savefile:` payload for a cell edit, a row insert, a column delete and an alignment change, plus the
+refuse-first cases (nested table, shape mismatch), that cancel writes nothing, and that an inbound
+render abandons the session. Because there is no Rust host, a commit never comes back as a re-render,
+so each committing scenario reloads the page first.
+
 ## Fidelity & intentional no-ops
 
 The Browser pane is Chromium and WebView2 is Edge/Chromium on the same machine (same system fonts), so
