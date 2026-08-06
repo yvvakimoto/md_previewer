@@ -7,16 +7,41 @@ Note: the harness has no Rust host, so a commit never comes back as a re-render 
 `currentMarkdownRaw` keeps its original value. Each committing scenario therefore
 reloads the page first — and the fact that a SECOND commit on a stale grid is refused
 is itself asserted below (that is the refuse-first guard doing its job).
+
+Line endings: the table editor is deliberately EOL-preserving (`tblReplaceLines`
+splices by offset precisely so a CRLF file stays CRLF), and git `core.autocrlf=true`
+checks `samples/table.md` out with CRLF on Windows. So a payload's line endings are a
+property of the CHECKOUT, not of the behaviour under test. Every assertion here goes
+through `content_of()`, which normalizes to LF — and the preservation itself is
+asserted separately against the file's actual bytes, so the fixture's EOL style is
+covered rather than merely tolerated. (No `.gitattributes` pin: forcing `samples/*.md`
+to LF would rewrite every sample in the working copy, and a CRLF fixture is worth
+having since it exercises the offset-splice path.)
 """
 import json, os, sys
 
-REPO = r"C:\Users\wakimoto.yuki\Documents\works\md_previewer"
-sys.path.insert(0, os.path.join(REPO, "tools", "preview-harness"))
+# Japanese fixtures and the ⊞ in a failure message are unprintable in the console's
+# default cp932 on a Japanese Windows, which turned a plain assertion failure into a
+# UnicodeEncodeError traceback that hid the real diff.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:  # noqa: BLE001 - older Python / non-reconfigurable stream
+        pass
+
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+REPO = os.path.abspath(os.path.join(SCRIPT_DIR, "..", ".."))
+sys.path.insert(0, SCRIPT_DIR)
 import shoot  # noqa: E402
 from playwright.sync_api import sync_playwright  # noqa: E402
 
 DOC = os.path.join(REPO, "samples", "table.md")
-SRC = open(DOC, encoding="utf-8").read()
+# Text mode applies universal newlines, so SRC is LF regardless of the checkout.
+with open(DOC, encoding="utf-8") as _fh:
+    SRC = _fh.read()
+# The raw bytes tell us what the editor is expected to write back.
+with open(DOC, "rb") as _fh:
+    SRC_IS_CRLF = b"\r\n" in _fh.read()
 PORT = 8794
 URL = "http://127.0.0.1:%d/index.html?file=%s" % (PORT, DOC.replace("\\", "/"))
 
@@ -50,6 +75,18 @@ def fresh(pg):
 
 def sent(pg, prefix="savefile:"):
     return pg.evaluate("(p) => window.__sentIpc.filter(m => m.indexOf(p) === 0)", prefix)
+
+def raw_content_of(msg):
+    """The `content` field of a `savefile:` payload, verbatim."""
+    return json.loads(msg[len("savefile:"):])["content"]
+
+def content_of(msg):
+    """`content` with line endings normalized to LF — see the module docstring.
+
+    Every content assertion below uses this so the suite passes on a CRLF checkout
+    and an LF one alike; EOL preservation gets its own assertion instead.
+    """
+    return raw_content_of(msg).replace("\r\n", "\n")
 
 httpd = shoot.start_harness(PORT, REPO, os.path.join(REPO, "assets"))
 try:
@@ -128,8 +165,13 @@ try:
         pg.evaluate("() => document.querySelector('.table-editing .table-commit-button').click()")
         s = sent(pg)
         check("one savefile: for a cell edit", len(s), 1)
-        check("cell edit payload", json.loads(s[0][9:])["content"],
+        check("cell edit payload", content_of(s[0]),
               SRC.replace("| 実装 | Bob | 進行中 |", "| 実装 | Bob | レビュー中 |"))
+        # The documented guarantee: the splice is offset-based, so the file's own EOLs
+        # survive untouched. Derived from the fixture's bytes, so this asserts real
+        # behaviour on either kind of checkout instead of hard-coding one.
+        check("payload keeps the file's line endings",
+              "\r\n" in raw_content_of(s[0]), SRC_IS_CRLF)
         check("exited edit mode", pg.evaluate("() => !!document.querySelector('.table-editing')"), False)
         check("cells no longer editable after commit",
               pg.evaluate("() => !!document.querySelector('#preview [contenteditable]')"), False)
@@ -162,7 +204,7 @@ try:
         pg.evaluate("() => document.querySelector('.table-editing .table-commit-button').click()")
         s2 = sent(pg)
         check("one savefile: for the row insert", len(s2), 1)
-        lines = json.loads(s2[0][9:])["content"].split("\n")
+        lines = content_of(s2[0]).split("\n")
         i = lines.index("| 設計 | Alice | 完了 |")
         check("blank row inserted after 設計", lines[i + 1], "|  |  |  |")
         check("following row intact", lines[i + 2], "| 実装 | Bob | 進行中 |")
@@ -191,7 +233,7 @@ try:
         pg.evaluate("() => document.querySelector('.table-editing .table-commit-button').click()")
         s3 = sent(pg)
         check("one savefile: for the column delete", len(s3), 1)
-        l3 = json.loads(s3[0][9:])["content"].split("\n")
+        l3 = content_of(s3[0]).split("\n")
         check("column removed from header", l3[l3.index("| 担当 | 状態 |")], "| 担当 | 状態 |")
         check("column removed from a row", "| Alice | 完了 |" in l3, True)
 
@@ -206,7 +248,7 @@ try:
         }""")
         pg.evaluate("() => document.querySelector('.table-editing .table-commit-button').click()")
         s4 = sent(pg)
-        l4 = json.loads(s4[0][9:])["content"].split("\n")
+        l4 = content_of(s4[0]).split("\n")
         check("delimiter row got the centre marker", l4[l4.index("| :-: | --- | --- |")], "| :-: | --- | --- |")
 
         # ================= hand-aligned table keeps its padding =================
@@ -221,7 +263,7 @@ try:
         s5 = sent(pg)
         check("one savefile: for the aligned table", len(s5), 1)
         check("hand-aligned padding preserved",
-              "| Alice |   lead   |  2021 |" in json.loads(s5[0][9:])["content"], True)
+              "| Alice |   lead   |  2021 |" in content_of(s5[0]), True)
 
         # ================= cancel writes nothing =================
         fresh(pg)
