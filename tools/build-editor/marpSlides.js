@@ -16,10 +16,18 @@
 // build-editor helpers (numberedListIndent.js etc).
 
 import { EditorSelection } from '@codemirror/state';
+import {
+  FM_RE,
+  scanSeparators,
+  unitAt,
+  unitDeleteRange,
+  padInsert,
+} from './mdBlocks.js';
 
-const SEP_RE = /^(---|\*\*\*|___)\s*$/;
-const FENCE_RE = /^\s*(```|~~~)/;
-const FM_RE = /^---\s*\n([\s\S]*?)\n---\s*(\n|$)/;
+// The `---` scanning primitives moved to mdBlocks.js so the Jupyter-style cell
+// feature could share them (a generic layer must not depend on this Marp-specific
+// one). Re-exported under the original names — callers are unchanged.
+export { scanSeparators as scanSlides, unitAt as slideAt };
 
 // Classes offered in the insert picker. split-2/3/4 are deliberately omitted to
 // keep the grid small; the renderer supports them, and frontMatterComplete.js
@@ -33,77 +41,25 @@ export function isMarpDocument(text) {
   return /^\s*marp\s*:\s*true\s*$/m.test(m[1]);
 }
 
-// One forward pass: locate front-matter and every slide separator (skipping
-// front-matter lines and fenced code blocks). Returns
-//   { fmEnd, fmLastLine, seps: [{line, from, to}], docLen }
-// fmEnd is the char offset just past the front-matter block (0 if none).
-export function scanSlides(state) {
-  const text = state.doc.toString();
-  let fmEnd = 0;
-  let fmLastLine = 0;
-  const fm = FM_RE.exec(text);
-  if (fm && fm.index === 0) {
-    fmEnd = fm[0].length;
-    fmLastLine = state.doc.lineAt(Math.max(0, fmEnd - 1)).number;
-  }
-  const seps = [];
-  let inFence = false;
-  const total = state.doc.lines;
-  for (let i = 1; i <= total; i++) {
-    if (i <= fmLastLine) continue; // front-matter (incl. its --- delimiters)
-    const ln = state.doc.line(i);
-    if (FENCE_RE.test(ln.text)) { inFence = !inFence; continue; }
-    if (inFence) continue;
-    if (SEP_RE.test(ln.text)) seps.push({ line: i, from: ln.from, to: ln.to });
-  }
-  return { fmEnd, fmLastLine, seps, docLen: state.doc.length };
-}
-
-// The slide unit containing `pos`. A unit spans from its leading separator
-// (which belongs to the slide it introduces) to the next separator. The first
-// slide has no leading separator and starts right after the front-matter.
-export function slideAt(state, pos, scan) {
-  scan = scan || scanSlides(state);
-  const { fmEnd, seps, docLen } = scan;
-  if (fmEnd > 0 && pos < fmEnd) {
-    return { inFrontMatter: true, from: 0, to: fmEnd, leadSep: null, trailSep: null };
-  }
-  let prev = null;
-  let next = null;
-  for (const s of seps) {
-    if (s.from <= pos) prev = s;
-    else { next = s; break; }
-  }
-  const from = prev ? prev.from : fmEnd;
-  const to = next ? next.from : docLen;
-  return { inFrontMatter: false, from, to, leadSep: prev, trailSep: next };
-}
-
 // Insert a new slide after the current one, parking the cursor on its (empty)
 // body line. `className` of '' / 'none' omits the `_class` directive.
 export function insertSlideAfter(view, className) {
   const state = view.state;
   const pos = state.selection.main.head;
-  const scan = scanSlides(state);
-  const slide = slideAt(state, pos, scan);
+  const scan = scanSeparators(state);
+  const slide = unitAt(state, pos, scan);
   const at = slide.inFrontMatter ? scan.fmEnd : slide.to;
-  const docLen = scan.docLen;
   const cls = (className || '').trim();
 
-  // Ensure we begin on a fresh line even if the doc doesn't end in a newline.
-  const before = at > 0 ? state.sliceDoc(at - 1, at) : '\n';
-  let head = '';
-  if (before !== '\n') head += '\n';
-  head += '\n---\n\n';
-  if (cls && cls !== 'none') head += `<!-- _class: ${cls} -->\n\n`;
-
-  const cursorPos = at + head.length;          // start of the new empty body line
-  const trailer = at < docLen ? '\n\n' : '\n'; // keep a blank line before the next sep / EOF
-  const insert = head + trailer;
+  // The slide's own text: separator, blank, optional directive + blank. The empty
+  // body line the cursor lands on is produced by padInsert's trailing newlines.
+  let body = '---\n\n';
+  if (cls && cls !== 'none') body += `<!-- _class: ${cls} -->\n\n`;
+  const { insert, bodyOffset } = padInsert(state, at, body);
 
   view.dispatch({
     changes: { from: at, insert },
-    selection: EditorSelection.cursor(cursorPos),
+    selection: EditorSelection.cursor(at + bodyOffset + body.length),
     scrollIntoView: true,
     userEvent: 'input',
   });
@@ -149,7 +105,7 @@ export function writeClipboard(text) {
 // No-op (false) when the cursor is in the front-matter.
 export function copySlide(view) {
   const state = view.state;
-  const slide = slideAt(state, state.selection.main.head);
+  const slide = unitAt(state, state.selection.main.head);
   if (slide.inFrontMatter) return Promise.resolve(false);
   const text = state.sliceDoc(slide.from, slide.to);
   return writeClipboard(text);
@@ -159,34 +115,20 @@ export function copySlide(view) {
 // the deck isn't left with a dangling `---`.
 export function cutSlide(view) {
   const state = view.state;
-  const scan = scanSlides(state);
-  const slide = slideAt(state, state.selection.main.head, scan);
+  const scan = scanSeparators(state);
+  const slide = unitAt(state, state.selection.main.head, scan);
   if (slide.inFrontMatter) return Promise.resolve(false);
-  const docLen = scan.docLen;
   const text = state.sliceDoc(slide.from, slide.to);
-
-  let delFrom;
-  let delTo;
-  if (slide.leadSep) {
-    // Drop this slide and its own leading separator; the next slide keeps its.
-    delFrom = slide.leadSep.from;
-    delTo = slide.trailSep ? slide.trailSep.from : docLen;
-  } else if (slide.trailSep) {
-    // First slide (no leading sep): drop through the trailing separator + its
-    // newline so the following slide becomes a clean first slide.
-    delFrom = slide.from;
-    delTo = Math.min(docLen, slide.trailSep.to + 1);
-  } else {
-    // Only slide in the deck — clear its content, keep the front-matter.
-    delFrom = slide.from;
-    delTo = docLen;
-  }
+  const { from: delFrom, to: delTo } = unitDeleteRange(slide, slide, scan.docLen);
 
   return writeClipboard(text).then((ok) => {
     view.dispatch({
       changes: { from: delFrom, to: delTo, insert: '' },
       selection: EditorSelection.cursor(delFrom),
-      userEvent: 'delete',
+      // NOT 'delete': @codemirror/commands' joinableUserEvent is
+      // /^(input\.type|delete)($|\.)/, so a 'delete' userEvent lets two cuts of
+      // adjacent ranges within newGroupDelay collapse into one undo step.
+      userEvent: 'slide.cut',
     });
     view.focus();
     return ok;

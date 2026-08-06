@@ -2738,6 +2738,9 @@
         // entry as a source line in history.state.line and restored on popstate.
         let pendingHistLine = null;   // restore line requested by popstate (consumed by loadFileFromRust)
         let __loadingFile = false;    // guard: suppress history sync during a (re)load
+        // An applyEditorScroll() that arrives mid-load, deferred until the render
+        // finishes. See the latch at the top of window.applyEditorScroll.
+        let __pendingEditorScrollLine = null;
         let __histSyncTimer = null;   // debounce timer for scroll-driven history sync
         let tocCollapsed = localStorage.getItem('tocCollapsed') === 'true';
         let scrollSpyObserver = null;
@@ -4652,6 +4655,24 @@ ${previewClone.outerHTML}
         const MD_FM_DELIM_RE = /^---\s*$/;
         // Marp's slide separator (a thematic break on its own line).
         const SLIDE_SEP_RE = /^(---|\*\*\*|___)\s*$/;
+
+        // Is this line plain paragraph text — i.e. can a `---` on the NEXT line be a
+        // setext <h2> underline instead of a thematic break? Used by the slide
+        // boundary scan in renderMarp(); see the comment there for why a phantom
+        // boundary is damaging. Everything below is a construct a `---` may legally
+        // follow as a thematic break, verified against the CommonMark spec. A fence
+        // marker needs no entry: callers only consult this for 'body' lines.
+        // ⚠️ Mirror of isParagraphLine() in tools/build-editor/mdBlocks.js — the
+        // editor's cell mode resolves the same boundaries and the two must agree.
+        function __isMdParagraphLine(text) {
+            if (!text || !text.trim()) return false;
+            if (SLIDE_SEP_RE.test(text)) return false;
+            if (/^\s{0,3}#{1,6}(\s|$)/.test(text)) return false;              // ATX heading
+            if (/^\s{0,3}>/.test(text)) return false;                         // blockquote
+            if (/^\s{0,3}([-*+]|\d{1,9}[.)])(\s|$)/.test(text)) return false; // list item
+            if (/^\s{0,3}</.test(text)) return false;                         // HTML block
+            return true;
+        }
         // Column divider inside a `split` slide or a `::: columns` region.
         const COL_DIVIDER_RE = /^\s*\+\+\+\s*$/;
 
@@ -6899,19 +6920,36 @@ ${previewClone.outerHTML}
             // the source yields correct source line numbers for each slide. Fenced
             // code blocks are skipped so a `---` inside ``` doesn't become a phantom
             // slide boundary (which marp-core would never split on).
+            //
+            // A `---` DIRECTLY AFTER A PARAGRAPH LINE is likewise not a boundary: in
+            // CommonMark that underlines the paragraph as a setext <h2>, so
+            // marp-core/markdown-it emits a heading, not an <hr>, and does not
+            // split. Counting it here would push a phantom entry into
+            // slideStartLines, and because the stamping below is POSITIONAL
+            // (svg[i] ↔ slideStartLines[i]) every following slide's data-line would
+            // shift — silently breaking editor↔preview sync in both directions.
+            // `***` / `___` can never be setext underlines, so the rule is
+            // dash-runs-only. Kept in sync with isParagraphLine() in
+            // tools/build-editor/mdBlocks.js, which the editor's cell mode uses to
+            // resolve the very same boundaries.
             const __lines = __sourceMarkdown.split('\n');
             const slideStartLines = [];
             const __scan = __makeMdLineScanner(__lines);
             // 1-based source lines: the slide after a break at index i starts at i+2.
             let __curStart = (__lines.length > 0 && MD_FM_DELIM_RE.test(__lines[0])) ? null : 1;
+            let __prevWasPara = false;
             for (let i = 0; i < __lines.length; i++) {
                 const kind = __scan.step(i);
-                if (kind === 'fm-close') { __curStart = i + 2; continue; }
-                if (kind !== 'body') continue;
-                if (SLIDE_SEP_RE.test(__lines[i])) {
+                if (kind === 'fm-close') { __curStart = i + 2; __prevWasPara = false; continue; }
+                if (kind !== 'body') { __prevWasPara = false; continue; }
+                const __ln = __lines[i];
+                const __isSep = SLIDE_SEP_RE.test(__ln) &&
+                    !(__ln[0] === '-' && __prevWasPara);
+                if (__isSep) {
                     if (__curStart != null) slideStartLines.push(__curStart);
                     __curStart = i + 2;
                 }
+                __prevWasPara = !__isSep && __isMdParagraphLine(__ln);
             }
             if (__curStart != null) slideStartLines.push(__curStart);
 
@@ -8659,6 +8697,18 @@ ${previewClone.outerHTML}
         // message arrives. Finds the block whose source line is closest to (but
         // not after) `line` and scrolls it to the top of the viewport.
         window.applyEditorScroll = function(line) {
+            // Defer if a load is still in flight. The EditorLiveContent handler in
+            // Rust emits ONE script — `loadFileFromRust(...)` then
+            // `applyEditorScroll(line)` — "so the preview never paints in between",
+            // but loadFileFromRust is async (it awaits renderMarkdown, which awaits
+            // katexReady / getMarp() before writing preview.innerHTML). So this call
+            // always ran at the first microtask boundary, against the PREVIOUS
+            // render's [data-line] elements. While typing that is invisible (the
+            // positions barely move and the next keystroke re-syncs), but a cell-mode
+            // Alt+Enter — insert a cell, then sync to it — landed on the wrong slide
+            // because the new one did not exist yet. loadFileFromRust drains this
+            // after the render.
+            if (__loadingFile) { __pendingEditorScrollLine = line; return; }
             // Marp mode: slides are stamped with data-line on their boundary line
             // (see renderMarp). In deck mode we advance the deck to the matching
             // slide; in scroll/list modes we fall through to the generic
@@ -9014,7 +9064,11 @@ ${previewClone.outerHTML}
             // Back/forward restore: jump to the remembered slide / scroll position.
             // popstate never sets pendingHeadingSlug/pendingScrollToTop, so no conflict.
             if (restoreLine != null) {
+                // An explicit Back/Forward target wins over a mid-load editor sync.
+                __pendingEditorScrollLine = null;
+                __loadingFile = false;
                 window.applyEditorScroll(restoreLine);
+                __loadingFile = true;
             }
             // ToC-triggered scroll: heading takes priority, then "scroll to top".
             if (pendingHeadingSlug) {
@@ -9049,6 +9103,15 @@ ${previewClone.outerHTML}
 
             // Load finished: re-enable history sync for subsequent user navigation.
             __loadingFile = false;
+
+            // Apply an editor sync that arrived while the render was in flight, now
+            // that the [data-line] elements it needs actually exist. Must run after
+            // the flag is cleared, or it would just re-stash itself.
+            if (__pendingEditorScrollLine != null) {
+                const __pl = __pendingEditorScrollLine;
+                __pendingEditorScrollLine = null;
+                window.applyEditorScroll(__pl);
+            }
 
             // Restore scroll position after reload
             if (isReload) {
