@@ -44,6 +44,10 @@ import {
 import {
   insertTable, tableColumnHighlight, mdTableKeymap, TABLE_ALIGNS,
 } from './mdTable.js';
+import {
+  cellMode, cellModeOf, setCellMode, cellList, cellAt, cellIndexAt, cellRunLine,
+  insertCellBelow, selectNextCell, CELL_HELP,
+} from './cells.js';
 
 // ---------- ATX heading fold service ----------
 function headingLevel(line) {
@@ -188,6 +192,13 @@ export function create(root, opts = {}) {
   btnTableCol.className = 'status-btn';
   btnTableCol.type = 'button';
   btnTableCol.title = "Highlight the cursor's table column  ·  :tablecol / gtc / Ctrl+Alt+H";
+  // Jupyter-style cell mode. Always visible for the same reason as the table
+  // buttons: it is a preference, and `---`-delimited cells are meaningful in any
+  // markdown document, not only a Marp deck.
+  const btnCells = document.createElement('button');
+  btnCells.className = 'status-btn';
+  btnCells.type = 'button';
+  btnCells.title = 'Jupyter-style cell mode (Esc = command mode, h = key list)  ·  :cellmode / gmc';
   // Marp slide helpers — only shown for Marp documents (see updateMarpButtons).
   const btnSlideAdd = document.createElement('button');
   btnSlideAdd.className = 'status-btn';
@@ -208,7 +219,7 @@ export function create(root, opts = {}) {
   btnSlideCut.textContent = '✂ Slide';
   btnSlideCut.style.display = 'none';
   statusCtrls.append(btnLn, btnVim, btnTheme, btnLive, btnTable, btnTableCol,
-                     btnSlideAdd, btnSlideCopy, btnSlideCut);
+                     btnCells, btnSlideAdd, btnSlideCopy, btnSlideCut);
   statusRight.append(statusInfo, statusCtrls);
   status.appendChild(statusFile);
   status.appendChild(statusRight);
@@ -364,9 +375,53 @@ export function create(root, opts = {}) {
     setTimeout(() => view.focus(), 0);
   }
 
+  // Cell-mode key list (reuses the cc-modal shell). Built from CELL_HELP so the
+  // keymap in cells.js and this list cannot drift apart.
+  const cellHelpModal = document.createElement('div');
+  cellHelpModal.className = 'cc-modal';
+  cellHelpModal.style.display = 'none';
+  cellHelpModal.innerHTML = `
+    <div class="cc-panel" role="dialog" aria-modal="true">
+      <button class="cc-close" type="button" aria-label="Close">&times;</button>
+      <h2>セルモード キー一覧</h2>
+      <div class="cell-help-grid">
+        ${CELL_HELP.map(([k, d]) =>
+          `<div class="cell-help-key">${k}</div><div class="cell-help-desc">${d}</div>`).join('')}
+      </div>
+      <div class="cc-hint"><kbd>Esc</kbd> で閉じる · セル区切りは <kbd>---</kbd> 行</div>
+    </div>`;
+  document.body.appendChild(cellHelpModal);
+  cellHelpModal.querySelector('.cc-close').addEventListener('click', () => closeCellHelp());
+  cellHelpModal.addEventListener('click', (e) => {
+    if (e.target === cellHelpModal) closeCellHelp();
+  });
+  function openCellHelp() {
+    document.body.classList.add('status-pinned');
+    cellHelpModal.style.display = 'flex';
+  }
+  function closeCellHelp() {
+    cellHelpModal.style.display = 'none';
+    document.body.classList.remove('status-pinned');
+    setTimeout(() => view.focus(), 0);
+  }
+  // The cell-mode key gate must stand down while any of these owns the keyboard:
+  // openModal() does not move focus, so contentDOM keeps it and the gate would
+  // otherwise fire in parallel with the Esc chain below.
+  function isModalOpen() {
+    return cellHelpModal.style.display === 'flex'
+      || tableModal.style.display === 'flex'
+      || slideModal.style.display === 'flex'
+      || modal.style.display === 'flex';
+  }
+
   document.addEventListener('keydown', (e) => {
     // Newest modal first (same ordering rule that put slideModal ahead of the
     // char-count modal). This chain is hard-coded, so a new modal must be added.
+    if (e.key === 'Escape' && cellHelpModal.style.display === 'flex') {
+      e.preventDefault();
+      closeCellHelp();
+      return;
+    }
     if (e.key === 'Escape' && tableModal.style.display === 'flex') {
       e.preventDefault();
       closeTableModal();
@@ -430,6 +485,7 @@ export function create(root, opts = {}) {
   const LS_THEME = 'editor:theme';
   const LS_LIVE = 'editor:livePreview';
   const LS_TABLECOL = 'editor:tableColHighlight';
+  const LS_CELLS = 'editor:cellMode';
   function readPref(key, valid, fallback) {
     try {
       const v = localStorage.getItem(key);
@@ -442,6 +498,7 @@ export function create(root, opts = {}) {
   let themeState = readPref(LS_THEME, ['light', 'dark'], 'light');
   let liveState = readPref(LS_LIVE, ['on', 'off'], 'on') === 'on';
   let tableColState = readPref(LS_TABLECOL, ['on', 'off'], 'on') === 'on';
+  let cellState = readPref(LS_CELLS, ['on', 'off'], 'off') === 'on';
 
   const vimComp = new Compartment();
   const lineNoComp = new Compartment();
@@ -452,9 +509,17 @@ export function create(root, opts = {}) {
   // Reconfiguring to [] destroys the plugin and drops its marks in the same
   // transaction.
   const tableColComp = new Compartment();
+  // Cell mode's ON/OFF axis. A Compartment (not a flag) so OFF means literally
+  // zero extensions — no decorations, no gutter, and crucially the Prec.highest
+  // pre-Vim key gate is not even registered, so a user who never turns cell mode
+  // on cannot be affected by it. The Edit/Command axis inside is a StateField and
+  // its *look* is a body class; see the header comment in cells.js.
+  const cellComp = new Compartment();
 
   // Apply chrome theme class on initial paint (before any toggle click).
   document.body.classList.toggle('theme-dark', themeState === 'dark');
+  document.body.classList.toggle('cell-mode', cellState);
+  document.body.classList.toggle('cellmode-edit', cellState);
 
   function lineNumberExt(mode) {
     if (mode === 'off') return [];
@@ -481,6 +546,8 @@ export function create(root, opts = {}) {
     btnLive.classList.toggle('active', liveState);
     btnTableCol.textContent = tableColState ? 'Col: ON' : 'Col: OFF';
     btnTableCol.classList.toggle('active', tableColState);
+    btnCells.textContent = cellState ? '⌗ Cells: ON' : '⌗ Cells: OFF';
+    btnCells.classList.toggle('active', cellState);
   }
   function setVim(on) {
     vimState = !!on;
@@ -539,12 +606,55 @@ export function create(root, opts = {}) {
     updateToolbar();
     setTimeout(() => view.focus(), 0);
   }
+  // Cell mode's callback bundle: cells.js stays free of chrome (modals, body
+  // classes, IPC), exactly like marpSlides.js / mdTable.js.
+  function cellCallbacks() {
+    return {
+      isModalOpen,
+      isMarp: () => isMarpDoc,
+      onSave: () => doSave(),
+      onCycleLineNo: () => cycleLineNo(),
+      onHelp: () => openCellHelp(),
+      onClassPicker: () => openSlideModal(),
+      onHint: (msg) => showHint(msg),
+      onEnterCommand: () => {
+        // Mirror the Vim-NORMAL behaviour so `i` starts in half-width.
+        try { ipcSend('editor:ime:off'); } catch (_) {}
+      },
+      onEnterInsert: (v) => {
+        // With Vim on, `i` should also mean INSERT there, so the two agree.
+        try { if (vimState) Vim.handleKey(getCM(v), 'i', 'user'); } catch (_) {}
+      },
+      onModeChange: (mode) => {
+        document.body.classList.toggle('cellmode-command', mode === 'command');
+        document.body.classList.toggle('cellmode-edit', mode !== 'command');
+        updateStatus();
+      },
+      onRun: (v, mode) => runCell(mode),
+    };
+  }
+  function setCells(on) {
+    cellState = !!on;
+    try { localStorage.setItem(LS_CELLS, cellState ? 'on' : 'off'); } catch (_) {}
+    view.dispatch({
+      effects: cellComp.reconfigure(cellState ? cellMode(cellCallbacks()) : []),
+    });
+    document.body.classList.toggle('cell-mode', cellState);
+    // Leaving cell mode must not strand the Command-mode look.
+    document.body.classList.toggle('cellmode-command', false);
+    document.body.classList.toggle('cellmode-edit', cellState);
+    updateToolbar();
+    updateStatus();
+    setTimeout(() => view.focus(), 0);
+  }
+
   btnVim.addEventListener('click', () => setVim(!vimState));
   btnLn.addEventListener('click', cycleLineNo);
   btnTheme.addEventListener('click', () => setTheme(themeState === 'dark' ? 'light' : 'dark'));
   btnLive.addEventListener('click', () => setLive(!liveState));
   btnTable.addEventListener('click', () => openTableModal());
   btnTableCol.addEventListener('click', () => setTableCol(!tableColState));
+  btnCells.addEventListener('click', () => setCells(!cellState));
   btnSlideAdd.addEventListener('click', () => openSlideModal());
   btnSlideCopy.addEventListener('click', () => copySlide(view));
   btnSlideCut.addEventListener('click', () => cutSlide(view));
@@ -572,6 +682,23 @@ export function create(root, opts = {}) {
       try { ipcSend('editor:dirty:' + (dirty ? 'true' : 'false')); } catch (_) {}
     }
   }
+  // Transient one-line message in the status bar (pinned so it is actually seen).
+  // Used for cell-mode keys that are deliberately inert in the current document.
+  let hintMsg = '';
+  let hintTimer = 0;
+  function showHint(msg) {
+    hintMsg = msg || '';
+    document.body.classList.add('status-pinned');
+    if (hintTimer) clearTimeout(hintTimer);
+    hintTimer = setTimeout(() => {
+      hintTimer = 0;
+      hintMsg = '';
+      if (!isModalOpen()) document.body.classList.remove('status-pinned');
+      updateStatus();
+    }, 1800);
+    updateStatus();
+  }
+
   function updateStatus() {
     if (!view) return;
     const sel = view.state.selection.main;
@@ -580,7 +707,15 @@ export function create(root, opts = {}) {
     const total = view.state.doc.length;
     const mode = (window.__vimMode || '').toUpperCase();
     const modeStr = mode ? ` · ${mode}` : '';
-    statusInfo.textContent = `Ln ${line.number}, Col ${col} · ${total} chars${modeStr}`;
+    let cellStr = '';
+    if (cellState) {
+      const cs = cellModeOf(view.state);
+      const n = cellIndexAt(view.state, sel.head) + 1;
+      cellStr = ` · CELL ${n}${cs.mode === 'command' ? ' CMD' : ''}${cs.pending ? ' ' + cs.pending : ''}`;
+    }
+    const hintStr = hintMsg ? ` · ${hintMsg}` : '';
+    statusInfo.textContent =
+      `Ln ${line.number}, Col ${col} · ${total} chars${modeStr}${cellStr}${hintStr}`;
   }
 
   // Save command
@@ -589,6 +724,7 @@ export function create(root, opts = {}) {
     if (liveTimer) { clearTimeout(liveTimer); liveTimer = 0; }
     ipcSend('editor:save:' + JSON.stringify({ path: currentPath, content }));
     savedDoc = content;
+    lastPushedDoc = content; // Rust re-renders the preview from this save
     dirty = false;
     updateTitle();
   }
@@ -596,11 +732,15 @@ export function create(root, opts = {}) {
   // Debounced live-content push to the preview (no disk write).
   let liveTimer = 0;
   let marpTimer = 0; // debounces Marp-button visibility re-checks on edit
-  function pushLiveNow() {
+  // Last document text the preview was given. Lets cell-mode "run" ask for a
+  // scroll-only sync when nothing changed — see runCell().
+  let lastPushedDoc = null;
+  function pushLiveNow(lineOverride) {
     if (!currentPath || suppressEcho) return;
     const content = view.state.doc.toString();
     const head = view.state.selection.main.head;
-    const line = view.state.doc.lineAt(head).number;
+    const line = lineOverride == null ? view.state.doc.lineAt(head).number : lineOverride;
+    lastPushedDoc = content;
     ipcSend('editor:change:' + JSON.stringify({ path: currentPath, content, line }));
   }
   function schedulePushLive() {
@@ -610,6 +750,60 @@ export function create(root, opts = {}) {
       liveTimer = 0;
       pushLiveNow();
     }, 150);
+  }
+
+  // ---------- cell "run" = sync the preview to a cell ----------
+  //
+  // No new Rust IPC: `editor:change:` already re-renders AND scrolls in one
+  // concatenated script (CustomEvent::EditorLiveContent), and `editor:cursor:`
+  // scrolls alone (EditorCursorMoved).
+  //
+  // Two deliberate choices:
+  //  - cancel the 150ms live debounce, or it fires straight after with the
+  //    CURSOR's line instead of the cell's and undoes the scroll (doSave() sets
+  //    the same precedent);
+  //  - when the document is unchanged, send `editor:cursor:` instead of
+  //    `editor:change:`. That skips a full re-render, but more importantly avoids
+  //    a real side effect: the `editor:change:` handler calls mark_dirty(), and
+  //    the JS side only pushes `editor:dirty:` on TRANSITIONS, so a spurious
+  //    mark_dirty() is never corrected and close_take_dirty_path() would reload an
+  //    unedited file from disk when the editor closes.
+  //
+  // Note pushLiveNow() has no `liveState` gate (only schedulePushLive does), so
+  // running works with Live: OFF — that combination is a fully manual,
+  // run-driven preview, the closest this app gets to real Jupyter semantics.
+  function flushRun(line) {
+    if (liveTimer) { clearTimeout(liveTimer); liveTimer = 0; }
+    if (view.state.doc.toString() === lastPushedDoc) {
+      ipcSend('editor:cursor:' + line);
+    } else {
+      pushLiveNow(line);
+    }
+  }
+  function runCell(mode) {
+    const st0 = view.state;
+    const cells0 = cellList(st0);
+    const idx0 = cellIndexAt(st0, st0.selection.main.head, cells0);
+
+    if (mode === 'insert') {
+      // Insert FIRST, then flush, so the preview renders the document that
+      // contains the new cell and can actually scroll to it.
+      insertCellBelow(view);
+      view.dispatch({ effects: setCellMode.of('edit') });
+      const st1 = view.state;
+      flushRun(cellRunLine(st1, cellAt(st1, st1.selection.main.head)));
+      return;
+    }
+    if (mode === 'next') {
+      selectNextCell(view);
+      view.dispatch({ effects: setCellMode.of('command') });
+      const st1 = view.state;
+      flushRun(cellRunLine(st1, cellAt(st1, st1.selection.main.head)));
+      return;
+    }
+    // 'stay'
+    view.dispatch({ effects: setCellMode.of('command') });
+    flushRun(cellRunLine(st0, cells0[idx0]));
   }
   // `:table` / `:tbl` argument forms:
   //   (none)          -> open the modal
@@ -657,6 +851,8 @@ export function create(root, opts = {}) {
         case 'norelativenumber': case 'nornu': setLineNo('absolute'); break;
         case 'tablecolumn': case 'tcol':       setTableCol(true);     break;
         case 'notablecolumn': case 'notcol':   setTableCol(false);    break;
+        case 'cellmode': case 'cells':         setCells(true);        break;
+        case 'nocellmode': case 'nocells':     setCells(false);       break;
         default: break;
       }
     });
@@ -674,6 +870,13 @@ export function create(root, opts = {}) {
     Vim.defineEx('tablecol', undefined, (_cm, params) => {
       const a = ((params && params.args && params.args[0]) || '').toLowerCase();
       setTableCol(a === 'on' ? true : a === 'off' ? false : !tableColState);
+    });
+    // Cell mode. ONE name only: registering both `cell` and `cellmode` would make
+    // `:cell` ambiguous under the prefix rule above. With one, `:cell` / `:cellm` /
+    // `:cellmode` all resolve to it.
+    Vim.defineEx('cellmode', undefined, (_cm, params) => {
+      const a = ((params && params.args && params.args[0]) || '').toLowerCase();
+      setCells(a === 'on' ? true : a === 'off' ? false : !cellState);
     });
   } catch (_) {}
 
@@ -703,16 +906,24 @@ export function create(root, opts = {}) {
   } catch (_) {}
 
   // Table helpers — NORMAL-mode `gt` leader (gti insert / gtc column highlight).
-  // Same rationale as `gs*` above: `gt*` (and `gm*`, kept free for a future
-  // feature) is unused by @replit/codemirror-vim's default keymap — real Vim's
-  // gt/gT tab-switching is not bound here — and is not bracket-prefixed. No digit
-  // after `gt`, which would fight Vim's count parsing. `C` remains unbound
-  // throughout: it is Vim's change-to-EOL operator.
+  // Same rationale as `gs*` above: `gt*` is unused by @replit/codemirror-vim's
+  // default keymap — real Vim's gt/gT tab-switching is not bound here — and is not
+  // bracket-prefixed. No digit after `gt`, which would fight Vim's count parsing.
+  // `C` remains unbound throughout: it is Vim's change-to-EOL operator.
   try {
     Vim.defineAction('mdTableInsert',    () => openTableModal());
     Vim.defineAction('mdTableColToggle', () => setTableCol(!tableColState));
     Vim.mapCommand('gti', 'action', 'mdTableInsert',    {}, { context: 'normal' });
     Vim.mapCommand('gtc', 'action', 'mdTableColToggle', {}, { context: 'normal' });
+  } catch (_) {}
+
+  // Cell mode — NORMAL-mode `gm` leader, the slot previously reserved here for a
+  // future feature. Only `gmc` is taken; once cell mode is on, its own key gate
+  // (which runs BEFORE Vim) owns the single-letter commands, so no further Vim
+  // mappings are needed.
+  try {
+    Vim.defineAction('mdCellModeToggle', () => setCells(!cellState));
+    Vim.mapCommand('gmc', 'action', 'mdCellModeToggle', {}, { context: 'normal' });
   } catch (_) {}
 
   // Japanese-aware w/b/e/W/B/E (and dw/cw/yw/daw/...) — segment by
@@ -758,9 +969,12 @@ export function create(root, opts = {}) {
         const line = u.state.doc.lineAt(head).number;
         ipcSend('editor:cursor:' + line);
       }
-      // Front-matter blank-field auto-suggest.
+      // Front-matter blank-field auto-suggest. Suppressed in cell Command mode:
+      // j/k can land on the front-matter pseudo-cell, and the popup that would
+      // open there cannot be interacted with (the gate holds the keyboard).
       const sel = u.state.selection.main;
-      if (sel.empty && (u.docChanged || sel.head !== fmLastAutoPos)) {
+      const inCellCommand = cellModeOf(u.state).mode === 'command';
+      if (sel.empty && !inCellCommand && (u.docChanged || sel.head !== fmLastAutoPos)) {
         fmLastAutoPos = sel.head;
         if (!completionStatus(u.state) && frontMatterBlankFieldAt(u.state, sel.head)) {
           setTimeout(() => startCompletion(view), 0);
@@ -791,6 +1005,17 @@ export function create(root, opts = {}) {
     extensions: [
       vimComp.of(vimState ? vim() : []),    // Vim must come first per docs
       lineNoComp.of(lineNumberExt(lineNoState)),
+      // Jupyter-style cell mode. Position matters twice:
+      //  - gutter order is extension order, so sitting after lineNoComp and
+      //    before foldGutter() yields [line numbers][cell numbers][fold arrows],
+      //    and cycling the line-number mode only adds/removes the leftmost one;
+      //  - its run keymap must precede the main keymap.of([… defaultKeymap …])
+      //    below to take `Mod-Enter` from insertBlankLine and `Shift-Enter` from
+      //    Enter's shift binding.
+      // Its key gate carries its OWN Prec.highest, which is what puts it ahead of
+      // vimPlugin's keydown handler — being listed after vimComp here does not
+      // change that (see the header comment in cells.js).
+      cellComp.of(cellState ? cellMode(cellCallbacks()) : []),
       themeComp.of(themeState === 'dark' ? oneDark : []),
       foldGutter(),
       headingFold,
@@ -919,8 +1144,13 @@ export function create(root, opts = {}) {
     view.dispatch({
       changes: { from: 0, to: view.state.doc.length, insert: payload.content },
       annotations: Transaction.addToHistory.of(false),
+      // Never land in a new file in cell Command mode with a stale pending latch.
+      effects: setCellMode.of('edit'),
     });
     savedDoc = payload.content;
+    // The preview is showing exactly this content, so a cell "run" on an untouched
+    // buffer can take the cheap scroll-only path.
+    lastPushedDoc = payload.content;
     dirty = false;
     updateTitle();
     updateStatus();

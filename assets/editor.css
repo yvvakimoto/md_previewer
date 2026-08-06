@@ -6,6 +6,16 @@
     --status-bg: #f0f0f0;
     --modal-bg: rgba(0, 0, 0, 0.4);
     --panel-bg: #ffffff;
+
+    /* Jupyter-style cell chrome (see the .cm-cell block near the bottom). */
+    --cell-edge: rgba(0, 0, 0, 0.10);
+    --cell-tint: rgba(0, 0, 0, 0.015);
+    --cell-bar-idle: transparent;
+    --cell-bar-command: #2563eb;   /* Jupyter blue  — Command mode */
+    --cell-bar-edit: #16a34a;      /* Jupyter green — Edit mode    */
+    --cell-bar-fm: #9ca3af;        /* protected front-matter       */
+    --cell-num: #9a9a9a;
+    --cell-num-active: #2563eb;
 }
 
 body.theme-dark {
@@ -15,6 +25,14 @@ body.theme-dark {
     --border: #2e2e2e;
     --status-bg: #232323;
     --panel-bg: #2a2a2a;
+
+    --cell-edge: rgba(255, 255, 255, 0.14);
+    --cell-tint: rgba(255, 255, 255, 0.022);
+    --cell-bar-command: #60a5fa;
+    --cell-bar-edit: #4ade80;
+    --cell-bar-fm: #6b7280;
+    --cell-num: #7a7a7a;
+    --cell-num-active: #60a5fa;
 }
 
 * { box-sizing: border-box; }
@@ -327,4 +345,134 @@ body.theme-dark .cm-editor .cm-md-table-col-head {
     background: var(--panel-bg);
     border-color: var(--fg);
     outline: none;
+}
+
+/* ── Jupyter-style cell chrome ──────────────────────────────────────────────
+ * The classes below are emitted as Decoration.line by tools/build-editor/cells.js,
+ * so every rule here styles a whole `.cm-line`. Three hard rules:
+ *
+ * 1. NEVER use `margin` in this block. CodeMirror derives each line block's
+ *    height from the element's border box, which EXCLUDES margins — a margin
+ *    opens a gap CodeMirror cannot see, and the caret / Vim fat cursor then drift
+ *    by that amount for every line below it, cumulatively. `padding` and `border`
+ *    are inside the border box and are safe.
+ * 2. Box edges use `inset box-shadow`, not `border`: zero layout cost (no
+ *    re-measure, no horizontal text shift, nothing for EditorView.lineWrapping to
+ *    reflow). It also avoids skewing drawSelection — rectanglesForRange samples
+ *    the first `.cm-line`'s horizontal padding for wide selection rectangles, so
+ *    per-cell padding-left differences would offset them by a few px.
+ * 3. The body tint uses `background-image`, not `background-color`, so
+ *    highlightActiveLine()'s background on the same `.cm-line` still shows
+ *    through — the same "tint, never replace" discipline as .cm-md-table-col.
+ *
+ * box-shadow lists replace rather than merge across rules, so the four edges live
+ * in custom properties and each variant overrides only its own slot.
+ *
+ * `.cm-line` has no margins by default, so consecutive lines abut with no gap:
+ * the per-line left/right edges merge into continuous rails and the first line's
+ * top edge plus the last line's bottom edge closes the box. */
+.cm-editor .cm-cell {
+    --_cell-l: inset 3px 0 0 0 var(--cell-bar-idle);
+    --_cell-r: inset -1px 0 0 0 var(--cell-edge);
+    --_cell-t: inset 0 0 0 0 transparent;
+    --_cell-b: inset 0 0 0 0 transparent;
+    box-shadow: var(--_cell-l), var(--_cell-r), var(--_cell-t), var(--_cell-b);
+    background-image: linear-gradient(var(--cell-tint), var(--cell-tint));
+}
+.cm-editor .cm-cell-first {
+    --_cell-t: inset 0 1px 0 0 var(--cell-edge);
+    border-radius: 4px 4px 0 0;
+    padding-top: 3px;   /* padding is inside the border box: safe */
+}
+.cm-editor .cm-cell-last {
+    --_cell-b: inset 0 -1px 0 0 var(--cell-edge);
+    border-radius: 0 0 4px 4px;
+    padding-bottom: 3px;
+}
+.cm-editor .cm-cell-first.cm-cell-last {
+    border-radius: 4px;
+}
+
+/* Active cell: Jupyter's left bar — blue in Command mode, green in Edit mode.
+ * `body.cellmode-*` is toggled by entry.js (same pattern as body.ime-open), so a
+ * mode change repaints with no transaction and no decoration rebuild. */
+body.cellmode-command .cm-editor .cm-cell-active {
+    --_cell-l: inset 3px 0 0 0 var(--cell-bar-command);
+}
+body.cellmode-edit .cm-editor .cm-cell-active {
+    --_cell-l: inset 3px 0 0 0 var(--cell-bar-edit);
+}
+
+/* The front matter is a protected pseudo-cell: it keeps a neutral rail even when
+ * active, so "you cannot run / split / delete this one" is visible. */
+.cm-editor .cm-cell-fm,
+body.cellmode-command .cm-editor .cm-cell-fm.cm-cell-active,
+body.cellmode-edit .cm-editor .cm-cell-fm.cm-cell-active {
+    --_cell-l: inset 3px 0 0 0 var(--cell-bar-fm);
+}
+
+/* The separator line belongs to no box — it IS the gap between two boxes. Kept
+ * fully visible and editable (it is real Markdown, and the author needs to see
+ * whether it is `---` / `***` / `___`), just dimmed. `opacity` is the only
+ * reliable way to dim a whole line: a `color` on .cm-line loses to
+ * syntaxHighlighting's per-token spans. It is safe here because both the
+ * drawSelection caret and the Vim block cursor live in sibling absolutely-
+ * positioned layers, not inside .cm-line, so neither is dimmed. */
+.cm-editor .cm-cell-gap {
+    opacity: 0.35;
+}
+
+/* In Command mode the document is not typed into (the key gate swallows the
+ * keys), so hide the caret and let the accent bar be the single "where am I"
+ * signal. NOT EditorView.editable.of(false): Vim dispatches transactions
+ * programmatically so that would not protect the document, and losing
+ * contentDOM focus would stop the gate receiving keydown at all — Command mode
+ * would become inescapable.
+ *
+ * `!important` is required here, and is the right tool rather than laziness:
+ * CodeMirror shows the caret from its BASE THEME via
+ *   .<generated>.cm-focused > .cm-scroller > .cm-cursorLayer .cm-cursor
+ * which is five classes (0,5,0) and outranks any reasonable selector we can
+ * write against a generated class name we do not control. Out-nesting it would
+ * hard-code their internal DOM structure instead. Verified: without !important
+ * the caret stays `display: block` in Command mode. */
+body.cellmode-command .cm-editor .cm-cursor,
+body.cellmode-command .cm-editor .cm-cursor-primary,
+body.cellmode-command .cm-editor .cm-fat-cursor {
+    display: none !important;
+}
+
+/* Cell-number gutter (`gutter({class: 'cm-cellNumbers'})`, placed after the line
+ * numbers and before the fold arrows). CodeMirror sets each .cm-gutterElement's
+ * height explicitly, so a smaller font here cannot desync it from the text. */
+.cm-editor .cm-cellNumbers .cm-gutterElement {
+    padding: 0 4px 0 6px;
+    min-width: 30px;
+    text-align: right;
+    white-space: nowrap;
+    font-size: 11px;
+    color: var(--cell-num);
+}
+.cm-editor .cm-cellNumbers .cm-cell-num-active {
+    color: var(--cell-num-active);
+    font-weight: 600;
+}
+
+/* Cell keymap help (reuses the .cc-modal / .cc-panel shell). */
+.cell-help-grid {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 4px 12px;
+    margin: 4px 0;
+    font-size: 12.5px;
+    max-height: 60vh;
+    overflow-y: auto;
+}
+.cell-help-key {
+    font-family: monospace;
+    color: var(--fg);
+    white-space: nowrap;
+}
+.cell-help-desc {
+    color: var(--muted);
 }
