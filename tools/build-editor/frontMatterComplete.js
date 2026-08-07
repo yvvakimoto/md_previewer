@@ -7,7 +7,7 @@
 // `:::` / `]{}` / `\begin{}` / path completion sources are unaffected.
 //
 // Key candidates are split by whether the block already declares `marp: true`:
-//   - always:            marp / confidential / title
+//   - always:            marp / confidential / watermark / title
 //   - Marp docs only:    theme / paginate / header / footer / size / class /
 //                        _class / backgroundColor / backgroundImage / color /
 //                        style / math
@@ -28,6 +28,7 @@ const CLASS_VALUES = ['title', 'section', 'lead', 'invert', 'split', 'split-2', 
 const COMMON_KEYS = [
   { name: 'marp', detail: 'Marpスライドモード (true)' },
   { name: 'confidential', detail: '機密透かし (true)' },
+  { name: 'watermark', detail: '背景透かし文字 (任意文字列, 例: DRAFT)' },
   { name: 'title', detail: 'タイトル (メタ情報・任意)' },
 ];
 

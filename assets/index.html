@@ -3419,6 +3419,11 @@
             if (document.body.classList.contains('wide')) bodyClasses.push('wide');
             if (document.body.classList.contains('confidential')) bodyClasses.push('confidential');
             const bodyClass = bodyClasses.join(' ');
+            // Carry a custom watermark label into the artifact. The injected
+            // <style id="confidential-label-style"> is NOT the document's first
+            // <style>, so it isn't captured by baseCss above — append it explicitly.
+            const wmStyleEl = document.getElementById('confidential-label-style');
+            const wmCss = wmStyleEl && wmStyleEl.textContent ? wmStyleEl.textContent : '';
             // Title: prefer the source filename basename (without .md/.markdown) so browser tabs and
             // bookmarks identify the document. Falls back to document.title for files opened via
             // drag-drop where we somehow don't have a path.
@@ -3631,6 +3636,7 @@ ${cdnLinks.join('\n')}
 <style>
 ${baseCss}
 ${userCssText ? '\n/* user style */\n' + userCssText : ''}
+${wmCss ? '\n/* watermark label override */\n' + wmCss : ''}
 /* export overrides: artifact is always visible (no splash / drop-zone gating) */
 #app-container { display: flex !important; }
 #splash, #drop-zone { display: none !important; }
@@ -7427,12 +7433,49 @@ ${previewClone.outerHTML}
             return /^\s*marp\s*:\s*true\s*$/m.test(m[1]);
         }
 
-        // Detect a confidential document: YAML front-matter with `confidential: true`.
-        // Mirrors isMarpDocument (same block regex); `i` flag also accepts True/TRUE.
-        function isConfidentialDocument(md) {
+        // Resolve the document's watermark (diagonal overlay) setting from YAML
+        // front-matter. Mirrors isMarpDocument (same block regex). Two keys drive it:
+        //   - `watermark: <任意文字列>` → overlay on, that string is the label.
+        //   - `confidential: true`     → overlay on, theme's default label
+        //                                 (--confidential-label, e.g. "CONFIDENTIAL").
+        // Returns null when off, else { label } where label===null means "use the
+        // theme default". If both keys appear, the `watermark:` string wins.
+        // The overlay itself is always the same `body.confidential` machinery — only
+        // the --confidential-label text differs; the look stays CSS/theme-driven.
+        function watermarkSetting(md) {
             const m = md.match(/^---\s*\n([\s\S]*?)\n---\s*(\n|$)/);
-            if (!m) return false;
-            return /^\s*confidential\s*:\s*true\s*$/im.test(m[1]);
+            if (!m) return null;
+            const fm = m[1];
+            let label = null;
+            const wm = fm.match(/^\s*watermark\s*:\s*(.+?)\s*$/im);
+            if (wm) {
+                // Strip a single surrounding matched quote pair, then re-trim.
+                label = wm[1].trim().replace(/^(["'])([\s\S]*)\1$/, '$2').trim();
+                if (!label) label = null;
+            }
+            const confidential = /^\s*confidential\s*:\s*true\s*$/im.test(fm);
+            if (label == null && !confidential) return null;
+            return { label };  // label===null → theme default "CONFIDENTIAL"
+        }
+
+        // Override the watermark text via a dedicated injected <style> (same pattern
+        // as the laser #marker-style element). label===null clears it, restoring the
+        // theme's own --confidential-label. Declared with !important directly on
+        // #preview / section so it beats a theme's non-important declaration wherever
+        // that theme set it (:root / #preview / section) — the ::before resolves the
+        // var() on #preview (normal) / each section (Marp), so the property must be
+        // stamped on those very elements to win.
+        function applyWatermarkLabel(label) {
+            let st = document.getElementById('confidential-label-style');
+            if (label == null) { if (st) st.textContent = ''; return; }
+            if (!st) {
+                st = document.createElement('style');
+                st.id = 'confidential-label-style';
+                document.head.appendChild(st);
+            }
+            const safe = String(label).replace(/[\r\n]+/g, ' ').replace(/[\\"]/g, '\\$&');
+            st.textContent =
+                `#preview, #preview [data-marpit-svg] section { --confidential-label: "${safe}" !important; }`;
         }
 
         // Remove a leading YAML front-matter block so it is not rendered in the
@@ -7567,13 +7610,16 @@ ${previewClone.outerHTML}
             // `$` sitting flush at end-of-line, which fails when a `\r` is in the way.
             markdown = markdown.replace(/\r\n?/g, '\n');
 
-            // Confidential mark (front-matter `confidential: true`). Set/cleared here —
-            // the single entry point for both the normal and the Marp pipeline (Marp
-            // is dispatched below), and always toggled (not just added) so the class
-            // never lingers when navigating to a non-confidential document. The look
-            // is defined entirely in CSS (body.confidential rules); see the inline
-            // <style> baseline and per-theme --confidential-* overrides.
-            document.body.classList.toggle('confidential', isConfidentialDocument(markdown));
+            // Watermark / confidential mark (front-matter `watermark: <text>` or
+            // `confidential: true`). Set/cleared here — the single entry point for both
+            // the normal and the Marp pipeline (Marp is dispatched below), and always
+            // toggled (not just added) so the class never lingers when navigating to a
+            // non-watermarked document. The overlay look is defined entirely in CSS
+            // (body.confidential rules + per-theme --confidential-* overrides); only the
+            // label text is customized here, via applyWatermarkLabel().
+            const __wm = watermarkSetting(markdown);
+            document.body.classList.toggle('confidential', !!__wm);
+            applyWatermarkLabel(__wm ? __wm.label : null);
 
             // Marp branch: presentation slides. Handles a separate pipeline (marp-core
             // produces its own HTML + theme CSS; we re-apply mermaid / csv /

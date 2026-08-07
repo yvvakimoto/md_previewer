@@ -198,7 +198,7 @@ md-previewer.exe path\to\bundle.mdx
 - **全幅レイアウト** — `W` キーで本文をウィンドウ幅いっぱいに表示（視認性のため左右に最低限の余白を確保）／固定幅中央寄せに戻す
 - **クロスファイル `.md` リンク** — `.md` 同士のリンクをクリックすると同じウィンドウで遷移
 - **戻る / 進む履歴** — `Alt+←` / `Alt+→`、マウス側面ボタン、右クリックメニューに対応
-- **機密表示（Confidential）** — front-matter に `confidential: true` を書くと「機密」の斜め透かしを表示。見た目は各テーマ CSS が `--confidential-*` で定義。エクスポートにも反映（後述）
+- **機密表示（Confidential）／任意の透かし** — front-matter に `confidential: true` で「機密（CONFIDENTIAL）」、`watermark: <文字列>` で `DRAFT` など任意の文字を斜め透かし表示。見た目は各テーマ CSS が `--confidential-*` で定義。エクスポートにも反映（後述）
 - **HTML / PDF エクスポート** — `X` キーで単一 HTML または PDF ファイルに保存（保存ダイアログの拡張子で選択。PDF はしおり・リンク付き。後述）
 - **専用エディタウィンドウ** — `E` キーで CodeMirror 6 ベースのエディタを別ウィンドウで起動（後述）
 - **Marp プレゼンテーションスライド** — front-matter に `marp: true` を書くと 16:9 のスライドモードに切替
@@ -268,13 +268,21 @@ theme: magenta    # ← assets/marp/magenta.css のテーマ名
 同梱: `magenta.css`（マゼンタ + ティールの非ブランドテーマ）。  
 Marp 標準の `default` / `gaia` / `uncover` も追加設定なしで利用可能です。
 
-### 機密表示（Confidential）
+### 機密表示（Confidential）／任意の透かし文字（watermark）
 
 文書の front-matter に `confidential: true` を書くと、ページ全体に「機密（CONFIDENTIAL）」の斜め透かしが重なります（文書ごとの指定）。
 
 ```yaml
 ---
 confidential: true
+---
+```
+
+「CONFIDENTIAL」以外の任意の文字を透かしにしたいときは、代わりに **`watermark: <文字列>`** を指定します（`DRAFT` / `社外秘` / `SAMPLE` など）。オーバーレイの色・書体・角度・サイズは `confidential: true` と全く同じ仕組みで各テーマ CSS が決め、文言だけが差し替わります。両方を書いた場合は `watermark:` の文言が優先されます。
+
+```yaml
+---
+watermark: DRAFT
 ---
 ```
 
@@ -289,7 +297,7 @@ confidential: true
 | `--confidential-font` | フォント |
 | `--confidential-opacity` | 不透明度（`0` で完全非表示） |
 
-同梱テーマはそれぞれ配色に合わせた透かしを定義済みです（例: `tategaki.css` は縦組みの「社外秘」）。透かしは通常プレビュー・Marp スライドの両方で機能し、`X` キーの HTML / PDF エクスポートにもそのまま反映されます。サンプル: [samples/confidential.md](samples/confidential.md)
+同梱テーマはそれぞれ配色に合わせた透かしを定義済みです（例: `tategaki.css` は縦組みの「社外秘」）。透かしは通常プレビュー・Marp スライドの両方で機能し、`X` キーの HTML / PDF エクスポートにもそのまま反映されます。サンプル: [samples/confidential.md](samples/confidential.md)（`confidential: true`）／ [samples/draft.md](samples/draft.md)（`watermark: DRAFT`）
 
 ---
 
@@ -399,6 +407,7 @@ md-previewer.exe <file.md|.mdx> --export-png <出力ディレクトリ> [--slide
 | `links.md` + `links-other.md` | クロスファイル `.md` リンクと履歴ナビ |
 | `marp.md` | Marp スライドモード |
 | `confidential.md` | 機密マーク（フロントマターの `confidential: true`） |
+| `draft.md` | 任意の透かし文字（フロントマターの `watermark: DRAFT`） |
 | `bundle.mdx` | `.mdx` バンドル形式（Markdown + 画像 + CSV を 1 ファイルに同梱） |
 | `長文技術ドキュメント.md` | 長文 + TOC + セクション番号 |
 | `縦書き長文.md` | 縦書きテーマ `tategaki.css` 向けの長文 |
