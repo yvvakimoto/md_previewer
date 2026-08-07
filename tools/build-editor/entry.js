@@ -44,6 +44,7 @@ import {
 import {
   insertTable, tableColumnHighlight, mdTableKeymap, TABLE_ALIGNS,
 } from './mdTable.js';
+import { tablePaste, plainPasteKeymap } from './tablePaste.js';
 import {
   cellMode, cellModeOf, setCellMode, cellList, cellAt, cellIndexAt, cellRunLine,
   insertCellBelow, selectNextCell, CELL_HELP,
@@ -485,6 +486,7 @@ export function create(root, opts = {}) {
   const LS_THEME = 'editor:theme';
   const LS_LIVE = 'editor:livePreview';
   const LS_TABLECOL = 'editor:tableColHighlight';
+  const LS_TABLEPASTE = 'editor:tablePaste';
   const LS_CELLS = 'editor:cellMode';
   function readPref(key, valid, fallback) {
     try {
@@ -498,6 +500,11 @@ export function create(root, opts = {}) {
   let themeState = readPref(LS_THEME, ['light', 'dark'], 'light');
   let liveState = readPref(LS_LIVE, ['on', 'off'], 'on') === 'on';
   let tableColState = readPref(LS_TABLECOL, ['on', 'off'], 'on') === 'on';
+  // No status-bar button, deliberately: the bar already carries seven controls,
+  // and this behaviour is right almost always. The per-paste escape hatch is
+  // Mod-Shift-V (plus a single Ctrl+Z); this pref is the permanent opt-out for
+  // the rare user who wants it gone, reachable via `:set notablepaste`.
+  let tablePasteState = readPref(LS_TABLEPASTE, ['on', 'off'], 'on') === 'on';
   let cellState = readPref(LS_CELLS, ['on', 'off'], 'off') === 'on';
 
   const vimComp = new Compartment();
@@ -604,6 +611,15 @@ export function create(root, opts = {}) {
       effects: tableColComp.reconfigure(tableColState ? tableColumnHighlight() : []),
     });
     updateToolbar();
+    setTimeout(() => view.focus(), 0);
+  }
+  // No reconfigure: tablePaste() reads this through an isEnabled closure. It
+  // holds no state and renders nothing, so unlike the column highlight above
+  // there are no stale decorations to drop.
+  function setTablePaste(on) {
+    tablePasteState = !!on;
+    try { localStorage.setItem(LS_TABLEPASTE, tablePasteState ? 'on' : 'off'); } catch (_) {}
+    showHint('表の貼り付け変換: ' + (tablePasteState ? 'ON' : 'OFF'));
     setTimeout(() => view.focus(), 0);
   }
   // Cell mode's callback bundle: cells.js stays free of chrome (modals, body
@@ -851,6 +867,8 @@ export function create(root, opts = {}) {
         case 'norelativenumber': case 'nornu': setLineNo('absolute'); break;
         case 'tablecolumn': case 'tcol':       setTableCol(true);     break;
         case 'notablecolumn': case 'notcol':   setTableCol(false);    break;
+        case 'tablepaste': case 'tpaste':      setTablePaste(true);   break;
+        case 'notablepaste': case 'notpaste':  setTablePaste(false);  break;
         case 'cellmode': case 'cells':         setCells(true);        break;
         case 'nocellmode': case 'nocells':     setCells(false);       break;
         default: break;
@@ -1030,6 +1048,19 @@ export function create(root, opts = {}) {
       bracketMatching(),
       syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
       markdown({ base: markdownLanguage }),
+      // Ctrl+V of an Office / HTML <table> or an Excel TSV range becomes a GFM
+      // pipe table. Prec.highest (inside tablePaste) is what puts it ahead of
+      // lang-markdown's pasteURLAsLink, which markdown() above registers by
+      // default; the built-in handlers.paste is appended after ALL plugins by
+      // computeHandlers(), so it is already behind us. Array position here is
+      // irrelevant. No Compartment: the extension holds no state and renders
+      // nothing, so a closure flag is correct (unlike tableColComp below).
+      tablePaste({
+        isEnabled: () => tablePasteState,
+        onConvert: (rows, cols) =>
+          showHint(rows + '行 × ' + cols + '列の表として貼り付け'
+                 + '  Ctrl+Z で取消 / Ctrl+Shift+V でそのまま貼付'),
+      }),
       search(),
       autocompletion({
         override: [frontMatterCompletionSource, fencedDivCompletionSource, spanStyleCompletionSource, texEnvCompletionSource, katexCommandCompletionSource, pathCompletionSource(() => currentPath)],
@@ -1056,6 +1087,10 @@ export function create(root, opts = {}) {
           onInsert: () => openTableModal(),
           onToggleColumn: () => setTableCol(!tableColState),
         }),
+        // Arms a one-shot "paste as plain text" flag and returns false so the
+        // native paste still runs. Must precede defaultKeymap; Vim sees this as
+        // <C-S-V>, not <C-v>, so visual-block is unaffected.
+        ...plainPasteKeymap(),
         indentWithTab,
         ...searchKeymap,
         ...defaultKeymap,

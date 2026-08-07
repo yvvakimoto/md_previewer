@@ -174,7 +174,42 @@ export function columnAt(state, pos) {
   return { table, index, colCount: headerSpans.length };
 }
 
-// ---------- template ----------
+// ---------- emitter ----------
+//
+// SYNC OBLIGATION — displayWidth / escapeTableCell / the pad arithmetic below are
+// a MIRROR of tblDisplayWidth / tblEscapeCell / tblPadCell / tblEmitRow in
+// assets/index.html (~7941-8069, the preview's "Edit table" model). index.html is
+// a monolith loaded directly by the preview WebView and cannot import an ES
+// module from tools/build-editor, and the two run in separate WebView2 windows
+// with no shared global — mirroring is the only option. Keep them in sync.
+//
+// What may legitimately differ: index.html DETECTS and reproduces the source
+// table's own style (indent, optional outer pipes, padding convention) so that
+// tblEmit(tblParse(x)) === x byte for byte. emitTable() always writes the
+// canonical padded form, because a pasted table has no source style to preserve.
+//
+// What must NOT differ: the wide-character set, the escape rule, the minimum
+// dash run, and the pad arithmetic.
+
+// Display columns, not code units: these documents are mostly Japanese and
+// `.length` would misalign every CJK column.
+const WIDE_RE = /[\u1100-\u115F\u2E80-\uA4CF\uA960-\uA97F\uAC00-\uD7A3\uF900-\uFAFF\uFE10-\uFE19\uFE30-\uFE6F\uFF00-\uFF60\uFFE0-\uFFE6]/;
+
+export function displayWidth(s) {
+  let w = 0;
+  for (const ch of String(s)) w += WIDE_RE.test(ch) ? 2 : 1;
+  return w;
+}
+
+// A cell can never span lines, and `|` must be escaped on the way out. Normalise
+// an already-escaped `\|` first so a round trip cannot double-escape it.
+export function escapeTableCell(text) {
+  return String(text)
+    .replace(/\r?\n/g, ' ')
+    .replace(/\\\|/g, '|')
+    .replace(/\|/g, '\\|')
+    .trim();
+}
 
 function delimCell(align, width) {
   const l = align === 'left' || align === 'center' ? ':' : '';
@@ -183,22 +218,57 @@ function delimCell(align, width) {
   return l + '-'.repeat(Math.max(1, dashes)) + r;
 }
 
+const padRight = (s, width) => s + ' '.repeat(Math.max(0, width - displayWidth(s)));
+
+// Emit any cell matrix as a column-padded GFM pipe table. rows[0] is the header
+// (GFM requires one); cells are RAW — escaping happens here, so a caller can
+// hand over arbitrary clipboard text.
+//
+// opts.aligns — per-column (null|'left'|'center'|'right')
+// opts.align  — applied to every column when `aligns` is absent
+//
+// Escaping and padding are deliberately SEPARATE steps: escapeTableCell() trims,
+// so padding before escaping would collapse an intentionally blank template cell
+// back to ''. Escape first, pad second.
+export function emitTable(rows, opts = {}) {
+  const grid = (rows || []).map((r) => (r || []).map(escapeTableCell));
+  const cols = grid.reduce((m, r) => Math.max(m, r.length), 0);
+  if (!grid.length || !cols) return { text: '', widths: [], firstCellOffset: 2 };
+
+  const uniform = TABLE_ALIGNS.indexOf(opts.align) >= 0 ? opts.align : null;
+  const aligns = [];
+  for (let i = 0; i < cols; i++) {
+    const a = opts.aligns ? opts.aligns[i] : uniform;
+    aligns.push(TABLE_ALIGNS.indexOf(a) >= 0 ? a : null);
+  }
+
+  const widths = new Array(cols).fill(MIN_DELIM);
+  for (const r of grid) {
+    for (let i = 0; i < r.length; i++) widths[i] = Math.max(widths[i], displayWidth(r[i]));
+  }
+
+  const row = (cells) =>
+    '| ' + widths.map((w, i) => padRight(cells[i] || '', w)).join(' | ') + ' |';
+  const lines = [row(grid[0]), row(widths.map((w, i) => delimCell(aligns[i], w)))];
+  for (let i = 1; i < grid.length; i++) lines.push(row(grid[i]));
+  // Cursor goes at the start of the first header cell's text: '| '.
+  return { text: lines.join('\n'), widths, firstCellOffset: 2 };
+}
+
+// ---------- template ----------
+
 // Column-padded template — reads correctly in the monospace editor and matches
 // what people hand-write. Returns { text, firstCellOffset } so insertTable does
 // not have to re-parse to place the cursor.
 export function buildTableTemplate(rows, cols, opts = {}) {
   const r = clamp(rows, MIN_ROWS, MAX_ROWS);
   const c = clamp(cols, MIN_COLS, MAX_COLS);
-  const align = TABLE_ALIGNS.indexOf(opts.align) >= 0 ? opts.align : null;
   const heads = [];
   for (let i = 0; i < c; i++) heads.push('Header ' + (i + 1));
-  const widths = heads.map((h) => Math.max(MIN_DELIM, h.length));
-  const row = (cells) =>
-    '| ' + cells.map((s, i) => s + ' '.repeat(widths[i] - s.length)).join(' | ') + ' |';
-  const lines = [row(heads), row(widths.map((w) => delimCell(align, w)))];
-  for (let i = 1; i < r; i++) lines.push(row(widths.map((w) => ' '.repeat(w))));
-  // Cursor goes at the start of the first header cell's text: '| '.
-  return { text: lines.join('\n'), firstCellOffset: 2 };
+  const grid = [heads];
+  for (let i = 1; i < r; i++) grid.push(new Array(c).fill(''));
+  const { text, firstCellOffset } = emitTable(grid, { align: opts.align });
+  return { text, firstCellOffset };
 }
 
 // Insert a table at the cursor. A table must be terminated by a blank line (or

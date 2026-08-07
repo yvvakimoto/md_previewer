@@ -10,7 +10,8 @@
 
 import {EditorState} from '@codemirror/state';
 import {markdown, markdownLanguage} from '@codemirror/lang-markdown';
-import {columnAt, isDelimiterRow, parseAlignments, buildTableTemplate} from './mdTable.js';
+import {columnAt, isDelimiterRow, parseAlignments, buildTableTemplate,
+        emitTable, escapeTableCell, displayWidth} from './mdTable.js';
 const mk = (doc) => EditorState.create({doc, extensions:[markdown({base: markdownLanguage})]});
 let fail=0;
 const eq=(label,got,want)=>{
@@ -67,5 +68,41 @@ eq('tpl no align',/^\| -+ \| -+ \|$/.test(buildTableTemplate(2,2).text.split('\n
 const st=mk(tpl.text+'\n');
 eq('tpl col0 resolves',columnAt(st,3).index,0);
 eq('tpl col1 resolves',columnAt(st,tpl.text.indexOf('Header 2')).index,1);
+// Byte pin. buildTableTemplate is now a thin wrapper over emitTable; the regex
+// assertions above would happily accept a collapsed blank row, so pin the exact
+// output. If this changes, the change was NOT a pure refactor.
+eq('tpl bytes',buildTableTemplate(3,2).text,
+   [P+' Header 1 '+P+' Header 2 '+P,
+    P+' -------- '+P+' -------- '+P,
+    P+'          '+P+'          '+P,
+    P+'          '+P+'          '+P].join('\n'));
+
+// ---------- emitter ----------
+// displayWidth / escapeTableCell are a MIRROR of tblDisplayWidth / tblEscapeCell
+// in assets/index.html (~7944 / ~7989). These pins are the regression net for
+// that sync obligation on the editor side.
+eq('width ascii',displayWidth('abc'),3);
+eq('width cjk',displayWidth('日本語'),6);          // CJK ideographs: U+2E80-U+A4CF
+eq('width kana',displayWidth('あア'),4);
+eq('width mixed',displayWidth('A日'),3);
+eq('width fullwidth punct',displayWidth('（）'),4);
+eq('escape pipe',escapeTableCell('a'+P+'b'),'a'+BS+P+'b');
+eq('escape no double',escapeTableCell('a'+BS+P+'b'),'a'+BS+P+'b');
+eq('escape newline',escapeTableCell('a\nb'),'a b');
+eq('escape trims',escapeTableCell('  a  '),'a');
+// CJK columns must align by DISPLAY width, not code units.
+eq('emit cjk aligned',emitTable([['名前','値'],['あ','1']]).text,
+   [P+' 名前 '+P+' 値  '+P,
+    P+' ---- '+P+' --- '+P,
+    P+' あ   '+P+' 1   '+P].join('\n'));
+eq('emit escapes cells',emitTable([['a'+P+'b','c']]).text.split('\n')[0],
+   P+' a'+BS+P+'b '+P+' c   '+P);
+eq('emit ragged pads',emitTable([['a','b'],['c']]).text.split('\n')[2],
+   P+' c   '+P+'     '+P);
+eq('emit header only',emitTable([['a','b']]).text.split('\n').length,2);
+eq('emit aligns per column',emitTable([['a','b','c']],
+   {aligns:['left',null,'right']}).text.split('\n')[1],
+   P+' :-- '+P+' --- '+P+' --: '+P);
+eq('emit empty',emitTable([]).text,'');
 console.log(fail? '\n'+fail+' FAILURES':'\nALL PASS');
 process.exit(fail?1:0);
