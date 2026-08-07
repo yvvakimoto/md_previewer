@@ -69,7 +69,7 @@
     text-combine-upright: digits 2;
 }
 
-/* --- 見出し: 論理プロパティで罫線を回転対応 --- */
+/* --- 見出し --- */
 #preview h1,
 #preview h2,
 #preview h3,
@@ -85,22 +85,29 @@
      * 縦組み書籍では章節の頭で「行アキ」を大きく取るのが慣例。 */
     margin-block-start: 2.5em;
     margin-block-end: 1.2em;
+    /* 基盤 CSS の #preview h1..h6 は物理プロパティ (margin-top/bottom) で
+     * 指定されており、縦組みではそれが inline 軸 = 段の天地に回る。基盤側が
+     * 罫線廃止に伴って 24px/16px -> 1.8em/0.6em になったので、そのままだと
+     * 縦組みの見出しが段の天から大きく下がる。ここで inline 軸を明示的に
+     * 従来値へ固定する (同特定性・後勝ちで基盤に勝つ)。 */
+    margin-inline-start: 24px;
+    margin-inline-end: 16px;
     /* 浮動表が見出しに被らないようクリア */
     clear: both;
 }
-/* 文書冒頭の見出しに余白を付けない */
+/* 文書冒頭の見出しに (block 軸 = 段間の) 余白を付けない */
 #preview > :first-child {
     margin-block-start: 0;
 }
+/* 見出しには罫線を引かない。縦組みでは見出し脇の border-inline-end も
+ * 下の #preview hr (章区切りの縦罫) と同じ「縦の細線」になり、横組みで
+ * `---` と h2 のアンダーラインが混同されたのと同じ問題が 90 度回った形で
+ * 起きる。階層はサイズと上の大きな行アキ (margin-block-start: 2.5em) で示す。 */
 #preview h1 {
     font-size: 1.6em;
-    padding-inline-end: 0.4em;
-    border-inline-end: 2px solid currentColor;
 }
 #preview h2 {
     font-size: 1.35em;
-    padding-inline-end: 0.3em;
-    border-inline-end: 1px solid currentColor;
 }
 #preview h3 { font-size: 1.18em; }
 #preview h4 { font-size: 1.05em; }

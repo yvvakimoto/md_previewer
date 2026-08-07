@@ -113,24 +113,50 @@
 
         /* Markdown styling */
         #preview h1, #preview h2, #preview h3, #preview h4, #preview h5, #preview h6 {
-            margin-top: 24px;
-            margin-bottom: 16px;
             font-weight: 600;
             line-height: 1.25;
         }
 
-        #preview h1 {
-            font-size: 2em;
-            border-bottom: 1px solid #eaecef;
-            padding-bottom: 0.3em;
+        /* Headings carry NO rule of their own — see `#preview hr` below. A
+           full-width 1px heading underline is indistinguishable from a `---`
+           thematic break used as a chapter separator (they were #eaecef vs
+           #dfe2e5, and the SAME #30363d in dark mode, one line apart), so the
+           hierarchy is carried by size + spacing instead and `---` is the only
+           horizontal rule in body text. The em unit resolves against the
+           heading's OWN font-size, so the gap tapers h1->h6 for free
+           (h1 ~58px, h2 ~43px, h3 ~36px, h6 ~24px).
+           ⚠️ The `:where()` wrap is load-bearing: it contributes ZERO
+           specificity, so this rule weighs less than a theme's own
+           `#preview h2 { margin-top: … }` and every theme keeps the heading
+           rhythm it authored (classical.css and the nwc_* themes all tune it;
+           tategaki.css relies on it to pin the inline axis under vertical
+           writing). Only the Default look changes. Same doctrine as the
+           `body.dark-mode { --md-dl-accent }` note further down: a baseline
+           default must never out-specify a theme. */
+        #preview :where(h1, h2, h3, h4, h5, h6) {
+            margin-top: 1.8em;
+            margin-bottom: 0.6em;
         }
 
-        #preview h2 {
-            font-size: 1.5em;
-            border-bottom: 1px solid #eaecef;
-            padding-bottom: 0.3em;
+        /* Slides keep the previous px rhythm. This one is deliberately at full
+           specificity: `#preview h1` already beats a Marp theme's
+           `section h1 { margin: … }`, so slides never honoured the em values
+           anyway, and an unpinned 1.8em would give a 46px slide title an ~83px
+           top margin. */
+        body.marp #preview h1, body.marp #preview h2, body.marp #preview h3,
+        body.marp #preview h4, body.marp #preview h5, body.marp #preview h6 {
+            margin-top: 24px;
+            margin-bottom: 16px;
         }
 
+        /* The first block hugs the top of the content area instead of adding
+           the big heading margin to #preview's own padding. Also :where()-wrapped
+           (same weight as the rule above, later in source, so it cancels that
+           default) — a theme's own `#preview h1 { margin-top }` still wins. */
+        #preview > :where(:first-child) { margin-top: 0; }
+
+        #preview h1 { font-size: 2em; }
+        #preview h2 { font-size: 1.5em; }
         #preview h3 { font-size: 1.25em; }
         #preview h4 { font-size: 1em; }
         #preview h5 { font-size: 0.875em; }
@@ -603,10 +629,20 @@
             text-decoration: underline;
         }
 
+        /* The ONLY horizontal rule in body text (headings deliberately carry
+           none — see the heading block above), so `---` reads unambiguously as
+           a chapter separator. The space is wide enough that the rule sits
+           between two sections rather than hugging the paragraph above it:
+           adjacent margins collapse, so this 40px and the following heading's
+           1.8em (~43px) do not add up and the rule ends up visually centred in
+           the gap. px, not em, on purpose — a nested `<hr>` inside a Marp slide
+           inherits a much larger font-size and an em value would explode there.
+           Color/space go through --md-hr-* so a theme or user style can rebrand
+           them (the --md-dl-* / --md-message-* convention). */
         #preview hr {
             border: none;
-            border-top: 1px solid #dfe2e5;
-            margin: 24px 0;
+            border-top: 1px solid var(--md-hr-color, #dfe2e5);
+            margin: var(--md-hr-space, 40px) 0;
         }
 
         /* Mermaid diagram styling */
@@ -1088,11 +1124,6 @@
             background: #0d2a4a;
         }
 
-        body.dark-mode #preview h1,
-        body.dark-mode #preview h2 {
-            border-bottom-color: #30363d;
-        }
-
         body.dark-mode #preview h6 {
             color: #8b949e;
         }
@@ -1128,9 +1159,15 @@
             color: #58a6ff;
         }
 
-        body.dark-mode #preview hr {
-            border-top-color: #30363d;
-        }
+        /* Dark default for the thematic break. Declared on `body` — NOT on
+           `body.dark-mode #preview hr` — on purpose: that selector out-specifies
+           every theme's own `#preview hr`, so in dark mode it silently overrode
+           e.g. classical.css's `--cl-rule: #3a342a` and hakuro-modern's
+           `--hk-line`. Declaring it on an ancestor makes it merely *inherited*,
+           so a theme setting the color directly on the <hr> wins while the
+           Default theme still gets a dark-appropriate rule. Same reasoning as
+           the `body.dark-mode { --md-dl-accent }` note further down. */
+        body.dark-mode { --md-hr-color: #30363d; }
 
         body.dark-mode .copy-button {
             background: #21262d;
@@ -1294,7 +1331,12 @@
             font-size: 0.9em;
             color: #57606a;
         }
+        /* This <hr> is a section divider, not a chapter break, so it keeps its
+           own tight spacing instead of the wide `--md-hr-space` above (which
+           would otherwise collapse with `.footnotes { margin-top: 2em }` and
+           leave the divider floating). */
         #preview .footnotes hr {
+            margin-top: 0;
             margin-bottom: 1em;
         }
         #preview .footnotes ol {
@@ -1496,14 +1538,13 @@
                 color: #6a737d !important;
                 border-left-color: #dfe2e5 !important;
             }
-            body.dark-mode #preview h1,
-            body.dark-mode #preview h2 {
-                border-bottom-color: #eaecef !important;
-            }
             body.dark-mode #preview th,
             body.dark-mode #preview td {
                 border-color: #dfe2e5 !important;
             }
+            /* Same source-order trick as the declaration itself: re-point the
+               variable rather than the <hr>, so a theme's own rule still wins. */
+            body.dark-mode { --md-hr-color: #dfe2e5; }
         }
 
         #toast {

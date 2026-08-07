@@ -32,12 +32,10 @@ body {
 #preview h6 {
     color: #5a3a1b;
     font-family: 'Georgia', serif;
-    border-bottom-color: #d8c8a8;
-}
-
-#preview h1 {
-    border-bottom: 2px solid #b8965f;
-    padding-bottom: 0.3em;
+    /* 見出しには罫線を引かない — `---`（章区切り）と見分けがつかなくなるため。
+       階層はサイズと余白で示す（基盤 CSS の見出しブロックのコメント参照）。
+       h1 はかつて #b8965f の 2px 罫線を持っていたが、その最も強い罫線色は
+       下の #preview hr（章区切り）に譲った。 */
 }
 
 #preview a {
