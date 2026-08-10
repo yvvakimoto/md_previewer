@@ -2,6 +2,13 @@
 
 このファイルは MD Previewer のバージョンごとの主な更新内容をまとめたものです（新しい順）。
 
+## v0.22.0
+
+- **tikz-cd 記法の可換図式に対応** — ` ```tikzcd ` フェンスに [tikz-cd](https://ctan.org/pkg/tikz-cd) 記法を書くと、圏論などで使う**可換図式（commutative diagram）**を図として描画します。斜め矢印・曲線矢印・二重矢印・pullback など tikz-cd の表現力をそのまま使えます。一般的な TikZ 図は ` ```tikz ` フェンス（`tikzpicture` を直接記述）で描けます。図は小さめなので**既定で 1.6 倍**に拡大し、ブロック先頭行に `scale: 2` のように書けば個別に倍率を変えられます。ダーク/ライト表示の色に追従し、通常文書・Marp スライドの両方、および HTML / PDF エクスポートにも対応します。描画はブラウザ内で完結する **完全オフライン**で、TeX エンジンは初回に一度だけ読み込まれます（`tikzcd` / `tikz` を使わない文書では読み込まれません）。サンプルは `samples/tikzcd.md`。
+- **ライセンスに関する注意** — この描画には WASM 版 TeX エンジン [@rod2ik/tikzjax](https://www.npmjs.com/package/@rod2ik/tikzjax) を同梱しており、これは本アプリで初の **WebAssembly** かつ初の **コピーレフト（GPL-3.0 / LPPL-1.3c）** 依存です。アプリ本体（インストーラ）を社外配布する際は、同梱ライセンス全文（ヘルプ `H` の「Third-party licenses」に収録済み）とエンジンの無改変配布にご注意ください。なお **エクスポートした HTML / PDF には TeX エンジン自体は含まれず**、描画結果の図と（自由に再配布できる Computer Modern）フォントのみなので、成果物の配布は従来どおり自由です。
+
+> 開発者向け: `assets/index.html` の `renderTikzCached`（メモ化 `__tikzCache`、`ensureTikz` で assetBaseUrl を絶対 URL 化した blob Web Worker 描画、`__applyTikzScale` の既定 1.6 倍）で実装。tikzjax の dist は `tools/fetch-libs.ps1` が npm ターボールを展開して `assets/libs/tikzjax/` に取得（git 管理外）。`get_mime_type` に `.wasm` を追加。HTML エクスポートは使用フォントの woff2 を base64 で `@font-face` 埋め込み。`--export-png` は非表示ウィンドウで WASM ワーカーが動かないため tikz を取得しません。
+
 ## v0.21.0
 
 - **任意の透かし文字を指定できる `watermark` に対応** — これまで機密透かしは front-matter の `confidential: true` で「CONFIDENTIAL」の斜め透かしを出すだけでしたが、代わりに **`watermark: DRAFT`** のように書くと、任意の文字（`DRAFT` / `社外秘` / `SAMPLE` など）を同じ斜め透かしとして表示できるようになりました。透かしの色・書体・角度・大きさは従来どおり各テーマが決め、文言だけが差し替わります。`confidential: true` は従来どおり「CONFIDENTIAL」を表示し、両方を書いた場合は `watermark` の文言が優先されます。HTML / PDF エクスポートにもそのまま反映されます。
