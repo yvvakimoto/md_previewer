@@ -794,6 +794,47 @@
             color: #ffa198;
         }
 
+        /* TikZ / tikz-cd (commutative diagrams) via @rod2ik/tikzjax. The engine
+           renders each block into a .tikzjax-wrapper span holding an <svg> whose
+           strokes/fills are currentColor; the wrapper carries an inline
+           color:black, so light mode is correct as-is and dark mode only needs to
+           override that color (!important beats the inline style). */
+        .tikzcd-diagram, .tikz-diagram {
+            margin: 16px 0;
+            text-align: center;
+            overflow-x: auto;
+        }
+        .tikzcd-diagram svg, .tikz-diagram svg {
+            max-width: 100%;
+            height: auto;
+        }
+        .tikzcd-diagram .tikzjax-wrapper, .tikz-diagram .tikzjax-wrapper {
+            background: transparent !important;
+        }
+        .tikz-loading { color: #57606a; font-size: 0.9em; }
+        body.dark-mode .tikz-loading { color: #8b949e; }
+        body.dark-mode .tikzcd-diagram .tikzjax-wrapper,
+        body.dark-mode .tikz-diagram .tikzjax-wrapper {
+            color: #d0d0d0 !important;
+        }
+        .tikz-error {
+            margin: 16px 0;
+            padding: 12px 16px;
+            border: 1px solid #d73a49;
+            border-radius: 4px;
+            background: #ffeef0;
+            color: #b31d28;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', monospace;
+            font-size: 0.9em;
+            white-space: pre-wrap;
+            text-align: left;
+        }
+        body.dark-mode .tikz-error {
+            background: #2a0d10;
+            border-color: #f85149;
+            color: #ffa198;
+        }
+
         /* App container - flex layout for sidebar + content */
         #app-container {
             display: none;
@@ -1866,6 +1907,8 @@
         body.marp #preview section .mermaid.marp-fig,
         body.marp #preview section .markwhen-timeline.marp-fig,
         body.marp #preview section .abc-notation.marp-fig,
+        body.marp #preview section .tikzcd-diagram.marp-fig,
+        body.marp #preview section .tikz-diagram.marp-fig,
         body.marp #preview section p.marp-fig {
             text-align: center;
         }
@@ -2592,6 +2635,36 @@
         // @markwhen/parser bundled as a browser IIFE (window.Markwhen); lazy-load
         // it the first time a ```markwhen block is rendered.
         function ensureMarkwhen() { return loadLib('libs/markwhen/markwhen.iife.js'); }
+        // @rod2ik/tikzjax — WASM TeX engine for ```tikzcd (commutative diagrams)
+        // and ```tikz blocks. Lazy-loaded the first time such a block appears, so
+        // documents without TikZ pay no startup cost (the engine + TeX core dump
+        // are ~7.7MB served from libs/tikzjax/dist/). tikzjax.js installs a
+        // MutationObserver on document.body that auto-renders any inserted
+        // <script type="text/tikz"> to inline SVG (in a blob Web Worker); we drive
+        // it per-block and memoize (see renderTikzCached). The engine emits SVG
+        // with stroke/fill=currentColor (so dark mode is a CSS `color` change) and
+        // glyphs as PUA-mapped <text> in the Computer-Modern web fonts declared by
+        // fonts.css — which is why fonts.css must be present for glyphs to paint.
+        let __tikzFontsLinked = false;
+        function ensureTikz() {
+            if (!__tikzFontsLinked) {
+                __tikzFontsLinked = true;
+                // assetBaseUrl tells tikzjax where to fetch run-tex.js / tex.wasm.gz /
+                // core.dump.gz / tex_files/*.gz from. It MUST be absolute: the TeX
+                // engine runs in a blob: Web Worker whose base URL is opaque, so a
+                // relative base can't resolve the on-demand tex_files/*.gz fetches
+                // (they 404 unless dist/ happens to sit at the server root) — which
+                // breaks any package load, e.g. tikz-cd for commutative diagrams.
+                const tikzBase = new URL('libs/tikzjax/dist', document.baseURI).href.replace(/\/$/, '');
+                window.TikzJaxOptions = Object.assign({ assetBaseUrl: tikzBase }, window.TikzJaxOptions || {});
+                const link = document.createElement('link');
+                link.rel = 'stylesheet';
+                link.href = 'libs/tikzjax/dist/fonts.css';
+                link.id = 'tikzjax-fonts';
+                document.head.appendChild(link);
+            }
+            return loadLib('libs/tikzjax/dist/tikzjax.js');
+        }
         // User-defined Marp theme CSS files discovered by the Rust host in
         // assets/marp/*.css. Fetched once, cached, and registered with
         // marp.themeSet.add() on each render. Themes must begin with a
@@ -2762,6 +2835,7 @@
         let plotlyCounter = 0;
         let abcCounter = 0;
         let markwhenCounter = 0;
+        let tikzCounter = 0;
         let currentMarkdown = '';
         // Un-embedded source markdown (relative image paths intact). Mirrors
         // `currentMarkdown` but without base64-embedded images, so host-bound
@@ -3374,6 +3448,43 @@
                 });
             }
 
+            // Inline the Computer-Modern web fonts that tikz / tikz-cd SVGs depend on.
+            // TikZJax renders glyphs as <text font-family="cmmi10"…> pointing at
+            // Private-Use-Area codepoints, so WITHOUT the matching @font-face the
+            // exported labels render as blank tofu. fonts.css maps family → same-named
+            // woff2 (font-family: cmmi10 → fonts/cmmi10.woff2), so we fetch just the
+            // families actually used and inline them as data: URIs. Only runs when the
+            // artifact contains a tikz diagram.
+            let tikzFontCss = '';
+            {
+                const tikzSvgs = previewClone.querySelectorAll('.tikzcd-diagram svg, .tikz-diagram svg');
+                if (tikzSvgs.length) {
+                    const fams = new Set();
+                    tikzSvgs.forEach(svg => svg.querySelectorAll('[font-family]').forEach(t => {
+                        const f = (t.getAttribute('font-family') || '').trim().replace(/['"]/g, '');
+                        if (f && /^[A-Za-z0-9_-]+$/.test(f)) fams.add(f);
+                    }));
+                    const toDataUrl = (blob) => new Promise((resolve, reject) => {
+                        const fr = new FileReader();
+                        fr.onload = () => resolve(fr.result);
+                        fr.onerror = () => reject(fr.error);
+                        fr.readAsDataURL(blob);
+                    });
+                    const faces = await Promise.all([...fams].map(async (fam) => {
+                        try {
+                            const resp = await fetch('libs/tikzjax/dist/fonts/' + fam + '.woff2');
+                            if (!resp.ok) return '';
+                            const dataUrl = await toDataUrl(await resp.blob());
+                            return '@font-face{font-family:"' + fam + '";src:url(' + dataUrl + ') format("woff2");font-display:block;}';
+                        } catch (e) {
+                            console.warn('export: failed to inline tikz font', fam, e);
+                            return '';
+                        }
+                    }));
+                    tikzFontCss = faces.filter(Boolean).join('\n');
+                }
+            }
+
             // Collect local video files referenced by <video> embeds so the host can
             // copy them next to the exported HTML (videos are served from disk, never
             // inlined). YouTube iframes need no copying — their https URLs survive export.
@@ -3678,6 +3789,7 @@ ${cdnLinks.join('\n')}
 ${baseCss}
 ${userCssText ? '\n/* user style */\n' + userCssText : ''}
 ${wmCss ? '\n/* watermark label override */\n' + wmCss : ''}
+${tikzFontCss ? '\n/* tikz Computer-Modern fonts (inlined) */\n' + tikzFontCss : ''}
 /* export overrides: artifact is always visible (no splash / drop-zone gating) */
 #app-container { display: flex !important; }
 #splash, #drop-zone { display: none !important; }
@@ -6738,6 +6850,134 @@ ${previewClone.outerHTML}
             }
         }
 
+        // ---- TikZ / tikz-cd (commutative diagrams) via @rod2ik/tikzjax ----
+        // The engine emits SVG with stroke/fill=currentColor, so dark mode needs no
+        // re-render (the cache is theme-salt-free, keyed by kind+source like abc).
+        // We drive tikzjax's DOM pipeline per-block: on a cache MISS we inject a
+        // <script type="text/tikz"> (its body.body MutationObserver auto-renders it
+        // in a blob Web Worker), await the resulting inline SVG, then snapshot
+        // el.innerHTML into the cache; on a HIT we re-attach that SVG directly (no
+        // recompile, no worker) — essential because #preview is rebuilt on every
+        // ~150ms live-edit keystroke and a TeX compile costs seconds.
+        const __tikzCache = new Map();
+        const __TIKZ_RENDER_TIMEOUT_MS = 30000;
+        // TikZ / tikz-cd diagrams render at their intrinsic (small) pt size, so scale
+        // them up by default. A leading `scale: <n>` directive line in the block
+        // overrides this per-diagram (like mermaid's scale:). The SVG carries a
+        // viewBox, so multiplying its width/height enlarges it cleanly; the CSS
+        // max-width:100% still caps anything wider than its container.
+        const __TIKZ_SCALE = 1.6;
+        function __applyTikzScale(el, factor) {
+            if (!(factor > 0) || factor === 1) return;
+            const svg = el.querySelector('.tikzjax-wrapper svg') || el.querySelector('svg');
+            if (!svg || !svg.getAttribute('viewBox')) return;
+            ['width', 'height'].forEach((a) => {
+                const m = String(svg.getAttribute(a) || '').match(/^([\d.]+)([a-z%]*)$/i);
+                if (m) svg.setAttribute(a, (parseFloat(m[1]) * factor).toFixed(3).replace(/\.?0+$/, '') + (m[2] || ''));
+            });
+        }
+
+        // Wait until `el` holds a finished tikzjax render (an <svg> that isn't the
+        // loading placeholder) or a `.tikzjax-error`; resolves 'ok' / 'error', or
+        // 'timeout' if neither appears. Uses a MutationObserver plus a fallback
+        // poll so it settles even if a mutation batch is coalesced.
+        function __tikzAwait(el) {
+            const done = () => {
+                if (el.querySelector('.tikzjax-error')) return 'error';
+                // tikzjax drops the `tikzjax-loading` class from its wrapper once a
+                // block settles — on SUCCESS (real SVG) or FAILURE (a broken-image
+                // placeholder). Keying off that (rather than only svg:not(loader))
+                // means a failed compile resolves immediately instead of waiting out
+                // the 30s timeout below.
+                const w = el.querySelector('.tikzjax-wrapper');
+                if (w && !w.classList.contains('tikzjax-loading')) return 'ok';
+                if (el.querySelector('svg:not(.tikzjax-loader)')) return 'ok';
+                return null;
+            };
+            return new Promise((resolve) => {
+                const immediate = done();
+                if (immediate) { resolve(immediate); return; }
+                let settled = false;
+                const finish = (r) => { if (settled) return; settled = true; try { obs.disconnect(); } catch (e) {} clearInterval(poll); clearTimeout(to); resolve(r); };
+                const obs = new MutationObserver(() => { const r = done(); if (r) finish(r); });
+                obs.observe(el, { childList: true, subtree: true });
+                const poll = setInterval(() => { const r = done(); if (r) finish(r); }, 250);
+                const to = setTimeout(() => finish('timeout'), __TIKZ_RENDER_TIMEOUT_MS);
+            });
+        }
+
+        async function renderTikzCached(el) {
+            const src = __diagSource(el, 'data-tikz-source');
+            const kind = el.getAttribute('data-tikz-kind') || 'raw'; // 'cd' | 'raw'
+            const key = kind + '|' + src; // full source (incl. any scale: line) keys the cache
+            if (__diagCacheHit(__tikzCache, key, el)) return;
+            try {
+                // Optional leading `scale: <n>` directive tunes the enlargement for
+                // this one diagram (default __TIKZ_SCALE); strip it before the TeX
+                // body so it never reaches the engine.
+                let scale = __TIKZ_SCALE;
+                let source = src;
+                const sm = src.match(/^[ \t]*scale:[ \t]*([\d.]+)[ \t]*\r?\n?/i);
+                if (sm) {
+                    const n = parseFloat(sm[1]);
+                    if (n > 0 && n <= 10) scale = n;
+                    source = src.slice(sm[0].length);
+                }
+                // Build the TeX body the engine compiles. A tikzcd block is wrapped
+                // in the tikz-cd environment (unless the author already wrote it) and
+                // pulls in the tikz-cd package; a raw tikz block is passed verbatim
+                // (tikz itself is preloaded in the core dump).
+                let body = source;
+                let pkgs = null;
+                if (kind === 'cd') {
+                    // amssymb gives common math symbols used in diagrams (e.g.
+                    // \lrcorner / \ulcorner pullback-corner marks, \hookrightarrow…).
+                    pkgs = '{"tikz-cd":"","amssymb":""}';
+                    // Trim surrounding whitespace before wrapping: marked's fenced-code
+                    // content carries a trailing newline, and a BLANK line inside a
+                    // tikzcd matrix becomes a \par — illegal, and TeX reports it as the
+                    // cryptic "! Missing $ inserted." So the wrap must hug the content.
+                    const inner = source.replace(/^\s+|\s+$/g, '');
+                    body = /\\begin\{tikzcd\}/.test(inner)
+                        ? inner
+                        : '\\begin{tikzcd}\n' + inner + '\n\\end{tikzcd}';
+                }
+                // Inject a <script type="text/tikz"> via innerHTML so tikzjax's
+                // MutationObserver picks it up and renders it in place. The content
+                // sits in the HTML "script data" state, so `&`, `\`, `{` are kept
+                // raw (never HTML-parsed); we only guard a literal </script. NOTE:
+                // this must be an innerHTML string, not createElement+textContent —
+                // tikzjax reads the parsed script and the DOM-built variant reaches
+                // it with an empty body (TeX then compiles nothing).
+                const pkgAttr = pkgs ? " data-tex-packages='" + pkgs + "'" : '';
+                el.innerHTML = '<script type="text/tikz"' + pkgAttr + '>'
+                    + body.replace(/<\/script/gi, '<\\/script')
+                    + '</scr' + 'ipt>';
+                const outcome = await __tikzAwait(el);
+                if (outcome === 'timeout') {
+                    // Leave uncached so a subsequent render retries the compile.
+                    el.innerHTML = '<div class="tikz-error">TikZ: レンダリングがタイムアウトしました</div>';
+                    return;
+                }
+                // On a failed compile tikzjax swaps in a generic broken-image
+                // placeholder (.tikzjax-broken-wrapper / .tikzjax-broken-image);
+                // surface it as our own styled error instead so the failure reads
+                // clearly and matches the rest of the diagram error blocks.
+                if (outcome === 'error' || el.querySelector('.tikzjax-broken-wrapper, .tikzjax-broken-image')) {
+                    el.innerHTML = '<div class="tikz-error">TikZ: コンパイルに失敗しました（TeX 構文を確認してください）</div>';
+                } else {
+                    // Enlarge the (intrinsically small) diagram before caching so the
+                    // scaled SVG is what gets memoized / exported.
+                    __applyTikzScale(el, scale);
+                }
+                // Cache the finished output (rendered SVG or the styled error) so
+                // identical sources don't recompile on every live-edit keystroke.
+                __diagCacheSet(__tikzCache, key, el.innerHTML);
+            } catch (error) {
+                el.innerHTML = '<div class="tikz-error">TikZ Error: ' + escapeHtml(error && error.message) + '</div>';
+            }
+        }
+
         // Marp instance reuse — `new Marp()` rebuilds a markdown-it parser and
         // re-parses every cached theme CSS via themeSet.add() on every render.
         // marp.render is effectively pure (it returns {html, css}; all of our
@@ -7290,6 +7530,14 @@ ${previewClone.outerHTML}
                     div.id = 'marp-markwhen-' + (markwhenCounter++);
                     div.setAttribute('data-markwhen-source', encodeURIComponent(code.textContent));
                     pre.replaceWith(div);
+                } else if (lang === 'tikzcd' || lang === 'tikz') {
+                    const div = document.createElement('div');
+                    div.className = (lang === 'tikzcd') ? 'tikzcd-diagram' : 'tikz-diagram';
+                    div.id = 'marp-tikz-' + (tikzCounter++);
+                    div.setAttribute('data-tikz-kind', lang === 'tikzcd' ? 'cd' : 'raw');
+                    div.setAttribute('data-tikz-source', encodeURIComponent(code.textContent));
+                    div.innerHTML = '<span class="tikz-loading">TikZ をコンパイル中…</span>';
+                    pre.replaceWith(div);
                 }
             });
 
@@ -7324,7 +7572,7 @@ ${previewClone.outerHTML}
             };
             const isFigureChild = (el) => {
                 if (el.nodeType !== 1) return false;
-                if (el.matches('.mermaid, .csv-table, table, .abc-notation, .plotly-block, .markwhen-timeline, video, iframe.video-embed, .video-embed')) return true;
+                if (el.matches('.mermaid, .csv-table, table, .abc-notation, .plotly-block, .markwhen-timeline, .tikzcd-diagram, .tikz-diagram, video, iframe.video-embed, .video-embed')) return true;
                 if (isImageParagraph(el)) return true;
                 return false;
             };
@@ -7432,6 +7680,21 @@ ${previewClone.outerHTML}
             if (marpMwEls.length > 0) {
                 await ensureMarkwhen();
                 await Promise.all(Array.from(marpMwEls).map(el => renderMarkwhenCached(el)));
+            }
+
+            // Render tikz / tikz-cd diagrams in slides (memoized by kind + source).
+            // Fire-and-forget like the normal pipeline (see the long note there):
+            // the TeX compile must not hold slide rendering / the splash. Contained
+            // per block so a missing/broken engine can't wedge anything.
+            const marpTikzEls = preview.querySelectorAll('.tikzcd-diagram, .tikz-diagram');
+            if (marpTikzEls.length > 0) {
+                (async () => {
+                    let tikzOk = true;
+                    try { await ensureTikz(); } catch (e) { tikzOk = false; }
+                    await Promise.all(Array.from(marpTikzEls).map(el => tikzOk
+                        ? renderTikzCached(el).catch(err => { el.innerHTML = '<div class="tikz-error">TikZ Error: ' + escapeHtml(String((err && err.message) || err)) + '</div>'; })
+                        : Promise.resolve().then(() => { el.innerHTML = '<div class="tikz-error">TikZ エンジンを読み込めませんでした（libs/tikzjax）</div>'; })));
+                })();
             }
 
             // 同じファイルの再読込（保存後の再描画 / ライブプレビュー / テーマ変更）では
@@ -7632,6 +7895,7 @@ ${previewClone.outerHTML}
 
         async function renderMarkdown(markdown) {
             mermaidCounter = 0;
+            tikzCounter = 0;
 
             // A render replaces #preview wholesale, so an in-flight table edit cannot
             // survive it. Abandon the session and tell the user rather than letting the
@@ -7709,11 +7973,13 @@ ${previewClone.outerHTML}
             const needsPlotly = /```plotly\b/.test(processedMarkdown);
             const needsAbc = /```abc\b/.test(processedMarkdown);
             const needsMarkwhen = /```markwhen\b/.test(processedMarkdown);
+            const needsTikz = /```tikz(cd)?\b/.test(processedMarkdown);
             const mermaidReady = needsMermaid ? ensureMermaid() : null;
             const katexReady = needsKatex ? ensureKatex() : null;
             const plotlyReady = needsPlotly ? Promise.all([ensureJsYaml(), ensurePlotly()]) : null;
             const abcReady = needsAbc ? ensureAbcjs() : null;
             const markwhenReady = needsMarkwhen ? ensureMarkwhen() : null;
+            const tikzReady = needsTikz ? ensureTikz() : null;
 
             // Flush the prior render's tracked CSV files so the Rust watcher only
             // monitors files referenced by the document we're about to render.
@@ -7769,6 +8035,25 @@ ${previewClone.outerHTML}
                 const ta = document.createElement('textarea');
                 ta.innerHTML = code;
                 return `<div class="markwhen-timeline" id="${id}" data-markwhen-source="${encodeURIComponent(ta.value)}"></div>`;
+            });
+
+            // Replace tikzcd / tikz code blocks with placeholder divs; the async
+            // renderer (renderTikzCached) injects a <script type="text/tikz"> that
+            // tikzjax compiles to inline SVG in a Web Worker. `tikzcd` auto-wraps its
+            // body in the tikz-cd environment (commutative diagrams); `tikz` is a raw
+            // tikzpicture. data-tikz-kind selects the wrapping/packages.
+            const tikzPlaceholder = '<span class="tikz-loading">TikZ をコンパイル中…</span>';
+            html = html.replace(/<pre><code class="language-tikzcd">([\s\S]*?)<\/code><\/pre>/g, (match, code) => {
+                const id = `tikz-${tikzCounter++}`;
+                const ta = document.createElement('textarea');
+                ta.innerHTML = code;
+                return `<div class="tikzcd-diagram" id="${id}" data-tikz-kind="cd" data-tikz-source="${encodeURIComponent(ta.value)}">${tikzPlaceholder}</div>`;
+            });
+            html = html.replace(/<pre><code class="language-tikz">([\s\S]*?)<\/code><\/pre>/g, (match, code) => {
+                const id = `tikz-${tikzCounter++}`;
+                const ta = document.createElement('textarea');
+                ta.innerHTML = code;
+                return `<div class="tikz-diagram" id="${id}" data-tikz-kind="raw" data-tikz-source="${encodeURIComponent(ta.value)}">${tikzPlaceholder}</div>`;
             });
 
             // Render math expressions (await katex if needed)
@@ -7871,6 +8156,28 @@ ${previewClone.outerHTML}
             if (mwEls.length > 0) {
                 if (markwhenReady) await markwhenReady;
                 await Promise.all(Array.from(mwEls).map(el => renderMarkwhenCached(el)));
+            }
+
+            // Render tikz / tikz-cd diagrams (memoized by kind + source).
+            // FIRE-AND-FORGET (not awaited): a TeX compile takes seconds and a
+            // malformed diagram waits out a 30s timeout, so holding render
+            // completion — and thus the "読み込み中" splash (hidden only after
+            // renderMarkdown resolves) — on it would freeze the whole page. Each
+            // block shows its own "コンパイル中…" placeholder and fills in
+            // asynchronously; results are memoized so live-edit re-renders are
+            // instant. Failures are contained per block, and an engine-load failure
+            // short-circuits to an error. (This also means --export-png, which runs
+            // in a hidden window where the wasm Web Worker can't execute, won't
+            // capture tikz rather than hang — a documented limitation.)
+            const tikzEls = preview.querySelectorAll('.tikzcd-diagram, .tikz-diagram');
+            if (tikzEls.length > 0) {
+                (async () => {
+                    let tikzOk = true;
+                    try { if (tikzReady) await tikzReady; } catch (e) { tikzOk = false; }
+                    await Promise.all(Array.from(tikzEls).map(el => tikzOk
+                        ? renderTikzCached(el).catch(err => { el.innerHTML = '<div class="tikz-error">TikZ Error: ' + escapeHtml(String((err && err.message) || err)) + '</div>'; })
+                        : Promise.resolve().then(() => { el.innerHTML = '<div class="tikz-error">TikZ エンジンを読み込めませんでした（libs/tikzjax）</div>'; })));
+                })();
             }
 
             // Generate table of contents

@@ -38,6 +38,7 @@ $MermaidVersion = '10.9.0'
 $PlotlyVersion  = '2.35.2'
 $JsYamlVersion  = '4.1.0'
 $AbcjsVersion   = '6.6.3'
+$TikzjaxVersion = '1.5.0'   # @rod2ik/tikzjax — WASM TeX for tikz-cd commutative diagrams
 
 # ---- KaTeX font list (mirrors what KaTeX 0.16.x ships in dist/fonts/) ---
 $KatexFonts = @(
@@ -147,3 +148,44 @@ foreach ($d in $Downloads) {
 
 Write-Host ""
 Write-Host "fetch-libs: done. fetched=$fetched skipped=$skipped total=$($Downloads.Count)"
+
+# ---- @rod2ik/tikzjax (npm tarball, extracted) ---------------------------
+# Unlike the single-file libs above, TikZJax ships a ~7.7MB dist/ tree of 400+
+# files (engine JS, tex.wasm.gz, core.dump.gz, fonts/*.woff2, tex_files/*.gz)
+# that would be impractical to enumerate one URL at a time, so we pull the npm
+# tarball and extract its package/dist/ into assets/libs/tikzjax/dist/.
+# Provides `tikzcd` / `tikz` fenced-block rendering (see assets/index.html).
+$TikzDist   = Join-Path $LibsDir 'tikzjax/dist'
+$TikzMarker = Join-Path $TikzDist 'tikzjax.js'
+if ((Test-Path $TikzMarker) -and -not $Force) {
+  Write-Host "  skip   : tikzjax/dist  (already present; pass -Force to refresh)"
+} else {
+  $tgzUrl = "https://registry.npmjs.org/@rod2ik/tikzjax/-/tikzjax-$TikzjaxVersion.tgz"
+  $tmpTgz = Join-Path ([System.IO.Path]::GetTempPath()) "rod2ik-tikzjax-$TikzjaxVersion.tgz"
+  $tmpDir = Join-Path ([System.IO.Path]::GetTempPath()) "rod2ik-tikzjax-$TikzjaxVersion"
+  try {
+    Write-Host "fetch-libs: downloading @rod2ik/tikzjax@$TikzjaxVersion tarball ..."
+    Invoke-WebRequest -Uri $tgzUrl -OutFile $tmpTgz -UseBasicParsing
+    if (Test-Path $tmpDir) { Remove-Item -Recurse -Force $tmpDir }
+    New-Item -ItemType Directory -Path $tmpDir -Force | Out-Null
+    # `tar` is bundled with Windows 10+; extracts package/dist/...
+    tar -xzf $tmpTgz -C $tmpDir
+    if ($LASTEXITCODE -ne 0) { throw "tar extraction failed (exit $LASTEXITCODE)" }
+    $srcDist = Join-Path $tmpDir 'package/dist'
+    if (-not (Test-Path $srcDist)) { throw "tarball had no package/dist/ ($srcDist)" }
+    if (Test-Path $TikzDist) { Remove-Item -Recurse -Force $TikzDist }
+    New-Item -ItemType Directory -Path (Split-Path -Parent $TikzDist) -Force | Out-Null
+    Copy-Item -Recurse -Force $srcDist $TikzDist
+    # Also place the tarball's LICENSE next to dist for collect-licenses fallback.
+    $srcLic = Join-Path $tmpDir 'package/LICENSE'
+    if (Test-Path $srcLic) { Copy-Item -Force $srcLic (Join-Path $LibsDir 'tikzjax/LICENSE') }
+    $sz = (Get-ChildItem -Recurse $TikzDist | Measure-Object Length -Sum).Sum
+    Write-Host ("  fetched: {0,-50}  ({1:N0} bytes)" -f 'tikzjax/dist', $sz)
+  } catch {
+    Write-Error "Failed to fetch @rod2ik/tikzjax: $_"
+    throw
+  } finally {
+    if (Test-Path $tmpTgz) { Remove-Item -Force $tmpTgz -ErrorAction SilentlyContinue }
+    if (Test-Path $tmpDir) { Remove-Item -Recurse -Force $tmpDir -ErrorAction SilentlyContinue }
+  }
+}

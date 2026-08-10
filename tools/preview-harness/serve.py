@@ -65,6 +65,7 @@ EXTRA_MIME = {
     ".woff2": "font/woff2",
     ".woff": "font/woff",
     ".avif": "image/avif",
+    ".wasm": "application/wasm",
 }
 
 

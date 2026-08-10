@@ -409,6 +409,9 @@ pub(crate) fn get_mime_type(path: &PathBuf) -> &'static str {
         Some("webm") => "video/webm",
         Some("ogv") | Some("ogg") => "video/ogg",
 
+        // WebAssembly (TikZJax WASM TeX engine, served from assets/libs/tikzjax/)
+        Some("wasm") => "application/wasm",
+
         // Other common types
         Some("json") => "application/json",
         Some("xml") => "application/xml",
@@ -2706,6 +2709,10 @@ mod tests {
         assert_eq!(mime("a.csv"), "text/csv; charset=utf-8");
         assert_eq!(mime("a.tsv"), "text/tab-separated-values; charset=utf-8");
         assert_eq!(mime("a.txt"), "text/plain; charset=utf-8");
+        assert_eq!(mime("a.wasm"), "application/wasm"); // TikZJax WASM engine
+        // TikZJax's gzipped assets (tex.wasm.gz / core.dump.gz / tex_files/*.gz)
+        // are served raw and decompressed in JS, so .gz stays the octet default.
+        assert_eq!(mime("core.dump.gz"), "application/octet-stream");
         // The default is why a non-image extension can never be usefully inlined.
         assert_eq!(mime("a.unknown"), "application/octet-stream");
         assert_eq!(mime("noext"), "application/octet-stream");

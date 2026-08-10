@@ -103,6 +103,12 @@ $direct = @(
     Upstream='https://github.com/paulrosen/abcjs';
     Path='assets/libs/abcjs/abcjs-basic-min.js';
     LicenseFile='tools/license-texts/abcjs.LICENSE' }
+  # TikZJax bundles a WebAssembly build of TeX/pgf/TikZ (GPL/LPPL) for the
+  # tikzcd / tikz fenced blocks — the project's only copyleft dependency.
+  [pscustomobject]@{ Name='@rod2ik/tikzjax (WASM TeX + TikZ/pgf/tikz-cd)'; Version='1.5.0'; Spdx='GPL-3.0 / LPPL-1.3c';
+    Upstream='https://www.npmjs.com/package/@rod2ik/tikzjax';
+    Path='assets/libs/tikzjax/';
+    LicenseFile='tools/license-texts/tikzjax.LICENSE' }
 )
 
 foreach ($d in $direct) {
