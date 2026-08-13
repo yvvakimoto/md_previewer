@@ -1,4 +1,13 @@
 :root {
+    /* Editing-surface typography. Written by entry.js (setFontSize /
+     * setFontFamily) and read back only by the EditorView.theme block there, so
+     * ONLY the CodeMirror content and its gutters scale — the status bar, the
+     * modals and the Vim ex prompt are chrome and stay at their fixed sizes.
+     * These are not colors, so they are deliberately absent from
+     * `body.theme-dark`; the two axes are orthogonal. */
+    --editor-font-size: 15px;
+    --editor-font-family: "Cascadia Code", "Source Han Code JP", "Yu Gothic UI", Consolas, monospace;
+
     --bg: #fafafa;
     --fg: #1a1a1a;
     --muted: #6a6a6a;
@@ -444,13 +453,17 @@ body.cellmode-command .cm-editor .cm-fat-cursor {
 
 /* Cell-number gutter (`gutter({class: 'cm-cellNumbers'})`, placed after the line
  * numbers and before the fold arrows). CodeMirror sets each .cm-gutterElement's
- * height explicitly, so a smaller font here cannot desync it from the text. */
+ * height explicitly, so a smaller font here cannot desync it from the text.
+ * The size is `em`-relative (0.733em ≈ the historical 11px at the default 15px)
+ * because the gutter is part of the editing surface, not chrome: it must track
+ * --editor-font-size like the line numbers, which carry no font-size of their
+ * own and therefore inherit it already. */
 .cm-editor .cm-cellNumbers .cm-gutterElement {
     padding: 0 4px 0 6px;
     min-width: 30px;
     text-align: right;
     white-space: nowrap;
-    font-size: 11px;
+    font-size: 0.733em;
     color: var(--cell-num);
 }
 .cm-editor .cm-cellNumbers .cm-cell-num-active {
@@ -475,4 +488,152 @@ body.cellmode-command .cm-editor .cm-fat-cursor {
 }
 .cell-help-desc {
     color: var(--muted);
+}
+
+/* Settings modal (reuses the .cc-modal / .cc-panel shell). Every color is an
+ * existing var(--…) token, so body.theme-dark is inherited with no rules of its
+ * own — same approach as .table-size-form above. */
+.settings-body {
+    max-height: 68vh;
+    overflow-y: auto;
+    margin: 4px -4px 0;
+    padding: 0 4px;
+}
+.settings-section {
+    margin: 0 0 14px;
+}
+.settings-section:last-child {
+    margin-bottom: 0;
+}
+.settings-section h3 {
+    margin: 0 0 6px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+    text-transform: none;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 4px;
+}
+.settings-row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    gap: 8px 12px;
+    padding: 6px 2px;
+}
+.settings-label {
+    font-size: 13px;
+    color: var(--fg);
+}
+/* Shortcut / ex-command hint. Before this modal existed these were documented
+ * only in the status-bar buttons' title= tooltips, which the consolidation
+ * removed — so the hints are load-bearing documentation, not decoration. */
+.settings-hint {
+    display: block;
+    font-size: 10.5px;
+    color: var(--muted);
+    margin-top: 2px;
+}
+.settings-hint code {
+    font-family: monospace;
+    background: var(--status-bg);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 0 4px;
+}
+.settings-control {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    justify-self: end;
+}
+.settings-control select,
+.settings-control input[type="checkbox"] {
+    font: inherit;
+    font-size: 13px;
+}
+.settings-control select {
+    padding: 4px 6px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--bg);
+    color: var(--fg);
+    max-width: 190px;
+}
+.settings-control select:focus {
+    border-color: var(--fg);
+    outline: none;
+}
+/* Small square buttons for the −/+ font stepper. */
+.settings-step {
+    font: inherit;
+    font-size: 14px;
+    line-height: 1;
+    width: 26px;
+    height: 24px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--status-bg);
+    color: var(--fg);
+    cursor: pointer;
+}
+.settings-step:hover {
+    border-color: var(--fg);
+}
+.settings-step:disabled {
+    opacity: 0.4;
+    cursor: default;
+}
+.settings-step:disabled:hover {
+    border-color: var(--border);
+}
+.settings-value {
+    min-width: 44px;
+    text-align: center;
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+    color: var(--fg);
+}
+.settings-reset {
+    font: inherit;
+    font-size: 11px;
+    padding: 3px 8px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+}
+.settings-reset:hover {
+    color: var(--fg);
+    border-color: var(--fg);
+}
+/* Segmented radio group (line numbers, theme). */
+.settings-seg {
+    display: inline-flex;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    overflow: hidden;
+}
+.settings-seg button {
+    font: inherit;
+    font-size: 12px;
+    padding: 3px 10px;
+    border: none;
+    border-left: 1px solid var(--border);
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+}
+.settings-seg button:first-child {
+    border-left: none;
+}
+.settings-seg button:hover {
+    color: var(--fg);
+}
+.settings-seg button.active {
+    background: var(--status-bg);
+    color: var(--fg);
+    font-weight: 600;
 }

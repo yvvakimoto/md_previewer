@@ -238,10 +238,12 @@ def main():
             # domEventHandlers, `j` would move ONE LINE inside the same cell and
             # `a` would enter INSERT. Both are asserted here.
             load(cells="on", vim="on")
+            # Vim used to be reported by a `Vim: ON` status-bar button; that and the
+            # other five preference buttons now live in the settings modal, so read
+            # its checkbox instead. The control is in the DOM whether or not the
+            # modal is displayed, so this stays side-effect free.
             check("Vim is on", page.evaluate(
-                "() => document.querySelector('.status-btn') !== null"
-                " && [...document.querySelectorAll('.status-btn')]"
-                ".some(b => b.textContent === 'Vim: ON')"), True)
+                "() => document.querySelector('[data-el=\"vim\"]').checked"), True)
             press("Escape")
             check("Vim ON: Esc still enters cell Command mode",
                   body_has("cellmode-command"), True)
@@ -355,19 +357,20 @@ def main():
             check("cell mode off: `j` is typed into the document, not swallowed",
                   doc_text(), "j" + before)
 
-            # Toggling on at runtime brings the chrome up.
-            page.evaluate(
-                "() => [...document.querySelectorAll('.status-btn')]"
-                ".find(b => b.textContent.indexOf('Cells') >= 0).click()")
-            page.wait_for_timeout(200)
-            check("clicking the status button turns cell mode on", body_has("cell-mode"), True)
+            # Toggling on at runtime brings the chrome up. This was a `⌗ Cells`
+            # status-bar button; it is now the settings modal's checkbox, which
+            # calls the same setCells(). Clicking a checkbox fires `change` even
+            # while the modal is hidden, so no open/close dance is needed.
+            def toggle_cells():
+                page.evaluate("() => document.querySelector('[data-el=\"cells\"]').click()")
+                page.wait_for_timeout(200)
+
+            toggle_cells()
+            check("the settings toggle turns cell mode on", body_has("cell-mode"), True)
             check("turning it on adds the decorations",
                   page.evaluate("() => document.querySelectorAll('.cm-cell').length > 0"), True)
-            page.evaluate(
-                "() => [...document.querySelectorAll('.status-btn')]"
-                ".find(b => b.textContent.indexOf('Cells') >= 0).click()")
-            page.wait_for_timeout(200)
-            check("clicking it again drops every decoration in one transaction",
+            toggle_cells()
+            check("toggling it off drops every decoration in one transaction",
                   page.evaluate("() => document.querySelectorAll('.cm-cell').length"), 0)
 
             # ---------- marpSlides regression (it now shares mdBlocks.js) ----------

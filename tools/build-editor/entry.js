@@ -46,6 +46,12 @@ import {
 } from './mdTable.js';
 import { tablePaste, plainPasteKeymap } from './tablePaste.js';
 import {
+  FONT_SIZE_MIN, FONT_SIZE_MAX, FONT_SIZE_DEFAULT,
+  clampFontSize, stepFontSize, parseFontSizeArg,
+  FONT_FAMILIES, FONT_FAMILY_DEFAULT, fontFamilyKeys, fontStackOf,
+  editorPrefsKeymap,
+} from './editorPrefs.js';
+import {
   cellMode, cellModeOf, setCellMode, cellList, cellAt, cellIndexAt, cellRunLine,
   insertCellBelow, selectNextCell, CELL_HELP,
 } from './cells.js';
@@ -163,43 +169,24 @@ export function create(root, opts = {}) {
   statusInfo.title = 'Click for character count';
   const statusCtrls = document.createElement('span');
   statusCtrls.className = 'status-ctrls';
-  const btnLn = document.createElement('button');
-  btnLn.className = 'status-btn';
-  btnLn.type = 'button';
-  btnLn.title = 'Cycle line number mode (absolute → relative → off)';
-  const btnVim = document.createElement('button');
-  btnVim.className = 'status-btn';
-  btnVim.type = 'button';
-  btnVim.title = 'Toggle Vim keybindings';
-  const btnTheme = document.createElement('button');
-  btnTheme.className = 'status-btn';
-  btnTheme.type = 'button';
-  btnTheme.title = 'Toggle editor theme (light / dark)';
-  const btnLive = document.createElement('button');
-  btnLive.className = 'status-btn';
-  btnLive.type = 'button';
-  btnLive.title = 'Toggle live preview (off = preview updates on save only)';
-  // Markdown table helpers. Unlike the Marp trio these stay visible in every
-  // document: inserting a table is meaningful anywhere, and the column highlight
-  // is a preference rather than a document-dependent action (hiding it would make
-  // it unsettable in a document that has no table yet — exactly when you are
-  // about to insert one).
+  // The bar carries ACTIONS only. Every preference (font size / family, theme,
+  // line numbers, Vim, cell mode, table column highlight, table paste, live
+  // preview) lives in the settings modal instead — the bar had grown to seven
+  // controls, which is what previously forced `editor:tablePaste` to be
+  // reachable through `:set notablepaste` alone, with no UI at all.
+  const btnSettings = document.createElement('button');
+  btnSettings.className = 'status-btn';
+  btnSettings.type = 'button';
+  btnSettings.title = '表示・編集の設定（文字サイズ / フォント / テーマ / Vim / セルモード …）  ·  :pref';
+  btnSettings.textContent = '⚙ 設定';
+  // Markdown table insert. An action, not a preference, so it stays on the bar.
+  // Unlike the Marp trio it is visible in every document: inserting a table is
+  // meaningful anywhere.
   const btnTable = document.createElement('button');
   btnTable.className = 'status-btn';
   btnTable.type = 'button';
   btnTable.title = 'Insert a Markdown table (rows × columns)  ·  :table [R C] / gti / Ctrl+Alt+T';
   btnTable.textContent = '⊞ Table';
-  const btnTableCol = document.createElement('button');
-  btnTableCol.className = 'status-btn';
-  btnTableCol.type = 'button';
-  btnTableCol.title = "Highlight the cursor's table column  ·  :tablecol / gtc / Ctrl+Alt+H";
-  // Jupyter-style cell mode. Always visible for the same reason as the table
-  // buttons: it is a preference, and `---`-delimited cells are meaningful in any
-  // markdown document, not only a Marp deck.
-  const btnCells = document.createElement('button');
-  btnCells.className = 'status-btn';
-  btnCells.type = 'button';
-  btnCells.title = 'Jupyter-style cell mode (Esc = command mode, h = key list)  ·  :cellmode / gmc';
   // Marp slide helpers — only shown for Marp documents (see updateMarpButtons).
   const btnSlideAdd = document.createElement('button');
   btnSlideAdd.className = 'status-btn';
@@ -219,8 +206,8 @@ export function create(root, opts = {}) {
   btnSlideCut.title = 'Cut the current slide  ·  :slidecut / gsd / Ctrl+Alt+X';
   btnSlideCut.textContent = '✂ Slide';
   btnSlideCut.style.display = 'none';
-  statusCtrls.append(btnLn, btnVim, btnTheme, btnLive, btnTable, btnTableCol,
-                     btnCells, btnSlideAdd, btnSlideCopy, btnSlideCut);
+  statusCtrls.append(btnSettings, btnTable,
+                     btnSlideAdd, btnSlideCopy, btnSlideCut);
   statusRight.append(statusInfo, statusCtrls);
   status.appendChild(statusFile);
   status.appendChild(statusRight);
@@ -405,11 +392,168 @@ export function create(root, opts = {}) {
     document.body.classList.remove('status-pinned');
     setTimeout(() => view.focus(), 0);
   }
+
+  // ---------- Settings modal (reuses the cc-modal shell) ----------
+  // The single home for every preference. It only ever calls the existing
+  // setters, so the Vim `:set` / `gtc` / `gmc` paths keep working untouched and
+  // there is exactly one place that owns each pref's state.
+  //
+  // Each row carries its shortcut / ex-command as a hint: before this modal the
+  // status-bar buttons' title= tooltips were the only documentation surface for
+  // them, and consolidating the buttons away would otherwise have lost that.
+  const settingsModal = document.createElement('div');
+  settingsModal.className = 'cc-modal';
+  settingsModal.style.display = 'none';
+  const fontOptions = FONT_FAMILIES
+    .map((f) => `<option value="${f.key}">${f.label}</option>`).join('');
+  settingsModal.innerHTML = `
+    <div class="cc-panel" role="dialog" aria-modal="true" aria-label="エディター設定">
+      <button class="cc-close" type="button" aria-label="閉じる">&times;</button>
+      <h2>⚙ 設定</h2>
+      <div class="settings-body">
+        <div class="settings-section">
+          <h3>表示</h3>
+          <div class="settings-row">
+            <span class="settings-label">文字サイズ
+              <span class="settings-hint"><code>Ctrl</code>+<code>+</code> / <code>-</code> / <code>0</code> · <code>Ctrl</code>+ホイール · <code>:fontsize</code></span>
+            </span>
+            <span class="settings-control">
+              <button class="settings-step" type="button" data-act="font-minus" aria-label="小さく">−</button>
+              <span class="settings-value" data-el="font-value">15px</span>
+              <button class="settings-step" type="button" data-act="font-plus" aria-label="大きく">＋</button>
+              <button class="settings-reset" type="button" data-act="font-reset">戻す</button>
+            </span>
+          </div>
+          <div class="settings-row">
+            <span class="settings-label">フォント
+              <span class="settings-hint">編集領域のみ。ステータスバー等は固定サイズです</span>
+            </span>
+            <span class="settings-control">
+              <select data-el="font-family" aria-label="フォント">${fontOptions}</select>
+            </span>
+          </div>
+          <div class="settings-row">
+            <span class="settings-label">テーマ</span>
+            <span class="settings-control">
+              <span class="settings-seg" data-seg="theme">
+                <button type="button" data-val="light">Light</button>
+                <button type="button" data-val="dark">Dark</button>
+              </span>
+            </span>
+          </div>
+          <div class="settings-row">
+            <span class="settings-label">行番号
+              <span class="settings-hint"><code>:set nu</code> / <code>rnu</code> / <code>nonu</code></span>
+            </span>
+            <span class="settings-control">
+              <span class="settings-seg" data-seg="lineNo">
+                <button type="button" data-val="absolute">絶対</button>
+                <button type="button" data-val="relative">相対</button>
+                <button type="button" data-val="off">なし</button>
+              </span>
+            </span>
+          </div>
+        </div>
+        <div class="settings-section">
+          <h3>編集</h3>
+          <div class="settings-row">
+            <span class="settings-label">Vim キーバインド
+              <span class="settings-hint">OFF で CodeMirror 標準のキー操作</span>
+            </span>
+            <span class="settings-control"><input type="checkbox" data-el="vim" aria-label="Vim キーバインド"></span>
+          </div>
+          <div class="settings-row">
+            <span class="settings-label">セルモード
+              <span class="settings-hint"><code>---</code> 区切りの Jupyter 風編集 · <code>:cellmode</code> / <code>gmc</code></span>
+            </span>
+            <span class="settings-control"><input type="checkbox" data-el="cells" aria-label="セルモード"></span>
+          </div>
+          <div class="settings-row">
+            <span class="settings-label">表の列ハイライト
+              <span class="settings-hint"><code>:tablecol</code> / <code>gtc</code> / <code>Ctrl</code>+<code>Alt</code>+<code>H</code></span>
+            </span>
+            <span class="settings-control"><input type="checkbox" data-el="table-col" aria-label="表の列ハイライト"></span>
+          </div>
+          <div class="settings-row">
+            <span class="settings-label">表の貼り付け変換
+              <span class="settings-hint">Excel / Word の表を GFM 表に · 一回だけ素で貼るのは <code>Ctrl</code>+<code>Shift</code>+<code>V</code></span>
+            </span>
+            <span class="settings-control"><input type="checkbox" data-el="table-paste" aria-label="表の貼り付け変換"></span>
+          </div>
+        </div>
+        <div class="settings-section">
+          <h3>連携</h3>
+          <div class="settings-row">
+            <span class="settings-label">ライブプレビュー
+              <span class="settings-hint">OFF なら保存時のみプレビュー更新（重い文書向け）</span>
+            </span>
+            <span class="settings-control"><input type="checkbox" data-el="live" aria-label="ライブプレビュー"></span>
+          </div>
+        </div>
+      </div>
+      <div class="cc-hint"><kbd>Esc</kbd> で閉じる</div>
+    </div>`;
+  document.body.appendChild(settingsModal);
+
+  // Handles for updateSettingsUI(). Declared with `let` and assigned here so
+  // updateSettingsUI can no-op safely if a setter fires before this point.
+  let settingsCtl = null;
+  {
+    const q = (sel) => settingsModal.querySelector(sel);
+    const segButtons = (name) =>
+      Array.from(settingsModal.querySelectorAll(`[data-seg="${name}"] button`));
+    settingsCtl = {
+      fontValue: q('[data-el="font-value"]'),
+      fontMinus: q('[data-act="font-minus"]'),
+      fontPlus: q('[data-act="font-plus"]'),
+      fontFamily: q('[data-el="font-family"]'),
+      vim: q('[data-el="vim"]'),
+      cells: q('[data-el="cells"]'),
+      tableCol: q('[data-el="table-col"]'),
+      tablePaste: q('[data-el="table-paste"]'),
+      live: q('[data-el="live"]'),
+      setSeg: (name, val) => {
+        segButtons(name).forEach((b) => b.classList.toggle('active', b.dataset.val === val));
+      },
+    };
+    // `quiet` on every call: the modal already shows the value, and a toast would
+    // pin the status bar behind the backdrop. It also keeps the setters from
+    // stealing focus back into the editor mid-interaction.
+    q('[data-act="font-minus"]').addEventListener('click', () => zoomFont(-1, true));
+    q('[data-act="font-plus"]').addEventListener('click', () => zoomFont(+1, true));
+    q('[data-act="font-reset"]').addEventListener('click', () => resetFont(true));
+    settingsCtl.fontFamily.addEventListener('change', (e) => setFontFamily(e.target.value, true));
+    segButtons('theme').forEach((b) =>
+      b.addEventListener('click', () => setTheme(b.dataset.val)));
+    segButtons('lineNo').forEach((b) =>
+      b.addEventListener('click', () => setLineNo(b.dataset.val)));
+    settingsCtl.vim.addEventListener('change', (e) => setVim(e.target.checked));
+    settingsCtl.cells.addEventListener('change', (e) => setCells(e.target.checked));
+    settingsCtl.tableCol.addEventListener('change', (e) => setTableCol(e.target.checked));
+    settingsCtl.tablePaste.addEventListener('change', (e) => setTablePaste(e.target.checked));
+    settingsCtl.live.addEventListener('change', (e) => setLive(e.target.checked));
+  }
+  settingsModal.querySelector('.cc-close').addEventListener('click', () => closeSettings());
+  settingsModal.addEventListener('click', (e) => {
+    if (e.target === settingsModal) closeSettings();
+  });
+  function openSettings() {
+    updateSettingsUI();
+    document.body.classList.add('status-pinned');
+    settingsModal.style.display = 'flex';
+  }
+  function closeSettings() {
+    settingsModal.style.display = 'none';
+    document.body.classList.remove('status-pinned');
+    setTimeout(() => view.focus(), 0);
+  }
+
   // The cell-mode key gate must stand down while any of these owns the keyboard:
   // openModal() does not move focus, so contentDOM keeps it and the gate would
   // otherwise fire in parallel with the Esc chain below.
   function isModalOpen() {
-    return cellHelpModal.style.display === 'flex'
+    return settingsModal.style.display === 'flex'
+      || cellHelpModal.style.display === 'flex'
       || tableModal.style.display === 'flex'
       || slideModal.style.display === 'flex'
       || modal.style.display === 'flex';
@@ -418,6 +562,11 @@ export function create(root, opts = {}) {
   document.addEventListener('keydown', (e) => {
     // Newest modal first (same ordering rule that put slideModal ahead of the
     // char-count modal). This chain is hard-coded, so a new modal must be added.
+    if (e.key === 'Escape' && settingsModal.style.display === 'flex') {
+      e.preventDefault();
+      closeSettings();
+      return;
+    }
     if (e.key === 'Escape' && cellHelpModal.style.display === 'flex') {
       e.preventDefault();
       closeCellHelp();
@@ -488,12 +637,24 @@ export function create(root, opts = {}) {
   const LS_TABLECOL = 'editor:tableColHighlight';
   const LS_TABLEPASTE = 'editor:tablePaste';
   const LS_CELLS = 'editor:cellMode';
+  const LS_FONTSIZE = 'editor:fontSize';
+  const LS_FONTFAMILY = 'editor:fontFamily';
   function readPref(key, valid, fallback) {
     try {
       const v = localStorage.getItem(key);
       if (v && valid.indexOf(v) >= 0) return v;
     } catch (_) {}
     return fallback;
+  }
+  // readPref validates against an enum, which cannot express a font size. This is
+  // the only numeric pref in the file; clampFontSize absorbs every junk form
+  // (missing, '', 'abc', out of range), including a hand-edited localStorage.
+  function readFontSizePref() {
+    try {
+      const v = localStorage.getItem(LS_FONTSIZE);
+      if (v != null && v !== '') return clampFontSize(v);
+    } catch (_) {}
+    return FONT_SIZE_DEFAULT;
   }
   let vimState = readPref(LS_VIM, ['on', 'off'], 'off') === 'on';
   let lineNoState = readPref(LS_LN, ['absolute', 'relative', 'off'], 'absolute');
@@ -506,6 +667,8 @@ export function create(root, opts = {}) {
   // the rare user who wants it gone, reachable via `:set notablepaste`.
   let tablePasteState = readPref(LS_TABLEPASTE, ['on', 'off'], 'on') === 'on';
   let cellState = readPref(LS_CELLS, ['on', 'off'], 'off') === 'on';
+  let fontSizeState = readFontSizePref();
+  let fontFamilyState = readPref(LS_FONTFAMILY, fontFamilyKeys(), FONT_FAMILY_DEFAULT);
 
   const vimComp = new Compartment();
   const lineNoComp = new Compartment();
@@ -527,6 +690,27 @@ export function create(root, opts = {}) {
   document.body.classList.toggle('theme-dark', themeState === 'dark');
   document.body.classList.toggle('cell-mode', cellState);
   document.body.classList.toggle('cellmode-edit', cellState);
+  // Typography is CSS variables rather than a Compartment: it holds no state and
+  // renders no decorations, so there is nothing to go stale — the same rule
+  // setTablePaste follows below. Applied here, before `new EditorView`, so a
+  // persisted size never flashes at 15px first.
+  applyFontVars();
+
+  function applyFontVars() {
+    const root = document.documentElement;
+    root.style.setProperty('--editor-font-size', fontSizeState + 'px');
+    root.style.setProperty('--editor-font-family', fontStackOf(fontFamilyState));
+  }
+
+  // Setters hand focus back to the editor so a status-bar click doesn't leave the
+  // caret stranded. That is wrong while the settings modal owns the screen: it
+  // would pull focus out from under the control the user just clicked and send
+  // their next keystroke into the editor behind the backdrop. Every setter that
+  // the modal can invoke routes its focus restore through here.
+  function refocusEditor() {
+    if (settingsModal.style.display === 'flex') return;
+    setTimeout(() => view.focus(), 0);
+  }
 
   function lineNumberExt(mode) {
     if (mode === 'off') return [];
@@ -541,20 +725,25 @@ export function create(root, opts = {}) {
     return lineNumbers();
   }
 
-  function updateToolbar() {
-    btnVim.textContent = vimState ? 'Vim: ON' : 'Vim: OFF';
-    btnVim.classList.toggle('active', vimState);
-    const lnLabel = { absolute: '# Abs', relative: '# Rel', off: '# Off' }[lineNoState];
-    btnLn.textContent = lnLabel;
-    btnLn.classList.toggle('active', lineNoState !== 'absolute');
-    btnTheme.textContent = themeState === 'dark' ? 'Theme: Dark' : 'Theme: Light';
-    btnTheme.classList.toggle('active', themeState === 'dark');
-    btnLive.textContent = liveState ? 'Live: ON' : 'Live: OFF';
-    btnLive.classList.toggle('active', liveState);
-    btnTableCol.textContent = tableColState ? 'Col: ON' : 'Col: OFF';
-    btnTableCol.classList.toggle('active', tableColState);
-    btnCells.textContent = cellState ? '⌗ Cells: ON' : '⌗ Cells: OFF';
-    btnCells.classList.toggle('active', cellState);
+  // Reflect current state into the settings modal's controls. Every setter calls
+  // this, so a preference changed from anywhere — a Vim `:set`, a `gtc` mapping,
+  // a Ctrl+= keypress — shows up correctly the next time the modal is opened.
+  // Cheap enough to run unconditionally: the modal is a handful of nodes, and
+  // guarding on "is it open" would leave the DOM stale for openSettings() to fix
+  // anyway.
+  function updateSettingsUI() {
+    if (!settingsCtl) return;   // called before the modal is built
+    settingsCtl.fontValue.textContent = fontSizeState + 'px';
+    settingsCtl.fontMinus.disabled = fontSizeState <= FONT_SIZE_MIN;
+    settingsCtl.fontPlus.disabled = fontSizeState >= FONT_SIZE_MAX;
+    settingsCtl.fontFamily.value = fontFamilyState;
+    settingsCtl.setSeg('theme', themeState);
+    settingsCtl.setSeg('lineNo', lineNoState);
+    settingsCtl.vim.checked = vimState;
+    settingsCtl.cells.checked = cellState;
+    settingsCtl.tableCol.checked = tableColState;
+    settingsCtl.tablePaste.checked = tablePasteState;
+    settingsCtl.live.checked = liveState;
   }
   function setVim(on) {
     vimState = !!on;
@@ -567,16 +756,16 @@ export function create(root, opts = {}) {
       // Defer until after the reconfigure flushes; getCM needs the adapter.
       setTimeout(attachVimModeListener, 0);
     }
-    updateToolbar();
+    updateSettingsUI();
     updateStatus();
-    setTimeout(() => view.focus(), 0);
+    refocusEditor();
   }
   function setLineNo(mode) {
     if (['absolute', 'relative', 'off'].indexOf(mode) < 0) return;
     lineNoState = mode;
     try { localStorage.setItem(LS_LN, mode); } catch (_) {}
     view.dispatch({ effects: lineNoComp.reconfigure(lineNumberExt(mode)) });
-    updateToolbar();
+    updateSettingsUI();
   }
   function cycleLineNo() {
     setLineNo({ absolute: 'relative', relative: 'off', off: 'absolute' }[lineNoState]);
@@ -587,8 +776,8 @@ export function create(root, opts = {}) {
     try { localStorage.setItem(LS_THEME, themeState); } catch (_) {}
     view.dispatch({ effects: themeComp.reconfigure(themeState === 'dark' ? oneDark : []) });
     document.body.classList.toggle('theme-dark', themeState === 'dark');
-    updateToolbar();
-    setTimeout(() => view.focus(), 0);
+    updateSettingsUI();
+    refocusEditor();
   }
   function setLive(on) {
     liveState = !!on;
@@ -601,8 +790,8 @@ export function create(root, opts = {}) {
       clearTimeout(liveTimer);
       liveTimer = 0;
     }
-    updateToolbar();
-    setTimeout(() => view.focus(), 0);
+    updateSettingsUI();
+    refocusEditor();
   }
   function setTableCol(on) {
     tableColState = !!on;
@@ -610,8 +799,8 @@ export function create(root, opts = {}) {
     view.dispatch({
       effects: tableColComp.reconfigure(tableColState ? tableColumnHighlight() : []),
     });
-    updateToolbar();
-    setTimeout(() => view.focus(), 0);
+    updateSettingsUI();
+    refocusEditor();
   }
   // No reconfigure: tablePaste() reads this through an isEnabled closure. It
   // holds no state and renders nothing, so unlike the column highlight above
@@ -619,8 +808,49 @@ export function create(root, opts = {}) {
   function setTablePaste(on) {
     tablePasteState = !!on;
     try { localStorage.setItem(LS_TABLEPASTE, tablePasteState ? 'on' : 'off'); } catch (_) {}
-    showHint('表の貼り付け変換: ' + (tablePasteState ? 'ON' : 'OFF'));
-    setTimeout(() => view.focus(), 0);
+    // `:set notablepaste` has no other feedback, but inside the modal the
+    // checkbox is the feedback and the hint would render behind the backdrop.
+    if (settingsModal.style.display !== 'flex') {
+      showHint('表の貼り付け変換: ' + (tablePasteState ? 'ON' : 'OFF'));
+    }
+    refocusEditor();
+  }
+  // Typography. No reconfigure for the same reason as setTablePaste above — but
+  // unlike it, a size change invalidates CodeMirror's cached character width and
+  // line height, so requestMeasure() is mandatory: EditorView.lineWrapping is on,
+  // and without a re-measure the wrap points and the caret drift away from the
+  // rendered glyphs. `quiet` suppresses the toast when the settings modal is the
+  // caller (the value is already visible there) and keeps focus in the modal.
+  function setFontSize(px, quiet) {
+    const next = clampFontSize(px);
+    const changed = next !== fontSizeState;
+    fontSizeState = next;
+    try { localStorage.setItem(LS_FONTSIZE, String(fontSizeState)); } catch (_) {}
+    applyFontVars();
+    if (view) view.requestMeasure();
+    updateSettingsUI();
+    if (!quiet) {
+      // At a clamp boundary say so, otherwise a repeated keypress looks broken.
+      showHint(changed ? '文字サイズ ' + fontSizeState + 'px'
+                       : '文字サイズ ' + fontSizeState + 'px（下限/上限）');
+      setTimeout(() => view.focus(), 0);
+    }
+  }
+  function zoomFont(delta, quiet) {
+    setFontSize(stepFontSize(fontSizeState, delta), quiet);
+  }
+  function resetFont(quiet) {
+    setFontSize(FONT_SIZE_DEFAULT, quiet);
+  }
+  function setFontFamily(key, quiet) {
+    if (fontFamilyKeys().indexOf(key) < 0) return;
+    fontFamilyState = key;
+    try { localStorage.setItem(LS_FONTFAMILY, fontFamilyState); } catch (_) {}
+    applyFontVars();
+    // A different family means a different advance width, so re-measure too.
+    if (view) view.requestMeasure();
+    updateSettingsUI();
+    if (!quiet) setTimeout(() => view.focus(), 0);
   }
   // Cell mode's callback bundle: cells.js stays free of chrome (modals, body
   // classes, IPC), exactly like marpSlides.js / mdTable.js.
@@ -659,18 +889,13 @@ export function create(root, opts = {}) {
     // Leaving cell mode must not strand the Command-mode look.
     document.body.classList.toggle('cellmode-command', false);
     document.body.classList.toggle('cellmode-edit', cellState);
-    updateToolbar();
+    updateSettingsUI();
     updateStatus();
-    setTimeout(() => view.focus(), 0);
+    refocusEditor();
   }
 
-  btnVim.addEventListener('click', () => setVim(!vimState));
-  btnLn.addEventListener('click', cycleLineNo);
-  btnTheme.addEventListener('click', () => setTheme(themeState === 'dark' ? 'light' : 'dark'));
-  btnLive.addEventListener('click', () => setLive(!liveState));
+  btnSettings.addEventListener('click', () => openSettings());
   btnTable.addEventListener('click', () => openTableModal());
-  btnTableCol.addEventListener('click', () => setTableCol(!tableColState));
-  btnCells.addEventListener('click', () => setCells(!cellState));
   btnSlideAdd.addEventListener('click', () => openSlideModal());
   btnSlideCopy.addEventListener('click', () => copySlide(view));
   btnSlideCut.addEventListener('click', () => cutSlide(view));
@@ -896,6 +1121,22 @@ export function create(root, opts = {}) {
       const a = ((params && params.args && params.args[0]) || '').toLowerCase();
       setCells(a === 'on' ? true : a === 'off' ? false : !cellState);
     });
+    // Font size: `:fontsize 17` / `:fontsize +2` / `:fontsize -2` / `:fontsize`
+    // (reset). No existing ex-command starts with `f`, so `:font` resolves here
+    // unambiguously under the package's prefix rule documented above.
+    Vim.defineEx('fontsize', undefined, (_cm, params) => {
+      const arg = (params && params.args && params.args[0]) || '';
+      const next = parseFontSizeArg(arg, fontSizeState);
+      if (next == null) {
+        showHint('E488: 引数が不正です: :fontsize ' + arg);
+        return;
+      }
+      setFontSize(next);
+    });
+    // Opens the settings modal. Deliberately NOT named `settings` / `set…`:
+    // the package resolves with name.indexOf(input) === 0, so any name starting
+    // with "set" would make `:set` itself ambiguous and break every option above.
+    Vim.defineEx('pref', undefined, () => openSettings());
   } catch (_) {}
 
   // Heading navigation + section folding (NORMAL mode).
@@ -1074,8 +1315,30 @@ export function create(root, opts = {}) {
       // acceptCompletion 等はポップアップ非表示時 false を返すので、
       // リスト継続・改行など通常挙動には干渉しない。
       Prec.highest(keymap.of(completionKeymap)),
+      // Ctrl+wheel font zoom. The editor webview builds WITHOUT
+      // .with_hotkeys_zoom(), and wry defaults zoom_hotkeys_enabled to false ->
+      // SetIsZoomControlEnabled(false), so there is no WebView2 browser zoom to
+      // fight here — but preventDefault is still needed to stop the scroll.
+      // A wheel listener on an element is not passive by default (only the ones
+      // on window/document/body are), so preventDefault takes effect.
+      EditorView.domEventHandlers({
+        wheel(e) {
+          if (!e.ctrlKey && !e.metaKey) return false;
+          e.preventDefault();
+          zoomFont(e.deltaY < 0 ? +1 : -1);
+          return true;
+        },
+      }),
       keymap.of([
         saveKey,
+        // Ctrl+= / Ctrl+- / Ctrl+0. A plain keymap layer is enough even with Vim
+        // on — see the header comment in editorPrefs.js for why these survive
+        // @replit/codemirror-vim's non-insert key swallowing.
+        ...editorPrefsKeymap({
+          onZoomIn: () => zoomFont(+1),
+          onZoomOut: () => zoomFont(-1),
+          onZoomReset: () => resetFont(),
+        }),
         ...mathInputAssistKeymap(),
         ...numberedListIndentKeymap(),
         ...marpSlideKeymap({
@@ -1097,10 +1360,15 @@ export function create(root, opts = {}) {
         ...historyKeymap,
       ]),
       modeListener,
+      // Typography reads the :root CSS variables that setFontSize /
+      // setFontFamily write (see editorPrefs.js for why variables rather than a
+      // Compartment). The fallbacks keep this correct if the stylesheet ever
+      // fails to load. Only `&` (.cm-editor) and .cm-scroller are affected, so
+      // the status bar / modals / Vim ex prompt stay at their fixed sizes.
       EditorView.theme({
-        '&': { height: '100%', fontSize: '15px' },
+        '&': { height: '100%', fontSize: 'var(--editor-font-size, 15px)' },
         '.cm-scroller': {
-          fontFamily: '"Cascadia Code", "Source Han Code JP", "Yu Gothic UI", Consolas, monospace',
+          fontFamily: 'var(--editor-font-family, "Cascadia Code", "Source Han Code JP", "Yu Gothic UI", Consolas, monospace)',
           lineHeight: '1.6',
         },
         '.cm-content': { padding: '12px 16px' },
@@ -1109,7 +1377,7 @@ export function create(root, opts = {}) {
     ],
   });
   const view = new EditorView({ state, parent: editorHost });
-  updateToolbar();
+  updateSettingsUI();
   updateMarpButtons();
 
   // Track CodeMirror Vim mode via event hook (replit-codemirror-vim exposes it on CM).
