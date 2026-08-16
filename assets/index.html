@@ -1770,6 +1770,90 @@
         #style-modal tr.style-row { cursor: pointer; }
         #style-modal tr.style-row:hover td { background: #f6f8fa; }
         #style-modal tr.style-row.active td { font-weight: 600; }
+        /* ⚙ — shown only on rows whose CSS declares @user-vars. The cell is
+           always present so the column stays aligned. */
+        #style-modal td.gear {
+            width: 1.8em;
+            padding: 0;
+            text-align: right;
+        }
+        #style-modal .style-gear {
+            background: transparent;
+            border: none;
+            cursor: pointer;
+            font-size: 14px;
+            line-height: 1;
+            padding: 4px 6px;
+            border-radius: 4px;
+            color: #6a737d;
+        }
+        #style-modal .style-gear:hover { background: #eaeef2; color: #24292e; }
+        /* Per-style settings pane — swaps places with the list inside the panel,
+           mirroring the help modal's #licenses-pane. */
+        #style-vars-pane .sv-row {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 7px 0;
+            font-size: 13px;
+        }
+        #style-vars-pane .sv-label {
+            flex: 0 0 9.5em;
+            color: #57606a;
+        }
+        #style-vars-pane .sv-control {
+            flex: 1 1 auto;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            min-width: 0;
+        }
+        #style-vars-pane .sv-control input[type="range"] { flex: 1 1 auto; min-width: 0; }
+        #style-vars-pane .sv-control select { flex: 1 1 auto; min-width: 0; }
+        #style-vars-pane .sv-value {
+            flex: 0 0 4.5em;
+            text-align: right;
+            font-variant-numeric: tabular-nums;
+            color: #24292e;
+        }
+        #style-vars-pane .sv-color {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            white-space: nowrap;
+        }
+        #style-vars-pane .sv-foot {
+            margin-top: 14px;
+            padding-top: 10px;
+            border-top: 1px solid #e1e4e8;
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+        }
+        #style-vars-pane .sv-foot button {
+            background: transparent;
+            border: 1px solid #d0d7de;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+            padding: 5px 12px;
+            color: #24292e;
+        }
+        #style-vars-pane .sv-foot button:hover { background: #f6f8fa; }
+        body.dark-mode #style-modal .style-gear { color: #8b949e; }
+        body.dark-mode #style-modal .style-gear:hover { background: #21262d; color: #c9d1d9; }
+        /* The form is the only place in the preview with native form controls, so
+           the UA colour scheme is opted in here rather than on body (which would
+           also repaint scrollbars app-wide). */
+        body.dark-mode #style-vars-pane { color-scheme: dark; }
+        body.dark-mode #style-vars-pane .sv-label { color: #8b949e; }
+        body.dark-mode #style-vars-pane .sv-value { color: #c9d1d9; }
+        body.dark-mode #style-vars-pane .sv-foot { border-top-color: #30363d; }
+        body.dark-mode #style-vars-pane .sv-foot button {
+            border-color: #30363d;
+            color: #c9d1d9;
+        }
+        body.dark-mode #style-vars-pane .sv-foot button:hover { background: #21262d; }
         body.dark-mode #help-modal .panel,
         body.dark-mode #style-modal .panel {
             background: #161b22;
@@ -2207,6 +2291,14 @@
             };
         }
         let { darkMode, currentStyle } = __resolveInitialState();
+        // Which axis the reader actually scrolls along. Writing mode alone cannot
+        // answer this: tategaki.css is vertical-rl and runs off to the left
+        // (horizontal scroll), while bunko.css is *also* vertical-rl but
+        // paginates into fixed 39x16 blocks stacked downward (vertical scroll).
+        // Measuring the container is the only thing true for both.
+        function __previewScrollsHorizontally() {
+            return previewContainer.scrollWidth > previewContainer.clientWidth + 1;
+        }
         function resetPreviewScrollToStart() {
             previewContainer.scrollTop = 0;
             // In `writing-mode: vertical-rl` (tategaki.css) the document's
@@ -2215,7 +2307,8 @@
             // (= end of content), so we jump to scrollWidth and let the
             // browser clamp it to the max valid value.
             const wm = (preview && getComputedStyle(preview).writingMode) || '';
-            if (wm.startsWith('vertical-rl') || wm === 'tb-rl') {
+            const verticalRl = wm.startsWith('vertical-rl') || wm === 'tb-rl';
+            if (verticalRl && __previewScrollsHorizontally()) {
                 previewContainer.scrollLeft = previewContainer.scrollWidth;
             } else {
                 previewContainer.scrollLeft = 0;
@@ -2224,32 +2317,32 @@
 
         // Capture/restore reader's position across a style swap. The DOM is
         // rebuilt by renderMarkdown(), so we anchor by [data-line] (source-line
-        // attribute already stamped for editor-sync). Writing mode may flip
-        // mid-cycle (e.g. light → tategaki.css), so raw scrollTop/scrollLeft
-        // values are not interchangeable; we store the anchor's viewport-edge
-        // offset in the axis matching the current writing mode and adapt at
-        // restore time.
+        // attribute already stamped for editor-sync). The scroll axis may flip
+        // mid-cycle (e.g. light → tategaki.css, or tategaki.css → bunko.css),
+        // so raw scrollTop/scrollLeft values are not interchangeable; we store
+        // the anchor's viewport-edge offset in the axis the reader is actually
+        // scrolling along and adapt at restore time.
         function capturePreviewAnchor() {
             const blocks = preview.querySelectorAll('[data-line]');
             if (!blocks.length) return null;
-            const wm = getComputedStyle(preview).writingMode;
-            const vertical = wm.startsWith('vertical-');
+            const horizontal = __previewScrollsHorizontally();
             const cRect = previewContainer.getBoundingClientRect();
             for (const el of blocks) {
                 const r = el.getBoundingClientRect();
-                if (vertical) {
-                    // vertical-rl: scan from the visual right edge (= reading
-                    // start). First block whose left edge sits at or left of
-                    // the viewport's right edge is the topmost visible block.
+                if (horizontal) {
+                    // vertical-rl running leftward: scan from the visual right
+                    // edge (= reading start). First block whose left edge sits
+                    // at or left of the viewport's right edge is the topmost
+                    // visible block.
                     if (r.left >= cRect.right) continue;
                     const line = parseInt(el.getAttribute('data-line'), 10);
                     if (!Number.isFinite(line)) continue;
-                    return { line, vertical: true, edge: cRect.right - r.right };
+                    return { line, horizontal: true, edge: cRect.right - r.right };
                 } else {
                     if (r.bottom <= cRect.top) continue;
                     const line = parseInt(el.getAttribute('data-line'), 10);
                     if (!Number.isFinite(line)) continue;
-                    return { line, vertical: false, edge: r.top - cRect.top };
+                    return { line, horizontal: false, edge: r.top - cRect.top };
                 }
             }
             return null;
@@ -2259,13 +2352,12 @@
             if (!anchor) { resetPreviewScrollToStart(); return; }
             const target = preview.querySelector('[data-line="' + anchor.line + '"]');
             if (!target) { resetPreviewScrollToStart(); return; }
-            const wm = getComputedStyle(preview).writingMode;
-            const vertical = wm.startsWith('vertical-');
+            const horizontal = __previewScrollsHorizontally();
             const cRect = previewContainer.getBoundingClientRect();
             const tRect = target.getBoundingClientRect();
             // Cross-axis swap: edge offset doesn't translate — pin to edge.
-            const edge = (anchor.vertical === vertical) ? anchor.edge : 0;
-            if (vertical) {
+            const edge = (anchor.horizontal === horizontal) ? anchor.edge : 0;
+            if (horizontal) {
                 // dx s.t. tRect.right - dx = cRect.right - edge
                 previewContainer.scrollLeft += (tRect.right - cRect.right) + edge;
             } else {
@@ -2285,23 +2377,181 @@
                 mermaid.initialize(mermaidBaseConfig());
             }
         }
+        // ----- Style variables (the `@user-vars` convention) -----------------
+        // A user style may declare which of its own CSS custom properties are
+        // meant to be adjusted by the reader, as a JSON array inside a
+        // `/* @user-vars … */` comment anywhere in the file:
+        //
+        //   /* @user-vars
+        //   [ { "var": "--bunko-chars", "label": "1行の文字数",
+        //       "type": "number", "min": 15, "max": 60, "step": 1,
+        //       "default": 39, "unit": "字" } ]
+        //   */
+        //
+        // The previewer fetches the CSS (the same relative href the <link> uses),
+        // parses that block and builds a settings form from it — reachable via the
+        // ⚙ button on the style's row in the S-key list. Which properties exist,
+        // and how many, is entirely up to the CSS file; a file without the comment
+        // simply has no ⚙. No Rust change is involved.
+        //
+        // Types: `number` (bare number, so it can be a calc() coefficient),
+        // `length` (number + CSS unit), `select` (one of the declared options),
+        // `color`. `unit` is a real CSS unit for `length` and a display-only
+        // suffix ("字" / "行" / "倍") for `number`.
+        const __STYLE_VARS_RE = /\/\*\s*@user-vars\b([\s\S]*?)\*\//;
+        const __styleVarSpecCache = new Map();
+
+        // Declared values are interpolated into an injected <style>, so nothing
+        // that could end the declaration, the rule or the comment may pass. Quotes
+        // are legal (font stacks need them) and select/color values are further
+        // whitelisted below — this is the backstop, not the only check.
+        function __styleVarValueSafe(v) {
+            return typeof v === 'string' && v.length > 0 && v.length <= 200
+                && !/[;{}<>\\]/.test(v) && v.indexOf('/*') < 0 && v.indexOf('*/') < 0;
+        }
+        function __isCssColor(v) {
+            return __styleVarValueSafe(v) && CSS.supports('color', v);
+        }
+        function __normalizeStyleVarSpec(raw) {
+            if (!Array.isArray(raw)) return [];
+            const out = [];
+            for (const it of raw) {
+                if (!it || typeof it !== 'object') continue;
+                const name = it.var;
+                if (typeof name !== 'string' || !/^--[A-Za-z0-9_-]+$/.test(name)) continue;
+                const type = it.type;
+                const label = (typeof it.label === 'string' && it.label) ? it.label : name;
+                if (type === 'select') {
+                    const options = (Array.isArray(it.options) ? it.options : [])
+                        .filter(o => o && __styleVarValueSafe(o.value))
+                        .map(o => ({ value: o.value, label: (typeof o.label === 'string' && o.label) ? o.label : o.value }));
+                    if (!options.length) continue;
+                    const def = options.some(o => o.value === it.default) ? it.default : options[0].value;
+                    out.push({ var: name, label, type, options, default: def });
+                } else if (type === 'color') {
+                    out.push({ var: name, label, type, default: __isCssColor(it.default) ? it.default : 'transparent' });
+                } else if (type === 'number' || type === 'length') {
+                    const min = Number(it.min), max = Number(it.max), def = Number(it.default);
+                    const step = Number(it.step);
+                    if (!Number.isFinite(min) || !Number.isFinite(max) || !Number.isFinite(def) || min >= max) continue;
+                    const unit = (typeof it.unit === 'string') ? it.unit : '';
+                    // For `length` the unit lands in the CSS value, so it must be one.
+                    if (type === 'length' && !/^(%|[a-z]{1,4})$/.test(unit)) continue;
+                    out.push({
+                        var: name, label, type, min, max, unit,
+                        step: (Number.isFinite(step) && step > 0) ? step : 1,
+                        default: Math.min(max, Math.max(min, def)),
+                    });
+                }
+            }
+            return out;
+        }
+        function __loadStyleVarSpec(name) {
+            if (!name) return Promise.resolve([]);
+            if (__styleVarSpecCache.has(name)) return Promise.resolve(__styleVarSpecCache.get(name));
+            return fetch(name)
+                .then(res => res.ok ? res.text() : '')
+                .then((css) => {
+                    const m = __STYLE_VARS_RE.exec(css);
+                    return m ? __normalizeStyleVarSpec(JSON.parse(m[1])) : [];
+                })
+                .catch((err) => { console.warn('@user-vars unavailable for', name, err); return []; })
+                .then((spec) => { __styleVarSpecCache.set(name, spec); return spec; });
+        }
+
+        // Per-style persistence, so each CSS keeps its own settings.
+        function __styleVarsKey(name) { return 'styleVars:' + name; }
+        function __readStyleVars(name) {
+            try {
+                const obj = JSON.parse(localStorage.getItem(__styleVarsKey(name)) || 'null');
+                return (obj && typeof obj === 'object' && !Array.isArray(obj)) ? obj : {};
+            } catch (err) { return {}; }
+        }
+        function __writeStyleVars(name, values) {
+            if (!name) return;
+            if (values && Object.keys(values).length) {
+                localStorage.setItem(__styleVarsKey(name), JSON.stringify(values));
+            } else {
+                localStorage.removeItem(__styleVarsKey(name));
+            }
+        }
+        // Resolve a stored value against its declaration. Everything unproven —
+        // out of range, not a declared option, not a color, absent — falls back to
+        // the CSS file's own default, so a theme that changes its @user-vars block
+        // can never leave a stale value producing invalid CSS.
+        function __styleVarCssValue(spec, value) {
+            if (spec.type === 'select') {
+                return spec.options.some(o => o.value === value) ? value : spec.default;
+            }
+            if (spec.type === 'color') {
+                return __isCssColor(value) ? value : spec.default;
+            }
+            const n = Number(value);
+            const v = Number.isFinite(n) ? Math.min(spec.max, Math.max(spec.min, n)) : spec.default;
+            // `number` stays bare so the CSS can use it as a calc() coefficient.
+            return spec.type === 'length' ? (v + spec.unit) : String(v);
+        }
+        // Stamp the overrides into a dedicated <style>. Same mechanism, and the
+        // same reason, as applyWatermarkLabel's #confidential-label-style: the
+        // property has to be declared with !important on the very elements that
+        // resolve it, so it wins wherever the theme happened to declare it
+        // (:root / body / #preview / section).
+        function applyStyleVars(name, spec, values) {
+            let st = document.getElementById('style-vars-style');
+            const decls = [];
+            if (name && spec && values && !document.body.classList.contains('marp')) {
+                for (const s of spec) {
+                    if (!Object.prototype.hasOwnProperty.call(values, s.var)) continue;
+                    decls.push(s.var + ':' + __styleVarCssValue(s, values[s.var]) + ' !important;');
+                }
+            }
+            if (!decls.length) { if (st) st.textContent = ''; return; }
+            if (!st) {
+                st = document.createElement('style');
+                st.id = 'style-vars-style';
+                document.head.appendChild(st);
+            }
+            st.textContent = '#preview, #preview [data-marpit-svg] section {' + decls.join('') + '}';
+        }
+        function __refreshStyleVars(name) {
+            if (!name || document.body.classList.contains('marp')) {
+                applyStyleVars(null);
+                return Promise.resolve();
+            }
+            return __loadStyleVarSpec(name).then((spec) => {
+                // A later style swap may have won the race — don't stamp stale vars.
+                if ((currentStyle || null) !== name) return;
+                applyStyleVars(name, spec, __readStyleVars(name));
+            });
+        }
+
         // Swap the user stylesheet. `name === null` removes any active user style
         // and leaves the document on the inline baseline (light or dark).
         // Returns a Promise that resolves once the new <link> has loaded so callers
         // that depend on the new writing-mode/layout (e.g. anchor scroll restore
         // when switching into tategaki.css) can await it.
+        // Resolves once the active user stylesheet (and its @user-vars) has been
+        // applied. A fresh file open needs this: until the CSS lands the preview
+        // is still horizontal-tb, so anything that depends on the writing mode —
+        // notably scrolling a vertical document to its reading start — would
+        // measure the wrong layout and silently do nothing.
+        let __userStyleReady = Promise.resolve();
         function applyUserStyle(name) {
             currentStyle = name || null;
             if (currentStyle) localStorage.setItem('styleName', currentStyle);
             else localStorage.removeItem('styleName');
             const existing = document.getElementById('user-style');
             if (existing) existing.remove();
-            if (!currentStyle) return Promise.resolve();
+            // The style's own @user-vars overrides ride along with the stylesheet,
+            // so every entry point (startup, the S-key picker, the Marp-exit
+            // re-apply) picks them up without its own call.
+            const varsReady = __refreshStyleVars(currentStyle);
+            if (!currentStyle) return (__userStyleReady = varsReady);
             // In Marp mode the Marp theme is authoritative — skip injecting the
             // user style so its `body` / `#preview` / heading rules don't cascade
             // into the slide `<foreignObject>` content. The choice is still
             // recorded above and will be restored when leaving Marp mode.
-            if (document.body.classList.contains('marp')) return Promise.resolve();
+            if (document.body.classList.contains('marp')) return (__userStyleReady = varsReady);
             const link = document.createElement('link');
             link.id = 'user-style';
             link.rel = 'stylesheet';
@@ -2311,7 +2561,7 @@
                 link.addEventListener('error', () => resolve(), { once: true });
             });
             document.head.appendChild(link);
-            return cssReady;
+            return (__userStyleReady = Promise.all([cssReady, varsReady]));
         }
         applyDarkMode(darkMode);
         applyUserStyle(currentStyle);
@@ -3098,12 +3348,209 @@
                 label.textContent = entry.label;
                 tr.appendChild(mark);
                 tr.appendChild(label);
+                // Always append the (initially empty) gear cell so the column
+                // stays aligned; __decorateStyleRowsWithGear() fills in only the
+                // rows whose CSS actually declares @user-vars.
+                if (!isMarp) {
+                    const gear = document.createElement('td');
+                    gear.className = 'gear';
+                    tr.appendChild(gear);
+                }
                 tbody.appendChild(tr);
             }
+            if (!isMarp) __decorateStyleRowsWithGear();
+        }
+        // Add a ⚙ button to each row whose stylesheet declares @user-vars. Async
+        // (the spec comes from fetching the CSS), so the list renders immediately
+        // and the gears appear a tick later; a row that has since been replaced by
+        // a re-render is skipped via isConnected.
+        function __decorateStyleRowsWithGear() {
+            const tbody = document.getElementById('style-modal-rows');
+            if (!tbody) return;
+            for (const tr of tbody.querySelectorAll('tr.style-row[data-style]')) {
+                const name = tr.dataset.style;
+                __loadStyleVarSpec(name).then((spec) => {
+                    if (!spec.length || !tr.isConnected || tr.querySelector('.style-gear')) return;
+                    const cell = tr.querySelector('td.gear');
+                    if (!cell) return;
+                    const btn = document.createElement('button');
+                    btn.type = 'button';
+                    btn.className = 'style-gear';
+                    btn.textContent = '⚙';
+                    btn.title = name + ' の詳細設定';
+                    btn.setAttribute('aria-label', name + ' の詳細設定');
+                    cell.appendChild(btn);
+                });
+            }
+        }
+
+        // ----- The per-style settings pane -----------------------------------
+        // Lives inside #style-modal (swapping places with the list) rather than in
+        // a modal of its own, so it inherits the panel chrome, the Esc/backdrop
+        // wiring and the click delegation — the same arrangement as the help
+        // modal's #licenses-pane.
+        let __styleVarsState = null;    // { name, spec, values, anchor }
+        let __styleVarsSeq = 0;         // unique ids so <label for> works
+        function __styleVarsPaneEl() { return document.getElementById('style-vars-pane'); }
+        function closeStyleVarsPane() {
+            const pane = __styleVarsPaneEl();
+            if (pane) { pane.hidden = true; pane.innerHTML = ''; }
+            const tbl = document.querySelector('#style-modal table');
+            if (tbl) tbl.hidden = false;
+            const title = document.getElementById('style-modal-title');
+            if (title) title.textContent = 'スタイルを選択';
+            __styleVarsState = null;
+        }
+        async function setStyleVarsPaneOpen(name) {
+            const pane = __styleVarsPaneEl();
+            if (!pane) return;
+            const spec = await __loadStyleVarSpec(name);
+            if (!spec.length) return;
+            // Configuring a style you cannot see is meaningless, so ⚙ also
+            // activates it. This is the same swap the row click performs.
+            if ((currentStyle || null) !== name) {
+                const anchor = capturePreviewAnchor();
+                const cssReady = applyUserStyle(name);
+                showToast(name);
+                const renderDone = currentMarkdown ? renderMarkdown(currentMarkdown) : Promise.resolve();
+                await Promise.all([cssReady, renderDone]);
+                requestAnimationFrame(() => restorePreviewAnchor(anchor));
+                __renderStyleRows(false);
+            }
+            const m = __styleModal();
+            if (!m || !m.classList.contains('visible')) return;
+            __styleVarsState = { name, spec, values: __readStyleVars(name), anchor: capturePreviewAnchor() };
+            const tbl = document.querySelector('#style-modal table');
+            if (tbl) tbl.hidden = true;
+            const title = document.getElementById('style-modal-title');
+            if (title) title.textContent = name + ' の設定';
+            pane.hidden = false;
+            __renderStyleVarsForm();
+        }
+        // Live-apply on `input` (dragging a slider retunes the page as you drag),
+        // persist on `change`. Only CSS custom properties move, so no re-render is
+        // needed — but the layout can shift a lot (字数 changes the whole 版面), so
+        // the reader's paragraph is pinned back afterwards.
+        function __setStyleVar(spec, value, persist) {
+            const st = __styleVarsState;
+            if (!st) return;
+            st.values[spec.var] = String(value);
+            applyStyleVars(st.name, st.spec, st.values);
+            // A paginating theme needs the split redone when the page size moves;
+            // no-op for every other theme.
+            __schedulePaginateRefresh();
+            if (persist) {
+                __writeStyleVars(st.name, st.values);
+                requestAnimationFrame(() => restorePreviewAnchor(st.anchor));
+            }
+        }
+        function __cssColorToHex(v) {
+            if (!__isCssColor(v)) return null;
+            const probe = document.createElement('span');
+            probe.style.cssText = 'display:none;color:' + v;
+            document.body.appendChild(probe);
+            const m = getComputedStyle(probe).color.match(/[\d.]+/g);
+            probe.remove();
+            if (!m || m.length < 3) return null;
+            if (m.length >= 4 && Number(m[3]) === 0) return null;   // transparent
+            return '#' + m.slice(0, 3).map(x => Number(x).toString(16).padStart(2, '0')).join('');
+        }
+        function __buildStyleVarRow(spec) {
+            const st = __styleVarsState;
+            const id = 'sv-ctl-' + (++__styleVarsSeq);
+            const row = document.createElement('div');
+            row.className = 'sv-row';
+            const label = document.createElement('label');
+            label.className = 'sv-label';
+            label.textContent = spec.label;
+            label.htmlFor = id;
+            const ctl = document.createElement('div');
+            ctl.className = 'sv-control';
+            row.appendChild(label);
+            row.appendChild(ctl);
+            const has = Object.prototype.hasOwnProperty.call(st.values, spec.var);
+            const current = has ? st.values[spec.var] : spec.default;
+            if (spec.type === 'select') {
+                const sel = document.createElement('select');
+                sel.id = id;
+                for (const o of spec.options) {
+                    const opt = document.createElement('option');
+                    opt.value = o.value;
+                    opt.textContent = o.label;
+                    sel.appendChild(opt);
+                }
+                sel.value = spec.options.some(o => o.value === current) ? current : spec.default;
+                sel.addEventListener('change', () => __setStyleVar(spec, sel.value, true));
+                ctl.appendChild(sel);
+            } else if (spec.type === 'color') {
+                // `transparent` has no <input type=color> representation, so the
+                // checkbox carries "off" and the swatch carries the colour.
+                const wrap = document.createElement('label');
+                wrap.className = 'sv-color';
+                const on = document.createElement('input');
+                on.type = 'checkbox';
+                on.checked = String(current) !== 'transparent';
+                const swatch = document.createElement('input');
+                swatch.type = 'color';
+                swatch.id = id;
+                swatch.value = __cssColorToHex(current) || '#888888';
+                swatch.disabled = !on.checked;
+                const push = (persist) => {
+                    swatch.disabled = !on.checked;
+                    __setStyleVar(spec, on.checked ? swatch.value : 'transparent', persist);
+                };
+                on.addEventListener('change', () => push(true));
+                swatch.addEventListener('input', () => push(false));
+                swatch.addEventListener('change', () => push(true));
+                wrap.appendChild(on);
+                wrap.appendChild(document.createTextNode('表示'));
+                ctl.appendChild(wrap);
+                ctl.appendChild(swatch);
+            } else {
+                const range = document.createElement('input');
+                range.type = 'range';
+                range.id = id;
+                range.min = String(spec.min);
+                range.max = String(spec.max);
+                range.step = String(spec.step);
+                const n = Number(current);
+                range.value = String(Number.isFinite(n) ? Math.min(spec.max, Math.max(spec.min, n)) : spec.default);
+                const out = document.createElement('span');
+                out.className = 'sv-value';
+                const paint = () => { out.textContent = range.value + (spec.unit || ''); };
+                paint();
+                range.addEventListener('input', () => { paint(); __setStyleVar(spec, range.value, false); });
+                range.addEventListener('change', () => __setStyleVar(spec, range.value, true));
+                ctl.appendChild(range);
+                ctl.appendChild(out);
+            }
+            return row;
+        }
+        function __renderStyleVarsForm() {
+            const pane = __styleVarsPaneEl();
+            const st = __styleVarsState;
+            if (!pane || !st) return;
+            pane.innerHTML = '';
+            for (const spec of st.spec) pane.appendChild(__buildStyleVarRow(spec));
+            const foot = document.createElement('div');
+            foot.className = 'sv-foot';
+            const back = document.createElement('button');
+            back.type = 'button';
+            back.className = 'sv-back';
+            back.textContent = '← 一覧へ';
+            const reset = document.createElement('button');
+            reset.type = 'button';
+            reset.className = 'sv-reset';
+            reset.textContent = '既定に戻す';
+            foot.appendChild(back);
+            foot.appendChild(reset);
+            pane.appendChild(foot);
         }
         function setStyleModalOpen(open) {
             const m = __styleModal();
             if (!m) return;
+            // Always start (and leave) on the list, so S never reopens mid-form.
+            closeStyleVarsPane();
             if (open) __renderStyleRows(document.body.classList.contains('marp'));
             m.classList.toggle('visible', open);
         }
@@ -3129,6 +3576,29 @@
             // Backdrop click (the modal overlay itself) or close button.
             if (e.target === m || target.closest('#style-modal .close')) {
                 setStyleModalOpen(false);
+                return;
+            }
+            // Settings pane (⚙): checked before the row branch, since the gear
+            // lives inside a row and must not read as "switch to this style".
+            const gear = target.closest('#style-modal .style-gear');
+            if (gear) {
+                const gearRow = gear.closest('.style-row');
+                if (gearRow && gearRow.dataset.style) setStyleVarsPaneOpen(gearRow.dataset.style);
+                return;
+            }
+            if (target.closest('#style-vars-pane .sv-back')) {
+                closeStyleVarsPane();
+                __renderStyleRows(false);
+                return;
+            }
+            if (target.closest('#style-vars-pane .sv-reset')) {
+                const st = __styleVarsState;
+                if (!st) return;
+                st.values = {};
+                __writeStyleVars(st.name, st.values);
+                applyStyleVars(st.name, st.spec, st.values);
+                __renderStyleVarsForm();
+                requestAnimationFrame(() => restorePreviewAnchor(st.anchor));
                 return;
             }
             const row = target.closest('#style-modal .style-row');
@@ -4515,6 +4985,175 @@ ${previewClone.outerHTML}
         }
 
         // Generate Table of Contents from headings
+        // ----- Page division (the `--md-page-lines` convention) ---------------
+        // A theme asks for the body to be divided into fixed-length pages by
+        // declaring, on #preview:
+        //
+        //     --md-page-lines: 16;    /* lines per page; absent or < 1 = off */
+        //
+        // and styling the element this pass inserts at each boundary:
+        //
+        //     #preview .md-page-break { block-size: 3em; inline-size: 100% }
+        //
+        // The gutter is therefore entirely the theme's business — this code never
+        // reads its size, because it re-measures after every insertion.
+        //
+        // This lives in JS because CSS cannot express it. The only CSS mechanism
+        // that fragments a text flow is multicol, and its columns are ordered along
+        // the container's INLINE axis — which in a vertical writing mode runs
+        // downward, never along the direction lines advance. Multicol therefore
+        // yields a vertically-scrolling pagination for free, but a horizontally
+        // scrolling 縦組み book (`bunko.css`) has to be paginated here.
+        //
+        // At each boundary the pass does what a typesetter does: break between two
+        // blocks if one starts there, otherwise split the paragraph that straddles
+        // it. It is a no-op for every theme that does not opt in.
+        const __PAGE_BREAK_CLASS = 'md-page-break';
+        const __PAGE_CONT_CLASS = 'md-page-cont';
+        const __PAGE_MAX_ITER = 4000;
+
+        // Block-axis geometry normalised so a "position" always grows in the
+        // direction the text flows: right→left for vertical-rl, top→bottom
+        // otherwise. Positions are measured from the content box's block-start
+        // edge, which no insertion can move.
+        function __blockAxis(el) {
+            const cs = getComputedStyle(el);
+            const wm = cs.writingMode || '';
+            const rect = el.getBoundingClientRect();
+            if (wm === 'vertical-rl' || wm === 'tb-rl' || wm === 'sideways-rl') {
+                const start = rect.right - parseFloat(cs.borderRightWidth || 0) - parseFloat(cs.paddingRight || 0);
+                return { pos: (r) => start - r.right, end: (r) => start - r.left };
+            }
+            const start = rect.top + parseFloat(cs.borderTopWidth || 0) + parseFloat(cs.paddingTop || 0);
+            return { pos: (r) => r.top - start, end: (r) => r.bottom - start };
+        }
+
+        // Only running text is split. A figure, table or heading is moved whole.
+        function __pageSplittable(el) {
+            return el.tagName === 'P' && !el.querySelector('img, video, iframe, svg, table, pre');
+        }
+
+        // First character at or past `boundary`. Position grows monotonically with
+        // offset inside a block, so each text node can be bisected.
+        function __findSplitPoint(el, axis, boundary) {
+            const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+            const r = document.createRange();
+            const sized = (rect) => rect.width > 0 || rect.height > 0;
+            let node;
+            while ((node = walker.nextNode())) {
+                const len = node.nodeValue.length;
+                if (!len) continue;
+                r.setStart(node, len - 1); r.setEnd(node, len);
+                const last = r.getBoundingClientRect();
+                if (!sized(last) || axis.pos(last) < boundary) continue;  // node ends before the boundary
+                let lo = 0, hi = len - 1, ans = null;
+                while (lo <= hi) {
+                    const mid = (lo + hi) >> 1;
+                    r.setStart(node, mid); r.setEnd(node, mid + 1);
+                    const rect = r.getBoundingClientRect();
+                    if (sized(rect) && axis.pos(rect) >= boundary) { ans = mid; hi = mid - 1; }
+                    else lo = mid + 1;
+                }
+                if (ans !== null) return { node, offset: ans };
+            }
+            return null;
+        }
+
+        // Move everything before `point` into a copy of the block, leaving the
+        // original as the continuation.
+        function __splitBlockAt(el, point) {
+            const range = document.createRange();
+            range.setStart(el, 0);
+            range.setEnd(point.node, point.offset);
+            const head = el.cloneNode(false);
+            head.appendChild(range.extractContents());
+            el.parentNode.insertBefore(head, el);
+            // The tail is a continuation, so it takes no paragraph indent, and it
+            // gives up the source line number — editor sync resolves [data-line]
+            // by value and the head is the block's real start.
+            el.removeAttribute('data-line');
+            el.classList.add(__PAGE_CONT_CLASS);
+            return head;
+        }
+
+        function paginatePreview() {
+            // Splitting is not idempotent — a second pass would insert a second
+            // break at every boundary — and #preview is rebuilt wholesale by each
+            // render, so the presence of a break means this DOM is already divided.
+            if (preview.querySelector('.' + __PAGE_BREAK_CLASS)) return;
+            // On the initial load renderMarkdown() finishes while #app-container is
+            // still display:none, so every rect is zero and there is nothing to
+            // measure. loadFileFromRust() calls this again once the preview is
+            // visible; declining here is what makes that second call the real one.
+            const box = preview.getBoundingClientRect();
+            if (!box.width && !box.height) return;
+            const cs = getComputedStyle(preview);
+            const lines = parseFloat(cs.getPropertyValue('--md-page-lines'));
+            if (!Number.isFinite(lines) || lines < 1) return;
+            const lineUnit = parseFloat(cs.lineHeight);
+            if (!Number.isFinite(lineUnit) || lineUnit <= 0) return;
+            const pageSize = lines * lineUnit;
+            const axis = __blockAxis(preview);
+            const newBreak = () => {
+                const b = document.createElement('div');
+                b.className = __PAGE_BREAK_CLASS;
+                b.setAttribute('aria-hidden', 'true');
+                return b;
+            };
+            let pageStart = 0;
+            for (let guard = 0; guard < __PAGE_MAX_ITER; guard++) {
+                const boundary = pageStart + pageSize;
+                let target = null;
+                for (const kid of preview.children) {
+                    if (kid.classList.contains(__PAGE_BREAK_CLASS)) continue;
+                    if (axis.end(kid.getBoundingClientRect()) > boundary + 0.5) { target = kid; break; }
+                }
+                if (!target) return;                       // the rest fits on this page
+                const startPos = axis.pos(target.getBoundingClientRect());
+                if (startPos < boundary - 0.5) {
+                    // The block straddles the boundary.
+                    if (__pageSplittable(target)) {
+                        const point = __findSplitPoint(target, axis, boundary);
+                        // offset 0 of the first node would split off nothing and spin.
+                        if (!point || (point.offset === 0 && point.node === target.firstChild)) return;
+                        __splitBlockAt(target, point);
+                    } else if (startPos > pageStart + 0.5) {
+                        // Unsplittable but it began mid-page: move it whole to the
+                        // next page, the way a book keeps a figure or heading intact.
+                    } else {
+                        // Unsplittable AND taller than a whole page (a large figure).
+                        // Let it overflow its page rather than spin.
+                        pageStart = axis.end(target.getBoundingClientRect());
+                        continue;
+                    }
+                }
+                // else: the block starts exactly at the boundary — break in front of it.
+                const brk = newBreak();
+                preview.insertBefore(brk, target);
+                const next = brk.nextElementSibling;
+                if (!next) return;
+                // Re-measure: the break just shifted everything after it. This is
+                // also why the gutter's size never has to be known here.
+                pageStart = axis.pos(next.getBoundingClientRect());
+            }
+        }
+
+        // A page-size change (字数 / 行数 / 行送り) has to re-run the split, and the
+        // split mutates the DOM, so the cheapest correct reset is a re-render.
+        let __paginateRefreshTimer = null;
+        function __schedulePaginateRefresh() {
+            const lines = parseFloat(getComputedStyle(preview).getPropertyValue('--md-page-lines'));
+            if (!Number.isFinite(lines) || lines < 1) return;
+            clearTimeout(__paginateRefreshTimer);
+            __paginateRefreshTimer = setTimeout(() => {
+                if (!currentMarkdown) return;
+                const anchor = capturePreviewAnchor();
+                Promise.resolve(renderMarkdown(currentMarkdown)).then(() => {
+                    requestAnimationFrame(() => restorePreviewAnchor(anchor));
+                });
+            }, 160);
+        }
+
         function generateTOC() {
             const headings = preview.querySelectorAll('h1, h2, h3, h4, h5, h6');
             const existingIds = new Set();
@@ -8180,6 +8819,15 @@ ${previewClone.outerHTML}
                 })();
             }
 
+            // Divide the body into fixed-length pages, if the active theme asks
+            // for it (`--md-page-lines`). Runs after the awaited figure renders so
+            // it measures final heights, and before the TOC so the TOC sees the
+            // same DOM the reader gets. Awaiting the stylesheet is required, not
+            // defensive: until it lands `--md-page-lines` reads as empty and the
+            // pass silently declines.
+            await __userStyleReady;
+            paginatePreview();
+
             // Generate table of contents
             generateTOC();
 
@@ -9473,12 +10121,27 @@ ${previewClone.outerHTML}
             } else if (pendingScrollToTop) {
                 resetPreviewScrollToStart();
                 pendingScrollToTop = false;
+            } else if (!isReload && restoreLine == null) {
+                // A freshly opened document must start at its reading start. For a
+                // horizontal document that is the container's resting 0/0, but in
+                // `vertical-rl` (tategaki.css / bunko.css) the text begins at the
+                // visual RIGHT edge, so scrollLeft 0 is its *last* page. Deferred
+                // until the stylesheet has applied — before that the preview is
+                // still horizontal and there is nothing to scroll.
+                __userStyleReady.then(() => requestAnimationFrame(resetPreviewScrollToStart));
             }
 
             // Show preview, hide drop zone and splash
             dropZone.style.display = 'none';
             appContainer.style.display = 'flex';
             hideSplash();
+
+            // Page division needs real geometry, and until the line above ran the
+            // whole container was display:none. The call inside renderMarkdown()
+            // covers every later render (live edit, style switch), where the
+            // preview is already on screen; this one covers the first load. It
+            // self-cancels if that earlier call already divided this DOM.
+            paginatePreview();
 
             // Maintain browser history so WebView2's Back/Forward navigate between files.
             // Skip when reloading the same file or when the load was triggered by popstate.
@@ -9535,7 +10198,7 @@ ${previewClone.outerHTML}
                 <tbody>
                     <tr><td class="keys"><kbd>H</kbd></td><td>このヘルプの表示 / 非表示</td></tr>
                     <tr><td class="keys"><kbd>M</kbd></td><td>ダーク / ライト表示の切り替え</td></tr>
-                    <tr><td class="keys"><kbd>S</kbd></td><td>スタイルの選択（Marpモードでは Marpテーマ。フロントマターを書き換え）</td></tr>
+                    <tr><td class="keys"><kbd>S</kbd></td><td>スタイルの選択（行末の ⚙ でそのスタイル固有の設定。Marpモードでは Marpテーマ。フロントマターを書き換え）</td></tr>
                     <tr><td class="keys"><kbd>N</kbd></td><td>セクション自動番号の切り替え</td></tr>
                     <tr><td class="keys"><kbd>L</kbd></td><td>行番号の表示切り替え</td></tr>
                     <tr><td class="keys"><kbd>W</kbd></td><td>全幅レイアウトの切り替え</td></tr>
@@ -9568,6 +10231,7 @@ ${previewClone.outerHTML}
             <table>
                 <tbody id="style-modal-rows"></tbody>
             </table>
+            <div id="style-vars-pane" hidden></div>
         </div>
     </div>
 </body>

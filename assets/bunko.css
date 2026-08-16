@@ -1,0 +1,231 @@
+/*
+ * bunko.css — 文庫本レイアウト (Japanese paperback typesetting).
+ *
+ * tategaki.css を土台に、本文を「1行 39字 × 16行」のページへ組み直す。行は右から
+ * 左へ連なり、tategaki と同じく横スクロールで読み進める。ページとページの間には
+ * 余白が入り、段落は本物の本と同じようにページをまたいで分割される。
+ *
+ * ■ tategaki との違いは二点
+ *   (1) 行長の決まり方
+ *       tategaki : height: calc(100vh - 40px) → 1行の字数がウィンドウの高さ次第
+ *       bunko    : height: calc(39 * 1em)     → 1行の字数が常に 39 字で固定
+ *       vertical-rl ではインライン軸が上→下なので、height がそのまま「1行の長さ」
+ *       になる。文庫本の字詰めの再現とは、つまりこの height を固定することに尽きる。
+ *   (2) ページ分割を index.html に依頼する (--md-page-lines)
+ *
+ * ■ ページ分割が CSS でなく JS なのは、CSS に手段が無いから
+ *   連続した本文を N 行ごとに割る仕組みは、CSS では段組み (multicol) しかない。
+ *   ところが multicol の段はコンテナの「インライン軸」に沿って並ぶ ―― 縦書きでは
+ *   下方向であって、行が進む左方向ではない。つまり multicol で作れるのは縦スクロール
+ *   のページ送りだけで、横スクロールの縦組み本は作れない。そこで index.html の
+ *   paginatePreview() に分割を任せ、本 CSS は「1ページ何行か」と「境目の見た目」
+ *   だけを宣言する。
+ *
+ * ■ 行取り (grid alignment) ―― ページをきっちり 16 行にするための仕掛け
+ *   見出し・引用・箇条書き・区切り線が占める block 軸の寸法を、すべて本文 1 行
+ *   (--bunko-line) の整数倍に揃えてある。これは和文組版でいう「行取り」そのもので、
+ *   これが無いと 1 ページの行数が半端になる。
+ *   ただし画像・コードブロック・表・数式など寸法が内容で決まる「島」は整数倍に
+ *   できないため、それを含むページだけ行数が足りなくなる。文庫レイアウトは元来
+ *   地の文のためのものなので、それで構わない。
+ *
+ * ■ 配色は指定しない (tategaki.css と同じ方針)。Light / Dark と直交合成する。
+ *
+ * ■ 字数・行数などは末尾の @user-vars で宣言した CSS 変数で変更できる。
+ *   S キーのスタイル一覧で本スタイルの行の ⚙ を押すと設定パネルが開く。
+ */
+
+@import url("tategaki.css");
+
+/* 横スクロール。tategaki と同じだが、天地が入り切らない小さなウィンドウでも
+   読めるよう y を hidden ではなく auto にしてある（収まっていれば出ない）。
+
+   版面の高さは字数で決まる固定値なので、ウィンドウが上下に広いと下側が余る。
+   flex で天地中央に置く。`safe` が要点で、これが無いとウィンドウが版面より
+   低いときに中央揃えが上へはみ出し、版面の天（＝各行の書き出し）へスクロール
+   して戻れなくなる。safe は溢れたときだけ start 揃えに落ちる。
+   未対応環境では宣言ごと捨てられて素の center が残る（＝従来どおり）。 */
+#preview-container {
+    overflow-x: auto;
+    overflow-y: auto;
+    display: flex;
+    align-items: center;
+    align-items: safe center;
+}
+
+/* --- 版面 --- */
+#preview {
+    /* 本文 1 行が block 軸に占める寸法。行取りの単位であり、1ページの高さの単位でもある。
+     * --bunko-font-size は px 付きの長さなので、そのまま掛けて長さになる。 */
+    --bunko-line: calc(var(--bunko-line-height, 1.75) * var(--bunko-font-size, 17px));
+
+    /* index.html の * { box-sizing: border-box } を打ち消す。border-box のままだと
+     * height に天地の余白が食い込み、その分だけ字数が減る。 */
+    box-sizing: content-box;
+
+    font-family: var(--bunko-font, "Yu Mincho", "YuMincho", "MS Mincho", "ＭＳ 明朝", serif);
+    font-size: var(--bunko-font-size, 17px);
+    /* 倍率ではなく絶対長で指定するのが要点。倍率 (無単位) は子孫ごとに font-size を
+     * 掛け直すので、脚注 (0.9em) などで行送りが変わり行取りが崩れる。絶対長なら
+     * そのまま継承されるため、文字サイズの違う要素も同じ行の格子に乗る。 */
+    line-height: var(--bunko-line);
+
+    /* グリッドを厳密にするため字送りは 1em ちょうど。約物詰めも既定では切る
+     * (palt を効かせると 1 行の実字数が版面と一致しなくなる)。 */
+    letter-spacing: 0;
+    font-feature-settings: var(--bunko-palt, normal);
+
+    /* ▼ 版面の要 — 1 行 = 39 字 */
+    height: calc(var(--bunko-chars, 39) * 1em);
+    /* 行は右から左へ無限に伸びる。min-width で本文の起点を画面右端に固定する
+       (tategaki と同じ理由)。flex アイテムなので縮まないよう shrink を切る ――
+       既定の flex-shrink: 1 のままだと、コンテナより広い版面が押し潰される。 */
+    flex: 0 0 auto;
+    width: auto;
+    min-width: 100%;
+    max-width: none;
+    max-height: none;
+    margin: 0;
+    padding: var(--bunko-margin, 24px) 40px;
+
+    /* ▼ ページ分割の依頼。index.html の paginatePreview() がこれを見て、本文を
+     * 16 行ごとのページに割り、境目に .md-page-break を差し込む。
+     * 余白の大きさはこちらで決める（あちらは読まない）。 */
+    --md-page-lines: var(--bunko-lines, 16);
+}
+
+/* ページの間の余白（柱間のアキ）。vertical-rl では block-size が画面の横方向なので、
+   これがそのままページ間のアキになる。 */
+#preview .md-page-break {
+    block-size: var(--bunko-gap, 3em);
+    inline-size: 100%;
+}
+
+/* ページをまたいで分割された段落の後半。継続なので字下げしない。 */
+#preview p.md-page-cont {
+    text-indent: 0;
+}
+
+/* --- 段落 ---
+ * 文庫本の本文に段落間のアキは無く、全角 1 字下げだけで段落を示す。
+ * さらに tategaki の `margin: 0 0 1em 0` は「物理的な下マージン」なので、
+ * vertical-rl では行末 (インライン軸の終端) に回り、全行が 1 字分短くなる。
+ * 版面をグリッドに保つため、ここでマージンを完全に落とす。 */
+#preview p {
+    text-indent: var(--bunko-indent, 1em);
+    margin: 0;
+}
+
+/* 行取りの単位を本文要素すべてに徹底する。ベースライン (index.html) は
+ * `#preview p { line-height: 1.6 }` のように要素ごとに倍率を置いており、
+ * 詳細度 (0,1,1) で #preview の指定 (0,1,0) に勝ってしまうため、ここで
+ * 明示的に揃え直す。これを怠ると段落だけ行送りが 27.2px になり、ページが
+ * 16 行ちょうどにならない。 */
+#preview p,
+#preview li,
+#preview dt,
+#preview dd,
+#preview blockquote,
+#preview .footnotes,
+#preview .footnotes li,
+#preview h1,
+#preview h2,
+#preview h3,
+#preview h4,
+#preview h5,
+#preview h6 {
+    line-height: var(--bunko-line);
+}
+
+/* --- 見出し: 前2行アキ + 本体1行 + 後1行アキ = 計4行 ---
+ * tategaki は inline 軸に 24px / 16px の物理値を入れているが、これは版面の
+ * 天地を半端に削るので落とす（文庫では見出しも版面の天から始める）。
+ * block 軸のアキは --bunko-line の整数倍だけを使う。
+ *
+ * 文字を大きくしないのは行取りの都合でもある。見出しの行ボックスは本文と同じ
+ * 1 行 (継承した絶対 line-height) なので、字が行送りより大きいと行ボックスから
+ * はみ出して行取りが崩れる。文庫の章題は本文と同寸か
+ * わずかに大きい程度で、アキで格を示すのが本来なので、ここでもそれに倣う。 */
+/* min() の第二項は行取りを守るための上限。行ボックスの高さは line-height と
+ * フォントの字面 (ascent + descent、和文で概ね 1.29em) の大きい方で決まるので、
+ * 字が行送りに対して大きすぎると行ボックスがひとりでに伸び、ページが 16 行
+ * ちょうどでなくなる。行送りの 0.68 倍までに抑えれば全設定域で収まる。既定
+ * (17px / 1.75) では 20.2px ―― 本文 17px よりわずかに大きい程度で、文庫の章題は
+ * 本来アキで格を示すものなので、これで足りる。 */
+#preview h1 { font-size: min(1.3em, calc(0.68 * var(--bunko-line))); }
+#preview h2 { font-size: min(1.15em, calc(0.68 * var(--bunko-line))); }
+#preview h3,
+#preview h4,
+#preview h5,
+#preview h6 { font-size: min(1em, calc(0.68 * var(--bunko-line))); }
+#preview h1,
+#preview h2,
+#preview h3,
+#preview h4,
+#preview h5,
+#preview h6 {
+    margin-inline-start: 0;
+    margin-inline-end: 0;
+    margin-block-start: calc(2 * var(--bunko-line));
+    margin-block-end: var(--bunko-line);
+}
+#preview > :first-child {
+    margin-block-start: 0;
+}
+
+/* --- 引用・箇条書き・区切り線も行取りに乗せる --- */
+#preview blockquote {
+    margin-block: var(--bunko-line);
+    padding-block: 0;
+}
+#preview ul,
+#preview ol {
+    margin-block: 0;
+}
+/* hr は幅 1px の縦罫 (tategaki)。前後のアキと合わせてちょうど 1 行にする。 */
+#preview hr {
+    margin: 0 calc((var(--bunko-line) - 1px) / 2);
+}
+
+/* 横組みの島は版面の天地に収める (tategaki の max-height: 90% を踏襲しつつ、
+   固定版面に合わせて少しだけ広く取る)。 */
+#preview pre,
+#preview img,
+#preview .mermaid,
+#preview .plotly-block,
+#preview figure {
+    max-height: 94%;
+}
+
+/* --- 脚注は版面いっぱいを使う --- */
+#preview .footnotes {
+    margin-inline-start: 0;
+}
+
+/* --- 透かしは文庫の小さな版面に合わせて既定サイズを少し絞る --- */
+#preview {
+    --confidential-size: 16vh;
+}
+
+/* @user-vars
+[
+  { "var": "--bunko-chars",       "label": "1行の文字数",     "type": "number", "min": 15,  "max": 60,  "step": 1,    "default": 39,   "unit": "字" },
+  { "var": "--bunko-lines",       "label": "1ページの行数",   "type": "number", "min": 6,   "max": 40,  "step": 1,    "default": 16,   "unit": "行" },
+  { "var": "--bunko-font-size",   "label": "文字サイズ",      "type": "length", "min": 12,  "max": 28,  "step": 1,    "default": 17,   "unit": "px" },
+  { "var": "--bunko-line-height", "label": "行送り",          "type": "number", "min": 1.5, "max": 2.6, "step": 0.05, "default": 1.75, "unit": "倍" },
+  { "var": "--bunko-margin",      "label": "天地の余白",      "type": "length", "min": 0,   "max": 80,  "step": 4,    "default": 24,   "unit": "px" },
+  { "var": "--bunko-indent",      "label": "段落の字下げ",    "type": "length", "min": 0,   "max": 2,   "step": 0.5,  "default": 1,    "unit": "em" },
+  { "var": "--bunko-font",        "label": "本文の書体",      "type": "select", "default": "\"Yu Mincho\", \"YuMincho\", \"MS Mincho\", serif",
+    "options": [
+      { "value": "\"Yu Mincho\", \"YuMincho\", \"MS Mincho\", serif", "label": "游明朝" },
+      { "value": "\"MS Mincho\", \"ＭＳ 明朝\", serif",               "label": "ＭＳ 明朝" },
+      { "value": "\"Yu Gothic\", \"Meiryo\", sans-serif",             "label": "游ゴシック" }
+    ] },
+  { "var": "--bunko-palt",        "label": "約物の詰め",      "type": "select", "default": "normal",
+    "options": [
+      { "value": "normal",   "label": "詰めない（字数が正確）" },
+      { "value": "'palt' 1", "label": "詰める（見た目重視）" }
+    ] },
+  { "var": "--bunko-gap",         "label": "ページ間の余白",  "type": "length", "min": 0,   "max": 12,  "step": 0.5,  "default": 3,    "unit": "em" }
+]
+*/
