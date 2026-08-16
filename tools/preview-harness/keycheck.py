@@ -142,9 +142,59 @@ def main():
             press(page, "s")
             check("S opens the style modal",
                   page.evaluate("() => !!document.querySelector('#style-modal.visible')"), True)
+            # The ⚙ button is added asynchronously (the @user-vars spec comes
+            # from fetching the CSS), so wait for it rather than sampling.
+            page.wait_for_function(
+                "() => document.querySelectorAll('#style-modal .style-gear').length > 0")
+            gears = page.evaluate(
+                "() => [...document.querySelectorAll('#style-modal tr.style-row')]"
+                ".filter(tr => tr.querySelector('.style-gear'))"
+                ".map(tr => tr.dataset.style).sort()")
+            check("only styles declaring @user-vars get a gear",
+                  gears, ["bunko.css", "tategaki.css"])
+
+            page.evaluate(
+                "() => document.querySelector"
+                "('tr.style-row[data-style=\"bunko.css\"] .style-gear').click()")
+            page.wait_for_function("() => !document.getElementById('style-vars-pane').hidden")
+            check("the gear opens the settings pane for that style",
+                  page.evaluate("() => document.getElementById('style-modal-title').textContent"),
+                  "bunko.css の設定")
+            check("...and hides the style list",
+                  page.evaluate("() => document.querySelector('#style-modal table').hidden"), True)
+            check("...with one control per declared variable",
+                  page.evaluate(
+                      "() => document.querySelectorAll('#style-vars-pane .sv-row').length"), 9)
+            # Live-apply: the 版面 is driven purely by the CSS custom properties,
+            # so moving a slider must resize #preview with no re-render.
+            page.evaluate(
+                "() => { const el = document.querySelector('#style-vars-pane input[type=range]');"
+                " el.value = '30';"
+                " el.dispatchEvent(new Event('input', {bubbles:true}));"
+                " el.dispatchEvent(new Event('change', {bubbles:true})); }")
+            page.wait_for_timeout(200)
+            check("a slider retunes the live layout",
+                  page.evaluate("() => getComputedStyle(preview).height"), "510px")  # 30 chars x 17px
+            check("...and persists per style",
+                  page.evaluate("() => JSON.parse(localStorage.getItem('styleVars:bunko.css'))"
+                                "['--bunko-chars']"), "30")
+            page.evaluate("() => document.querySelector('#style-vars-pane .sv-reset').click()")
+            page.wait_for_timeout(200)
+            check("the reset button clears the override",
+                  page.evaluate("() => localStorage.getItem('styleVars:bunko.css')"), None)
+            check("...and restores the CSS default",
+                  page.evaluate("() => getComputedStyle(preview).height"), "663px")  # 39 chars
             press(page, "Escape")
             check("Escape closes the style modal",
                   page.evaluate("() => !!document.querySelector('#style-modal.visible')"), False)
+            # Reopening must land on the list, never mid-form.
+            press(page, "s")
+            check("reopening starts on the style list",
+                  page.evaluate("() => document.getElementById('style-vars-pane').hidden"), True)
+            press(page, "Escape")
+            # Leave the document on the baseline style for the checks that follow.
+            page.evaluate("() => applyUserStyle(null)")
+            shoot.wait_for_render(page)
 
             press(page, "h")
             check("H opens the help modal",

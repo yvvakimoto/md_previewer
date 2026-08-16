@@ -34,9 +34,11 @@
     /* 和文フォント — Windows 標準で完結する明朝体優先 */
     font-family: "Yu Mincho", "YuMincho", "Hiragino Mincho ProN",
                  "Noto Serif JP", "MS Mincho", "ＭＳ 明朝", serif;
-    font-size: 17px;
-    line-height: 1.9;
-    letter-spacing: 0.02em;
+    /* 既定値は従来のハードコード値と同一。末尾の @user-vars で宣言してあるので
+     * S キーのスタイル一覧の ⚙ から変更できる。 */
+    font-size: var(--tategaki-font-size, 17px);
+    line-height: var(--tategaki-line-height, 1.9);
+    letter-spacing: var(--tategaki-letter-spacing, 0.02em);
 
     /* 約物詰め (プロポーショナル和文メトリクス) */
     font-feature-settings: "palt" 1, "pkna" 1;
@@ -390,3 +392,11 @@ body.numbered #preview h4::before {
     --confidential-label: "社外秘";
     --confidential-size: 22vh;
 }
+
+/* @user-vars
+[
+  { "var": "--tategaki-font-size",      "label": "文字サイズ", "type": "length", "min": 12,  "max": 28,  "step": 1,    "default": 17,   "unit": "px" },
+  { "var": "--tategaki-line-height",    "label": "行送り",     "type": "number", "min": 1.2, "max": 2.6, "step": 0.05, "default": 1.9,  "unit": "倍" },
+  { "var": "--tategaki-letter-spacing", "label": "字間",       "type": "length", "min": 0,   "max": 0.3, "step": 0.01, "default": 0.02, "unit": "em" }
+]
+*/
