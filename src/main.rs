@@ -120,8 +120,11 @@ enum CustomEvent {
     // PrintPdf stashes the target path and asks the preview to rasterize any
     // <video> to its chosen frame (`__beforePdfPrint`); the JS posts
     // `pdfprintready:` when the DOM is ready → PrintPdfNow runs the actual print.
+    // That ack carries the paper size the preview laid itself out for, in CSS px
+    // (a Marp deck reports its slide box so one slide fills one page); `None`
+    // means "no preference" and keeps the A4 default.
     PrintPdf(PathBuf),
-    PrintPdfNow,
+    PrintPdfNow { page_px: Option<(f64, f64)> },
     PdfExportDone { ok: bool, path: PathBuf },
     // PNG capture (headless `--export-png` mode). The preview JS posts
     // `renderdone:` once the initial render (incl. async Marp/mermaid/KaTeX)
@@ -422,6 +425,23 @@ pub(crate) fn get_mime_type(path: &PathBuf) -> &'static str {
 
         // Default
         _ => "application/octet-stream",
+    }
+}
+
+/// Parse the `pdfprintready:` ack payload into a paper size in CSS px.
+///
+/// The preview sends `{"pageW":1280,"pageH":720}` once it has laid a Marp deck
+/// out as one slide per page, and `{}` for an ordinary document. Anything else —
+/// a missing key, a malformed body, a non-finite or non-positive number — means
+/// "no preference" and yields `None`, which keeps the historical A4 output.
+fn parse_pdf_page_size(payload: &str) -> Option<(f64, f64)> {
+    let v: serde_json::Value = serde_json::from_str(payload.trim()).ok()?;
+    let w = v.get("pageW")?.as_f64()?;
+    let h = v.get("pageH")?.as_f64()?;
+    if w.is_finite() && h.is_finite() && w > 0.0 && h > 0.0 {
+        Some((w, h))
+    } else {
+        None
     }
 }
 
@@ -1672,9 +1692,13 @@ fn main() -> wry::Result<()> {
             if let Err(e) = ipc_event_proxy.send_event(CustomEvent::ToggleFullscreen) {
                 eprintln!("Failed to dispatch ToggleFullscreen: {}", e);
             }
-        } else if message == "pdfprintready:" {
-            // Preview finished swapping <video> → still frames; run the print now.
-            if let Err(e) = ipc_event_proxy.send_event(CustomEvent::PrintPdfNow) {
+        } else if let Some(payload) = message.strip_prefix("pdfprintready:") {
+            // Preview finished preparing the DOM (video → still frames, and for a
+            // Marp deck the one-slide-per-page layout); run the print now. The
+            // payload reports the paper size that layout expects, in CSS px.
+            // Anything unparseable or non-positive falls back to the A4 default.
+            let page_px = parse_pdf_page_size(payload);
+            if let Err(e) = ipc_event_proxy.send_event(CustomEvent::PrintPdfNow { page_px }) {
                 eprintln!("Failed to dispatch PrintPdfNow: {}", e);
             }
         } else if message == "openinstalldir:" {
@@ -2174,19 +2198,19 @@ fn main() -> wry::Result<()> {
                     let _ = wv.evaluate_script("window.__beforePdfPrint && window.__beforePdfPrint()");
                 }
             }
-            Event::UserEvent(CustomEvent::PrintPdfNow) => {
+            Event::UserEvent(CustomEvent::PrintPdfNow { page_px }) => {
                 let path = pending_pdf.lock().unwrap().take();
                 if let Some(path) = path {
                     // Print the live webview to PDF on the UI thread (COM STA).
                     #[cfg(windows)]
                     {
                         if let Ok(wv) = webview.lock() {
-                            pdf_win::print_current_to_pdf(&wv, path, event_proxy.clone());
+                            pdf_win::print_current_to_pdf(&wv, path, page_px, event_proxy.clone());
                         }
                     }
                     #[cfg(not(windows))]
                     {
-                        let _ = path;
+                        let _ = (path, page_px);
                     }
                 }
             }
@@ -2744,6 +2768,36 @@ mod tests {
     #[test]
     fn byte_range_uses_only_the_first_of_a_multi_range() {
         assert_eq!(parse_byte_range("bytes=0-1,5-6", 10), Some((0, 1)));
+    }
+
+    // ---- parse_pdf_page_size -----------------------------------------------
+
+    #[test]
+    fn pdf_page_size_reads_the_marp_slide_box() {
+        assert_eq!(
+            parse_pdf_page_size("{\"pageW\":1280,\"pageH\":720}"),
+            Some((1280.0, 720.0))
+        );
+        // 4:3 decks (front-matter `size: 4:3`).
+        assert_eq!(
+            parse_pdf_page_size("{\"pageW\":960,\"pageH\":720}"),
+            Some((960.0, 720.0))
+        );
+    }
+
+    #[test]
+    fn pdf_page_size_falls_back_to_none_for_anything_unproven() {
+        // A non-Marp document sends an empty object.
+        assert_eq!(parse_pdf_page_size("{}"), None);
+        // Legacy / empty ack (the payload-less form this handler used to match).
+        assert_eq!(parse_pdf_page_size(""), None);
+        assert_eq!(parse_pdf_page_size("not json"), None);
+        assert_eq!(parse_pdf_page_size("{\"pageW\":1280}"), None); // half a size
+        assert_eq!(parse_pdf_page_size("{\"pageW\":0,\"pageH\":720}"), None);
+        assert_eq!(parse_pdf_page_size("{\"pageW\":-1280,\"pageH\":720}"), None);
+        // JSON.stringify(NaN) === "null", so a bad measurement arrives as null.
+        assert_eq!(parse_pdf_page_size("{\"pageW\":null,\"pageH\":720}"), None);
+        assert_eq!(parse_pdf_page_size("{\"pageW\":\"1280\",\"pageH\":720}"), None);
     }
 
     // ---- js_call / build_load_file_script ----------------------------------
