@@ -1559,33 +1559,75 @@
                 background: none !important;
             }
 
-            /* Force light backgrounds for print even when dark mode is active */
-            body.dark-mode,
-            body.dark-mode #preview-container,
-            body.dark-mode #preview {
+            /* Force light backgrounds for print even when dark mode is active.
+               Marp is excluded throughout: a slide's colors come from its own theme
+               (the M key is a no-op in Marp mode for the same reason), so repainting
+               them white would only break decks that are dark by design. */
+            body.dark-mode:not(.marp),
+            body.dark-mode:not(.marp) #preview-container,
+            body.dark-mode:not(.marp) #preview {
                 background: #ffffff !important;
                 color: #24292e !important;
             }
-            body.dark-mode #preview pre,
-            body.dark-mode #preview code,
-            body.dark-mode #preview th {
+            body.dark-mode:not(.marp) #preview pre,
+            body.dark-mode:not(.marp) #preview code,
+            body.dark-mode:not(.marp) #preview th {
                 background: #f6f8fa !important;
                 color: #24292e !important;
             }
-            body.dark-mode #preview a {
+            body.dark-mode:not(.marp) #preview a {
                 color: #0366d6 !important;
             }
-            body.dark-mode #preview blockquote {
+            body.dark-mode:not(.marp) #preview blockquote {
                 color: #6a737d !important;
                 border-left-color: #dfe2e5 !important;
             }
-            body.dark-mode #preview th,
-            body.dark-mode #preview td {
+            body.dark-mode:not(.marp) #preview th,
+            body.dark-mode:not(.marp) #preview td {
                 border-color: #dfe2e5 !important;
             }
             /* Same source-order trick as the declaration itself: re-point the
                variable rather than the <hr>, so a theme's own rule still wins. */
-            body.dark-mode { --md-hr-color: #dfe2e5; }
+            body.dark-mode:not(.marp) { --md-hr-color: #dfe2e5; }
+
+            /* ---- Marp → PDF: one page per slide, no margins ----
+               Scoped to .pdf-print (set by __marpPrepareForPdf) so this only ever
+               applies to the export we prepared the layout for. The slides are
+               already sized to their true box in inline styles by that function;
+               what's left is stripping the app shell's padding/background and
+               putting a page break between slides. */
+            body.marp.pdf-print,
+            body.marp.pdf-print #app-container,
+            body.marp.pdf-print #preview-container,
+            body.marp.pdf-print #preview {
+                margin: 0 !important;
+                padding: 0 !important;
+                /* The deck gutter (body.marp #preview { background:#2a2a2a }) would
+                   otherwise be painted onto every page by printBackground:true. */
+                background: transparent !important;
+            }
+            body.marp.pdf-print #preview > div.marpit > svg[data-marpit-svg] {
+                box-shadow: none !important;
+                break-inside: avoid;
+                page-break-inside: avoid;
+            }
+            /* break-BEFORE on each slide after the first, rather than break-after on
+               every slide — a trailing break-after would emit a blank final page. */
+            body.marp.pdf-print #preview > div.marpit > svg[data-marpit-svg] + svg[data-marpit-svg] {
+                break-before: page;
+                page-break-before: always;
+            }
+            body.marp.pdf-print #preview [data-marpit-svg] section {
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+            }
+            /* Fixed-position chrome the base rules above predate: each would otherwise
+               be painted onto the first printed page. Same set body.capturing hides. */
+            #slide-counter,
+            #laser-canvas,
+            #update-banner {
+                display: none !important;
+            }
         }
 
         #toast {
@@ -2606,8 +2648,12 @@
         // resolution (Chromium's print engine embeds the live DOM bitmaps verbatim).
         // Same swap/restore mechanism as the video-frame swap: the original src is
         // stashed in `__pdfImgSwaps` and restored in __afterPdfPrint.
+        //
+        // For a Marp deck __beforePdfPrint additionally rebuilds the live layout into
+        // "one page per slide, no margins" — see __marpPrepareForPdf below.
         let __pdfSwaps = [];
         let __pdfImgSwaps = [];   // {img, origSrc, origSrcset}
+        let __pdfMarpRestore = null;   // teardown closure set by __marpPrepareForPdf
         const __PDF_IMG_MAX_EDGE = 1600;      // absolute cap on the long edge (~A4 width at high DPI)
         const __PDF_IMG_TARGET_SCALE = 2;     // keep up to 2× the displayed CSS size (retina-crisp)
         const __PDF_IMG_SLACK = 1.25;         // only re-encode when meaningfully oversized
@@ -2695,10 +2741,81 @@
             }
         }
 
+        // Marp → PDF: lay the live DOM out as "one page per slide, no margins".
+        //
+        // This is deliberately NOT done in @media print alone. fitMarpSlides() measures
+        // the on-screen layout and writes inline transforms; if the slide box only
+        // changed size inside the print stylesheet, those measurements would describe a
+        // layout the printer never sees. So we resize the slides for real (the same move
+        // __prepareCapture makes for --export-png) and re-fit, and let the print CSS
+        // handle only what it must: page breaks and the zero-margin page box.
+        //
+        // Returns the slide box in CSS px ({w, h}) so the host can ask Chromium for a
+        // paper of exactly that size, or null for a non-Marp document (→ A4 as before).
+        function __marpPrepareForPdf() {
+            if (!document.body.classList.contains('marp')) return null;
+            const slides = __marpSlides();
+            if (!slides.length) return null;
+            // Real slide box: marp-core sizes the <foreignObject> from the `size:`
+            // directive, so this is 1280x720 for 16:9 and 960x720 for 4:3.
+            const fo = slides[0].querySelector('foreignObject');
+            const W = (fo && parseFloat(fo.getAttribute('width'))) || 1280;
+            const H = (fo && parseFloat(fo.getAttribute('height'))) || 720;
+
+            const restoreView = __marpEnterScrollLayout();
+            document.body.classList.add('pdf-print');
+            slides.forEach(s => {
+                s.style.display = 'block';
+                s.style.position = 'static';
+                s.style.margin = '0';
+                s.style.width = W + 'px';
+                s.style.height = H + 'px';
+                s.style.maxWidth = 'none';
+                s.style.transform = '';
+                s.style.transformOrigin = '';
+                s.style.transition = '';
+                s.style.boxShadow = 'none';
+            });
+            // @page can't be expressed in the static stylesheet — the size is per-deck.
+            const st = document.createElement('style');
+            st.id = 'pdf-page-style';
+            st.textContent = '@page { size: ' + W + 'px ' + H + 'px; margin: 0; }';
+            document.head.appendChild(st);
+            // Re-fit now that every slide occupies its true 1:1 box.
+            fitMarpSlides();
+
+            __pdfMarpRestore = () => {
+                slides.forEach(s => {
+                    s.style.display = '';
+                    s.style.position = '';
+                    s.style.margin = '';
+                    s.style.width = '';
+                    s.style.height = '';
+                    s.style.maxWidth = '';
+                    s.style.boxShadow = '';
+                });
+                document.body.classList.remove('pdf-print');
+                const old = document.getElementById('pdf-page-style');
+                if (old) old.remove();
+                // Clear the inline sizing before re-fitting, or the fit would be
+                // measured against the print box instead of the restored view.
+                if (restoreView) restoreView(); else fitMarpSlides();
+            };
+            return { w: W, h: H };
+        }
+
         window.__beforePdfPrint = async function () {
             __pdfSwaps = [];
             __pdfImgSwaps = [];
+            __pdfMarpRestore = null;
+            let page = null;
             try {
+                // Marp layout first: __downscaleImageForPdf sizes each image against its
+                // DISPLAYED box, and in list mode that box is a ~280px thumbnail — an
+                // image downscaled to fit a thumbnail would then be blown up to fill a
+                // full-page slide. Resizing the slides first makes those measurements
+                // describe the page the image actually lands on.
+                page = __marpPrepareForPdf();
                 const decodes = [];
                 // Downscale unnecessarily high-res images first (skip freshly-inserted
                 // video-frame stills, handled by the loop below).
@@ -2746,8 +2863,11 @@
                 __dbgLog('__beforePdfPrint error: ' + (e && e.message));
             } finally {
                 // Always signal readiness so the print proceeds even with no videos.
+                // The payload carries the Marp slide box (CSS px) so the host can size
+                // the paper to it; `{}` means "no preference" → the host's A4 default.
                 if (window.ipc && typeof window.ipc.postMessage === 'function') {
-                    window.ipc.postMessage('pdfprintready:');
+                    const info = page ? { pageW: page.w, pageH: page.h } : {};
+                    window.ipc.postMessage('pdfprintready:' + JSON.stringify(info));
                 }
             }
         };
@@ -2765,6 +2885,12 @@
                 if (origSrcset != null) img.setAttribute('srcset', origSrcset);
             }
             __pdfImgSwaps = [];
+            // Marp layout last: it ends in a fitMarpSlides() pass, which measures the
+            // DOM — so the images and videos must already be back to their real sizes.
+            if (__pdfMarpRestore) {
+                try { __pdfMarpRestore(); } catch (e) { __dbgLog('marp pdf restore failed: ' + (e && e.message)); }
+                __pdfMarpRestore = null;
+            }
         };
 
         // Opt-in auto-update banner. Called by the Rust host (CustomEvent::
@@ -3729,29 +3855,13 @@
         // anchors are rewritten to point to the per-page .html siblings, computed
         // as paths relative to `pageRelPath`.
         async function buildExportArtifact({ pageRelPath = null } = {}) {
-            // Marp: the export reflects scroll-mode layout. If we're viewing in deck/list
-            // mode, the inactive slides are display:none (scrollHeight === 0) so
-            // fitMarpSlides() can't measure/shrink them. Temporarily drop deck/list so
-            // every slide is display:block & measurable, reset any deck zoom, fit them all
-            // (scrollHeight read forces a synchronous reflow), snapshot, then restore. Doing
-            // this before cloneNode means the clone captures the correct inline fit
-            // transforms; the async image work below runs on the detached clone, so the
-            // live view is restored immediately with no visible flash.
-            let __restoreMarpExportView = null;
-            if (document.body.classList.contains('marp')
-                    && (document.body.classList.contains('deck-mode')
-                        || document.body.classList.contains('list-mode'))) {
-                const wasDeck = document.body.classList.contains('deck-mode');
-                const wasList = document.body.classList.contains('list-mode');
-                __resetMarpZoom();
-                document.body.classList.remove('deck-mode', 'list-mode');
-                fitMarpSlides();
-                __restoreMarpExportView = () => {
-                    document.body.classList.toggle('deck-mode', wasDeck);
-                    document.body.classList.toggle('list-mode', wasList);
-                    fitMarpSlides();
-                };
-            }
+            // Marp: the export reflects scroll-mode layout, so drop deck/list first
+            // (see __marpEnterScrollLayout for why hidden slides must be un-hidden
+            // before they can be fitted). Doing this before cloneNode means the clone
+            // captures the correct inline fit transforms; the async image work below
+            // runs on the detached clone, so the live view is restored immediately
+            // with no visible flash.
+            const __restoreMarpExportView = __marpEnterScrollLayout();
             // Snapshot live DOM. Cloning preserves rendered SVGs, KaTeX spans, and hljs token markup.
             const previewClone = preview.cloneNode(true);
             if (__restoreMarpExportView) __restoreMarpExportView();
@@ -6635,6 +6745,26 @@ ${previewClone.outerHTML}
                     try { Plotly.Plots.resize(el); } catch (e) {}
                 });
             }
+        }
+        // Temporarily leave deck / list view so every slide is display:block and
+        // therefore measurable: fitMarpSlides() skips a slide whose content height
+        // reads 0, which is exactly what a display:none deck slide reports — so any
+        // whole-deck output (HTML export, PDF print) must do this before measuring,
+        // or the hidden slides ship un-shrunk. Also clears the deck zoom transform.
+        // Returns a restore closure, or null when nothing had to change.
+        function __marpEnterScrollLayout() {
+            if (!document.body.classList.contains('marp')) return null;
+            const wasDeck = document.body.classList.contains('deck-mode');
+            const wasList = document.body.classList.contains('list-mode');
+            if (!wasDeck && !wasList) return null;
+            __resetMarpZoom();
+            document.body.classList.remove('deck-mode', 'list-mode');
+            fitMarpSlides();
+            return () => {
+                document.body.classList.toggle('deck-mode', wasDeck);
+                document.body.classList.toggle('list-mode', wasList);
+                fitMarpSlides();
+            };
         }
         // Apply the current __marpZoom transform to the active slide <svg>.
         function __applyMarpZoom() {
