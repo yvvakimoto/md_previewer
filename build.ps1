@@ -15,12 +15,17 @@ $ToolsDir = Join-Path $RepoRoot 'tools'
 $InstallDepsScript = Join-Path $ToolsDir 'install-deps.ps1'
 $MakeIconScript = Join-Path $ToolsDir 'make-icon\make_icon.py'
 
+# --manifest-path, not a bare `cargo build`: cargo resolves Cargo.toml from the
+# CURRENT directory, so without it this script only works when the caller's cwd
+# happens to be the repo root. ..\nwc-addon\build-full-installer.ps1 invokes it
+# by absolute path from its own directory, where a bare `cargo build` fails.
+$ManifestArg = @('--manifest-path', (Join-Path $RepoRoot 'Cargo.toml'))
 if ($DebugBuild) {
     $BuildProfile = 'debug'
-    $CargoArgs = @('build')
+    $CargoArgs = @('build') + $ManifestArg
 } else {
     $BuildProfile = 'release'
-    $CargoArgs = @('build', '--release')
+    $CargoArgs = @('build', '--release') + $ManifestArg
 }
 $TargetDir = Join-Path $RepoRoot "target\$BuildProfile"
 $TargetAssetsDir = Join-Path $TargetDir 'assets'
@@ -42,7 +47,7 @@ function Invoke-External {
 # 1. Clean
 if ($Clean) {
     Write-Host '==> Cleaning target\ and assets\libs\' -ForegroundColor Cyan
-    Invoke-External -File 'cargo' -Arguments @('clean') -Description 'cargo clean'
+    Invoke-External -File 'cargo' -Arguments (@('clean') + $ManifestArg) -Description 'cargo clean'
     if (Test-Path $LibsDir) {
         Remove-Item -LiteralPath $LibsDir -Recurse -Force
     }
