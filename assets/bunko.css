@@ -208,6 +208,25 @@
     margin-inline-start: 0;
 }
 
+/* --- ノンブル (ページ番号) ---
+ * index.html の #preview .md-page::after が実装。ここは「出す／出さない」の
+ * 宣言だけで、値がそのまま display に入る (@user-vars の select はスタイル
+ * シートへ素通しで書き出されるので、変数 1 個がトグルと値を兼ねる)。
+ * 番号は版面の直下 ―― #preview の下パディング (--bunko-margin) の中に置かれる。
+ * 既定 24px に対し 0.62em ≒ 10.5px なので収まるが、天地の余白を 0 にすると
+ * 版面の外へはみ出す。 */
+#preview {
+    --md-nombre-display: var(--bunko-nombre, block);
+    --md-nombre-size: 0.62em;
+}
+
+/* --- 印刷: A4 横 1 枚に 2 面 (見開き) ---
+ * index.html の __verticalPrepareForPdf() が読む上限値。実際に何面載るかは
+ * 版面の実寸を測って決めるので、図版で膨らんだ面は自動的に 1 枚 1 面へ落ちる。 */
+#preview {
+    --md-print-pages-per-sheet: 2;
+}
+
 /* --- 透かしは文庫の小さな版面に合わせて既定サイズを少し絞る --- */
 #preview {
     --confidential-size: 16vh;
@@ -232,6 +251,11 @@
       { "value": "normal",   "label": "詰めない（字数が正確）" },
       { "value": "'palt' 1", "label": "詰める（見た目重視）" }
     ] },
-  { "var": "--bunko-gap",         "label": "ページ間の余白",  "type": "length", "min": 0,   "max": 12,  "step": 0.5,  "default": 3,    "unit": "em" }
+  { "var": "--bunko-gap",         "label": "ページ間の余白",  "type": "length", "min": 0,   "max": 12,  "step": 0.5,  "default": 3,    "unit": "em" },
+  { "var": "--bunko-nombre",      "label": "ノンブル",        "type": "select", "default": "block",
+    "options": [
+      { "value": "block", "label": "表示する" },
+      { "value": "none",  "label": "表示しない" }
+    ] }
 ]
 */

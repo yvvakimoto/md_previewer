@@ -176,6 +176,31 @@
         #preview > .md-page:first-child > :where(:first-child) { margin-top: 0; }
         #preview .md-page { position: relative; counter-increment: md-page; }
 
+        /* ノンブル (page number). Off unless the theme opts in by setting
+           --md-nombre-display, the same "theme declares, the app implements"
+           convention as --md-page-lines. `display` carries the on/off switch
+           because a @user-vars `select` writes its value through verbatim
+           (applyStyleVars), so one variable is both the toggle and the value.
+
+           top:100% puts it just outside the page box, i.e. in #preview's own
+           bottom padding — the 地 of the page in a vertical-writing theme. */
+        #preview .md-page::after {
+            display: var(--md-nombre-display, none);
+            content: counter(md-page);
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            writing-mode: horizontal-tb;
+            text-align: center;
+            line-height: 1.2;
+            font-size: var(--md-nombre-size, 0.62em);
+            font-variant-numeric: tabular-nums;
+            color: var(--md-nombre-color, inherit);
+            opacity: var(--md-nombre-opacity, 0.55);
+            pointer-events: none;
+        }
+
         #preview h1 { font-size: 2em; }
         #preview h2 { font-size: 1.5em; }
         #preview h3 { font-size: 1.25em; }
@@ -3578,14 +3603,26 @@
         // persist on `change`. Only CSS custom properties move, so no re-render is
         // needed — but the layout can shift a lot (字数 changes the whole 版面), so
         // the reader's paragraph is pinned back afterwards.
+        // Which @user-vars entries can move a page boundary. Everything that is
+        // not obviously decorative counts, so a new variable defaults to "safe
+        // but slow" rather than "fast but stale".
+        const __STYLE_VAR_DECORATIVE = /(nombre|color|colour|accent|background|opacity|shadow)/i;
+        function __styleVarAffectsLayout(spec) {
+            if (!spec || !spec.var) return true;
+            if (spec.type === 'color') return false;
+            return !__STYLE_VAR_DECORATIVE.test(spec.var);
+        }
+
         function __setStyleVar(spec, value, persist) {
             const st = __styleVarsState;
             if (!st) return;
             st.values[spec.var] = String(value);
             applyStyleVars(st.name, st.spec, st.values);
             // A paginating theme needs the split redone when the page size moves;
-            // no-op for every other theme.
-            __schedulePaginateRefresh();
+            // no-op for every other theme. Purely decorative variables (colours,
+            // the nombre toggle) are skipped — the refresh is a full re-render,
+            // which is far too much for a variable that only repaints.
+            if (__styleVarAffectsLayout(spec)) __schedulePaginateRefresh();
             if (persist) {
                 __writeStyleVars(st.name, st.values);
                 requestAnimationFrame(() => restorePreviewAnchor(st.anchor));
