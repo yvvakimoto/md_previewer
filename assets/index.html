@@ -1719,63 +1719,117 @@
 
         /* Opt-in auto-update banner (see updater.rs). Shown only when the Rust
            host detects a newer version on the internal share and calls
-           window.__updateAvailable(). A top slide-down bar — noticeable but
-           dismissible, not a modal. Theme-aware. */
+           window.__updateAvailable(). A small bottom-right card rather than a
+           full-width bar: an update is "notice it when you look" information,
+           not something that should cover the first lines of the document or
+           carry modal-like visual weight. Palette is the help/style modal's
+           .panel tokens so it reads as native app chrome. Theme-aware. */
         #update-banner {
             position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
+            bottom: 24px;
+            right: 24px;
+            width: min(320px, calc(100vw - 32px));
             display: none;
-            align-items: center;
-            gap: 12px;
-            padding: 10px 18px;
-            background: #0b5cad;
-            color: #fff;
-            font-size: 14px;
+            flex-direction: column;
+            gap: 8px;
+            padding: 12px 14px;
+            background: #ffffff;
+            color: #24292e;
+            border: 1px solid #e1e4e8;
+            border-radius: 8px;
+            font-size: 13px;
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
-            transform: translateY(-100%);
-            transition: transform 0.25s ease;
-            z-index: 10002;
+            /* One step shallower than the modals' 0 12px 40px. */
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.14);
+            /* Below #toast (10000) and the modals (10001) so a notification
+               arriving while the help modal is open never lands on top of it;
+               above #slide-counter (9000) and #laser-canvas (9500). */
+            z-index: 9600;
         }
+        /* An animation, not a transition: the class is added in the same frame
+           as display:none -> flex, which a transition cannot animate across. */
         #update-banner.visible {
             display: flex;
-            transform: translateY(0);
+            animation: update-card-in 0.22s ease;
         }
-        #update-banner-icon { font-size: 16px; }
-        #update-banner-msg { flex: 1 1 auto; }
-        #update-banner-msg .ver { font-weight: 700; }
-        #update-banner-msg .notes { opacity: 0.85; margin-left: 8px; }
+        @keyframes update-card-in {
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        /* Nudged above the deck-mode slide counter (bottom: 14px; right: 18px). */
+        body.marp.deck-mode #update-banner { bottom: 52px; }
+        /* Room for the absolutely-positioned close button. */
+        #update-banner-msg { padding-right: 18px; }
+        #update-banner-msg .ver { font-weight: 600; }
+        #update-banner-msg .notes {
+            margin: 2px 0 0;
+            font-size: 12px;
+            opacity: 0.72;
+            overflow: hidden;
+            display: -webkit-box;
+            -webkit-box-orient: vertical;
+            -webkit-line-clamp: 2;
+        }
         #update-banner-actions {
-            flex: 0 0 auto;
-            display: inline-flex;
-            gap: 8px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
         }
-        #update-banner-actions button {
+        #update-banner-actions #update-install-btn {
             font: inherit;
-            font-size: 13px;
-            padding: 5px 14px;
-            border-radius: 6px;
-            border: 1px solid rgba(255, 255, 255, 0.55);
-            background: transparent;
+            font-size: 12px;
+            padding: 4px 12px;
+            border-radius: 5px;
+            border: 0;
+            background: #1f6feb;
             color: #fff;
             cursor: pointer;
             transition: background 0.12s ease;
         }
-        #update-banner-actions button:hover { background: rgba(255, 255, 255, 0.16); }
-        #update-banner-actions #update-install-btn {
-            background: #fff;
-            color: #0b5cad;
-            border-color: #fff;
-            font-weight: 700;
+        #update-banner-actions #update-install-btn:hover { background: #1a5fcc; }
+        #update-banner-actions #update-install-btn:disabled {
+            opacity: 0.6;
+            cursor: default;
         }
-        #update-banner-actions #update-install-btn:hover { background: #eaf1fb; }
-        body.dark-mode #update-banner { background: #14497f; }
-        body.dark-mode #update-banner-actions #update-install-btn {
-            background: #e6eefc;
-            color: #14497f;
+        /* Not a button in appearance: the rarely-wanted permanent opt-out. */
+        #update-banner-actions #update-optout-btn {
+            font: inherit;
+            font-size: 11px;
+            margin-left: auto;
+            padding: 0;
+            border: 0;
+            background: none;
+            color: inherit;
+            opacity: 0.6;
+            text-decoration: underline;
+            cursor: pointer;
         }
+        #update-banner-actions #update-optout-btn:hover { opacity: 0.9; }
+        #update-later-btn {
+            position: absolute;
+            top: 6px;
+            right: 8px;
+            font: inherit;
+            font-size: 15px;
+            line-height: 1;
+            padding: 2px 5px;
+            border: 0;
+            border-radius: 4px;
+            background: none;
+            color: inherit;
+            opacity: 0.5;
+            cursor: pointer;
+        }
+        #update-later-btn:hover { opacity: 0.9; background: rgba(0, 0, 0, 0.06); }
+        body.dark-mode #update-banner {
+            background: #161b22;
+            color: #c9d1d9;
+            border-color: #30363d;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+        }
+        body.dark-mode #update-banner-actions #update-install-btn { background: #316dca; }
+        body.dark-mode #update-banner-actions #update-install-btn:hover { background: #3d7ee0; }
+        body.dark-mode #update-later-btn:hover { background: #21262d; }
         body.capturing #update-banner { display: none !important; }
 
         #help-modal,
@@ -3192,7 +3246,7 @@
                 if (!b || !msg) return;
                 const ver = (info && info.version) ? String(info.version) : '';
                 const notes = (info && info.notes) ? String(info.notes) : '';
-                let html = '新しいバージョン <span class="ver">v' + escapeHtml(ver) + '</span> が利用可能です。';
+                let html = '新しいバージョン <span class="ver">v' + escapeHtml(ver) + '</span> があります';
                 if (notes) html += '<span class="notes">' + escapeHtml(notes) + '</span>';
                 msg.innerHTML = html;
                 b.classList.add('visible');
@@ -10696,11 +10750,10 @@ ${previewClone.outerHTML}
     </script>
     <div id="toast"></div>
     <div id="update-banner" role="status" aria-live="polite">
-        <span id="update-banner-icon" aria-hidden="true">⬆️</span>
+        <button type="button" id="update-later-btn" aria-label="閉じる" title="閉じる">&times;</button>
         <span id="update-banner-msg"></span>
         <span id="update-banner-actions">
-            <button type="button" id="update-install-btn">今すぐ更新</button>
-            <button type="button" id="update-later-btn">後で</button>
+            <button type="button" id="update-install-btn">更新</button>
             <button type="button" id="update-optout-btn">今後表示しない</button>
         </span>
     </div>
