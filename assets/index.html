@@ -22,6 +22,12 @@
             flex-direction: column;
             overflow: hidden;
             background: #f5f5f5;
+            /* The nombre counter. It lives on <body>, not on #preview, because
+               `body.numbered #preview { counter-reset: num-h2 }` (the N-key
+               section numbering) is more specific and counter-reset does not
+               accumulate across rules — declaring it on #preview would make the
+               page numbers silently depend on whether numbering is on. */
+            counter-reset: md-page;
         }
 
         #drop-zone {
@@ -154,6 +160,21 @@
            (same weight as the rule above, later in source, so it cancels that
            default) — a theme's own `#preview h1 { margin-top }` still wins. */
         #preview > :where(:first-child) { margin-top: 0; }
+
+        /* Page division — see paginatePreview() / __wrapPages(). A theme that
+           declares --md-page-lines has its body split into .md-page boxes
+           separated by .md-page-break gutters. The wrapper is what gives a
+           page an identity: a box to hang the nombre on, and the unit the PDF
+           export packs onto a sheet.
+
+           It is deliberately layout-neutral. position:relative creates no BFC,
+           so a child's block-start margin still collapses straight through it —
+           which is exactly why the first-child rule above needs the twin below:
+           after wrapping it would otherwise match the .md-page, whose own
+           margin is already 0, and the heading's margin would collapse out and
+           push the whole first page along. */
+        #preview > .md-page:first-child > :where(:first-child) { margin-top: 0; }
+        #preview .md-page { position: relative; counter-increment: md-page; }
 
         #preview h1 { font-size: 2em; }
         #preview h2 { font-size: 1.5em; }
@@ -5120,6 +5141,7 @@ ${previewClone.outerHTML}
         // it. It is a no-op for every theme that does not opt in.
         const __PAGE_BREAK_CLASS = 'md-page-break';
         const __PAGE_CONT_CLASS = 'md-page-cont';
+        const __PAGE_CLASS = 'md-page';
         const __PAGE_MAX_ITER = 4000;
 
         // Block-axis geometry normalised so a "position" always grows in the
@@ -5186,7 +5208,49 @@ ${previewClone.outerHTML}
             return head;
         }
 
+        // Split, then wrap. Kept apart because only the first half is the
+        // delicate measure-and-cut pass; the second is a pure DOM regrouping
+        // that must not disturb what the first one just computed.
         function paginatePreview() {
+            // The geometry guard belongs to BOTH halves. On the initial load
+            // renderMarkdown() finishes while #app-container is still
+            // display:none, so nothing can be measured and the splitter
+            // declines; the wrapper must decline too, or it bundles the whole
+            // undivided document into a single page box — and the later call
+            // that does have geometry then sees one unsplittable child and
+            // paginates nothing at all.
+            const box = preview.getBoundingClientRect();
+            if (!box.width && !box.height) return;
+            __paginateSplit();
+            __wrapPages();
+        }
+
+        // Turn the boundaries the split pass settled on into real page boxes.
+        // The .md-page-break gutters stay as siblings between the wrappers —
+        // they are the theme's contract (--bunko-gap hangs off them) and the
+        // PDF export uses them as its break-after targets.
+        //
+        // Never stamp data-line on a wrapper: __tableLocate()'s
+        // `lineEl.contains(tableEl)` guard would then match every table in the
+        // document and refuse to edit any of them.
+        function __wrapPages() {
+            const cs = getComputedStyle(preview);
+            const lines = parseFloat(cs.getPropertyValue('--md-page-lines'));
+            if (!Number.isFinite(lines) || lines < 1) return;   // not a paginating theme
+            if (preview.querySelector(':scope > .' + __PAGE_CLASS)) return;
+            let page = null;
+            for (const kid of [...preview.children]) {
+                if (kid.classList.contains(__PAGE_BREAK_CLASS)) { page = null; continue; }
+                if (!page) {
+                    page = document.createElement('div');
+                    page.className = __PAGE_CLASS;
+                    preview.insertBefore(page, kid);
+                }
+                page.appendChild(kid);
+            }
+        }
+
+        function __paginateSplit() {
             // Splitting is not idempotent — a second pass would insert a second
             // break at every boundary — and #preview is rebuilt wholesale by each
             // render, so the presence of a break means this DOM is already divided.

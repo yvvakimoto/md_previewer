@@ -172,6 +172,12 @@
 #preview > :first-child {
     margin-block-start: 0;
 }
+/* __wrapPages() が本文を .md-page に包んだ後は、上の規則がラッパにマッチする。
+   ラッパのマージンは元々 0 で、中の見出しの margin-block-start (2行) がラッパを
+   貫通して使用値になるため、そのままだと先頭ページが 2 行ぶん右へずれる。 */
+#preview > .md-page:first-child > :first-child {
+    margin-block-start: 0;
+}
 
 /* --- 引用・箇条書き・区切り線も行取りに乗せる --- */
 #preview blockquote {

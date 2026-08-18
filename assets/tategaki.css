@@ -101,6 +101,12 @@
 #preview > :first-child {
     margin-block-start: 0;
 }
+/* ページ分割テーマ (bunko.css) では本文が .md-page に包まれるので、上の規則は
+   ラッパにマッチしてしまう。ラッパ自身のマージンは元々 0 で、中身の見出しの
+   margin-block-start がラッパを貫通して現れるため、1 段深い双子が要る。 */
+#preview > .md-page:first-child > :first-child {
+    margin-block-start: 0;
+}
 /* 見出しには罫線を引かない。縦組みでは見出し脇の border-inline-end も
  * 下の #preview hr (章区切りの縦罫) と同じ「縦の細線」になり、横組みで
  * `---` と h2 のアンダーラインが混同されたのと同じ問題が 90 度回った形で
