@@ -4141,6 +4141,56 @@
         // preview DOM. If `pageRelPath` is provided (workspace export), file-tree
         // anchors are rewritten to point to the per-page .html siblings, computed
         // as paths relative to `pageRelPath`.
+        // Splice every same-origin @import into the stylesheet text, recursively.
+        // A stylesheet that is about to be inlined into a <style> can no longer
+        // resolve a relative @import, so a theme layered on another one (bunko.css
+        // on tategaki.css) would export with only its own half applied.
+        //
+        // Note this does NOT rewrite relative url() inside the imported text —
+        // those are exactly as (un)resolvable as the importing file's own, which
+        // is a separate, pre-existing limitation of inlining the theme at all.
+        const __CSS_IMPORT_RE = /@import\s+(?:url\(\s*(['"]?)([^'")]+)\1\s*\)|(['"])([^'"]+)\3)([^;]*);/g;
+        const __CSS_IMPORT_MAX_DEPTH = 4;
+        async function __inlineCssImports(cssText, baseHref, depth, seen) {
+            depth = depth || 0;
+            seen = seen || new Set();
+            if (depth >= __CSS_IMPORT_MAX_DEPTH) return cssText;
+            const jobs = [];
+            __CSS_IMPORT_RE.lastIndex = 0;
+            let m;
+            while ((m = __CSS_IMPORT_RE.exec(cssText))) {
+                jobs.push({ full: m[0], spec: (m[2] || m[4] || '').trim(), cond: (m[5] || '').trim() });
+            }
+            for (const job of jobs) {
+                let replacement = job.full;   // default: leave the @import as written
+                try {
+                    const url = new URL(job.spec, baseHref);
+                    // A cascade layer / supports() condition cannot be reproduced by
+                    // splicing, and a cross-origin import still resolves from the
+                    // artifact — leave both alone.
+                    const inlinable = url.origin === location.origin
+                        && !/^(layer|supports)\b/i.test(job.cond)
+                        && !seen.has(url.href);
+                    if (inlinable) {
+                        seen.add(url.href);
+                        const resp = await fetch(url.href);
+                        if (resp.ok) {
+                            const inner = await __inlineCssImports(await resp.text(), url.href, depth + 1, seen);
+                            replacement = job.cond ? ('@media ' + job.cond + ' {\n' + inner + '\n}') : inner;
+                        }
+                    } else if (seen.has(url.href)) {
+                        replacement = '';   // already spliced in; a cycle would repeat forever
+                    }
+                } catch (err) {
+                    console.warn('export: could not inline @import', job.spec, err);
+                }
+                // String needle => first occurrence only, which is what we want when
+                // the same @import text appears twice (one job per occurrence).
+                cssText = cssText.replace(job.full, () => replacement);
+            }
+            return cssText;
+        }
+
         async function buildExportArtifact({ pageRelPath = null } = {}) {
             // Marp: the export reflects scroll-mode layout, so drop deck/list first
             // (see __marpEnterScrollLayout for why hidden slides must be un-hidden
@@ -4413,8 +4463,14 @@
             let userCssText = '';
             if (currentStyle) {
                 try {
-                    const resp = await fetch(currentStyle);
-                    if (resp.ok) userCssText = await resp.text();
+                    const href = new URL(currentStyle, document.baseURI).href;
+                    const resp = await fetch(href);
+                    // The text goes into a <style> in the artifact, so any @import
+                    // it carries would resolve against the ARTIFACT's location
+                    // instead of the app's — bunko.css is `@import "tategaki.css"`
+                    // plus overrides, so the export silently lost the whole
+                    // vertical-writing base and came out horizontal.
+                    if (resp.ok) userCssText = await __inlineCssImports(await resp.text(), href);
                 } catch (err) {
                     console.warn('export: failed to inline user CSS', err);
                 }
