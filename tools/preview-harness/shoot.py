@@ -79,19 +79,39 @@ _FIGURES_READY_JS = """() => {
 }"""
 
 
+STYLE_INIT_JS = """(() => { try { %s } catch (e) {} })()"""
+
+
+def style_init_script(style):
+    """Pick the user style the way the S-key picker does: localStorage.styleName.
+
+    The harness has no Rust host and no S-key modal, so this is the only way a
+    capture can target bunko.css / tategaki.css -- and those are exactly the
+    themes whose layout is worth a pixel baseline.
+    """
+    if not style or style.lower() in ("default", "none", ""):
+        return STYLE_INIT_JS % "localStorage.removeItem('styleName');"
+    return STYLE_INIT_JS % ("localStorage.setItem('styleName', %s);" % json.dumps(style))
+
+
 def wait_for_render(page):
     """Wait for async figures to finish, then for layout height to stabilize."""
     try:
         page.wait_for_function(_FIGURES_READY_JS)
     except Exception:  # noqa: BLE001
         pass  # best effort; a figure that never resolves shouldn't block capture
-    # Stabilize: poll #preview height until two reads match (fonts/figures settled).
-    prev = -1
+    # Stabilize: poll #preview extent until two reads match (fonts/figures settled).
+    # BOTH axes, because a vertical-writing theme grows horizontally -- and because
+    # paginatePreview() widens the flow by one gutter per page once the user
+    # stylesheet has landed, which a height-only probe cannot see.
+    prev = None
     for _ in range(20):
-        h = page.evaluate("() => { const p=document.getElementById('preview'); return p?p.scrollHeight:0; }")
-        if h == prev:
+        wh = page.evaluate(
+            "() => { const p=document.getElementById('preview');"
+            " return p ? [p.scrollWidth, p.scrollHeight] : [0, 0]; }")
+        if wh == prev:
             break
-        prev = h
+        prev = wh
         page.wait_for_timeout(150)
 
 
@@ -112,6 +132,8 @@ def main():
     ap.add_argument("--scale", type=float, default=2.0, help="device scale factor (default 2)")
     ap.add_argument("--channel", default=None, help="browser channel: msedge | chrome (auto-detect)")
     ap.add_argument("--full", action="store_true", help="non-Marp: capture full page incl. sidebar")
+    ap.add_argument("--style", default=None,
+                    help="user style to apply, e.g. bunko.css (default: the built-in style)")
     ap.add_argument("--port", type=int, default=8771, help="in-process harness port (default 8771)")
     ap.add_argument("--timeout", type=int, default=20000, help="per-step timeout ms (default 20000)")
     args = ap.parse_args()
@@ -158,6 +180,7 @@ def main():
             )
             page = ctx.new_page()
             page.set_default_timeout(args.timeout)
+            page.add_init_script(style_init_script(args.style))
             # domcontentloaded, not networkidle: decks with video / YouTube embeds
             # keep the network busy forever, so networkidle never fires.
             page.goto(url, wait_until="domcontentloaded")

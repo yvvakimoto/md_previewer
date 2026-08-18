@@ -164,7 +164,24 @@ def main():
                   page.evaluate("() => document.querySelector('#style-modal table').hidden"), True)
             check("...with one control per declared variable",
                   page.evaluate(
-                      "() => document.querySelectorAll('#style-vars-pane .sv-row').length"), 9)
+                      "() => document.querySelectorAll('#style-vars-pane .sv-row').length"), 10)
+            # The nombre is a select whose value IS the CSS `display`, so the
+            # pane's own control is what turns the page numbers on and off.
+            check("every page carries a nombre by default",
+                  page.evaluate(
+                      "() => [...document.querySelectorAll('#preview > .md-page')]"
+                      ".every(p => getComputedStyle(p, '::after').display === 'block')"), True)
+            page.evaluate(
+                "() => { const sels=[...document.querySelectorAll('#style-vars-pane select')];"
+                " const el=sels[sels.length-1]; el.value='none';"
+                " el.dispatchEvent(new Event('change', {bubbles:true})); }")
+            page.wait_for_timeout(200)
+            check("turning the nombre off hides every page number",
+                  page.evaluate(
+                      "() => [...document.querySelectorAll('#preview > .md-page')]"
+                      ".every(p => getComputedStyle(p, '::after').display === 'none')"), True)
+            check("...without re-splitting the document",
+                  page.evaluate("() => document.querySelectorAll('#preview > .md-page').length > 1"), True)
             # Live-apply: the 版面 is driven purely by the CSS custom properties,
             # so moving a slider must resize #preview with no re-render.
             page.evaluate(

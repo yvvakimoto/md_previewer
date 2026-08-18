@@ -22,6 +22,12 @@
             flex-direction: column;
             overflow: hidden;
             background: #f5f5f5;
+            /* The nombre counter. It lives on <body>, not on #preview, because
+               `body.numbered #preview { counter-reset: num-h2 }` (the N-key
+               section numbering) is more specific and counter-reset does not
+               accumulate across rules — declaring it on #preview would make the
+               page numbers silently depend on whether numbering is on. */
+            counter-reset: md-page;
         }
 
         #drop-zone {
@@ -154,6 +160,50 @@
            (same weight as the rule above, later in source, so it cancels that
            default) — a theme's own `#preview h1 { margin-top }` still wins. */
         #preview > :where(:first-child) { margin-top: 0; }
+
+        /* Page division — see paginatePreview() / __wrapPages(). A theme that
+           declares --md-page-lines has its body split into .md-page boxes
+           separated by .md-page-break gutters. The wrapper is what gives a
+           page an identity: a box to hang the nombre on, and the unit the PDF
+           export packs onto a sheet.
+
+           It is deliberately layout-neutral. position:relative creates no BFC,
+           so a child's block-start margin still collapses straight through it —
+           which is exactly why the first-child rule above needs the twin below:
+           after wrapping it would otherwise match the .md-page, whose own
+           margin is already 0, and the heading's margin would collapse out and
+           push the whole first page along. */
+        #preview > .md-page:first-child > :where(:first-child) { margin-top: 0; }
+        #preview .md-page { position: relative; counter-increment: md-page; }
+
+        /* ノンブル (page number). Off unless the theme opts in by setting
+           --md-nombre-display, the same "theme declares, the app implements"
+           convention as --md-page-lines. `display` carries the on/off switch
+           because a @user-vars `select` writes its value through verbatim
+           (applyStyleVars), so one variable is both the toggle and the value.
+
+           top:100% puts it just outside the page box, i.e. in #preview's own
+           bottom padding — the 地 of the page in a vertical-writing theme. */
+        #preview .md-page::after {
+            display: var(--md-nombre-display, none);
+            content: counter(md-page);
+            position: absolute;
+            /* Clear of the 版面, not flush against it. The `em` here resolves
+               against the nombre's own (small) font-size, so the gap scales with
+               the number rather than with the body text. A theme that reserves
+               space for the nombre does so in its own padding — see bunko.css. */
+            top: calc(100% + var(--md-nombre-gap, 1em));
+            left: 0;
+            right: 0;
+            writing-mode: horizontal-tb;
+            text-align: center;
+            line-height: 1.2;
+            font-size: var(--md-nombre-size, 0.62em);
+            font-variant-numeric: tabular-nums;
+            color: var(--md-nombre-color, inherit);
+            opacity: var(--md-nombre-opacity, 0.55);
+            pointer-events: none;
+        }
 
         #preview h1 { font-size: 2em; }
         #preview h2 { font-size: 1.5em; }
@@ -1491,6 +1541,22 @@
                 max-width: 100%;
             }
 
+            /* The app shell's desk colour must never become the paper.
+               body { background: #f5f5f5 } propagates to the page canvas, while
+               #preview-container paints its white only as far as its own box —
+               which, with height:auto in print, stops where the content stops.
+               So everything after the end of the body came out grey: the tail of
+               the last page of any document, and (for a vertical-writing theme,
+               where the flow ends part-way across the sheet) a grey block the
+               size of most of that page. Marp is excluded — a deck's colours are
+               its theme's business, and body.marp.pdf-print already forces the
+               whole shell transparent so slide backgrounds show through. */
+            body:not(.marp) {
+                background: #ffffff !important;
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+            }
+
             /* Avoid page breaks inside code blocks, tables and definition lists */
             pre, table, .code-block-wrapper, dl {
                 page-break-inside: avoid;
@@ -2654,6 +2720,7 @@
         let __pdfSwaps = [];
         let __pdfImgSwaps = [];   // {img, origSrc, origSrcset}
         let __pdfMarpRestore = null;   // teardown closure set by __marpPrepareForPdf
+        let __pdfVerticalRestore = null;   // ditto, set by __verticalPrepareForPdf
         const __PDF_IMG_MAX_EDGE = 1600;      // absolute cap on the long edge (~A4 width at high DPI)
         const __PDF_IMG_TARGET_SCALE = 2;     // keep up to 2× the displayed CSS size (retina-crisp)
         const __PDF_IMG_SLACK = 1.25;         // only re-encode when meaningfully oversized
@@ -2804,10 +2871,202 @@
             return { w: W, h: H };
         }
 
+        // ---- Vertical-writing (縦組み) themes: A4 landscape, N pages per sheet ----
+        //
+        // A vertical-rl #preview is an ORTHOGONAL FLOW inside a horizontal-tb page
+        // box: the page fragments downward while the text advances leftward, so the
+        // printer emits one page holding the first paper-width of the column and
+        // silently drops the rest (measured: 1906 of 4473 characters). Forced breaks
+        // inside an orthogonal flow are not honoured either, so no amount of
+        // `break-after` on the gutters fixes it.
+        //
+        // What does work — and is what this does — is to make the PAGE BOX itself
+        // vertical. The principal writing mode is taken from the root element, so
+        // putting html/body (and the two containers in between) into vertical-rl
+        // during print turns the fragmentation axis right-to-left: the column then
+        // paginates naturally, in document order, with page 1 on the right of each
+        // spread. No DOM restructuring at all, which is why the teardown is just
+        // "remove what was added" and needs no re-render.
+        //
+        // Returns the paper in CSS px ({w, h}) so the host can ask Chromium for it,
+        // or null for a horizontal document (→ the A4 portrait default, unchanged).
+        const __PDF_V_PAPER_W = 1122;   // A4 landscape: 297mm at 96dpi is 1122.52…
+        const __PDF_V_PAPER_H = 793;    //               210mm is 793.70…
+        const __PDF_V_MARGIN = 76;      // ≈20mm
+        const __PDF_V_MIN_SCALE = 0.5;  // floor for the print reduction below
+        // Both figures are floored to whole CSS px on purpose. @page and the paper
+        // size the host derives from this must describe the SAME box; a sheet a
+        // hundredth of a pixel taller than the page emits a blank page after every
+        // sheet (src/pdf_win.rs carries the same warning for the Marp slide box).
+
+        function __verticalPrepareForPdf() {
+            const cs = getComputedStyle(preview);
+            if (!/^vertical/.test(cs.writingMode)) return null;
+            const innerW = __PDF_V_PAPER_W - 2 * __PDF_V_MARGIN;
+            const innerH = __PDF_V_PAPER_H - 2 * __PDF_V_MARGIN;
+
+            document.body.classList.add('pdf-print', 'pdf-vertical');
+            preview.classList.add('pdf-vertical-src');
+
+            // Phase 1 — rules that must be live NOW, because the packing below
+            // measures the result. An @media print block would not apply here.
+            // A theme may want a wider gutter on paper than on screen: on a
+            // spread the gutter reads as the ノド between two facing pages.
+            const printGap = (cs.getPropertyValue('--md-print-gap') || '').trim();
+
+            const pre = document.createElement('style');
+            pre.id = 'pdf-vertical-style';
+            pre.textContent = [
+                // A page whose first block is a heading is 2 lines wider than the
+                // others (paginatePreview anchors the boundary AFTER the collapsed
+                // margin). On paper that irregularity is what pushes a spread over
+                // the sheet, so flatten every page to exactly its line count.
+                '#preview.pdf-vertical-src > .' + __PAGE_CLASS + ' > :first-child { margin-block-start: 0 !important; }',
+                // …and the trailing one, which is invisible (nothing follows it on
+                // that page) but is NOT inside the wrapper's border box: it
+                // collapses out and pushes the gutter along, so a spread that
+                // measured as fitting overflowed the sheet by exactly one line.
+                '#preview.pdf-vertical-src > .' + __PAGE_CLASS + ' > :last-child { margin-block-end: 0 !important; }',
+                // A gutter that lands at the end of a sheet only eats paper.
+                // display:none is not an option — it would remove the very element
+                // the break-after below is attached to.
+                '#preview.pdf-vertical-src > .' + __PAGE_BREAK_CLASS + '.md-sheet-end { block-size: 0 !important; }',
+                (printGap
+                    ? '#preview.pdf-vertical-src > .' + __PAGE_BREAK_CLASS + ':not(.md-sheet-end) { block-size: ' + printGap + ' !important; }'
+                    : ''),
+            ].join('\n');
+            document.head.appendChild(pre);
+
+            // ---- Fit the 版面 to the paper ----
+            // A fixed 版面 is a fixed number of CSS px (bunko: 39字 × 1em tall,
+            // 16行 × 行送り wide), and A4 landscape has barely more than that —
+            // so a generous paper margin, or a wider gutter, simply would not
+            // fit. Every one of those lengths is derived from one font size, so
+            // multiplying that single value shrinks the whole 版面 uniformly
+            // WITHOUT reflowing a word: the line stays 39 characters because the
+            // character advance shrank with it. A theme opts in by routing its
+            // own font size through --md-print-scale (see bunko.css); a theme
+            // that doesn't is simply never scaled.
+            // This is also what stops a reader who set 字数 to 60 from getting a
+            // clipped PDF — the 版面 no longer has to fit the paper as authored.
+            const fixed = parseFloat(cs.getPropertyValue('--md-page-lines')) >= 1;
+            if (fixed) {
+                const lines = parseFloat(cs.getPropertyValue('--md-page-lines'));
+                const lineUnit = parseFloat(cs.lineHeight);
+                const inline0 = parseFloat(cs.height)
+                    + Math.max(0, parseFloat(cs.paddingBottom) - parseFloat(cs.paddingTop));
+                const gap0 = (() => {
+                    const b = preview.querySelector(':scope > .' + __PAGE_BREAK_CLASS);
+                    return b ? b.getBoundingClientRect().width : 0;
+                })();
+                const perCap = Math.max(1, parseInt(cs.getPropertyValue('--md-print-pages-per-sheet'), 10) || 1);
+                const spread0 = perCap * lines * lineUnit + (perCap - 1) * gap0;
+                let f = 1;
+                if (inline0 > 0) f = Math.min(f, innerH / inline0);
+                // 0.995 of the exact fit: the packing below rejects a spread that
+                // exceeds innerW, and an exact tie loses to sub-pixel rounding.
+                if (spread0 > 0) f = Math.min(f, (innerW / spread0) * 0.995);
+                f = Math.max(__PDF_V_MIN_SCALE, Math.min(1, f));
+                if (f < 1) preview.style.setProperty('--md-print-scale', String(f));
+            }
+
+            // Pack pages onto sheets by MEASURED extent, capped by the theme's
+            // --md-print-pages-per-sheet. Measuring (rather than marking every Nth
+            // gutter) is what keeps a page carrying an oversized figure from
+            // overflowing its sheet: it simply gets a sheet to itself.
+            const perMax = Math.max(1, parseInt(cs.getPropertyValue('--md-print-pages-per-sheet'), 10) || 1);
+            // Measure by POSITION, not by each wrapper's own extent: a margin that
+            // collapses out of the wrapper occupies space on the sheet while
+            // sitting outside its border box, so extent-based arithmetic
+            // under-counts. `stop` is where the following gutter begins (or, for
+            // the last page, where its content ends), which counts everything.
+            const axis = __blockAxis(preview);
+            const pages = [];
+            for (const kid of preview.children) {
+                if (kid.classList.contains(__PAGE_BREAK_CLASS)) {
+                    if (pages.length) pages[pages.length - 1].brk = kid;
+                    continue;
+                }
+                const r = kid.getBoundingClientRect();
+                pages.push({ start: axis.pos(r), stop: axis.end(r), brk: null });
+            }
+            for (const pg of pages) {
+                if (pg.brk) pg.stop = axis.pos(pg.brk.getBoundingClientRect());
+            }
+            // Because every position comes from one measurement pass, the width of
+            // a sheet is simply stop[last] − start[first]; the gutters inside it
+            // are already part of that distance. Collapsing a gutter we mark only
+            // moves later pages closer, so the estimate stays conservative.
+            let first = 0;
+            for (let i = 1; i < pages.length; i++) {
+                const n = i - first;
+                if (pages[i].stop - pages[first].start > innerW + 0.5 || n >= perMax) {
+                    const prev = pages[i - 1];
+                    if (prev.brk) prev.brk.classList.add('md-sheet-end');
+                    first = i;
+                }
+            }
+
+            // A fixed 版面 (bunko: height = 字数 × 1em) is centred on the page's
+            // inline axis; a window-sized one (tategaki) is told to fill the paper
+            // instead, which is what makes its line length — and hence the lines
+            // per page — follow the paper rather than the window.
+            const hPx = parseFloat(cs.height);
+            // Split the leftover inline-axis space around the 版面, but keep
+            // whatever extra the theme reserved at the 地 — that is where a
+            // nombre lives, and centring the block evenly would print it into
+            // the page margin.
+            const reserve = Math.max(0, parseFloat(cs.paddingBottom) - parseFloat(cs.paddingTop)) || 0;
+            let padTop = null, padBottom = null;
+            if (fixed && Number.isFinite(hPx) && hPx > 0 && hPx < innerH) {
+                const slack = innerH - hPx;
+                padTop = Math.max(0, (slack - reserve) / 2);
+                padBottom = slack - padTop;
+            }
+
+            const st = document.createElement('style');
+            st.id = 'pdf-page-style';
+            st.textContent = [
+                '@page { size: ' + __PDF_V_PAPER_W + 'px ' + __PDF_V_PAPER_H + 'px; margin: ' + __PDF_V_MARGIN + 'px; }',
+                '@media print {',
+                '  html, body, #app-container, #preview-container { writing-mode: vertical-rl !important; }',
+                // !important is load-bearing: applyUserStyle() appends the theme's
+                // <link> AFTER this document's inline <style>, so tategaki.css /
+                // bunko.css `#preview-container { overflow-x: auto }` wins on source
+                // order over the base print rule. A fragmentation break does not
+                // propagate out of a scroll container, so leaving it would yield a
+                // one-page PDF — indistinguishable from the orthogonal-flow failure.
+                '  #preview-container { overflow: visible !important; height: auto !important;',
+                '                        display: block !important; }',
+                '  #preview { margin: 0 !important; min-width: 0 !important; width: auto !important;',
+                '             max-width: none !important; padding-left: 0 !important; padding-right: 0 !important; }',
+                (padTop !== null
+                    ? '  #preview { padding-top: ' + padTop + 'px !important; padding-bottom: ' + padBottom + 'px !important; }'
+                    : '  #preview { height: auto !important; padding-top: 6px !important; padding-bottom: 6px !important; }'),
+                '  #preview .' + __PAGE_BREAK_CLASS + '.md-sheet-end { break-after: page; }',
+                '}',
+            ].join('\n');
+            document.head.appendChild(st);
+
+            __pdfVerticalRestore = () => {
+                document.body.classList.remove('pdf-print', 'pdf-vertical');
+                preview.classList.remove('pdf-vertical-src');
+                preview.style.removeProperty('--md-print-scale');
+                for (const id of ['pdf-page-style', 'pdf-vertical-style']) {
+                    const el = document.getElementById(id);
+                    if (el) el.remove();
+                }
+                preview.querySelectorAll('.md-sheet-end')
+                       .forEach(b => b.classList.remove('md-sheet-end'));
+            };
+            return { w: __PDF_V_PAPER_W, h: __PDF_V_PAPER_H };
+        }
+
         window.__beforePdfPrint = async function () {
             __pdfSwaps = [];
             __pdfImgSwaps = [];
             __pdfMarpRestore = null;
+            __pdfVerticalRestore = null;
             let page = null;
             try {
                 // Marp layout first: __downscaleImageForPdf sizes each image against its
@@ -2859,8 +3118,20 @@
                     }
                 }
                 await Promise.all(decodes);
+                // Vertical-writing layout LAST, unlike Marp: it measures each page's
+                // extent to pack the sheets, and a video swapped for a still or an
+                // image swapped for a downscaled data URL can change that extent.
+                if (!page) page = __verticalPrepareForPdf();
             } catch (e) {
                 __dbgLog('__beforePdfPrint error: ' + (e && e.message));
+                // A half-applied vertical layout must not be printed: otherwise the
+                // finally block posts `{}` and the host prints a mutated DOM onto
+                // A4 portrait.
+                if (__pdfVerticalRestore) {
+                    try { __pdfVerticalRestore(); } catch (e2) {}
+                    __pdfVerticalRestore = null;
+                    page = null;
+                }
             } finally {
                 // Always signal readiness so the print proceeds even with no videos.
                 // The payload carries the Marp slide box (CSS px) so the host can size
@@ -2890,6 +3161,10 @@
             if (__pdfMarpRestore) {
                 try { __pdfMarpRestore(); } catch (e) { __dbgLog('marp pdf restore failed: ' + (e && e.message)); }
                 __pdfMarpRestore = null;
+            }
+            if (__pdfVerticalRestore) {
+                try { __pdfVerticalRestore(); } catch (e) { __dbgLog('vertical pdf restore failed: ' + (e && e.message)); }
+                __pdfVerticalRestore = null;
             }
         };
 
@@ -3557,14 +3832,26 @@
         // persist on `change`. Only CSS custom properties move, so no re-render is
         // needed — but the layout can shift a lot (字数 changes the whole 版面), so
         // the reader's paragraph is pinned back afterwards.
+        // Which @user-vars entries can move a page boundary. Everything that is
+        // not obviously decorative counts, so a new variable defaults to "safe
+        // but slow" rather than "fast but stale".
+        const __STYLE_VAR_DECORATIVE = /(nombre|color|colour|accent|background|opacity|shadow)/i;
+        function __styleVarAffectsLayout(spec) {
+            if (!spec || !spec.var) return true;
+            if (spec.type === 'color') return false;
+            return !__STYLE_VAR_DECORATIVE.test(spec.var);
+        }
+
         function __setStyleVar(spec, value, persist) {
             const st = __styleVarsState;
             if (!st) return;
             st.values[spec.var] = String(value);
             applyStyleVars(st.name, st.spec, st.values);
             // A paginating theme needs the split redone when the page size moves;
-            // no-op for every other theme.
-            __schedulePaginateRefresh();
+            // no-op for every other theme. Purely decorative variables (colours,
+            // the nombre toggle) are skipped — the refresh is a full re-render,
+            // which is far too much for a variable that only repaints.
+            if (__styleVarAffectsLayout(spec)) __schedulePaginateRefresh();
             if (persist) {
                 __writeStyleVars(st.name, st.values);
                 requestAnimationFrame(() => restorePreviewAnchor(st.anchor));
@@ -3854,6 +4141,56 @@
         // preview DOM. If `pageRelPath` is provided (workspace export), file-tree
         // anchors are rewritten to point to the per-page .html siblings, computed
         // as paths relative to `pageRelPath`.
+        // Splice every same-origin @import into the stylesheet text, recursively.
+        // A stylesheet that is about to be inlined into a <style> can no longer
+        // resolve a relative @import, so a theme layered on another one (bunko.css
+        // on tategaki.css) would export with only its own half applied.
+        //
+        // Note this does NOT rewrite relative url() inside the imported text —
+        // those are exactly as (un)resolvable as the importing file's own, which
+        // is a separate, pre-existing limitation of inlining the theme at all.
+        const __CSS_IMPORT_RE = /@import\s+(?:url\(\s*(['"]?)([^'")]+)\1\s*\)|(['"])([^'"]+)\3)([^;]*);/g;
+        const __CSS_IMPORT_MAX_DEPTH = 4;
+        async function __inlineCssImports(cssText, baseHref, depth, seen) {
+            depth = depth || 0;
+            seen = seen || new Set();
+            if (depth >= __CSS_IMPORT_MAX_DEPTH) return cssText;
+            const jobs = [];
+            __CSS_IMPORT_RE.lastIndex = 0;
+            let m;
+            while ((m = __CSS_IMPORT_RE.exec(cssText))) {
+                jobs.push({ full: m[0], spec: (m[2] || m[4] || '').trim(), cond: (m[5] || '').trim() });
+            }
+            for (const job of jobs) {
+                let replacement = job.full;   // default: leave the @import as written
+                try {
+                    const url = new URL(job.spec, baseHref);
+                    // A cascade layer / supports() condition cannot be reproduced by
+                    // splicing, and a cross-origin import still resolves from the
+                    // artifact — leave both alone.
+                    const inlinable = url.origin === location.origin
+                        && !/^(layer|supports)\b/i.test(job.cond)
+                        && !seen.has(url.href);
+                    if (inlinable) {
+                        seen.add(url.href);
+                        const resp = await fetch(url.href);
+                        if (resp.ok) {
+                            const inner = await __inlineCssImports(await resp.text(), url.href, depth + 1, seen);
+                            replacement = job.cond ? ('@media ' + job.cond + ' {\n' + inner + '\n}') : inner;
+                        }
+                    } else if (seen.has(url.href)) {
+                        replacement = '';   // already spliced in; a cycle would repeat forever
+                    }
+                } catch (err) {
+                    console.warn('export: could not inline @import', job.spec, err);
+                }
+                // String needle => first occurrence only, which is what we want when
+                // the same @import text appears twice (one job per occurrence).
+                cssText = cssText.replace(job.full, () => replacement);
+            }
+            return cssText;
+        }
+
         async function buildExportArtifact({ pageRelPath = null } = {}) {
             // Marp: the export reflects scroll-mode layout, so drop deck/list first
             // (see __marpEnterScrollLayout for why hidden slides must be un-hidden
@@ -4126,8 +4463,14 @@
             let userCssText = '';
             if (currentStyle) {
                 try {
-                    const resp = await fetch(currentStyle);
-                    if (resp.ok) userCssText = await resp.text();
+                    const href = new URL(currentStyle, document.baseURI).href;
+                    const resp = await fetch(href);
+                    // The text goes into a <style> in the artifact, so any @import
+                    // it carries would resolve against the ARTIFACT's location
+                    // instead of the app's — bunko.css is `@import "tategaki.css"`
+                    // plus overrides, so the export silently lost the whole
+                    // vertical-writing base and came out horizontal.
+                    if (resp.ok) userCssText = await __inlineCssImports(await resp.text(), href);
                 } catch (err) {
                     console.warn('export: failed to inline user CSS', err);
                 }
@@ -5120,6 +5463,7 @@ ${previewClone.outerHTML}
         // it. It is a no-op for every theme that does not opt in.
         const __PAGE_BREAK_CLASS = 'md-page-break';
         const __PAGE_CONT_CLASS = 'md-page-cont';
+        const __PAGE_CLASS = 'md-page';
         const __PAGE_MAX_ITER = 4000;
 
         // Block-axis geometry normalised so a "position" always grows in the
@@ -5186,7 +5530,49 @@ ${previewClone.outerHTML}
             return head;
         }
 
+        // Split, then wrap. Kept apart because only the first half is the
+        // delicate measure-and-cut pass; the second is a pure DOM regrouping
+        // that must not disturb what the first one just computed.
         function paginatePreview() {
+            // The geometry guard belongs to BOTH halves. On the initial load
+            // renderMarkdown() finishes while #app-container is still
+            // display:none, so nothing can be measured and the splitter
+            // declines; the wrapper must decline too, or it bundles the whole
+            // undivided document into a single page box — and the later call
+            // that does have geometry then sees one unsplittable child and
+            // paginates nothing at all.
+            const box = preview.getBoundingClientRect();
+            if (!box.width && !box.height) return;
+            __paginateSplit();
+            __wrapPages();
+        }
+
+        // Turn the boundaries the split pass settled on into real page boxes.
+        // The .md-page-break gutters stay as siblings between the wrappers —
+        // they are the theme's contract (--bunko-gap hangs off them) and the
+        // PDF export uses them as its break-after targets.
+        //
+        // Never stamp data-line on a wrapper: __tableLocate()'s
+        // `lineEl.contains(tableEl)` guard would then match every table in the
+        // document and refuse to edit any of them.
+        function __wrapPages() {
+            const cs = getComputedStyle(preview);
+            const lines = parseFloat(cs.getPropertyValue('--md-page-lines'));
+            if (!Number.isFinite(lines) || lines < 1) return;   // not a paginating theme
+            if (preview.querySelector(':scope > .' + __PAGE_CLASS)) return;
+            let page = null;
+            for (const kid of [...preview.children]) {
+                if (kid.classList.contains(__PAGE_BREAK_CLASS)) { page = null; continue; }
+                if (!page) {
+                    page = document.createElement('div');
+                    page.className = __PAGE_CLASS;
+                    preview.insertBefore(page, kid);
+                }
+                page.appendChild(kid);
+            }
+        }
+
+        function __paginateSplit() {
             // Splitting is not idempotent — a second pass would insert a second
             // break at every boundary — and #preview is rebuilt wholesale by each
             // render, so the presence of a break means this DOM is already divided.

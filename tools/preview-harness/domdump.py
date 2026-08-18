@@ -160,7 +160,7 @@ def render_digest(payload, places):
     return "\n".join(lines) + "\n"
 
 
-def slug_for(repo_root, md_path, mode, dark):
+def slug_for(repo_root, md_path, mode, dark, style=None):
     """Stable output filename derived from the doc's repo-relative path."""
     try:
         rel = os.path.relpath(md_path, repo_root)
@@ -171,6 +171,8 @@ def slug_for(repo_root, md_path, mode, dark):
     suffix = "." + mode if mode else ""
     if dark:
         suffix += ".dark"
+    if style and style.lower() not in ("default", "none"):
+        suffix += "." + re.sub(r"[^0-9A-Za-z._-]", "_", style)
     return rel + suffix + ".txt"
 
 
@@ -215,6 +217,8 @@ def main():
                     help="Marp view modes to dump, comma-separated (scroll,deck,list)")
     ap.add_argument("--dark", action="store_true", help="also dump each doc in dark mode")
     ap.add_argument("--sidebar", action="store_true", help="include the TOC sidebar text")
+    ap.add_argument("--style", default=None,
+                    help="user style to apply, e.g. bunko.css (default: the built-in style)")
     ap.add_argument("--round", type=int, default=2, dest="places",
                     help="decimal places to round numbers inside style= (default 2)")
     ap.add_argument("--channel", default=None, help="browser channel: msedge | chrome (auto)")
@@ -266,6 +270,7 @@ def main():
             ctx = browser.new_context(viewport={"width": 1440, "height": 900})
             page = ctx.new_page()
             page.set_default_timeout(args.timeout)
+            page.add_init_script(shoot.style_init_script(args.style))
 
             for md_path in paths:
                 url = "http://127.0.0.1:%d/index.html?file=%s" % (args.port, md_path)
@@ -276,7 +281,7 @@ def main():
                     sys.stderr.write("WARN: %s failed: %s\n" % (md_path, str(e)[:200]))
                     continue
                 for (mode, is_dark), text in results.items():
-                    dest = os.path.join(out_dir, slug_for(repo_root, md_path, mode, is_dark))
+                    dest = os.path.join(out_dir, slug_for(repo_root, md_path, mode, is_dark, args.style))
                     with open(dest, "w", encoding="utf-8", newline="\n") as fh:
                         fh.write(text)
                     written.append(dest)
