@@ -2892,7 +2892,8 @@
         // or null for a horizontal document (→ the A4 portrait default, unchanged).
         const __PDF_V_PAPER_W = 1122;   // A4 landscape: 297mm at 96dpi is 1122.52…
         const __PDF_V_PAPER_H = 793;    //               210mm is 793.70…
-        const __PDF_V_MARGIN = 38;      // ≈10mm
+        const __PDF_V_MARGIN = 76;      // ≈20mm
+        const __PDF_V_MIN_SCALE = 0.5;  // floor for the print reduction below
         // Both figures are floored to whole CSS px on purpose. @page and the paper
         // size the host derives from this must describe the SAME box; a sheet a
         // hundredth of a pixel taller than the page emits a blank page after every
@@ -2909,6 +2910,10 @@
 
             // Phase 1 — rules that must be live NOW, because the packing below
             // measures the result. An @media print block would not apply here.
+            // A theme may want a wider gutter on paper than on screen: on a
+            // spread the gutter reads as the ノド between two facing pages.
+            const printGap = (cs.getPropertyValue('--md-print-gap') || '').trim();
+
             const pre = document.createElement('style');
             pre.id = 'pdf-vertical-style';
             pre.textContent = [
@@ -2917,18 +2922,64 @@
                 // margin). On paper that irregularity is what pushes a spread over
                 // the sheet, so flatten every page to exactly its line count.
                 '#preview.pdf-vertical-src > .' + __PAGE_CLASS + ' > :first-child { margin-block-start: 0 !important; }',
+                // …and the trailing one, which is invisible (nothing follows it on
+                // that page) but is NOT inside the wrapper's border box: it
+                // collapses out and pushes the gutter along, so a spread that
+                // measured as fitting overflowed the sheet by exactly one line.
+                '#preview.pdf-vertical-src > .' + __PAGE_CLASS + ' > :last-child { margin-block-end: 0 !important; }',
                 // A gutter that lands at the end of a sheet only eats paper.
                 // display:none is not an option — it would remove the very element
                 // the break-after below is attached to.
                 '#preview.pdf-vertical-src > .' + __PAGE_BREAK_CLASS + '.md-sheet-end { block-size: 0 !important; }',
+                (printGap
+                    ? '#preview.pdf-vertical-src > .' + __PAGE_BREAK_CLASS + ':not(.md-sheet-end) { block-size: ' + printGap + ' !important; }'
+                    : ''),
             ].join('\n');
             document.head.appendChild(pre);
+
+            // ---- Fit the 版面 to the paper ----
+            // A fixed 版面 is a fixed number of CSS px (bunko: 39字 × 1em tall,
+            // 16行 × 行送り wide), and A4 landscape has barely more than that —
+            // so a generous paper margin, or a wider gutter, simply would not
+            // fit. Every one of those lengths is derived from one font size, so
+            // multiplying that single value shrinks the whole 版面 uniformly
+            // WITHOUT reflowing a word: the line stays 39 characters because the
+            // character advance shrank with it. A theme opts in by routing its
+            // own font size through --md-print-scale (see bunko.css); a theme
+            // that doesn't is simply never scaled.
+            // This is also what stops a reader who set 字数 to 60 from getting a
+            // clipped PDF — the 版面 no longer has to fit the paper as authored.
+            const fixed = parseFloat(cs.getPropertyValue('--md-page-lines')) >= 1;
+            if (fixed) {
+                const lines = parseFloat(cs.getPropertyValue('--md-page-lines'));
+                const lineUnit = parseFloat(cs.lineHeight);
+                const inline0 = parseFloat(cs.height)
+                    + Math.max(0, parseFloat(cs.paddingBottom) - parseFloat(cs.paddingTop));
+                const gap0 = (() => {
+                    const b = preview.querySelector(':scope > .' + __PAGE_BREAK_CLASS);
+                    return b ? b.getBoundingClientRect().width : 0;
+                })();
+                const perCap = Math.max(1, parseInt(cs.getPropertyValue('--md-print-pages-per-sheet'), 10) || 1);
+                const spread0 = perCap * lines * lineUnit + (perCap - 1) * gap0;
+                let f = 1;
+                if (inline0 > 0) f = Math.min(f, innerH / inline0);
+                // 0.995 of the exact fit: the packing below rejects a spread that
+                // exceeds innerW, and an exact tie loses to sub-pixel rounding.
+                if (spread0 > 0) f = Math.min(f, (innerW / spread0) * 0.995);
+                f = Math.max(__PDF_V_MIN_SCALE, Math.min(1, f));
+                if (f < 1) preview.style.setProperty('--md-print-scale', String(f));
+            }
 
             // Pack pages onto sheets by MEASURED extent, capped by the theme's
             // --md-print-pages-per-sheet. Measuring (rather than marking every Nth
             // gutter) is what keeps a page carrying an oversized figure from
             // overflowing its sheet: it simply gets a sheet to itself.
             const perMax = Math.max(1, parseInt(cs.getPropertyValue('--md-print-pages-per-sheet'), 10) || 1);
+            // Measure by POSITION, not by each wrapper's own extent: a margin that
+            // collapses out of the wrapper occupies space on the sheet while
+            // sitting outside its border box, so extent-based arithmetic
+            // under-counts. `stop` is where the following gutter begins (or, for
+            // the last page, where its content ends), which counts everything.
             const axis = __blockAxis(preview);
             const pages = [];
             for (const kid of preview.children) {
@@ -2937,17 +2988,23 @@
                     continue;
                 }
                 const r = kid.getBoundingClientRect();
-                pages.push({ ext: axis.end(r) - axis.pos(r), brk: null });
+                pages.push({ start: axis.pos(r), stop: axis.end(r), brk: null });
             }
-            let acc = 0, n = 0;
-            for (let i = 0; i < pages.length; i++) {
-                const prev = pages[i - 1];
-                const gutter = (n === 0 || !prev || !prev.brk) ? 0 : prev.brk.getBoundingClientRect().width;
-                const need = (n === 0) ? pages[i].ext : acc + gutter + pages[i].ext;
-                if (n > 0 && (need > innerW + 0.5 || n >= perMax)) {
-                    if (prev && prev.brk) prev.brk.classList.add('md-sheet-end');
-                    acc = pages[i].ext; n = 1;
-                } else { acc = need; n++; }
+            for (const pg of pages) {
+                if (pg.brk) pg.stop = axis.pos(pg.brk.getBoundingClientRect());
+            }
+            // Because every position comes from one measurement pass, the width of
+            // a sheet is simply stop[last] − start[first]; the gutters inside it
+            // are already part of that distance. Collapsing a gutter we mark only
+            // moves later pages closer, so the estimate stays conservative.
+            let first = 0;
+            for (let i = 1; i < pages.length; i++) {
+                const n = i - first;
+                if (pages[i].stop - pages[first].start > innerW + 0.5 || n >= perMax) {
+                    const prev = pages[i - 1];
+                    if (prev.brk) prev.brk.classList.add('md-sheet-end');
+                    first = i;
+                }
             }
 
             // A fixed 版面 (bunko: height = 字数 × 1em) is centred on the page's
@@ -2955,7 +3012,6 @@
             // instead, which is what makes its line length — and hence the lines
             // per page — follow the paper rather than the window.
             const hPx = parseFloat(cs.height);
-            const fixed = parseFloat(cs.getPropertyValue('--md-page-lines')) >= 1;
             // Split the leftover inline-axis space around the 版面, but keep
             // whatever extra the theme reserved at the 地 — that is where a
             // nombre lives, and centring the block evenly would print it into
@@ -2995,6 +3051,7 @@
             __pdfVerticalRestore = () => {
                 document.body.classList.remove('pdf-print', 'pdf-vertical');
                 preview.classList.remove('pdf-vertical-src');
+                preview.style.removeProperty('--md-print-scale');
                 for (const id of ['pdf-page-style', 'pdf-vertical-style']) {
                     const el = document.getElementById(id);
                     if (el) el.remove();

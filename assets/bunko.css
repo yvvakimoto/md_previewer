@@ -57,14 +57,20 @@
 #preview {
     /* 本文 1 行が block 軸に占める寸法。行取りの単位であり、1ページの高さの単位でもある。
      * --bunko-font-size は px 付きの長さなので、そのまま掛けて長さになる。 */
-    --bunko-line: calc(var(--bunko-line-height, 1.75) * var(--bunko-font-size, 17px));
+    /* --md-print-scale は PDF 出力時だけ 1 未満になる (index.html の
+     * __verticalPrepareForPdf)。版面の寸法はすべてこの 1 つの文字サイズから
+     * 導かれているので、ここに掛けるだけで版面全体が相似に縮む ―― 1 行は
+     * 39 字のまま、行送りも見出しも同じ比率で縮むため、組版は一切崩れない。
+     * これが無いと A4 横に 39字 × 16行 の見開きがぎりぎりで収まるだけになり、
+     * 紙の余白もページ間のアキも広げられない。画面では常に 1。 */
+    --bunko-line: calc(var(--bunko-line-height, 1.75) * var(--bunko-font-size, 17px) * var(--md-print-scale, 1));
 
     /* index.html の * { box-sizing: border-box } を打ち消す。border-box のままだと
      * height に天地の余白が食い込み、その分だけ字数が減る。 */
     box-sizing: content-box;
 
     font-family: var(--bunko-font, "Yu Mincho", "YuMincho", "MS Mincho", "ＭＳ 明朝", serif);
-    font-size: var(--bunko-font-size, 17px);
+    font-size: calc(var(--bunko-font-size, 17px) * var(--md-print-scale, 1));
     /* 倍率ではなく絶対長で指定するのが要点。倍率 (無単位) は子孫ごとに font-size を
      * 掛け直すので、脚注 (0.9em) などで行送りが変わり行取りが崩れる。絶対長なら
      * そのまま継承されるため、文字サイズの違う要素も同じ行の格子に乗る。 */
@@ -228,6 +234,8 @@
  * 版面の実寸を測って決めるので、図版で膨らんだ面は自動的に 1 枚 1 面へ落ちる。 */
 #preview {
     --md-print-pages-per-sheet: 2;
+    /* 紙の上ではページ間のアキが見開きのノドになるので、画面より広く取る。 */
+    --md-print-gap: 6em;
 }
 
 /* --- 透かしは文庫の小さな版面に合わせて既定サイズを少し絞る --- */
