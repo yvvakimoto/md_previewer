@@ -18,6 +18,11 @@ What it pins:
   * zero margins: a full-bleed slide background reaches all four page corners
   * a non-Marp document still prints A4 portrait with its 0.4in margins
   * __afterPdfPrint() restores the view (classes, inline sizing, injected @page)
+  * a vertical-writing theme prints A4 LANDSCAPE, multi-page, losing no text --
+    bunko.css at 2 pages per sheet with a nombre under each, tategaki.css with
+    its line length taken from the paper. Both are the case a naive
+    `break-after: page` silently truncates, so the text-completeness assertion
+    is the load-bearing one here.
 
 MIRROR: ``print_params`` below reproduces ``print_params()`` in src/pdf_win.rs.
 Keep the two in sync — this file is what proves the params actually produce the
@@ -119,6 +124,12 @@ color: #ffffff
 
 DECK_43_MD = DECK_MD.replace("theme: default", "theme: default\nsize: 4:3")
 
+# Long enough to need several 文庫 pages: the whole point is multi-page output.
+VERTICAL_MD = "# 縦組みの文書\n\n" + "".join(
+    "## 第%d節\n\n%s\n\n" % (i + 1, ("この文書は縦組みテーマの印刷経路を確かめるためのものである。"
+                                       "行は右から左へ進み、紙は横に置かれる。") * 6)
+    for i in range(6))
+
 PLAIN_MD = """# 通常のドキュメント
 
 これは Marp ではないので A4 縦のままであるべき。
@@ -143,6 +154,36 @@ def start_harness(port, repo_root, assets_dir):
     httpd.assets_dir = assets_dir
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
     return httpd
+
+
+def open_styled(browser, style):
+    """A fresh context whose localStorage picks a user style, as startup would.
+
+    A style cannot be switched mid-page here: the S-key modal is the only UI for
+    it, and add_init_script only runs on navigation. A per-style context is also
+    what keeps each case's localStorage from leaking into the next.
+    """
+    ctx = browser.new_context(viewport={"width": 1440, "height": 900})
+    page = ctx.new_page()
+    page.set_default_timeout(20000)
+    page.add_init_script(
+        "(() => { try { localStorage.setItem('styleName', %s); } catch (e) {} })()" % json.dumps(style))
+    return ctx, page, ctx.new_cdp_session(page)
+
+
+def load_vertical(page, url):
+    """Load a doc under a vertical theme and wait for the split to settle."""
+    page.goto(url, wait_until="domcontentloaded")
+    page.wait_for_function(
+        "() => { const p=document.getElementById('preview'); return p && p.children.length>0; }")
+    page.wait_for_function(
+        "() => /^vertical/.test(getComputedStyle(document.getElementById('preview')).writingMode)")
+    page.wait_for_timeout(400)
+    page.evaluate(RECORD_IPC_JS)
+
+
+def flat_text(doc):
+    return ["".join(doc[i].get_text().split()) for i in range(doc.page_count)]
 
 
 def load(page, url, marp):
@@ -214,7 +255,9 @@ def main():
     deck = os.path.join(tmp, "deck.md")
     deck43 = os.path.join(tmp, "deck43.md")
     plain = os.path.join(tmp, "plain.md")
-    for path, body in ((deck, DECK_MD), (deck43, DECK_43_MD), (plain, PLAIN_MD)):
+    vertical = os.path.join(tmp, "vertical.md")
+    for path, body in ((deck, DECK_MD), (deck43, DECK_43_MD), (plain, PLAIN_MD),
+                       (vertical, VERTICAL_MD)):
         with open(path, "w", encoding="utf-8") as fh:
             fh.write(body)
 
@@ -303,6 +346,83 @@ def main():
             cs = corners(doc[0].get_pixmap(dpi=48))
             check("no margin on a 4:3 deck", all(near(c, (0x12, 0x34, 0x56)) for c in cs), cs)
             doc.close()
+
+            ctx.close()
+
+            # ---- vertical-writing themes: A4 landscape ------------------------
+            for style, per, label in (("bunko.css", 2, "bunko"), ("tategaki.css", 1, "tategaki")):
+                print("\n[%s — A4 横]" % label)
+                vctx, vpage, vclient = open_styled(browser, style)
+                load_vertical(vpage, base + vertical)
+                body_chars = vpage.evaluate(
+                    "() => document.getElementById('preview').innerText.replace(/\\s+/g,'').length")
+                out = os.path.join(tmp, "%s.pdf" % label)
+                payload = run_export(vpage, vclient, out)
+                sheets = vpage.evaluate(
+                    "() => document.querySelectorAll('#preview .md-sheet-end').length + 1")
+                npages = vpage.evaluate(
+                    "() => document.querySelectorAll('#preview > .md-page').length")
+
+                check("ack reports A4 landscape in CSS px",
+                      payload.get("pageW") == 1122 and payload.get("pageH") == 793, payload)
+                doc = fitz.open(out)
+                r = doc[0].rect
+                check("page is A4 landscape (841.5x594.75pt)",
+                      approx(r.width, 841.5) and approx(r.height, 594.75),
+                      "got %.1fx%.1f" % (r.width, r.height))
+                check("more than one page", doc.page_count > 1, doc.page_count)
+
+                texts = flat_text(doc)
+                total = sum(len(t) for t in texts)
+                # The orthogonal-flow failure this whole path exists to avoid loses
+                # most of the body silently, so completeness is the real assertion.
+                check("no text is lost (%d chars over %d pages)" % (total, doc.page_count),
+                      total >= body_chars, "pdf=%d preview=%d" % (total, body_chars))
+                check("every page carries text", all(len(t) > 0 for t in texts),
+                      [len(t) for t in texts])
+                check("page 1 starts at the top of the document",
+                      texts[0].startswith("縦組みの文書"), texts[0][:20])
+
+                area = fitz.Rect(28.5, 28.5, r.width - 28.5, r.height - 28.5)
+                worst = None
+                for i in range(doc.page_count):
+                    for b in doc[i].get_text("blocks"):
+                        bb = fitz.Rect(b[:4])
+                        if not (bb.x0 >= area.x0 - 2 and bb.x1 <= area.x1 + 2
+                                and bb.y0 >= area.y0 - 2 and bb.y1 <= area.y1 + 2):
+                            worst = (i + 1, tuple(round(v, 1) for v in b[:4]))
+                check("nothing spills outside the printable area", worst is None, worst)
+
+                if style == "bunko.css":
+                    check("the deck is packed %d pages to a sheet" % per,
+                          doc.page_count == sheets and sheets <= -(-npages // per) + 1,
+                          "pages=%d sheets=%d 文庫pages=%d" % (doc.page_count, sheets, npages))
+                    nombres = [[int(w) for w in doc[i].get_text().split()
+                                if w.isdigit() and 1 <= int(w) <= npages] for i in range(doc.page_count)]
+                    seen = [n for page_ns in nombres for n in page_ns]
+                    check("every 文庫 page's nombre appears exactly once",
+                          all(seen.count(k) >= 1 for k in range(1, npages + 1)), seen)
+                doc.close()
+
+                vpage.evaluate("() => window.__afterPdfPrint()")
+                vpage.wait_for_timeout(150)
+                state = vpage.evaluate("""() => ({
+                  pdfPrint: document.body.classList.contains('pdf-print'),
+                  vertical: document.body.classList.contains('pdf-vertical'),
+                  src: document.getElementById('preview').classList.contains('pdf-vertical-src'),
+                  pageStyle: !!document.getElementById('pdf-page-style'),
+                  preStyle: !!document.getElementById('pdf-vertical-style'),
+                  marks: document.querySelectorAll('#preview .md-sheet-end').length,
+                })""")
+                check("restore: every print-only class and style is gone",
+                      not any(state[k] for k in ("pdfPrint", "vertical", "src", "pageStyle", "preStyle"))
+                      and state["marks"] == 0, state)
+                vctx.close()
+
+            ctx = browser.new_context(viewport={"width": 1440, "height": 900})
+            page = ctx.new_page()
+            page.set_default_timeout(20000)
+            client = ctx.new_cdp_session(page)
 
             # ---- non-Marp regression ------------------------------------------
             print("\n[非 Marp — 現状維持]")

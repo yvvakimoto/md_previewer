@@ -2700,6 +2700,7 @@
         let __pdfSwaps = [];
         let __pdfImgSwaps = [];   // {img, origSrc, origSrcset}
         let __pdfMarpRestore = null;   // teardown closure set by __marpPrepareForPdf
+        let __pdfVerticalRestore = null;   // ditto, set by __verticalPrepareForPdf
         const __PDF_IMG_MAX_EDGE = 1600;      // absolute cap on the long edge (~A4 width at high DPI)
         const __PDF_IMG_TARGET_SCALE = 2;     // keep up to 2× the displayed CSS size (retina-crisp)
         const __PDF_IMG_SLACK = 1.25;         // only re-encode when meaningfully oversized
@@ -2850,10 +2851,136 @@
             return { w: W, h: H };
         }
 
+        // ---- Vertical-writing (縦組み) themes: A4 landscape, N pages per sheet ----
+        //
+        // A vertical-rl #preview is an ORTHOGONAL FLOW inside a horizontal-tb page
+        // box: the page fragments downward while the text advances leftward, so the
+        // printer emits one page holding the first paper-width of the column and
+        // silently drops the rest (measured: 1906 of 4473 characters). Forced breaks
+        // inside an orthogonal flow are not honoured either, so no amount of
+        // `break-after` on the gutters fixes it.
+        //
+        // What does work — and is what this does — is to make the PAGE BOX itself
+        // vertical. The principal writing mode is taken from the root element, so
+        // putting html/body (and the two containers in between) into vertical-rl
+        // during print turns the fragmentation axis right-to-left: the column then
+        // paginates naturally, in document order, with page 1 on the right of each
+        // spread. No DOM restructuring at all, which is why the teardown is just
+        // "remove what was added" and needs no re-render.
+        //
+        // Returns the paper in CSS px ({w, h}) so the host can ask Chromium for it,
+        // or null for a horizontal document (→ the A4 portrait default, unchanged).
+        const __PDF_V_PAPER_W = 1122;   // A4 landscape: 297mm at 96dpi is 1122.52…
+        const __PDF_V_PAPER_H = 793;    //               210mm is 793.70…
+        const __PDF_V_MARGIN = 38;      // ≈10mm
+        // Both figures are floored to whole CSS px on purpose. @page and the paper
+        // size the host derives from this must describe the SAME box; a sheet a
+        // hundredth of a pixel taller than the page emits a blank page after every
+        // sheet (src/pdf_win.rs carries the same warning for the Marp slide box).
+
+        function __verticalPrepareForPdf() {
+            const cs = getComputedStyle(preview);
+            if (!/^vertical/.test(cs.writingMode)) return null;
+            const innerW = __PDF_V_PAPER_W - 2 * __PDF_V_MARGIN;
+            const innerH = __PDF_V_PAPER_H - 2 * __PDF_V_MARGIN;
+
+            document.body.classList.add('pdf-print', 'pdf-vertical');
+            preview.classList.add('pdf-vertical-src');
+
+            // Phase 1 — rules that must be live NOW, because the packing below
+            // measures the result. An @media print block would not apply here.
+            const pre = document.createElement('style');
+            pre.id = 'pdf-vertical-style';
+            pre.textContent = [
+                // A page whose first block is a heading is 2 lines wider than the
+                // others (paginatePreview anchors the boundary AFTER the collapsed
+                // margin). On paper that irregularity is what pushes a spread over
+                // the sheet, so flatten every page to exactly its line count.
+                '#preview.pdf-vertical-src > .' + __PAGE_CLASS + ' > :first-child { margin-block-start: 0 !important; }',
+                // A gutter that lands at the end of a sheet only eats paper.
+                // display:none is not an option — it would remove the very element
+                // the break-after below is attached to.
+                '#preview.pdf-vertical-src > .' + __PAGE_BREAK_CLASS + '.md-sheet-end { block-size: 0 !important; }',
+            ].join('\n');
+            document.head.appendChild(pre);
+
+            // Pack pages onto sheets by MEASURED extent, capped by the theme's
+            // --md-print-pages-per-sheet. Measuring (rather than marking every Nth
+            // gutter) is what keeps a page carrying an oversized figure from
+            // overflowing its sheet: it simply gets a sheet to itself.
+            const perMax = Math.max(1, parseInt(cs.getPropertyValue('--md-print-pages-per-sheet'), 10) || 1);
+            const axis = __blockAxis(preview);
+            const pages = [];
+            for (const kid of preview.children) {
+                if (kid.classList.contains(__PAGE_BREAK_CLASS)) {
+                    if (pages.length) pages[pages.length - 1].brk = kid;
+                    continue;
+                }
+                const r = kid.getBoundingClientRect();
+                pages.push({ ext: axis.end(r) - axis.pos(r), brk: null });
+            }
+            let acc = 0, n = 0;
+            for (let i = 0; i < pages.length; i++) {
+                const prev = pages[i - 1];
+                const gutter = (n === 0 || !prev || !prev.brk) ? 0 : prev.brk.getBoundingClientRect().width;
+                const need = (n === 0) ? pages[i].ext : acc + gutter + pages[i].ext;
+                if (n > 0 && (need > innerW + 0.5 || n >= perMax)) {
+                    if (prev && prev.brk) prev.brk.classList.add('md-sheet-end');
+                    acc = pages[i].ext; n = 1;
+                } else { acc = need; n++; }
+            }
+
+            // A fixed 版面 (bunko: height = 字数 × 1em) is centred on the page's
+            // inline axis; a window-sized one (tategaki) is told to fill the paper
+            // instead, which is what makes its line length — and hence the lines
+            // per page — follow the paper rather than the window.
+            const hPx = parseFloat(cs.height);
+            const fixed = parseFloat(cs.getPropertyValue('--md-page-lines')) >= 1;
+            const pad = (fixed && Number.isFinite(hPx) && hPx > 0 && hPx < innerH)
+                ? (innerH - hPx) / 2 : null;
+
+            const st = document.createElement('style');
+            st.id = 'pdf-page-style';
+            st.textContent = [
+                '@page { size: ' + __PDF_V_PAPER_W + 'px ' + __PDF_V_PAPER_H + 'px; margin: ' + __PDF_V_MARGIN + 'px; }',
+                '@media print {',
+                '  html, body, #app-container, #preview-container { writing-mode: vertical-rl !important; }',
+                // !important is load-bearing: applyUserStyle() appends the theme's
+                // <link> AFTER this document's inline <style>, so tategaki.css /
+                // bunko.css `#preview-container { overflow-x: auto }` wins on source
+                // order over the base print rule. A fragmentation break does not
+                // propagate out of a scroll container, so leaving it would yield a
+                // one-page PDF — indistinguishable from the orthogonal-flow failure.
+                '  #preview-container { overflow: visible !important; height: auto !important;',
+                '                        display: block !important; }',
+                '  #preview { margin: 0 !important; min-width: 0 !important; width: auto !important;',
+                '             max-width: none !important; padding-left: 0 !important; padding-right: 0 !important; }',
+                (pad !== null
+                    ? '  #preview { padding-top: ' + pad + 'px !important; padding-bottom: ' + pad + 'px !important; }'
+                    : '  #preview { height: auto !important; padding-top: 6px !important; padding-bottom: 6px !important; }'),
+                '  #preview .' + __PAGE_BREAK_CLASS + '.md-sheet-end { break-after: page; }',
+                '}',
+            ].join('\n');
+            document.head.appendChild(st);
+
+            __pdfVerticalRestore = () => {
+                document.body.classList.remove('pdf-print', 'pdf-vertical');
+                preview.classList.remove('pdf-vertical-src');
+                for (const id of ['pdf-page-style', 'pdf-vertical-style']) {
+                    const el = document.getElementById(id);
+                    if (el) el.remove();
+                }
+                preview.querySelectorAll('.md-sheet-end')
+                       .forEach(b => b.classList.remove('md-sheet-end'));
+            };
+            return { w: __PDF_V_PAPER_W, h: __PDF_V_PAPER_H };
+        }
+
         window.__beforePdfPrint = async function () {
             __pdfSwaps = [];
             __pdfImgSwaps = [];
             __pdfMarpRestore = null;
+            __pdfVerticalRestore = null;
             let page = null;
             try {
                 // Marp layout first: __downscaleImageForPdf sizes each image against its
@@ -2905,8 +3032,20 @@
                     }
                 }
                 await Promise.all(decodes);
+                // Vertical-writing layout LAST, unlike Marp: it measures each page's
+                // extent to pack the sheets, and a video swapped for a still or an
+                // image swapped for a downscaled data URL can change that extent.
+                if (!page) page = __verticalPrepareForPdf();
             } catch (e) {
                 __dbgLog('__beforePdfPrint error: ' + (e && e.message));
+                // A half-applied vertical layout must not be printed: otherwise the
+                // finally block posts `{}` and the host prints a mutated DOM onto
+                // A4 portrait.
+                if (__pdfVerticalRestore) {
+                    try { __pdfVerticalRestore(); } catch (e2) {}
+                    __pdfVerticalRestore = null;
+                    page = null;
+                }
             } finally {
                 // Always signal readiness so the print proceeds even with no videos.
                 // The payload carries the Marp slide box (CSS px) so the host can size
@@ -2936,6 +3075,10 @@
             if (__pdfMarpRestore) {
                 try { __pdfMarpRestore(); } catch (e) { __dbgLog('marp pdf restore failed: ' + (e && e.message)); }
                 __pdfMarpRestore = null;
+            }
+            if (__pdfVerticalRestore) {
+                try { __pdfVerticalRestore(); } catch (e) { __dbgLog('vertical pdf restore failed: ' + (e && e.message)); }
+                __pdfVerticalRestore = null;
             }
         };
 
