@@ -86,7 +86,10 @@
     max-width: none;
     max-height: none;
     margin: 0;
-    padding: var(--bunko-margin, 24px) 40px;
+    /* 地だけノンブル 1 行ぶん広く取る。和文の版面は元来 天 < 地 なので、
+       ノンブルを消していても不自然にはならない (条件付きの余白は CSS だけでは
+       書けないので、常に確保している)。 */
+    padding: var(--bunko-margin, 24px) 40px calc(var(--bunko-margin, 24px) + 1.4em);
 
     /* ▼ ページ分割の依頼。index.html の paginatePreview() がこれを見て、本文を
      * 16 行ごとのページに割り、境目に .md-page-break を差し込む。

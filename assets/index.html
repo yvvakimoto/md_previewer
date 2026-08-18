@@ -188,7 +188,11 @@
             display: var(--md-nombre-display, none);
             content: counter(md-page);
             position: absolute;
-            top: 100%;
+            /* Clear of the 版面, not flush against it. The `em` here resolves
+               against the nombre's own (small) font-size, so the gap scales with
+               the number rather than with the body text. A theme that reserves
+               space for the nombre does so in its own padding — see bunko.css. */
+            top: calc(100% + var(--md-nombre-gap, 1em));
             left: 0;
             right: 0;
             writing-mode: horizontal-tb;
@@ -1535,6 +1539,22 @@
 
             #preview {
                 max-width: 100%;
+            }
+
+            /* The app shell's desk colour must never become the paper.
+               body { background: #f5f5f5 } propagates to the page canvas, while
+               #preview-container paints its white only as far as its own box —
+               which, with height:auto in print, stops where the content stops.
+               So everything after the end of the body came out grey: the tail of
+               the last page of any document, and (for a vertical-writing theme,
+               where the flow ends part-way across the sheet) a grey block the
+               size of most of that page. Marp is excluded — a deck's colours are
+               its theme's business, and body.marp.pdf-print already forces the
+               whole shell transparent so slide backgrounds show through. */
+            body:not(.marp) {
+                background: #ffffff !important;
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
             }
 
             /* Avoid page breaks inside code blocks, tables and definition lists */
@@ -2936,8 +2956,17 @@
             // per page — follow the paper rather than the window.
             const hPx = parseFloat(cs.height);
             const fixed = parseFloat(cs.getPropertyValue('--md-page-lines')) >= 1;
-            const pad = (fixed && Number.isFinite(hPx) && hPx > 0 && hPx < innerH)
-                ? (innerH - hPx) / 2 : null;
+            // Split the leftover inline-axis space around the 版面, but keep
+            // whatever extra the theme reserved at the 地 — that is where a
+            // nombre lives, and centring the block evenly would print it into
+            // the page margin.
+            const reserve = Math.max(0, parseFloat(cs.paddingBottom) - parseFloat(cs.paddingTop)) || 0;
+            let padTop = null, padBottom = null;
+            if (fixed && Number.isFinite(hPx) && hPx > 0 && hPx < innerH) {
+                const slack = innerH - hPx;
+                padTop = Math.max(0, (slack - reserve) / 2);
+                padBottom = slack - padTop;
+            }
 
             const st = document.createElement('style');
             st.id = 'pdf-page-style';
@@ -2955,8 +2984,8 @@
                 '                        display: block !important; }',
                 '  #preview { margin: 0 !important; min-width: 0 !important; width: auto !important;',
                 '             max-width: none !important; padding-left: 0 !important; padding-right: 0 !important; }',
-                (pad !== null
-                    ? '  #preview { padding-top: ' + pad + 'px !important; padding-bottom: ' + pad + 'px !important; }'
+                (padTop !== null
+                    ? '  #preview { padding-top: ' + padTop + 'px !important; padding-bottom: ' + padBottom + 'px !important; }'
                     : '  #preview { height: auto !important; padding-top: 6px !important; padding-bottom: 6px !important; }'),
                 '  #preview .' + __PAGE_BREAK_CLASS + '.md-sheet-end { break-after: page; }',
                 '}',

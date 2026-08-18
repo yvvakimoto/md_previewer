@@ -393,6 +393,17 @@ def main():
                             worst = (i + 1, tuple(round(v, 1) for v in b[:4]))
                 check("nothing spills outside the printable area", worst is None, worst)
 
+                # body's #f5f5f5 desk colour propagates to the page canvas, while
+                # #preview-container paints white only as far as its own box — so
+                # the tail of the last page used to come out grey.
+                pix = doc[doc.page_count - 1].get_pixmap(dpi=48)
+                w, h = pix.width - 1, pix.height - 1
+                probes = [(2, 2), (w - 2, 2), (2, h - 2), (w - 2, h - 2),
+                          (w // 2, h // 2), (w // 6, h // 2), (w // 3, h // 4)]
+                greys = [tuple(pix.pixel(x, y)[:3]) for x, y in probes]
+                check("the last page is paper white after the body ends",
+                      all(near(g, (255, 255, 255)) for g in greys), greys)
+
                 if style == "bunko.css":
                     check("the deck is packed %d pages to a sheet" % per,
                           doc.page_count == sheets and sheets <= -(-npages // per) + 1,
@@ -437,6 +448,12 @@ def main():
                   "got %.1fx%.1f" % (r.width, r.height))
             cs = corners(doc[0].get_pixmap(dpi=48))
             check("margins are still white", all(near(c, (255, 255, 255)) for c in cs), cs)
+            pix = doc[0].get_pixmap(dpi=48)
+            w, h = pix.width - 1, pix.height - 1
+            tail = [tuple(pix.pixel(x, y)[:3]) for x, y in
+                    ((w // 2, int(h * 0.85)), (w // 4, int(h * 0.95)), (w - 4, int(h * 0.7)))]
+            check("no grey desk colour below the end of the body",
+                  all(near(t, (255, 255, 255)) for t in tail), tail)
             check("bookmarks still generated", len(doc.get_toc()) >= 2, doc.get_toc())
             doc.close()
 
