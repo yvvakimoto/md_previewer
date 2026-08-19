@@ -81,6 +81,28 @@ parens): `color`/`c`, `bg`/`background`, `size`/`s`, `font`/`f`, `weight`/`w`, `
 
 Only fires when ≥1 valid property is present, so ordinary `[label](url)` links are untouched.
 
+## Ruby / 振り仮名 — `samples/ruby.md`
+
+Reading annotations, でんでんマークダウン syntax. Three forms, all producing `<ruby>`:
+
+```markdown
+吾輩は｜猫《ねこ》である。          <- bar form: the base is spelled out after ｜
+お天気《てんき》の良い日            <- short form: the kanji run before 《 is the base
+{吾輩|わがはい}は                   <- brace form: half- or full-width | splits base/reading
+{漢字|かん|じ}  ｜東京《とう|きょう》 <- mono ruby: one reading per base character
+\｜ \《 \》                         <- escapes
+```
+
+- **Mono ruby only when the counts match.** `{漢字|かん|じ}` has 2 segments for 2 characters, so
+  each lands on its own character. `{五月雨|さみ|だれ}` (2 for 3) falls back to group ruby.
+- **The base is plain text** — no `**bold**` inside. Wrap the whole thing: `**｜強調《きょうちょう》した語**`.
+- **Not usable in a GFM table cell** in the brace form (`|` splits the cell first) — use the bar or
+  short form there, or escape as `\|`.
+- A `《…》` used as a quotation right after kanji becomes a ruby; write `\《` to opt out.
+- Works in Marp slides too, and carries into HTML / PDF export.
+- **Vertical writing**: ruby appears on the right of the column automatically. Under `bunko.css` the
+  annotation is kept out of the 行取り grid; for ruby-heavy prose, widen 行送り to ~1.9–2.1 via the ⚙.
+
 ## Footnotes — `samples/footnotes.md`
 
 ```markdown

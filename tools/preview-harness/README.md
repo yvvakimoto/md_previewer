@@ -87,6 +87,17 @@ node tools/preview-harness/table-model.test.cjs     # pure model layer, no brows
 python tools/preview-harness/tablecheck.py          # end-to-end, Playwright
 ```
 
+`ruby-model.test.cjs` is the same idea for the ruby (振り仮名) grammar:
+
+```powershell
+node tools/preview-harness/ruby-model.test.cjs      # pure grammar layer, no browser
+```
+
+It extracts `RUBY_ALT_SRC` / `buildRubyHtml` / `rubyifyMdLine` out of `assets/index.html` and pins the
+three views built from that one alternation — notably that `start()` reports the offset of the **base**
+rather than of `《` (an offset pointing at `《` makes marked emit the base twice), that a segment-count
+mismatch falls back to group ruby, and that the Marp line rewriter skips inline code spans.
+
 `table-model.test.cjs` extracts the `tbl*` functions out of `assets/index.html` and runs them under
 plain `node`. Its centrepiece is **idempotency** — `tblEmit(tblParse(lines)) === lines` byte for byte —
 which is what guarantees that saving a table never reformats lines the user did not touch.
