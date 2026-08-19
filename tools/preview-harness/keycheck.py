@@ -298,6 +298,54 @@ def main():
             check("Home jumps to the first slide",
                   page.evaluate(ACTIVE_IDX), 0)
 
+            # ---------- autofit leaves no residual scrollbar (A) ----------
+            # fitMarpSlides() sizes the .marp-fit-body scroll region from its own
+            # measurement of the body's content height, so if the two disagree the
+            # slide keeps a scrollbar on content the fit report calls fitted. The DOM
+            # digest cannot see this (it records the inline px, not whether they hold
+            # the content), and it is exactly how the marp.md 定義リスト slide broke:
+            # the measurement ran with overflow:visible, which collapses the body's
+            # trailing margin OUT of scrollHeight, while the applied overflow-y:auto
+            # makes the wrapper a BFC and contains it -- 16px of overflow.
+            FIT_STATE = """() => [...document.querySelectorAll(
+              'div.marpit > svg[data-marpit-svg] > foreignObject > section')]
+              .map((s, i) => {
+                const b = s.querySelector(':scope > .marp-fit-body');
+                if (!b) return null;
+                const m = /scale\(([\d.]+)\)/.exec(b.style.transform || '');
+                return { i: i + 1, fitted: !!b.style.height,
+                         scale: m ? parseFloat(m[1]) : 1,
+                         scrolls: b.scrollHeight > b.clientHeight + 0.5 };
+              }).filter(Boolean)"""
+
+            def fit_state():
+                """Measure every slide in scroll layout (a display:none deck slide
+                reports 0 and is skipped by the fit pass)."""
+                page.evaluate("() => { document.body.classList.remove('deck-mode','list-mode');"
+                              " fitMarpSlides(); }")
+                page.wait_for_timeout(200)
+                page.evaluate("() => fitMarpSlides()")
+                return page.evaluate(FIT_STATE)
+
+            def want_autofit(on):
+                for _ in range(2):
+                    cur = page.evaluate("() => localStorage.getItem('marpAutofit')") != "false"
+                    if cur == on:
+                        return
+                    press(page, "a")
+
+            want_autofit(True)
+            st = fit_state()
+            check("autofit shrinks at least one slide", any(s["fitted"] for s in st), True)
+            check("no shrunk-to-fit slide keeps a scrollbar",
+                  [s["i"] for s in st if s["scale"] > 0.5001 and s["scrolls"]], [])
+            check("a slide floored at the 0.5 minimum stays scrollable",
+                  any(s["scale"] <= 0.5001 and s["scrolls"] for s in st), True)
+            want_autofit(False)
+            check("with autofit off an overflowing body scrolls instead of clipping",
+                  any(s["fitted"] and s["scrolls"] and s["scale"] == 1 for s in fit_state()), True)
+            want_autofit(True)
+
             # ---------- context menus (__createContextMenu) ----------
             load("samples/math.md")
             MENU = "() => document.querySelectorAll('.app-context-menu .app-menu-item').length"
