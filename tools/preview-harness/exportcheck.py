@@ -77,11 +77,30 @@ PROBE = """() => {
     pages: p.querySelectorAll(':scope > .md-page').length,
     breaks: p.querySelectorAll(':scope > .md-page-break').length,
     nombre: first ? getComputedStyle(first, '::after').display : null,
+    // Ruby: the annotation must survive as real markup AND keep its computed size --
+    // the #preview rt rules live in the document's first <style>, which is what the
+    // artifact inlines, so a change to how that block is snapshotted shows up here.
+    rubyCount: p.querySelectorAll('ruby').length,
+    rtCount: p.querySelectorAll('rt').length,
+    rtFontSize: (() => { const rt = p.querySelector('rt');
+                         return rt ? getComputedStyle(rt).fontSize : null; })(),
+    rtPosition: (() => { const r = p.querySelector('ruby');
+                         return r ? getComputedStyle(r).rubyPosition : null; })(),
+    // bunko cancels the annotation's line-box reservation here; if that margin is lost
+    // in the artifact, the 行取り grid silently drifts and `pages` above moves with it.
+    rtMarginBlockStart: (() => { const rt = p.querySelector('rt');
+                                 return rt ? getComputedStyle(rt).marginBlockStart : null; })(),
   };
 }"""
 
+# The ruby run is load-bearing, not decoration: <ruby> is the one inline element whose
+# annotation reserves space outside the line box, so it is the thing most likely to make
+# an exported bunko artifact paginate differently from the preview it was built from.
 VERTICAL_MD = "# 縦組みの書き出し\n\n" + "".join(
-    "## 第%d節\n\n%s\n\n" % (i + 1, "この文書は書き出したあとも縦組みのままでなければならない。" * 8)
+    "## 第%d節\n\n%s\n\n%s\n\n" % (
+        i + 1,
+        "この文書は書き出したあとも縦組みのままでなければならない。" * 8,
+        "｜雪国《ゆきぐに》の冬は朝が遅く、｜炉端《ろばた》では湯が沸いている。" * 4)
     for i in range(4))
 
 PLAIN_MD = "# 横組みの文書\n\n本文本文本文。\n\n## 見出し\n\nもう少し本文。\n"
@@ -130,7 +149,8 @@ def run_style(browser, base_url, doc, style, vertical):
         ctx.close()
         return
     for key in ("writingMode", "textOrientation", "fontFamily", "fontSize",
-                "lineHeight", "height", "pageLines", "pages", "breaks", "nombre"):
+                "lineHeight", "height", "pageLines", "pages", "breaks", "nombre",
+                "rubyCount", "rtCount", "rtFontSize", "rtPosition", "rtMarginBlockStart"):
         check("%s survives the export (%s)" % (key, json.dumps(live[key], ensure_ascii=False)),
               art[key] == live[key], "artifact=%s" % json.dumps(art[key], ensure_ascii=False))
     # An unresolved relative @import is the failure this file exists for: it

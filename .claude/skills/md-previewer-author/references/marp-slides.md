@@ -112,6 +112,16 @@ Metric: [前年比 +28%]{color=#e91e63 size=large weight=bold}
 Note: [補足はグレー小文字]{color=gray size=small}
 ```
 
+Ruby (振り仮名) works on slides too, in all three forms:
+
+```markdown
+創業は明治二十七年、｜坪内逍遥《つぼうちしょうよう》の時代
+主力製品《せいひん》の出荷台数《だいすう》は前年比 128%
+読みを区切るとモノルビ: {漢字|かん|じ}
+```
+
+The syntax inside a code span is left alone, so a slide can document the notation itself.
+
 ## Emphasized message slide
 
 ```markdown

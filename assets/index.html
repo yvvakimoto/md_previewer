@@ -628,6 +628,41 @@
            Default theme still gets a dark-appropriate rule. */
         body.dark-mode { --md-dl-accent: #30363d; }
 
+        /* Ruby / 振り仮名 (｜漢字《かんじ》 / 漢字《かんじ》 / {漢字|かんじ}).
+           The look is received via --md-ruby-* custom properties so a user style
+           or a Marp theme can retune it by declaring the variable on `#preview` /
+           `section` — variable inheritance sidesteps the high `#preview` ID
+           specificity, the same convention as --md-message-* / --md-dl-*.
+           Scoped to #preview so it reaches Marp slide sections inside the
+           foreignObject and carries into HTML / PDF export.
+
+           In a vertical writing mode (tategaki.css / bunko.css) `over` resolves
+           to the RIGHT of the column, which is where 縦組みのルビ belongs — so
+           one declaration serves both axes and no theme override is needed.
+
+           The letter-spacing / font-feature-settings resets are not cosmetic:
+           tategaki.css sets `letter-spacing: 0.02em` and `"palt" 1` on #preview
+           and both inherit into <rt>, where they visibly wreck the kana fitting.
+           `line-height: 1` keeps <rt>'s own box no taller than its glyphs. Note it
+           does NOT stop the annotation from growing the LINE box: Chromium sizes
+           that reservation from <rt>'s font-size, and no line-height anywhere
+           changes it (measured). A theme that must hold a fixed 行取り grid has to
+           cancel the reservation outright — see bunko.css. */
+        #preview ruby {
+            ruby-position: var(--md-ruby-position, over);
+            ruby-align: var(--md-ruby-align, space-around);
+        }
+        #preview rt {
+            font-size: var(--md-ruby-size, 0.5em);
+            color: var(--md-ruby-color, inherit);
+            font-weight: normal;
+            font-style: normal;
+            line-height: 1;
+            letter-spacing: normal;
+            font-feature-settings: normal;
+            text-indent: 0;
+        }
+
         #preview table {
             border-collapse: collapse;
             width: 100%;
@@ -5086,6 +5121,115 @@ ${previewClone.outerHTML}
             return decls.join(';');
         }
 
+        // ===== Ruby (振り仮名): ｜漢字《かんじ》 / 漢字《かんじ》 / {漢字|かんじ} ======
+        // Shared builder for the でんでんマークダウン-compatible ruby annotation. Like
+        // buildSpanStyle() above it is the single source of truth for BOTH pipelines:
+        // the normal one via the `ruby` marked inline extension, and Marp via a
+        // pre-pass that rewrites the same forms into raw <ruby> before marp.render
+        // (getMarp() runs with html:true). Four forms, all handled by one alternation:
+        //
+        //   ｜猫《ねこ》       bar form   — the base is spelled out after ｜
+        //   漢字《かんじ》     short form — the base is the kanji run just before 《
+        //   {吾輩|わがはい}    brace form — half- or full-width | splits base/reading
+        //   {漢字|かん|じ}     mono ruby  — the reading is split per base character
+        //   \｜ \《 \》        escapes    — emit the delimiter itself
+        //
+        // Mono ruby fires ONLY when the number of reading segments equals the number
+        // of base characters (でんでん's rule); otherwise the segments are joined and
+        // a single group-ruby annotation is emitted. A wholly empty reading yields ''
+        // so the caller can decline and leave the source text verbatim.
+        //
+        // The base is emitted as PLAIN TEXT — unlike styledSpan it is NOT recursively
+        // inline-parsed, because mono ruby has to split the base per character and
+        // `**bold**` inside it would have no well-defined split point.
+        //
+        // Known, deliberate limitations (both shared with でんでん, both documented in
+        // samples/ruby.md): the brace form cannot be used inside a GFM table cell
+        // (`|` is the column separator and the table tokenizer runs first), and a
+        // 《…》 used as a quotation mark right after kanji is read as a short-form
+        // ruby — write \《 to opt out.
+
+        // Base characters accepted by the short form: CJK Unified Ideographs (+ Ext A,
+        // + Compatibility) plus 々 〆 ヶ, which occur inside ordinary kanji runs
+        // (人々 / 一ヶ月). Deliberately excludes kana, so ordinary prose ending in a
+        // particle before a 《…》 quotation is left alone.
+        const RUBY_KANJI_SRC = '[一-鿿㐀-䶿豈-﫿々〆ヶ]';
+        // Reading separator — half-width | and full-width ｜ are both accepted.
+        const RUBY_SEP_RE = /[|｜]/;
+        // The one grammar. Groups: 1=escaped delimiter, 2/3=bar base/reading,
+        // 4/5=brace base/reading (5 keeps its leading separator), 6/7=short form.
+        // The short-form alternative starts at the kanji run rather than at 《, so
+        // .exec()'s leftmost match reports the beginning of the base — which is what
+        // lets marked's start() hook clip the preceding text at the right offset.
+        const RUBY_ALT_SRC =
+              '\\\\([｜《》])'
+            + '|｜([^｜《》\\n]+)《([^《》\\n]*)》'
+            + '|\\{([^{}|｜\\n]+)((?:[|｜][^{}|｜\\n]*)+)\\}'
+            + '|(' + RUBY_KANJI_SRC + '+)《([^《》\\n]*)》';
+        // Three views of the same grammar, kept in lockstep by construction.
+        // NOTE the flags: RUBY_START_RE must NOT be global — marked calls start() on
+        // every inline chunk and a stateful lastIndex would skip matches.
+        const RUBY_START_RE = new RegExp(RUBY_ALT_SRC);
+        const RUBY_TOKEN_RE = new RegExp('^(?:' + RUBY_ALT_SRC + ')');
+        const RUBY_SCAN_RE = new RegExp(RUBY_ALT_SRC, 'g');
+        // Inline code span on one line: a backtick run, content, the same run again.
+        const RUBY_CODE_SPAN_RE = /(`+)[\s\S]*?\1/g;
+
+        function buildRubyHtml(base, reading) {
+            if (!base) return '';
+            const parts = String(reading == null ? '' : reading).split(RUBY_SEP_RE);
+            // `{漢字|}` and friends: nothing to annotate — decline.
+            if (!parts.some(p => p !== '')) return '';
+            // Array.from() so a base written with surrogate pairs (𠮟 etc.) splits
+            // by character rather than by UTF-16 code unit.
+            const chars = Array.from(base);
+            if (parts.length > 1 && parts.length === chars.length) {
+                let out = '<ruby>';
+                for (let i = 0; i < chars.length; i++) {
+                    out += escapeHtml(chars[i]) + '<rt>' + escapeHtml(parts[i]) + '</rt>';
+                }
+                return out + '</ruby>';
+            }
+            return '<ruby>' + escapeHtml(base)
+                + '<rt>' + escapeHtml(parts.join('')) + '</rt></ruby>';
+        }
+
+        // Turn one RUBY_ALT_SRC match array into HTML. Shared by the marked tokenizer
+        // (which passes a RegExp match) and rubyifyText (which passes String.replace's
+        // argument list — same [full, p1…p7, …] layout, which is why this works for both).
+        // Returns '' when the match is not actually a ruby, so callers fall back to the
+        // original source text.
+        function rubyMatchToHtml(m) {
+            if (m[1]) return m[1];                                // \｜ \《 \》 → the bare delimiter
+            if (m[2]) return buildRubyHtml(m[2], m[3]);           // ｜base《reading》
+            if (m[4]) return buildRubyHtml(m[4], m[5].slice(1));  // {base|reading} — drop the leading sep
+            if (m[6]) return buildRubyHtml(m[6], m[7]);           // kanji《reading》
+            return '';
+        }
+
+        // Rewrite every ruby form on ONE line, skipping inline code spans. Used only by
+        // the Marp pre-pass: __rewriteMdLines() already hides the front-matter and fenced
+        // code, but marp-core renders `` `｜漢字《かんじ》` `` as literal text and the
+        // pre-pass must not convert it — otherwise a slide documenting the syntax (ours
+        // does) shows rendered ruby instead of the source. The normal pipeline gets this
+        // for free: marked never runs inline tokenizers inside a code span.
+        function rubyifyMdLine(line) {
+            if (!RUBY_START_RE.test(line)) return line;
+            let out = '', last = 0, m;
+            RUBY_CODE_SPAN_RE.lastIndex = 0;
+            while ((m = RUBY_CODE_SPAN_RE.exec(line)) !== null) {
+                out += rubyifyText(line.slice(last, m.index)) + m[0];
+                last = m.index + m[0].length;
+            }
+            return out + rubyifyText(line.slice(last));
+        }
+        function rubyifyText(s) {
+            if (!s) return s;
+            return s.replace(RUBY_SCAN_RE, function () {
+                return rubyMatchToHtml(arguments) || arguments[0];
+            });
+        }
+
         // Blockquote attribution convention: inside a blockquote, a paragraph
         // (or the last line of one) that begins with `--` or an em dash `—` is
         // treated as a citation source and right-aligned via the `.bq-attribution`
@@ -6469,6 +6613,37 @@ ${previewClone.outerHTML}
                 renderer(token) {
                     return '<span style="' + token.style + '">'
                         + this.parser.parseInline(token.tokens) + '</span>';
+                }
+            }]
+        });
+
+        // Inline-level marked extension for the ruby (振り仮名) syntax:
+        //   ｜猫《ねこ》   漢字《かんじ》   {吾輩|わがはい}   {漢字|かん|じ}
+        // The grammar and the HTML come from the shared RUBY_ALT_SRC / buildRubyHtml()
+        // above, so this pipeline and the Marp pre-pass cannot drift apart.
+        // Unlike styledSpan the base is NOT recursively inline-parsed — mono ruby
+        // splits it per character, which has no meaning for nested markup.
+        // The extension declines (returns undefined) when the match is not really a
+        // ruby, leaving the source to marked's built-in rules. Code spans and fenced
+        // blocks are immune automatically (marked runs no inline tokenizer inside
+        // them), and `$…$` math never reaches here — extractMathInto() masks it first.
+        marked.use({
+            extensions: [{
+                name: 'ruby',
+                level: 'inline',
+                start(src) {
+                    const m = RUBY_START_RE.exec(src);
+                    return m ? m.index : undefined;
+                },
+                tokenizer(src) {
+                    const m = RUBY_TOKEN_RE.exec(src);
+                    if (!m) return;
+                    const html = rubyMatchToHtml(m);
+                    if (!html) return;
+                    return { type: 'ruby', raw: m[0], html };
+                },
+                renderer(token) {
+                    return token.html;
                 }
             }]
         });
@@ -8292,6 +8467,18 @@ ${previewClone.outerHTML}
                     return style ? '<span style="' + style + '">' + text + '</span>' : full;
                 }));
             }
+
+            // Ruby pre-pass — rewrite ｜漢字《かんじ》 / 漢字《かんじ》 / {漢字|かんじ}
+            // into raw <ruby> so marp-core (html:true) renders it, mirroring the normal
+            // pipeline's `ruby` marked extension via the shared rubyMatchToHtml().
+            // Line-aware (front-matter and fenced code are skipped) and 1 line in →
+            // 1 line out, so it is line-count preserving and the slide→source-line map
+            // built below from the untouched source stays exact.
+            // Runs AFTER the styled-span pass so a styled span whose attribute value
+            // happens to contain `|` is already collapsed and cannot be misread as a
+            // brace-form ruby. rubyifyMdLine() additionally skips inline code spans,
+            // which __rewriteMdLines() does not do — see its comment.
+            markdown = __rewriteMdLines(markdown, ln => rubyifyMdLine(ln));
 
             // Split layout pre-pass — within slides that declare `<!-- _class: split -->`
             // (or split-2/3/4), convert `+++` lines into a sentinel paragraph that
