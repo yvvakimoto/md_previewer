@@ -7113,9 +7113,21 @@ ${previewClone.outerHTML}
                     // flexed box (an overflowing figure inside the flex:1 .md-vcenter
                     // wouldn't be reported). Neutralize the flex to measure the true
                     // content height, then restore (styles were reset to '' above).
+                    //
+                    // overflow:'hidden' — NOT 'visible' — is load-bearing: it makes the
+                    // wrapper a block formatting context, exactly like the overflow-y:auto
+                    // we apply below. Under 'visible' the leading child's margin-block-start
+                    // and the trailing child's margin-block-end COLLAPSE THROUGH the
+                    // wrapper's edges and are therefore absent from scrollHeight; the moment
+                    // the fit is applied the BFC contains them and the content is suddenly
+                    // taller than the box we sized from that measurement — leaving a
+                    // scrollbar on a slide the autofit reported as fitted (the trailing
+                    // margin of a body ending in a <p> / <ul> / <dl> is 16px, which is
+                    // exactly how much a marp.md 定義リスト slide overshot by). Measuring in
+                    // the same box model we apply is what keeps the two in agreement.
                     body.style.flex = 'none';
                     body.style.height = 'auto';
-                    body.style.overflow = 'visible';
+                    body.style.overflow = 'hidden';
                     const contentH = body.scrollHeight;
                     body.style.flex = '';
                     body.style.height = '';
