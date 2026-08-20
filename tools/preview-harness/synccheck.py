@@ -129,6 +129,34 @@ def run_case(page, port, style, sample):
 
     check(moved, "applyEditorScroll() actually scrolls the preview")
 
+    # Stepping the cursor line by line (j / down-arrow) must move the preview
+    # MONOTONICALLY. The sub-block interpolation advances fractionally into the
+    # current block on the lines between two stamped blocks -- typically the
+    # blank line separating two paragraphs -- and if its sign is wrong for the
+    # axis, every such step scrolls BACKWARD and the next real line snaps
+    # forward again: the preview visibly oscillates as the cursor is stepped.
+    # Monotonicity is the property; the absolute direction differs per axis
+    # (a right-to-left flow advances by DECREASING scrollLeft), so it is
+    # derived from the overall trend rather than assumed.
+    seq = page.evaluate("""(maxLine) => {
+      const pc = document.getElementById('preview-container');
+      const horizontal = pc.scrollWidth > pc.clientWidth + 1;
+      const out = [];
+      for (let L = 1; L <= maxLine; L++) {
+        window.applyEditorScroll(L);
+        out.push([L, +(horizontal ? pc.scrollLeft : pc.scrollTop).toFixed(1)]);
+      }
+      return out;
+    }""", min(160, max(lines)))
+    sign = 1 if (seq[-1][1] - seq[0][1]) >= 0 else -1
+    backward = [(seq[i - 1], seq[i]) for i in range(1, len(seq))
+                if (seq[i][1] - seq[i - 1][1]) * sign < -0.6]
+    check(not backward,
+          "stepping the cursor line by line never scrolls backward (%d reversal(s))"
+          % len(backward))
+    for (a, b) in backward[:5]:
+        print("       line %d -> %d : pos %.1f -> %.1f" % (a[0], b[0], a[1], b[1]))
+
 
 def main():
     ap = argparse.ArgumentParser()

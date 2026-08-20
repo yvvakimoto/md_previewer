@@ -10593,9 +10593,19 @@ ${previewClone.outerHTML}
                 // an absolute target value would need a sign assumption. Solving
                 // `newRight = containerRect.right - margin` for the delta needs
                 // none, and the browser clamps it.
+                // The interpolation term is SUBTRACTED here, not added. The
+                // relation above is `newRight = oldRight - delta`, and advancing
+                // into a block means moving LEFT (deeper into the flow), so the
+                // point we want at the margin is `targetRect.right - frac*width`:
+                //   delta = (targetRect.right - frac*width) - containerRect.right + margin
+                // Getting this sign wrong is not a small offset error -- it makes
+                // every step onto a blank line scroll BACKWARD and the next real
+                // line snap forward again, i.e. the preview visibly oscillates as
+                // the cursor is stepped line by line. Pinned by the monotonicity
+                // case in tools/preview-harness/synccheck.py.
                 const margin = previewContainer.clientWidth * 0.25;
                 previewContainer.scrollLeft +=
-                    (targetRect.right - containerRect.right) + margin + frac * targetRect.width;
+                    (targetRect.right - containerRect.right) + margin - frac * targetRect.width;
             } else {
                 const offset = targetRect.top - containerRect.top + previewContainer.scrollTop
                     + frac * targetRect.height;
