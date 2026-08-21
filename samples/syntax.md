@@ -84,3 +84,38 @@ LIMIT 10;
     color: #fff;
 }
 ```
+
+## Modelica
+
+Not part of highlight.js core — registered by the in-house
+`assets/libs/hljs-modelica.js`. Aliases: `mo`, `mos`.
+
+```modelica
+within MyLib.Examples;
+
+model FirstOrder "A first-order system with a reset event"
+  parameter Real T(unit = "s") = 0.5 "Time constant";
+  parameter Real y0 = 1.0e-3 "Initial value";
+  Real y(start = y0, fixed = true);
+  Real 'quoted ident' = 2 "Q-IDENT is an identifier, not a string";
+protected
+  constant Real eps = 1e-12;
+equation
+  T * der(y) + y = if time < 1 then 0 else 1;
+  when y > 0.9 then
+    reinit(y, 0.9);
+  end when;
+algorithm
+  for i in 1:3 loop
+    if noEvent(abs(y) < eps) then
+      break;
+    end if;
+  end for;
+  annotation (Icon(coordinateSystem(preserveAspectRatio = false)));
+end FirstOrder;
+
+operator record Complex
+  Real re;
+  Real im;
+end Complex;
+```
