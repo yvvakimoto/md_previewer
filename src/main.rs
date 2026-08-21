@@ -5,6 +5,7 @@ use std::env;
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 use tao::{
     event::{Event, WindowEvent},
@@ -512,6 +513,169 @@ fn open_with_default(path: &Path) {
     }
 }
 
+/// Launch a second instance of this exe on `target` — i.e. open that document in
+/// a NEW previewer window (Ctrl+click on a `.md` link).
+///
+/// This is deliberately the very entry point Explorer's double-click and the CLI
+/// argument use, so the new window builds its own watcher, history, `current_dir`
+/// and editor pairing and shares no state with this one. Nothing needs
+/// coordinating: there is no single-instance guard, and the WebView2 user-data
+/// folder is left unpinned, so concurrent instances are already the norm
+/// (double-clicking two `.md` files in Explorer does the same thing).
+fn spawn_new_previewer(exe: &Path, target: &Path, origin: Option<(f64, f64)>) {
+    let mut cmd = std::process::Command::new(exe);
+    cmd.arg(target);
+    if let Some((x, y)) = origin {
+        cmd.arg("--window-pos").arg(format!("{},{}", x, y));
+    }
+    match cmd.spawn() {
+        Ok(_) => dbg_log!("openmdnew: spawned {:?} for {:?} at {:?}", exe, target, origin),
+        Err(e) => {
+            eprintln!("openmdnew: failed to spawn {}: {}", exe.display(), e);
+            dbg_log!("openmdnew: spawn failed: {}", e);
+        }
+    }
+}
+
+/// How far down-right each Ctrl+click-spawned window sits from the one it came
+/// from, and how many steps before the cascade starts over. Logical px, so the
+/// offset looks the same on a high-DPI display.
+const CASCADE_STEP: f64 = 36.0;
+const CASCADE_CYCLE: usize = 6;
+/// Room left below a window so it never hides under the taskbar. Matches the
+/// allowance `clamped_window_geometry` centres within.
+const WINDOW_BOTTOM_MARGIN: f64 = 80.0;
+/// Count of windows this process has spawned, for the cascade above.
+static CASCADE_SEQ: AtomicUsize = AtomicUsize::new(0);
+
+/// Pick where a cascaded window goes: `step` down-right of the window it came
+/// from if that still fits on the monitor, else wrapped back to the monitor's
+/// top-left corner plus the same step — which is what Windows' own "cascade
+/// windows" does.
+///
+/// Wrapping, rather than clamping to the edge, is the load-bearing part. This
+/// app's window is 1200x800 logical, which on a 1536x960 logical display (a
+/// 1920x1200 panel at 125%, i.e. an ordinary laptop) leaves well under one step
+/// of slack on either axis. A clamp then saturates and hands back the parent's
+/// own position — the new window opens exactly on top of the old one, which is
+/// the whole thing the cascade exists to avoid. Verified: it was doing that.
+fn cascade_origin(
+    parent_origin: (f64, f64),
+    win_size: (f64, f64),
+    mon_origin: (f64, f64),
+    mon_size: (f64, f64),
+    step: f64,
+) -> (f64, f64) {
+    let stepped = (parent_origin.0 + step, parent_origin.1 + step);
+    let fits = stepped.0 >= mon_origin.0
+        && stepped.1 >= mon_origin.1
+        && stepped.0 + win_size.0 <= mon_origin.0 + mon_size.0
+        && stepped.1 + win_size.1 <= mon_origin.1 + mon_size.1 - WINDOW_BOTTOM_MARGIN;
+    if fits {
+        stepped
+    } else {
+        (mon_origin.0 + step, mon_origin.1 + step)
+    }
+}
+
+/// Where a Ctrl+click-spawned window should open: offset down-right of the
+/// window it came from, so both documents stay visible instead of the new one
+/// landing exactly on top (every window is otherwise centred on its monitor by
+/// `clamped_window_geometry`). Repeated Ctrl+clicks from one window step further
+/// along the cascade rather than stacking. `None` (position unavailable) simply
+/// falls back to the centred default in the child.
+///
+/// The decision is made here, in the parent, because this is the only place that
+/// knows both where that window sits and which monitor it sits on.
+fn next_cascade_origin(parent: &tao::window::Window) -> Option<(f64, f64)> {
+    let scale = parent.scale_factor();
+    let pos = parent.outer_position().ok()?.to_logical::<f64>(scale);
+    let size = parent.outer_size().to_logical::<f64>(scale);
+    let n = (CASCADE_SEQ.fetch_add(1, Ordering::Relaxed) % CASCADE_CYCLE) + 1;
+    let step = CASCADE_STEP * n as f64;
+    match parent.current_monitor().as_ref().map(monitor_logical_bounds) {
+        Some((mon_origin, mon_size)) => Some(cascade_origin(
+            (pos.x, pos.y),
+            (size.width, size.height),
+            mon_origin,
+            mon_size,
+            step,
+        )),
+        // No monitor info: offset blindly; the child clamps defensively anyway.
+        None => Some((pos.x + step, pos.y + step)),
+    }
+}
+
+/// Parse a `--window-pos <x>,<y>` value (logical px) as handed to a spawned
+/// previewer by `next_cascade_origin`.
+fn parse_window_pos(s: &str) -> Option<(f64, f64)> {
+    let (xs, ys) = s.split_once(',')?;
+    let x: f64 = xs.trim().parse().ok()?;
+    let y: f64 = ys.trim().parse().ok()?;
+    (x.is_finite() && y.is_finite()).then_some((x, y))
+}
+
+/// Keep a requested window origin inside a monitor, so a cascaded child can
+/// never open with its title bar off-screen (the cascade walks down-right, and
+/// a parent already near the bottom-right corner would push it out). All values
+/// are logical px; `margin_h` matches `clamped_window_geometry`'s taskbar
+/// allowance. A window larger than the monitor is pinned to its origin.
+fn clamp_window_origin(
+    req: (f64, f64),
+    size: (f64, f64),
+    mon_origin: (f64, f64),
+    mon_size: (f64, f64),
+    margin_h: f64,
+) -> (f64, f64) {
+    let max_x = mon_origin.0 + (mon_size.0 - size.0).max(0.0);
+    let max_y = mon_origin.1 + (mon_size.1 - margin_h - size.1).max(0.0);
+    (
+        req.0.clamp(mon_origin.0, max_x),
+        req.1.clamp(mon_origin.1, max_y),
+    )
+}
+
+fn monitor_logical_bounds(m: &tao::monitor::MonitorHandle) -> ((f64, f64), (f64, f64)) {
+    let scale = m.scale_factor();
+    let p = m.position().to_logical::<f64>(scale);
+    let sz = m.size().to_logical::<f64>(scale);
+    ((p.x, p.y), (sz.width, sz.height))
+}
+
+/// Resolve a `--window-pos` request against whichever monitor contains it
+/// (so a cascade off a window on a secondary display stays on that display),
+/// clamped to stay reachable.
+///
+/// The result must be applied with `Window::set_outer_position`, NOT with
+/// `WindowBuilder::with_position`: measured on Windows, `with_position` lands
+/// roughly the *client* origin while `outer_position()` (what
+/// `next_cascade_origin` reads off the parent) returns the window rect, ~20
+/// logical px higher. Mixing the two silently ate that much of the vertical
+/// step on every hop — the first child came out 36px right but only 16px down.
+fn cascaded_window_pos(
+    event_loop: &tao::event_loop::EventLoopWindowTarget<CustomEvent>,
+    req: (f64, f64),
+    w: f64,
+    h: f64,
+) -> tao::dpi::LogicalPosition<f64> {
+    let mons: Vec<_> = event_loop.available_monitors().collect();
+    let bounds = mons
+        .iter()
+        .map(monitor_logical_bounds)
+        .find(|((mx, my), (mw, mh))| {
+            req.0 >= *mx && req.0 < mx + mw && req.1 >= *my && req.1 < my + mh
+        })
+        .or_else(|| event_loop.primary_monitor().as_ref().map(monitor_logical_bounds))
+        .or_else(|| mons.first().map(monitor_logical_bounds));
+    let (x, y) = match bounds {
+        Some((origin, size)) => {
+            clamp_window_origin(req, (w, h), origin, size, WINDOW_BOTTOM_MARGIN)
+        }
+        None => req,
+    };
+    tao::dpi::LogicalPosition::new(x, y)
+}
+
 // Normalize a path to absolute without the `\\?\` Windows prefix.
 fn to_abs(p: &Path) -> PathBuf {
     if p.is_absolute() {
@@ -526,6 +690,13 @@ fn is_markdown_ext(p: &Path) -> bool {
         .and_then(|e| e.to_str())
         .map(|e| e.eq_ignore_ascii_case("md") || e.eq_ignore_ascii_case("markdown"))
         .unwrap_or(false)
+}
+
+/// A path this app can open as a document in a window of its own: markdown or an
+/// `.mdx` bundle. Extension-only (touches no filesystem) so it stays a pure unit;
+/// callers pair it with their own `is_file()` check.
+fn is_previewable_ext(p: &Path) -> bool {
+    is_markdown_ext(p) || mdx::is_mdx_ext(p)
 }
 
 fn is_image_ext(p: &Path) -> bool {
@@ -1032,6 +1203,9 @@ fn main() -> wry::Result<()> {
     let mut cap_out: Option<PathBuf> = None;
     let mut cap_slides: Option<String> = None;
     let mut cap_scale: f64 = 2.0;
+    // Set by the parent when this process was spawned from a Ctrl+click
+    // (`openmdnew:`): where to put the window instead of centring it.
+    let mut win_pos: Option<(f64, f64)> = None;
     {
         let mut i = 1;
         while i < args.len() {
@@ -1046,6 +1220,10 @@ fn main() -> wry::Result<()> {
                 }
                 "--png-scale" => {
                     cap_scale = args.get(i + 1).and_then(|s| s.parse().ok()).unwrap_or(2.0);
+                    i += 2;
+                }
+                "--window-pos" => {
+                    win_pos = args.get(i + 1).and_then(|s| parse_window_pos(s));
                     i += 2;
                 }
                 a => {
@@ -1172,6 +1350,11 @@ fn main() -> wry::Result<()> {
     // window can fall off-screen behind the taskbar. Shared with the editor window.
     let (init_w, init_h, init_pos) =
         editor_registry::clamped_window_geometry(&event_loop, 1200.0, 800.0);
+    // A window spawned by Ctrl+click (`openmdnew:`) asks to be cascaded off its
+    // parent instead of centred, so the two documents are both visible. It is
+    // applied with `set_outer_position` after build() rather than through
+    // `with_position` — see `cascaded_window_pos`.
+    let cascade_pos = win_pos.map(|req| cascaded_window_pos(&event_loop, req, init_w, init_h));
     let mut window_builder = WindowBuilder::new()
         .with_title(&initial_title)
         .with_inner_size(tao::dpi::LogicalSize::new(init_w, init_h));
@@ -1186,6 +1369,9 @@ fn main() -> wry::Result<()> {
         window_builder = window_builder.with_visible(false);
     }
     let window = window_builder.build(&event_loop).unwrap();
+    if let Some(pos) = cascade_pos {
+        window.set_outer_position(pos);
+    }
 
     // Prepare initialization script: optional workspace payload + optional file load.
     let workspace_init = if let Some(ref w) = initial_workspace {
@@ -1566,6 +1752,10 @@ fn main() -> wry::Result<()> {
     // Owned copy of the install directory (exe_dir is a borrowed &Path) so the
     // `openinstalldir:` IPC branch can open it in Explorer from the move closure.
     let ipc_install_dir = exe_dir.to_path_buf();
+    // Owned copy of this exe's own path so the `openmdnew:` branch can spawn a
+    // second instance of it. `ipc_exe_path` below is #[cfg(windows)]-gated for
+    // the updater, so this branch keeps its own un-gated clone.
+    let ipc_self_exe = exe_path.clone();
     // Auto-update: the prefetched-installer handle + this exe's path, so the
     // `update:install` IPC branch can launch the silent installer + relaunch
     // (Windows-only; the install branch below is cfg-gated).
@@ -1576,6 +1766,25 @@ fn main() -> wry::Result<()> {
     webview_builder = webview_builder.with_ipc_handler(move |window, message| {
         if let Some(name) = message.strip_prefix("settitle:") {
             window.set_title(&format_title(Some(name)));
+        } else if let Some(path_str) = message.strip_prefix("openmdnew:") {
+            // Ctrl+click on a `.md` link: open the target in a NEW previewer
+            // window instead of navigating this one. No CustomEvent is involved
+            // — this window's watcher / history / current_file stay untouched;
+            // we merely start another process. Placed ahead of the `openmd:`
+            // branch so the two prefixes can never be confused.
+            let path = to_abs(&PathBuf::from(path_str));
+            if path.is_file() && is_previewable_ext(&path) {
+                let exe = ipc_self_exe.clone();
+                // Read the parent's position here (the handler has the Window;
+                // the worker thread must not touch it).
+                let origin = next_cascade_origin(window);
+                // Off-thread like the other spawn / dialog handlers so a slow
+                // process launch never blocks the IPC thread.
+                std::thread::spawn(move || spawn_new_previewer(&exe, &path, origin));
+            } else {
+                eprintln!("openmdnew: not a previewable file: {:?}", path);
+                dbg_log!("openmdnew: rejected {:?}", path);
+            }
         } else if let Some(path_str) = message.strip_prefix("openmd:") {
             let path = PathBuf::from(path_str);
             if path.is_dir() {
@@ -2890,6 +3099,70 @@ mod tests {
         assert!(is_markdown_href("dir/a.md#section"));
         assert!(!is_markdown_href("a.txt"));
         assert!(!is_markdown_href("https://example.com/"));
+    }
+
+    #[test]
+    fn previewable_ext_accepts_markdown_and_mdx_only() {
+        // What `openmdnew:` will hand to a freshly spawned previewer.
+        assert!(is_previewable_ext(Path::new(r"C:\d\a.md")));
+        assert!(is_previewable_ext(Path::new(r"C:\d\a.MARKDOWN")));
+        assert!(is_previewable_ext(Path::new(r"C:\d\bundle.mdx")));
+        assert!(!is_previewable_ext(Path::new(r"C:\d\notes.txt")));
+        assert!(!is_previewable_ext(Path::new(r"C:\d\pic.png")));
+        // A directory (no extension) is not a document; workspace mode opens
+        // those through `opendir:` instead.
+        assert!(!is_previewable_ext(Path::new(r"C:\d\folder")));
+    }
+
+    #[test]
+    fn window_pos_parses_pairs_and_rejects_junk() {
+        assert_eq!(parse_window_pos("120,80"), Some((120.0, 80.0)));
+        assert_eq!(parse_window_pos(" -12.5 , 0 "), Some((-12.5, 0.0)));
+        assert_eq!(parse_window_pos("120"), None);
+        assert_eq!(parse_window_pos("120,"), None);
+        assert_eq!(parse_window_pos("a,b"), None);
+        assert_eq!(parse_window_pos("inf,0"), None);
+    }
+
+    #[test]
+    fn cascade_steps_when_there_is_room_and_wraps_when_there_is_not() {
+        let mon_origin = (0.0, 0.0);
+        let mon = (2560.0, 1440.0);
+        let size = (1216.0, 840.0);
+        // Roomy display: each step just offsets down-right of the parent.
+        assert_eq!(cascade_origin((300.0, 80.0), size, mon_origin, mon, 36.0), (336.0, 116.0));
+        assert_eq!(cascade_origin((300.0, 80.0), size, mon_origin, mon, 72.0), (372.0, 152.0));
+        // The real 1920x1200-at-125% laptop case: a 1216x840 window in 1536x960
+        // has under one step of slack, so stepping would run off the monitor and
+        // the cascade wraps to the top-left instead of saturating on the parent.
+        let small = (1536.0, 960.0);
+        assert_eq!(cascade_origin((300.0, 80.0), size, mon_origin, small, 36.0), (36.0, 36.0));
+        // Successive wrapped steps still land somewhere different.
+        assert_eq!(cascade_origin((300.0, 80.0), size, mon_origin, small, 72.0), (72.0, 72.0));
+        // A secondary monitor's origin is respected on both paths.
+        assert_eq!(
+            cascade_origin((1920.0, 0.0), size, (1920.0, 0.0), small, 36.0),
+            (1956.0, 36.0)
+        );
+    }
+
+    #[test]
+    fn cascaded_origin_is_clamped_into_the_monitor() {
+        let size = (1200.0, 800.0);
+        let origin = (0.0, 0.0);
+        let mon = (1920.0, 1080.0);
+        // Room to cascade: the request is honoured as-is.
+        assert_eq!(clamp_window_origin((36.0, 36.0), size, origin, mon, 80.0), (36.0, 36.0));
+        // Bottom-right parent: pulled back so the window stays on screen
+        // (1920-1200 = 720 across, 1080-80-800 = 200 down).
+        assert_eq!(clamp_window_origin((1800.0, 900.0), size, origin, mon, 80.0), (720.0, 200.0));
+        // Above/left of the monitor is pulled back to its origin.
+        assert_eq!(clamp_window_origin((-50.0, -50.0), size, origin, mon, 80.0), (0.0, 0.0));
+        // A secondary monitor's origin is respected, not assumed to be 0,0.
+        assert_eq!(clamp_window_origin((1920.0, 0.0), size, (1920.0, 0.0), mon, 80.0), (1920.0, 0.0));
+        // A window bigger than the monitor pins to the origin rather than
+        // producing an inverted clamp range (which would panic).
+        assert_eq!(clamp_window_origin((100.0, 100.0), (4000.0, 3000.0), origin, mon, 80.0), (0.0, 0.0));
     }
 
     #[test]

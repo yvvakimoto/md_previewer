@@ -8,6 +8,8 @@
     <link rel="stylesheet" href="libs/katex/katex.min.css">
     <link rel="stylesheet" href="libs/highlight.js/github.min.css">
     <script src="libs/highlight.js/highlight.min.js"></script>
+    <!-- Modelica grammar for highlight.js (in-house; hljs core ships none). Must follow highlight.min.js. -->
+    <script src="libs/hljs-modelica.js"></script>
     <style>
         * {
             margin: 0;
@@ -10559,27 +10561,59 @@ ${previewClone.outerHTML}
             }
             if (!target) target = blocks[0];
 
+            // The reader's scroll axis is measured, not inferred from the writing
+            // mode (see __previewScrollsHorizontally). A vertical-writing theme
+            // (tategaki.css / bunko.css) runs leftward, so its "top of the
+            // viewport" is the container's RIGHT edge and the scroll axis is
+            // scrollLeft; scrollTop never moves there, which is why this whole
+            // function used to be a silent no-op under those themes.
+            const horizontal = __previewScrollsHorizontally();
             const containerRect = previewContainer.getBoundingClientRect();
             const targetRect = target.getBoundingClientRect();
-            let offset = targetRect.top - containerRect.top + previewContainer.scrollTop;
 
             // Sub-block interpolation: if there's a next block with a known line,
-            // fractionally scroll within the current block so smooth editor
-            // scrolling translates to smooth preview scrolling.
+            // fractionally advance INTO the current block, so smooth editor
+            // scrolling translates to smooth preview scrolling. "Into" is along
+            // the block axis: downward when horizontal-tb, leftward when
+            // vertical-rl.
+            let frac = 0;
             const targetLine = parseInt(target.getAttribute('data-line'), 10);
             if (Number.isFinite(targetLine) && nextLine && line > targetLine && nextLine > targetLine) {
-                const frac = Math.min(1, (line - targetLine) / (nextLine - targetLine));
-                offset += frac * target.getBoundingClientRect().height;
+                frac = Math.min(1, (line - targetLine) / (nextLine - targetLine));
             }
 
-            // Top margin: land the cursor's block ~1/4 from the top so the
-            // reader retains upstream context above the active line.
-            const topMargin = previewContainer.clientHeight * 0.25;
-
+            // Reading-start margin: land the cursor's block ~1/4 in from the
+            // start edge so the reader retains upstream context before the
+            // active line.
             // Suppress click-driven jumpTo for ~200 ms in case the scroll
             // momentum nudges the cursor onto a different block.
             suppressJumpUntil = Date.now() + 200;
-            previewContainer.scrollTo({ top: Math.max(0, offset - topMargin), behavior: 'auto' });
+            if (horizontal) {
+                // Relative adjustment, exactly as restorePreviewAnchor does it:
+                // WebView2 leaves scrollLeft unnormalized for a right-to-left
+                // flow (0 is the visual left, i.e. the END of the content), so
+                // an absolute target value would need a sign assumption. Solving
+                // `newRight = containerRect.right - margin` for the delta needs
+                // none, and the browser clamps it.
+                // The interpolation term is SUBTRACTED here, not added. The
+                // relation above is `newRight = oldRight - delta`, and advancing
+                // into a block means moving LEFT (deeper into the flow), so the
+                // point we want at the margin is `targetRect.right - frac*width`:
+                //   delta = (targetRect.right - frac*width) - containerRect.right + margin
+                // Getting this sign wrong is not a small offset error -- it makes
+                // every step onto a blank line scroll BACKWARD and the next real
+                // line snap forward again, i.e. the preview visibly oscillates as
+                // the cursor is stepped line by line. Pinned by the monotonicity
+                // case in tools/preview-harness/synccheck.py.
+                const margin = previewContainer.clientWidth * 0.25;
+                previewContainer.scrollLeft +=
+                    (targetRect.right - containerRect.right) + margin - frac * targetRect.width;
+            } else {
+                const offset = targetRect.top - containerRect.top + previewContainer.scrollTop
+                    + frac * targetRect.height;
+                const topMargin = previewContainer.clientHeight * 0.25;
+                previewContainer.scrollTo({ top: Math.max(0, offset - topMargin), behavior: 'auto' });
+            }
         };
 
         // Inverse of applyEditorScroll: report the source line currently shown at
@@ -10605,14 +10639,33 @@ ${previewClone.outerHTML}
                 }
                 const blocks = preview.querySelectorAll('[data-line]');
                 if (!blocks.length) return 1;
-                const containerTop = previewContainer.getBoundingClientRect().top;
-                const threshold = previewContainer.clientHeight * 0.25;
+                // Same axis question as applyEditorScroll: under a vertical
+                // writing mode the reader's "top of the viewport" is the
+                // container's right edge, and a block's distance from the
+                // reading start is measured leftward. Both distances are
+                // monotonic in document order, so the scan itself is shared.
+                const horizontal = __previewScrollsHorizontally();
+                const cRect = previewContainer.getBoundingClientRect();
+                const threshold = (horizontal ? previewContainer.clientWidth
+                                              : previewContainer.clientHeight) * 0.25;
                 let bestLine = 1;
                 for (const el of blocks) {
                     const elLine = parseInt(el.getAttribute('data-line'), 10);
                     if (!Number.isFinite(elLine)) continue;
-                    const top = el.getBoundingClientRect().top - containerTop;
-                    if (top <= threshold) bestLine = elLine;
+                    const r = el.getBoundingClientRect();
+                    // Distance from the reading-start edge; negative once the
+                    // block has been scrolled past.
+                    const dist = horizontal ? (cRect.right - r.right) : (r.top - cRect.top);
+                    // 1px tolerance, not a cosmetic fudge: applyEditorScroll()
+                    // lands the target block's start edge at exactly `threshold`,
+                    // but the engine snaps the resulting scroll offset to device
+                    // pixels, so it settles a fraction PAST it (measured: 290.5
+                    // against a 290 threshold). Comparing exactly then breaks the
+                    // scan at the very block we scrolled to and reports the one
+                    // before it -- i.e. the open->edit->reopen round-trip this
+                    // function exists to keep stable was off by one block on both
+                    // axes.
+                    if (dist <= threshold + 1) bestLine = elLine;
                     else break;
                 }
                 return bestLine;
@@ -10623,7 +10676,8 @@ ${previewClone.outerHTML}
 
         // Intercept clicks on .md / .markdown links and re-open them via the host app.
         // WebView2 blocks file:// navigations for security, so we route the request
-        // back to Rust which loads the target file into the current viewer.
+        // back to Rust which loads the target file into the current viewer --
+        // or, with Ctrl/Cmd held, into a newly spawned previewer window.
         preview.addEventListener('click', (e) => {
             const anchor = e.target.closest('a');
             if (!anchor) return;
@@ -10654,9 +10708,21 @@ ${previewClone.outerHTML}
             // Normalize to backslashes for Windows
             localPath = localPath.replace(/\//g, '\\');
 
+            // Ctrl (or Cmd) + click opens the target in a NEW previewer
+            // window, i.e. a second process of this exe -- the same route
+            // Explorer's double-click and the CLI arg take, so the new window
+            // is in every way an ordinarily-launched previewer (own watcher,
+            // own history, own editor pairing). Shift / Alt are excluded so
+            // the combo stays unambiguous. The fragment was already stripped
+            // above; the same-window path ignores it too, so both behave alike.
             e.preventDefault();
             if (window.ipc && typeof window.ipc.postMessage === 'function') {
-                window.ipc.postMessage('openmd:' + localPath);
+                if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey) {
+                    window.ipc.postMessage('openmdnew:' + localPath);
+                    showToast('新しいウィンドウで開いています…');
+                } else {
+                    window.ipc.postMessage('openmd:' + localPath);
+                }
             }
         });
 
@@ -10976,6 +11042,7 @@ ${previewClone.outerHTML}
                     <tr><td class="keys"><kbd>X</kbd></td><td>現在の文書をエクスポート（保存ダイアログで HTML / PDF を選択。PDFはクリック可能なリンクと見出しのしおりを保持）</td></tr>
                     <tr><td class="keys"><kbd>Ctrl</kbd>+<kbd>+</kbd> / <kbd>Ctrl</kbd>+<kbd>-</kbd> / <kbd>Ctrl</kbd>+<kbd>0</kbd></td><td>ズームイン / アウト / リセット</td></tr>
                     <tr><td class="keys"><kbd>Alt</kbd>+<kbd>←</kbd> / <kbd>Alt</kbd>+<kbd>→</kbd></td><td>開いたファイルの履歴を戻る / 進む</td></tr>
+                    <tr><td class="keys"><kbd>Ctrl</kbd>+クリック</td><td>.md リンクを新しいプレビュアのウィンドウで開く（通常のクリックは同じウィンドウで遷移）</td></tr>
                     <tr><td class="keys"><kbd>P</kbd></td><td>Marp表示の切り替え: スクロール → デッキ → 一覧（一覧でサムネイルをクリックするとデッキで開く）</td></tr>
                     <tr><td class="keys"><kbd>F</kbd></td><td>全画面表示の切り替え（Marp文書）</td></tr>
                     <tr><td class="keys"><kbd>A</kbd></td><td>スライドの自動縮小の切り替え（Marp）</td></tr>

@@ -113,7 +113,8 @@ so each committing scenario reloads the page first.
 The Browser pane is Chromium and WebView2 is Edge/Chromium on the same machine (same system fonts), so
 markdown / CSS / SVG / Marp rendering is essentially identical. The following are **intentional no-ops**
 under the harness (each just logs an `[ipc]` line): the companion editor (`E`), save, HTML/PDF export
-(`X`), headless PNG capture, and cross-file `openmd:` navigation — to open another file, use a new
+(`X`), headless PNG capture, and cross-file navigation (`openmd:` and the Ctrl+click
+`openmdnew:`, which in the real host spawns a second previewer process) — to open another file, use a new
 `?file=` URL. One document is tracked at a time (a single `/userfile/` base).
 
 For the highest-fidelity check of the actual shipping binary — especially Marp deck layout — use the
