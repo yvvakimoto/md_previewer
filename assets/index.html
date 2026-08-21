@@ -10676,7 +10676,8 @@ ${previewClone.outerHTML}
 
         // Intercept clicks on .md / .markdown links and re-open them via the host app.
         // WebView2 blocks file:// navigations for security, so we route the request
-        // back to Rust which loads the target file into the current viewer.
+        // back to Rust which loads the target file into the current viewer --
+        // or, with Ctrl/Cmd held, into a newly spawned previewer window.
         preview.addEventListener('click', (e) => {
             const anchor = e.target.closest('a');
             if (!anchor) return;
@@ -10707,9 +10708,21 @@ ${previewClone.outerHTML}
             // Normalize to backslashes for Windows
             localPath = localPath.replace(/\//g, '\\');
 
+            // Ctrl (or Cmd) + click opens the target in a NEW previewer
+            // window, i.e. a second process of this exe -- the same route
+            // Explorer's double-click and the CLI arg take, so the new window
+            // is in every way an ordinarily-launched previewer (own watcher,
+            // own history, own editor pairing). Shift / Alt are excluded so
+            // the combo stays unambiguous. The fragment was already stripped
+            // above; the same-window path ignores it too, so both behave alike.
             e.preventDefault();
             if (window.ipc && typeof window.ipc.postMessage === 'function') {
-                window.ipc.postMessage('openmd:' + localPath);
+                if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey) {
+                    window.ipc.postMessage('openmdnew:' + localPath);
+                    showToast('新しいウィンドウで開いています…');
+                } else {
+                    window.ipc.postMessage('openmd:' + localPath);
+                }
             }
         });
 
@@ -11029,6 +11042,7 @@ ${previewClone.outerHTML}
                     <tr><td class="keys"><kbd>X</kbd></td><td>現在の文書をエクスポート（保存ダイアログで HTML / PDF を選択。PDFはクリック可能なリンクと見出しのしおりを保持）</td></tr>
                     <tr><td class="keys"><kbd>Ctrl</kbd>+<kbd>+</kbd> / <kbd>Ctrl</kbd>+<kbd>-</kbd> / <kbd>Ctrl</kbd>+<kbd>0</kbd></td><td>ズームイン / アウト / リセット</td></tr>
                     <tr><td class="keys"><kbd>Alt</kbd>+<kbd>←</kbd> / <kbd>Alt</kbd>+<kbd>→</kbd></td><td>開いたファイルの履歴を戻る / 進む</td></tr>
+                    <tr><td class="keys"><kbd>Ctrl</kbd>+クリック</td><td>.md リンクを新しいプレビュアのウィンドウで開く（通常のクリックは同じウィンドウで遷移）</td></tr>
                     <tr><td class="keys"><kbd>P</kbd></td><td>Marp表示の切り替え: スクロール → デッキ → 一覧（一覧でサムネイルをクリックするとデッキで開く）</td></tr>
                     <tr><td class="keys"><kbd>F</kbd></td><td>全画面表示の切り替え（Marp文書）</td></tr>
                     <tr><td class="keys"><kbd>A</kbd></td><td>スライドの自動縮小の切り替え（Marp）</td></tr>
