@@ -35,6 +35,9 @@ import { fencedDivCompletionSource } from './fencedDivComplete.js';
 import { spanStyleCompletionSource } from './spanStyleComplete.js';
 import { frontMatterCompletionSource, frontMatterBlankFieldAt } from './frontMatterComplete.js';
 import { installJpWordMotion } from './jpWordMotion.js';
+import {
+  KEY_LAYOUTS, DEFAULT_KEY_LAYOUT, keyLayoutKeys, applyKeyLayout,
+} from './keyLayout.js';
 import { numberedListIndentKeymap } from './numberedListIndent.js';
 import { installClipboardSync } from './clipboardSync.js';
 import {
@@ -406,6 +409,8 @@ export function create(root, opts = {}) {
   settingsModal.style.display = 'none';
   const fontOptions = FONT_FAMILIES
     .map((f) => `<option value="${f.key}">${f.label}</option>`).join('');
+  const keyLayoutOptions = keyLayoutKeys()
+    .map((k) => `<option value="${k}">${KEY_LAYOUTS[k].label}</option>`).join('');
   settingsModal.innerHTML = `
     <div class="cc-panel" role="dialog" aria-modal="true" aria-label="エディター設定">
       <button class="cc-close" type="button" aria-label="閉じる">&times;</button>
@@ -463,6 +468,14 @@ export function create(root, opts = {}) {
             <span class="settings-control"><input type="checkbox" data-el="vim" aria-label="Vim キーバインド"></span>
           </div>
           <div class="settings-row">
+            <span class="settings-label">キー配列（Vim コマンド）
+              <span class="settings-hint">Dvorak エミュレータ使用時に、コマンドモードのキーを QWERTY の位置で解釈 · <code>:set dvorak</code> / <code>:keylayout</code></span>
+            </span>
+            <span class="settings-control">
+              <select data-el="key-layout" aria-label="キー配列">${keyLayoutOptions}</select>
+            </span>
+          </div>
+          <div class="settings-row">
             <span class="settings-label">セルモード
               <span class="settings-hint"><code>---</code> 区切りの Jupyter 風編集 · <code>:cellmode</code> / <code>gmc</code></span>
             </span>
@@ -507,6 +520,7 @@ export function create(root, opts = {}) {
       fontMinus: q('[data-act="font-minus"]'),
       fontPlus: q('[data-act="font-plus"]'),
       fontFamily: q('[data-el="font-family"]'),
+      keyLayout: q('[data-el="key-layout"]'),
       vim: q('[data-el="vim"]'),
       cells: q('[data-el="cells"]'),
       tableCol: q('[data-el="table-col"]'),
@@ -531,6 +545,7 @@ export function create(root, opts = {}) {
     settingsCtl.cells.addEventListener('change', (e) => setCells(e.target.checked));
     settingsCtl.tableCol.addEventListener('change', (e) => setTableCol(e.target.checked));
     settingsCtl.tablePaste.addEventListener('change', (e) => setTablePaste(e.target.checked));
+    settingsCtl.keyLayout.addEventListener('change', (e) => setKeyLayout(e.target.value));
     settingsCtl.live.addEventListener('change', (e) => setLive(e.target.checked));
   }
   settingsModal.querySelector('.cc-close').addEventListener('click', () => closeSettings());
@@ -639,6 +654,7 @@ export function create(root, opts = {}) {
   const LS_CELLS = 'editor:cellMode';
   const LS_FONTSIZE = 'editor:fontSize';
   const LS_FONTFAMILY = 'editor:fontFamily';
+  const LS_KEYLAYOUT = 'editor:keyLayout';
   function readPref(key, valid, fallback) {
     try {
       const v = localStorage.getItem(key);
@@ -669,6 +685,7 @@ export function create(root, opts = {}) {
   let cellState = readPref(LS_CELLS, ['on', 'off'], 'off') === 'on';
   let fontSizeState = readFontSizePref();
   let fontFamilyState = readPref(LS_FONTFAMILY, fontFamilyKeys(), FONT_FAMILY_DEFAULT);
+  let keyLayoutState = readPref(LS_KEYLAYOUT, keyLayoutKeys(), DEFAULT_KEY_LAYOUT);
 
   const vimComp = new Compartment();
   const lineNoComp = new Compartment();
@@ -737,6 +754,7 @@ export function create(root, opts = {}) {
     settingsCtl.fontMinus.disabled = fontSizeState <= FONT_SIZE_MIN;
     settingsCtl.fontPlus.disabled = fontSizeState >= FONT_SIZE_MAX;
     settingsCtl.fontFamily.value = fontFamilyState;
+    settingsCtl.keyLayout.value = keyLayoutState;
     settingsCtl.setSeg('theme', themeState);
     settingsCtl.setSeg('lineNo', lineNoState);
     settingsCtl.vim.checked = vimState;
@@ -812,6 +830,22 @@ export function create(root, opts = {}) {
     // checkbox is the feedback and the hint would render behind the backdrop.
     if (settingsModal.style.display !== 'flex') {
       showHint('表の貼り付け変換: ' + (tablePasteState ? 'ON' : 'OFF'));
+    }
+    refocusEditor();
+  }
+  // Keyboard-layout translation for Vim command mode. No Compartment and no
+  // reconfigure: this drives Vim's global `langmap`, which lives on the Vim
+  // singleton and renders nothing, so there is no state to go stale — the same
+  // reasoning as setTablePaste above. Independent of vimComp, so it is also
+  // correct to set while Vim mode is OFF.
+  function setKeyLayout(name) {
+    if (keyLayoutKeys().indexOf(name) < 0) return;
+    keyLayoutState = name;
+    try { localStorage.setItem(LS_KEYLAYOUT, keyLayoutState); } catch (_) {}
+    try { applyKeyLayout(Vim, keyLayoutState); } catch (_) {}
+    updateSettingsUI();
+    if (settingsModal.style.display !== 'flex') {
+      showHint('キー配列: ' + KEY_LAYOUTS[keyLayoutState].label);
     }
     refocusEditor();
   }
@@ -1096,6 +1130,8 @@ export function create(root, opts = {}) {
         case 'notablepaste': case 'notpaste':  setTablePaste(false);  break;
         case 'cellmode': case 'cells':         setCells(true);        break;
         case 'nocellmode': case 'nocells':     setCells(false);       break;
+        case 'dvorak':                         setKeyLayout('dvorak'); break;
+        case 'nodvorak':                       setKeyLayout('qwerty'); break;
         default: break;
       }
     });
@@ -1132,6 +1168,22 @@ export function create(root, opts = {}) {
         return;
       }
       setFontSize(next);
+    });
+    // Keyboard layout for Vim command mode: `:keylayout dvorak` / `:keylayout
+    // qwerty`, or no argument to report the current one. No other ex-command
+    // starts with `k`, so `:key` resolves here under the prefix rule above.
+    Vim.defineEx('keylayout', undefined, (_cm, params) => {
+      const arg = ((params && params.args && params.args[0]) || '').toLowerCase();
+      if (!arg) {
+        showHint('キー配列: ' + KEY_LAYOUTS[keyLayoutState].label);
+        return;
+      }
+      if (keyLayoutKeys().indexOf(arg) < 0) {
+        showHint('E488: 引数が不正です: :keylayout ' + arg
+          + '  (' + keyLayoutKeys().join(' / ') + ')');
+        return;
+      }
+      setKeyLayout(arg);
     });
     // Opens the settings modal. Deliberately NOT named `settings` / `set…`:
     // the package resolves with name.indexOf(input) === 0, so any name starting
@@ -1188,6 +1240,10 @@ export function create(root, opts = {}) {
   // Japanese-aware w/b/e/W/B/E (and dw/cw/yw/daw/...) — segment by
   // hiragana / katakana / han / ASCII-word / punctuation class boundaries.
   try { installJpWordMotion(Vim); } catch (_) {}
+  // Vim is a module-level singleton independent of the vimComp Compartment, so
+  // the layout is applied unconditionally at boot — including while Vim mode is
+  // OFF, so turning it on later already has the right langmap.
+  try { applyKeyLayout(Vim, keyLayoutState); } catch (_) {}
 
   // OS-clipboard-backed yank/paste (unnamedplus): plain y/d/c/x mirror to the
   // OS clipboard, and `p`/`P` paste it (synced in on window focus). Routed

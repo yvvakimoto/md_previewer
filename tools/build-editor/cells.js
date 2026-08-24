@@ -63,6 +63,7 @@ import {
   unitDeleteRange,
 } from './mdBlocks.js';
 import { writeClipboard } from './marpSlides.js';
+import { mapCommandKey } from './keyLayout.js';
 
 // ───────────────────────────── cell model ─────────────────────────────
 
@@ -645,7 +646,13 @@ export function cellGate(cb) {
       }
 
       const pending = st.pending;
-      const k = e.key;
+      // Command mode here is the same kind of command mode Vim has, and carries
+      // the same QWERTY muscle memory, so it goes through the keyboard-layout
+      // translation too. Identity while the layout pref is 'qwerty' (the
+      // default), so this is a no-op for everyone who has not opted in.
+      // Deliberately below the modifier branch above: Ctrl combos are left
+      // untranslated, matching the remapCtrl:false choice in keyLayout.js.
+      const k = mapCommandKey(e.key);
 
       if (pending === 'd') {
         view.dispatch({ effects: setCellPend.of('') });
