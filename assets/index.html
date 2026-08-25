@@ -3387,8 +3387,31 @@
         // with stroke/fill=currentColor (so dark mode is a CSS `color` change) and
         // glyphs as PUA-mapped <text> in the Computer-Modern web fonts declared by
         // fonts.css — which is why fonts.css must be present for glyphs to paint.
+        //
+        // The installer does NOT bundle the TikZ engine: it is GPL/LPPL, so an
+        // opt-in installer task fetches it from upstream instead (see
+        // installer/md-previewer.iss). The Rust host probes for it on startup and
+        // reports the result as window.__tikzAvailable.
+        //
+        // UNDEFINED MEANS AVAILABLE. tools/preview-harness/serve.py injects the
+        // other host globals but not this one, so the flag may only ever suppress,
+        // never enable — otherwise the harness would lose tikz entirely.
+        function __tikzUnavailable() {
+            return window.__tikzAvailable === false;
+        }
+        // Distinguish "never installed" (actionable) from "installed but failed to
+        // load" (a real fault). Single source of truth for both pipelines.
+        const __TIKZ_MISSING_HTML  = '<div class="tikz-error">TikZ コンポーネントが未インストールです。インストーラーを再実行し、「TikZ・可換図式コンポーネントをダウンロード」にチェックを入れてください。</div>';
+        const __TIKZ_LOADFAIL_HTML = '<div class="tikz-error">TikZ エンジンを読み込めませんでした（libs/tikzjax）</div>';
+        function __tikzUnavailableHtml() {
+            return __tikzUnavailable() ? __TIKZ_MISSING_HTML : __TIKZ_LOADFAIL_HTML;
+        }
         let __tikzFontsLinked = false;
         function ensureTikz() {
+            // Fail fast when the component was never downloaded, rather than
+            // injecting a <script> that could only 404. Call sites test
+            // __tikzUnavailable() first; this is defence in depth.
+            if (__tikzUnavailable()) return Promise.reject(new Error('tikzjax is not installed'));
             if (!__tikzFontsLinked) {
                 __tikzFontsLinked = true;
                 // assetBaseUrl tells tikzjax where to fetch run-tex.js / tex.wasm.gz /
@@ -9099,11 +9122,11 @@ ${previewClone.outerHTML}
             const marpTikzEls = preview.querySelectorAll('.tikzcd-diagram, .tikz-diagram');
             if (marpTikzEls.length > 0) {
                 (async () => {
-                    let tikzOk = true;
-                    try { await ensureTikz(); } catch (e) { tikzOk = false; }
+                    let tikzOk = !__tikzUnavailable();
+                    try { if (tikzOk) await ensureTikz(); } catch (e) { tikzOk = false; }
                     await Promise.all(Array.from(marpTikzEls).map(el => tikzOk
                         ? renderTikzCached(el).catch(err => { el.innerHTML = '<div class="tikz-error">TikZ Error: ' + escapeHtml(String((err && err.message) || err)) + '</div>'; })
-                        : Promise.resolve().then(() => { el.innerHTML = '<div class="tikz-error">TikZ エンジンを読み込めませんでした（libs/tikzjax）</div>'; })));
+                        : Promise.resolve().then(() => { el.innerHTML = __tikzUnavailableHtml(); })));
                 })();
             }
 
@@ -9389,7 +9412,7 @@ ${previewClone.outerHTML}
             const plotlyReady = needsPlotly ? Promise.all([ensureJsYaml(), ensurePlotly()]) : null;
             const abcReady = needsAbc ? ensureAbcjs() : null;
             const markwhenReady = needsMarkwhen ? ensureMarkwhen() : null;
-            const tikzReady = needsTikz ? ensureTikz() : null;
+            const tikzReady = (needsTikz && !__tikzUnavailable()) ? ensureTikz() : null;
 
             // Flush the prior render's tracked CSV files so the Rust watcher only
             // monitors files referenced by the document we're about to render.
@@ -9582,11 +9605,11 @@ ${previewClone.outerHTML}
             const tikzEls = preview.querySelectorAll('.tikzcd-diagram, .tikz-diagram');
             if (tikzEls.length > 0) {
                 (async () => {
-                    let tikzOk = true;
-                    try { if (tikzReady) await tikzReady; } catch (e) { tikzOk = false; }
+                    let tikzOk = !__tikzUnavailable();
+                    try { if (tikzOk && tikzReady) await tikzReady; } catch (e) { tikzOk = false; }
                     await Promise.all(Array.from(tikzEls).map(el => tikzOk
                         ? renderTikzCached(el).catch(err => { el.innerHTML = '<div class="tikz-error">TikZ Error: ' + escapeHtml(String((err && err.message) || err)) + '</div>'; })
-                        : Promise.resolve().then(() => { el.innerHTML = '<div class="tikz-error">TikZ エンジンを読み込めませんでした（libs/tikzjax）</div>'; })));
+                        : Promise.resolve().then(() => { el.innerHTML = __tikzUnavailableHtml(); })));
                 })();
             }
 
