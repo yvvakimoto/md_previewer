@@ -66,17 +66,41 @@ def parse_slides_spec(spec, count):
     return out
 
 
-# JS predicate: every async figure (mermaid / markwhen / plotly) has either
-# produced its output or an error block. networkidle only means the *scripts*
-# loaded — the renderers run afterwards, so we must wait on the DOM result.
+# JS predicate: every async figure (mermaid / markwhen / abc / plotly / tikz)
+# has either produced its output or an error block. networkidle only means the
+# *scripts* loaded — the renderers run afterwards, so we must wait on the DOM
+# result.
+#
+# The tikz arm mirrors `__tikzAwait`'s `done()` in assets/index.html rather than
+# testing for a bare <svg>: while a block is compiling, tikzjax parks an
+# `<svg class="tikzjax-loader">` spinner inside a `.tikzjax-wrapper.tikzjax-loading`,
+# so `querySelector('svg')` is satisfied by the UNFINISHED state. Keying off the
+# wrapper losing `tikzjax-loading` also resolves a FAILED compile immediately
+# (tikzjax swaps in a broken-image placeholder, no svg) instead of waiting out
+# index.html's 30s render timeout.
 _FIGURES_READY_JS = """() => {
   const done = (sel, ok) => [...document.querySelectorAll(sel)].every(ok);
   const mer = done('.mermaid', m => m.querySelector('svg') || m.querySelector('.mermaid-error'));
   const mw  = done('.markwhen-timeline', m => m.querySelector('svg') || m.querySelector('.markwhen-error'));
   const abc = done('.abc-notation', m => m.querySelector('svg') || m.querySelector('.abc-error'));
   const pl  = done('.plotly-block', m => m.querySelector('.plotly') || m.querySelector('.plotly-error'));
-  return mer && mw && abc && pl;
+  const tkz = done('.tikzcd-diagram, .tikz-diagram', m => {
+    if (m.querySelector('.tikz-error')) return true;
+    const w = m.querySelector('.tikzjax-wrapper');
+    if (w) return !w.classList.contains('tikzjax-loading');
+    return !!m.querySelector('svg:not(.tikzjax-loader)');
+  });
+  return mer && mw && abc && pl && tkz;
 }"""
+
+_TIKZ_SELECTOR_JS = "() => !!document.querySelector('.tikzcd-diagram, .tikz-diagram')"
+
+# A tikz block compiles TeX in a WASM Web Worker and is deliberately
+# fire-and-forget (see CLAUDE.md), so it takes seconds — and a block that never
+# settles only resolves once index.html's own 30s __TIKZ_RENDER_TIMEOUT_MS swaps
+# in a .tikz-error. The page default (20s) cannot see that resolution, so a page
+# carrying tikz blocks gets its own budget.
+_TIKZ_WAIT_MS = 45000
 
 
 STYLE_INIT_JS = """(() => { try { %s } catch (e) {} })()"""
@@ -97,7 +121,12 @@ def style_init_script(style):
 def wait_for_render(page):
     """Wait for async figures to finish, then for layout height to stabilize."""
     try:
-        page.wait_for_function(_FIGURES_READY_JS)
+        has_tikz = page.evaluate(_TIKZ_SELECTOR_JS)
+    except Exception:  # noqa: BLE001
+        has_tikz = False
+    try:
+        page.wait_for_function(_FIGURES_READY_JS,
+                               timeout=_TIKZ_WAIT_MS if has_tikz else None)
     except Exception:  # noqa: BLE001
         pass  # best effort; a figure that never resolves shouldn't block capture
     # Stabilize: poll #preview extent until two reads match (fonts/figures settled).
