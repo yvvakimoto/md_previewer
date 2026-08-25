@@ -513,6 +513,32 @@ fn open_with_default(path: &Path) {
     }
 }
 
+/// Run an update that was reserved with "終了後に更新", called from the
+/// CloseRequested arm just before `ControlFlow::Exit`.
+///
+/// **Synchronous on purpose**: the process is about to exit, so a detached
+/// worker thread (the shape `update:install` uses) could be killed before its
+/// `spawn()` completes. `Command::spawn` returns immediately, so this does not
+/// hold up the quit. No relaunch — the user closed the app deliberately, so the
+/// new version simply shows up the next time they start it.
+#[cfg(windows)]
+fn run_deferred_update(
+    install_on_exit: &Arc<Mutex<bool>>,
+    update_ready: &Arc<Mutex<Option<updater::UpdateReady>>>,
+) {
+    if !*install_on_exit.lock().unwrap() {
+        return;
+    }
+    let ready = update_ready.lock().unwrap().clone();
+    if let Some(r) = ready {
+        if let Err(e) = updater::launch_installer(&r.setup_temp, None) {
+            let msg = format!("updater: failed to launch installer on exit: {}", e);
+            dbg_log_write(&msg);
+            eprintln!("{}", msg);
+        }
+    }
+}
+
 /// Launch a second instance of this exe on `target` — i.e. open that document in
 /// a NEW previewer window (Ctrl+click on a `.md` link).
 ///
@@ -1532,6 +1558,11 @@ fn main() -> wry::Result<()> {
     // background check confirms a newer version; the `update:install` IPC reads
     // it. Absent config ⇒ no thread, no network, offline as before.
     let update_ready: Arc<Mutex<Option<updater::UpdateReady>>> = Arc::new(Mutex::new(None));
+    // Set by the `update:onexit` IPC ("終了後に更新"): the update is reserved and
+    // run — without a relaunch — from the CloseRequested arm of the event loop.
+    // `Arc<Mutex<bool>>` rather than an atomic purely so it reads like
+    // `update_ready` next to it; both locks are taken together at exit.
+    let install_on_exit: Arc<Mutex<bool>> = Arc::new(Mutex::new(false));
     if capture_config.is_none() {
         if let Some(cfg) = updater::load_config(exe_dir, &assets_dir) {
             let proxy = event_proxy.clone();
@@ -1775,6 +1806,9 @@ fn main() -> wry::Result<()> {
     let ipc_update_ready = update_ready.clone();
     #[cfg(windows)]
     let ipc_exe_path = exe_path.clone();
+    // `update:onexit` only flips this flag; the install itself happens at exit.
+    #[cfg(windows)]
+    let ipc_install_on_exit = install_on_exit.clone();
     webview_builder = webview_builder.with_ipc_handler(move |window, message| {
         if let Some(name) = message.strip_prefix("settitle:") {
             window.set_title(&format_title(Some(name)));
@@ -1958,6 +1992,15 @@ fn main() -> wry::Result<()> {
                         }
                     });
                 }
+            }
+        } else if message == "update:onexit" {
+            // "終了後に更新": reserve only — keep working, and install when the
+            // user closes the app. No thread and no `update_ready` read here;
+            // the CloseRequested arm does the work (and does NOT relaunch).
+            #[cfg(windows)]
+            {
+                *ipc_install_on_exit.lock().unwrap() = true;
+                dbg_log_write("updater: install deferred to app exit");
             }
         } else if message == "newfile:" {
             // New document (Ctrl+N) — pick a save location via a native dialog,
@@ -2326,6 +2369,10 @@ fn main() -> wry::Result<()> {
                         }
                     }
                 } else {
+                    // "終了後に更新" was chosen earlier: this is the only
+                    // user-initiated quit, so run the reserved install here.
+                    #[cfg(windows)]
+                    run_deferred_update(&install_on_exit, &update_ready);
                     *control_flow = ControlFlow::Exit;
                 }
             }

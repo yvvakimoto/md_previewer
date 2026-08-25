@@ -216,39 +216,58 @@ pub fn check_and_prepare(cfg: &UpdateConfig, current_version: &str) -> Option<Up
     }
 }
 
-/// Launch the (per-user, no-UAC) installer silently for an in-place upgrade,
-/// then relaunch the freshly-installed exe — optionally reopening `open_file`.
+/// Build the `cmd /S /C "…"` argument string that runs the installer.
 ///
-/// Spawns a detached `cmd` that (1) waits ~1s so this process fully exits and
-/// releases its own exe's file lock, (2) runs the Inno installer with
-/// `/VERYSILENT /SUPPRESSMSGBOXES /NORESTART`, then (3) `start`s the new exe.
+/// Pure string work, so it is unit-tested and not `#[cfg(windows)]`-gated.
+/// The command always (1) waits ~1s — `ping` is a console-independent delay
+/// (`timeout` needs a real console and fails when detached) — so this process
+/// fully exits and releases its own exe's file lock, then (2) runs the Inno
+/// installer with `/VERYSILENT /SUPPRESSMSGBOXES /NORESTART`. When `relaunch`
+/// is `Some((exe, open_file))` it additionally (3) `start`s the new exe,
+/// optionally reopening `open_file`; with `None` the chain stops after the
+/// install, which is what the "終了後に更新" path wants (the user quit on
+/// purpose, so nothing is reopened).
+///
 /// `cmd /S /C "…"` strips only the outer quotes, so the internal quotes around
-/// each path are preserved verbatim. The caller should request app exit right
-/// after this returns.
+/// each path are preserved verbatim.
+fn installer_cmd_line(setup: &Path, relaunch: Option<(&Path, Option<&Path>)>) -> String {
+    // Strip stray quotes from paths (paths shouldn't contain `"`; belt-and-braces).
+    let setup_s = setup.to_string_lossy().replace('"', "");
+    let tail = match relaunch {
+        Some((exe, open_file)) => {
+            let exe_s = exe.to_string_lossy().replace('"', "");
+            let reopen = match open_file {
+                Some(p) => format!(" \"{}\"", p.to_string_lossy().replace('"', "")),
+                None => String::new(),
+            };
+            format!(" & start \"\" \"{}\"{}", exe_s, reopen)
+        }
+        None => String::new(),
+    };
+
+    let inner = format!(
+        "ping -n 2 127.0.0.1 >nul & \"{}\" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART{}",
+        setup_s, tail
+    );
+    format!("/S /C \"{}\"", inner)
+}
+
+/// Launch the (per-user, no-UAC) installer silently for an in-place upgrade.
+///
+/// Spawns the detached `cmd` built by [`installer_cmd_line`]; see there for the
+/// meaning of `relaunch`. The caller should request app exit right after this
+/// returns — and when called from the exit path itself, it must be called
+/// **synchronously**, since a detached worker thread can be killed before its
+/// `spawn()` completes.
 #[cfg(windows)]
-pub fn launch_installer_and_relaunch(
+pub fn launch_installer(
     setup: &Path,
-    exe: &Path,
-    open_file: Option<&Path>,
+    relaunch: Option<(&Path, Option<&Path>)>,
 ) -> std::io::Result<()> {
     use std::os::windows::process::CommandExt;
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
-    // Strip stray quotes from paths (paths shouldn't contain `"`; belt-and-braces).
-    let setup_s = setup.to_string_lossy().replace('"', "");
-    let exe_s = exe.to_string_lossy().replace('"', "");
-    let reopen = match open_file {
-        Some(p) => format!(" \"{}\"", p.to_string_lossy().replace('"', "")),
-        None => String::new(),
-    };
-
-    // `ping` is used as a console-independent ~1s delay (`timeout` needs a real
-    // console and fails when detached).
-    let inner = format!(
-        "ping -n 2 127.0.0.1 >nul & \"{}\" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART & start \"\" \"{}\"{}",
-        setup_s, exe_s, reopen
-    );
-    let full = format!("/S /C \"{}\"", inner);
+    let full = installer_cmd_line(setup, relaunch);
     crate::dbg_log_write(&format!("updater: launching installer: cmd {}", full));
 
     std::process::Command::new("cmd")
@@ -256,6 +275,17 @@ pub fn launch_installer_and_relaunch(
         .creation_flags(CREATE_NO_WINDOW)
         .spawn()?;
     Ok(())
+}
+
+/// Install, then relaunch the freshly-installed exe — optionally reopening
+/// `open_file`. Thin wrapper over [`launch_installer`] ("今すぐ更新" path).
+#[cfg(windows)]
+pub fn launch_installer_and_relaunch(
+    setup: &Path,
+    exe: &Path,
+    open_file: Option<&Path>,
+) -> std::io::Result<()> {
+    launch_installer(setup, Some((exe, open_file)))
 }
 
 #[cfg(test)]
@@ -354,5 +384,57 @@ mod tests {
         };
         // Unreachable share ⇒ None (never panics, never blocks past the timeout).
         assert!(check_and_prepare(&cfg, "0.15.0").is_none());
+    }
+
+    // ---- installer_cmd_line ------------------------------------------------
+    // Both paths must keep the ~1s `ping` delay (the exe lock is still held for
+    // a moment after exit) and the silent-install switches; they differ only in
+    // whether the freshly-installed exe is started afterwards.
+
+    #[test]
+    fn installer_cmd_line_relaunches() {
+        let cmd = installer_cmd_line(
+            Path::new(r"C:\Temp\mdp-update\Setup.exe"),
+            Some((Path::new(r"C:\Apps\md-previewer.exe"), None)),
+        );
+        assert!(cmd.starts_with(r#"/S /C "ping -n 2 127.0.0.1 >nul & "#), "{}", cmd);
+        assert!(cmd.contains("/VERYSILENT /SUPPRESSMSGBOXES /NORESTART"), "{}", cmd);
+        assert!(cmd.contains(r#"& start "" "C:\Apps\md-previewer.exe""#), "{}", cmd);
+        assert!(cmd.ends_with('"'), "{}", cmd);
+    }
+
+    #[test]
+    fn installer_cmd_line_reopens_file() {
+        let cmd = installer_cmd_line(
+            Path::new(r"C:\Temp\Setup.exe"),
+            Some((
+                Path::new(r"C:\Apps\md-previewer.exe"),
+                Some(Path::new(r"C:\Docs\メモ.md")),
+            )),
+        );
+        assert!(
+            cmd.contains(r#"start "" "C:\Apps\md-previewer.exe" "C:\Docs\メモ.md""#),
+            "{}",
+            cmd
+        );
+    }
+
+    #[test]
+    fn installer_cmd_line_without_relaunch_stops_after_install() {
+        let cmd = installer_cmd_line(Path::new(r"C:\Temp\Setup.exe"), None);
+        assert!(cmd.contains("ping -n 2 127.0.0.1 >nul"), "{}", cmd);
+        assert!(cmd.contains("/VERYSILENT /SUPPRESSMSGBOXES /NORESTART"), "{}", cmd);
+        // The whole point of the "終了後に更新" path: no relaunch.
+        assert!(!cmd.contains("start"), "{}", cmd);
+        assert_eq!(
+            cmd,
+            r#"/S /C "ping -n 2 127.0.0.1 >nul & "C:\Temp\Setup.exe" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART""#
+        );
+    }
+
+    #[test]
+    fn installer_cmd_line_strips_stray_quotes() {
+        let cmd = installer_cmd_line(Path::new(r#"C:\Te"mp\Setup.exe"#), None);
+        assert!(cmd.contains(r#""C:\Temp\Setup.exe""#), "{}", cmd);
     }
 }
