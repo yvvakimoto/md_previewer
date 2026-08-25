@@ -1811,6 +1811,12 @@
             display: flex;
             align-items: center;
             gap: 10px;
+            /* The card is a fixed min(320px, …) wide and the two update buttons plus
+               the opt-out link only just fit on one row, so allow a wrap rather than
+               letting them overflow. When it wraps, the opt-out link keeps its
+               margin-left:auto and lands at the right edge of the second row. */
+            flex-wrap: wrap;
+            row-gap: 6px;
         }
         #update-banner-actions #update-install-btn {
             font: inherit;
@@ -1828,6 +1834,19 @@
             opacity: 0.6;
             cursor: default;
         }
+        /* Secondary: reserve the update for app exit instead of quitting now. */
+        #update-banner-actions #update-onexit-btn {
+            font: inherit;
+            font-size: 12px;
+            padding: 4px 10px;
+            border-radius: 5px;
+            border: 1px solid rgba(0, 0, 0, 0.18);
+            background: none;
+            color: inherit;
+            cursor: pointer;
+            transition: background 0.12s ease;
+        }
+        #update-banner-actions #update-onexit-btn:hover { background: rgba(0, 0, 0, 0.06); }
         /* Not a button in appearance: the rarely-wanted permanent opt-out. */
         #update-banner-actions #update-optout-btn {
             font: inherit;
@@ -1866,6 +1885,8 @@
         }
         body.dark-mode #update-banner-actions #update-install-btn { background: #316dca; }
         body.dark-mode #update-banner-actions #update-install-btn:hover { background: #3d7ee0; }
+        body.dark-mode #update-banner-actions #update-onexit-btn { border-color: #30363d; }
+        body.dark-mode #update-banner-actions #update-onexit-btn:hover { background: #21262d; }
         body.dark-mode #update-later-btn:hover { background: #21262d; }
         body.capturing #update-banner { display: none !important; }
 
@@ -3308,6 +3329,7 @@
             // the escaped output is character-identical.
             document.addEventListener('DOMContentLoaded', function () {
                 const install = document.getElementById('update-install-btn');
+                const onexit = document.getElementById('update-onexit-btn');
                 const later = document.getElementById('update-later-btn');
                 const optout = document.getElementById('update-optout-btn');
                 if (install) install.addEventListener('click', function () {
@@ -3317,6 +3339,16 @@
                     }
                     install.disabled = true;
                     install.textContent = '更新中…';
+                });
+                if (onexit) onexit.addEventListener('click', function () {
+                    // Reservation only: the host installs when the user closes the
+                    // app, and does NOT relaunch (they quit on purpose).
+                    if (window.ipc && typeof window.ipc.postMessage === 'function') {
+                        window.ipc.postMessage('update:onexit');
+                    }
+                    hideBanner();
+                    showToast('終了時に更新します');
+                    __dbgLog('update deferred to exit');
                 });
                 if (later) later.addEventListener('click', hideBanner);
                 if (optout) optout.addEventListener('click', function () {
@@ -11041,7 +11073,8 @@ ${previewClone.outerHTML}
         <button type="button" id="update-later-btn" aria-label="閉じる" title="閉じる">&times;</button>
         <span id="update-banner-msg"></span>
         <span id="update-banner-actions">
-            <button type="button" id="update-install-btn">更新</button>
+            <button type="button" id="update-install-btn">今すぐ更新</button>
+            <button type="button" id="update-onexit-btn">終了後に更新</button>
             <button type="button" id="update-optout-btn">今後表示しない</button>
         </span>
     </div>
