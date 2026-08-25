@@ -12,6 +12,20 @@
 #define ProgID         "MdPreviewer.md"
 #define ProgIDmdx      "MdPreviewer.mdx"
 
+; ---- TikZJax (optional, downloaded at install time) ----------------------
+; @rod2ik/tikzjax is GPL-3.0-or-later and bundles LPPL-licensed TeX packages
+; plus compiled WASM binaries. It is deliberately NOT shipped inside this
+; installer (see the Excludes on the assets\* entry below); instead the
+; "tikz" task fetches it straight from the upstream npm registry, so this
+; installer never conveys the GPL'd binaries itself.
+; KEEP TikzjaxVersion IN SYNC WITH $TikzjaxVersion IN tools\fetch-libs.ps1.
+; To bump: change the version, then re-run
+;   curl -sL <TikzjaxUrl> | sha256sum
+; and paste the digest into TikzjaxSha256.
+#define TikzjaxVersion "1.5.0"
+#define TikzjaxUrl     "https://registry.npmjs.org/@rod2ik/tikzjax/-/tikzjax-" + TikzjaxVersion + ".tgz"
+#define TikzjaxSha256  "45d12756acaad80bfe8231cad4667e36cb3e908aa906cfce63496a70f074ab38"
+
 [Setup]
 ; Keep this AppId stable across versions so upgrades replace the old install.
 AppId={{892BC24C-95B0-43BB-8480-087C91AC6316}
@@ -41,7 +55,10 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Files]
 Source: "..\target\release\{#AppExeName}"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\assets\*"; DestDir: "{app}\assets"; Flags: ignoreversion recursesubdirs createallsubdirs
+; NOTE: libs\tikzjax\* is excluded on purpose - it is GPL/LPPL and is fetched
+; from upstream at install time by the "tikz" task instead (see [Code]).
+; The exclusion also means an upgrade leaves an already-downloaded copy alone.
+Source: "..\assets\*"; DestDir: "{app}\assets"; Excludes: "libs\tikzjax\*"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\samples\*"; DestDir: "{app}\samples"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\README.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\HISTORY.md"; DestDir: "{app}"; Flags: ignoreversion
@@ -61,6 +78,7 @@ Name: "desktopicon"; Description: "デスクトップにショートカットを
 Name: "assoc_md";    Description: ".md / .markdown / .mdx を {#AppName} に関連付ける / Associate .md, .markdown & .mdx files"
 Name: "ctx_folder";  Description: "フォルダ右クリックメニューに追加 / Add to folder context menu"
 Name: "ctx_file";    Description: ".md / .mdx ファイル右クリックメニューに追加 / Add to .md & .mdx file context menu"
+Name: "tikz";        Description: "TikZ・可換図式コンポーネントをダウンロード (約6MB, 要インターネット接続) / Download TikZ component (~6MB, needs internet)"
 
 [Registry]
 ; ---- ProgID + DefaultIcon + open command ----
@@ -108,3 +126,204 @@ Filename: "{app}\{#AppExeName}"; Parameters: """{app}\HISTORY.md"""; Description
 Filename: "{app}\{#AppExeName}"; Parameters: """{app}\README.md"""; Description: "使い方 (README) を表示 / Show the user guide (README)"; Flags: nowait postinstall skipifsilent unchecked
 Filename: "{win}\explorer.exe"; Parameters: """{app}"""; Description: "インストール先フォルダを開く / Open install folder"; Flags: nowait postinstall skipifsilent unchecked shellexec
 Filename: "{app}\assets\THIRD_PARTY_LICENSES.txt"; Description: "サードパーティライセンスを表示 / View third-party licenses"; Flags: nowait postinstall skipifsilent unchecked shellexec
+
+[UninstallDelete]
+; The TikZ component is downloaded after install, so it is not recorded in the
+; uninstall log and would otherwise be left behind.
+Type: filesandordirs; Name: "{app}\assets\libs\tikzjax"
+
+[Code]
+// TikZ component acquisition.
+//
+// This mirrors the tikzjax block of tools\fetch-libs.ps1 (which does the same
+// job for a dev checkout): fetch the upstream npm tarball, verify its SHA-256,
+// and extract package/dist into the install's assets\libs\tikzjax\dist.
+//
+// Failure is always SOFT. An offline machine still gets a fully working
+// previewer, minus the tikz / tikzcd fenced blocks - assets\index.html detects
+// the missing engine and renders an actionable message in their place.
+//
+// NOTE: comments here are // rather than { } on purpose. Pascal brace comments
+// do not nest, so an {app} / {tmp} constant named inside one ends it early.
+
+const
+  TikzMarkerRel = 'assets\libs\tikzjax\dist\tikzjax.js';
+  TikzDestRel   = 'assets\libs\tikzjax';
+  TikzTgzName   = 'rod2ik-tikzjax.tgz';
+
+function TikzAlreadyInstalled(): Boolean;
+begin
+  Result := FileExists(ExpandConstant('{app}\' + TikzMarkerRel));
+end;
+
+function IsHttpUrl(const S: String): Boolean;
+var
+  L: String;
+begin
+  L := Lowercase(S);
+  Result := (Pos('http://', L) = 1) or (Pos('https://', L) = 1);
+end;
+
+// Resolve where to fetch the tarball from. Priority, highest first:
+//   1. /TIKZSRC=<url-or-path>   (plus optional /TIKZSHA256=<digest>)
+//   2. assets\tikz-source.ini in the install dir - the same assets\* overlay
+//      mechanism that nwc-addon already uses to drop in update.json. INI rather
+//      than JSON because Inno has GetIniString built in and Unicode-safe, and
+//      has no JSON parser at all; update.json stays JSON because its consumer
+//      is Rust/serde.
+//   3. the compiled-in upstream npm registry URL.
+procedure ResolveTikzSource(var Url, Sha: String);
+var
+  IniPath, V: String;
+begin
+  Url := '{#TikzjaxUrl}';
+  Sha := '{#TikzjaxSha256}';
+
+  IniPath := ExpandConstant('{app}\assets\tikz-source.ini');
+  if FileExists(IniPath) then begin
+    V := GetIniString('TikZ', 'Url', '', IniPath);
+    if V <> '' then begin
+      Url := V;
+      Sha := GetIniString('TikZ', 'Sha256', '', IniPath);
+      Log('tikz: source overridden by ' + IniPath);
+    end;
+  end;
+
+  V := ExpandConstant('{param:TIKZSRC|}');
+  if V <> '' then begin
+    Url := V;
+    Sha := ExpandConstant('{param:TIKZSHA256|}');
+    Log('tikz: source overridden by /TIKZSRC');
+  end;
+end;
+
+function OnTikzDownloadProgress(const Url, FileName: String; const Progress, ProgressMax: Int64): Boolean;
+begin
+  if (ProgressMax > 0) and not WizardSilent() then
+    WizardForm.StatusLabel.Caption :=
+      Format('TikZ コンポーネントを取得しています... %d%%', [(Progress * 100) div ProgressMax]);
+  Result := True;
+end;
+
+function AcquireTikz(const Url, Sha: String; var Tgz: String): Boolean;
+var
+  Actual: String;
+begin
+  Result := False;
+  Tgz := ExpandConstant('{tmp}\' + TikzTgzName);
+  try
+    if IsHttpUrl(Url) then begin
+      // Raises on failure, and verifies the digest itself when Sha is set.
+      DownloadTemporaryFile(Url, TikzTgzName, Sha, @OnTikzDownloadProgress);
+    end else begin
+      if not FileExists(Url) then begin
+        Log('tikz: mirror file not found: ' + Url);
+        Exit;
+      end;
+      if not CopyFile(Url, Tgz, False) then begin
+        Log('tikz: could not copy from mirror: ' + Url);
+        Exit;
+      end;
+      if Sha <> '' then begin
+        Actual := GetSHA256OfFile(Tgz);
+        if CompareText(Actual, Sha) <> 0 then begin
+          Log('tikz: SHA-256 mismatch - expected ' + Sha + ', got ' + Actual);
+          Exit;
+        end;
+      end;
+    end;
+    Result := True;
+  except
+    Log('tikz: acquire failed: ' + GetExceptionMessage);
+  end;
+end;
+
+function ExtractTikz(const Tgz: String): Boolean;
+var
+  Tar, Dest, Params: String;
+  ResultCode: Integer;
+begin
+  Result := False;
+
+  // bsdtar ships with Windows 10 1803 and later.
+  Tar := ExpandConstant('{sys}\tar.exe');
+  if not FileExists(Tar) then begin
+    Log('tikz: ' + Tar + ' not found (Windows 10 1803 or later required)');
+    Exit;
+  end;
+
+  Dest := ExpandConstant('{app}\' + TikzDestRel);
+  if not ForceDirectories(Dest) then begin
+    Log('tikz: could not create ' + Dest);
+    Exit;
+  end;
+
+  // --strip-components=1 rewrites package/dist/... to dist/..., landing the
+  // tree exactly where fetch-libs.ps1 puts it with no extra move step. Naming
+  // the member keeps package.json / README.md out of the install.
+  Params := '-xzf "' + Tgz + '" -C "' + Dest + '" --strip-components=1 package/dist';
+  if not Exec(Tar, Params, '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then begin
+    Log('tikz: could not run ' + Tar);
+    Exit;
+  end;
+  if ResultCode <> 0 then begin
+    Log('tikz: tar exited with code ' + IntToStr(ResultCode));
+    Exit;
+  end;
+
+  // Also extract the tarball's own LICENSE (GPL-3.0) next to dist\.
+  // The GPL asks that recipients be shown the terms, and package/LICENSE sits
+  // outside package/dist so the extraction above cannot pick it up. Best
+  // effort only: THIRD_PARTY_LICENSES.txt carries the same text regardless.
+  Params := '-xzf "' + Tgz + '" -C "' + Dest + '" --strip-components=1 package/LICENSE';
+  if not Exec(Tar, Params, '', SW_HIDE, ewWaitUntilTerminated, ResultCode) or (ResultCode <> 0) then
+    Log('tikz: could not extract LICENSE (non-fatal)');
+
+  // Trust the marker file, not tar's exit code alone.
+  Result := TikzAlreadyInstalled();
+end;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+var
+  Url, Sha, Tgz: String;
+  Ok: Boolean;
+begin
+  if CurStep <> ssPostInstall then
+    Exit;
+
+  if not WizardIsTaskSelected('tikz') then begin
+    Log('tikz: task not selected, skipping');
+    Exit;
+  end;
+
+  // An upgrade over an existing install keeps whatever is already there: the
+  // Excludes on the assets\* entry means [Files] never touched it.
+  if TikzAlreadyInstalled() then begin
+    Log('tikz: already present, skipping download');
+    Exit;
+  end;
+
+  ResolveTikzSource(Url, Sha);
+  Log('tikz: acquiring from ' + Url);
+  if not WizardSilent() then
+    WizardForm.StatusLabel.Caption := 'TikZ コンポーネントを取得しています...';
+
+  // Spelled out rather than "A and B" so the evaluation order is unambiguous.
+  Ok := AcquireTikz(Url, Sha, Tgz);
+  if Ok then
+    Ok := ExtractTikz(Tgz);
+
+  if Ok then
+    Log('tikz: installed into ' + ExpandConstant('{app}\' + TikzDestRel))
+  else
+    // SuppressibleMsgBox returns the default answer without showing anything
+    // in silent mode, which is exactly what the auto-updater path needs.
+    SuppressibleMsgBox(
+      'TikZ・可換図式コンポーネントを取得できませんでした。' + #13#10 +
+      'TikZ 以外の機能はすべて正常に動作します。' + #13#10#13#10 +
+      'あとからインストーラーを再実行すると再試行できます。',
+      mbInformation, MB_OK, IDOK);
+
+  if Tgz <> '' then
+    DeleteFile(Tgz);
+end;
