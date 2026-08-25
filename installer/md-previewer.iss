@@ -43,10 +43,13 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Source: "..\target\release\{#AppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\assets\*"; DestDir: "{app}\assets"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\samples\*"; DestDir: "{app}\samples"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\README.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\HISTORY.md"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExeName}"; IconFilename: "{app}\{#AppExeName}"
+Name: "{group}\使い方 (README)"; Filename: "{app}\{#AppExeName}"; Parameters: """{app}\README.md"""; IconFilename: "{app}\{#AppExeName}"; Comment: "機能一覧・ショートカット・カスタマイズ方法 / Feature guide, shortcuts and customization"
 Name: "{group}\Sample Documents"; Filename: "{app}\samples"; IconFilename: "{app}\{#AppExeName}"; Comment: "機能デモ用 Markdown サンプル / Sample markdown files demonstrating features"
 Name: "{group}\更新履歴 (Release Notes)"; Filename: "{app}\{#AppExeName}"; Parameters: """{app}\HISTORY.md"""; IconFilename: "{app}\{#AppExeName}"; Comment: "バージョンごとの更新内容 / What's new in each version"
 Name: "{group}\Third-party Licenses"; Filename: "{app}\assets\THIRD_PARTY_LICENSES.txt"; Comment: "Open-source licenses for bundled libraries (marked / mermaid / KaTeX / highlight.js / Marp / CodeMirror, etc.)"
@@ -102,5 +105,6 @@ Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.mdx\shell\MdPrevie
 
 [Run]
 Filename: "{app}\{#AppExeName}"; Parameters: """{app}\HISTORY.md"""; Description: "{#AppName} を起動し更新内容を表示 / Launch {#AppName} (show what's new)"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\{#AppExeName}"; Parameters: """{app}\README.md"""; Description: "使い方 (README) を表示 / Show the user guide (README)"; Flags: nowait postinstall skipifsilent unchecked
 Filename: "{win}\explorer.exe"; Parameters: """{app}"""; Description: "インストール先フォルダを開く / Open install folder"; Flags: nowait postinstall skipifsilent unchecked shellexec
 Filename: "{app}\assets\THIRD_PARTY_LICENSES.txt"; Description: "サードパーティライセンスを表示 / View third-party licenses"; Flags: nowait postinstall skipifsilent unchecked shellexec
