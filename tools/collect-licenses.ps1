@@ -103,16 +103,24 @@ $direct = @(
     Upstream='https://github.com/paulrosen/abcjs';
     Path='assets/libs/abcjs/abcjs-basic-min.js';
     LicenseFile='tools/license-texts/abcjs.LICENSE' }
-  # TikZJax bundles a WebAssembly build of TeX/pgf/TikZ (GPL/LPPL) for the
-  # tikzcd / tikz fenced blocks — the project's only copyleft dependency.
-  [pscustomobject]@{ Name='@rod2ik/tikzjax (WASM TeX + TikZ/pgf/tikz-cd)'; Version='1.5.0'; Spdx='GPL-3.0 / LPPL-1.3c';
+  # TikZJax is a WebAssembly build of TeX/pgf/TikZ for the tikzcd / tikz fenced
+  # blocks. It is the project's only copyleft dependency and the only one the
+  # installer does NOT ship: distributing a compiled GPL binary would oblige us
+  # to offer its Corresponding Source, so an opt-in installer task downloads it
+  # straight from the npm registry instead (installer/md-previewer.iss). The
+  # entry is kept here because the component may be present on disk, and a user
+  # who has it is entitled to these terms.
+  [pscustomobject]@{ Name='@rod2ik/tikzjax (WASM TeX + TikZ/pgf/tikz-cd)'; Version='1.5.0'; Spdx='GPL-3.0-or-later';
     Upstream='https://www.npmjs.com/package/@rod2ik/tikzjax';
     Path='assets/libs/tikzjax/';
+    Note='OPTIONAL COMPONENT - not included in the installer. Downloaded from the upstream npm registry at install time, and only when you opt in. The bundle also carries TeX/LaTeX packages under the LaTeX Project Public License 1.3c (https://www.latex-project.org/lppl/lppl-1-3c/); when present, its own LICENSE file sits next to dist/.';
     LicenseFile='tools/license-texts/tikzjax.LICENSE' }
 )
 
 foreach ($d in $direct) {
   $title = "$($d.Name) $($d.Version)`nSPDX-License-Identifier: $($d.Spdx)`nUpstream: $($d.Upstream)`nBundled at: $($d.Path)"
+  # Optional extra line, used by entries that are not actually bundled.
+  if ($d.PSObject.Properties['Note'] -and $d.Note) { $title += "`nNote: $($d.Note)" }
   $licPath = Join-Path $RepoRoot $d.LicenseFile
   if (Test-Path $licPath) {
     $body = Get-Content -LiteralPath $licPath -Raw
