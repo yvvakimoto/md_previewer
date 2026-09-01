@@ -1,0 +1,61 @@
+<!-- Source for assets/og.png. Rendered at 1200x630 by shoot-docs.py so the
+     social card cannot drift from the page's own type and palette. -->
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700;12..96,800&family=Zen+Kaku+Gothic+New:wght@500;700&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    width: 1200px; height: 630px; overflow: hidden; position: relative;
+    background: #faf6ee; color: #16130f;
+    font-family: "Zen Kaku Gothic New", sans-serif;
+    display: flex; flex-direction: column; justify-content: center;
+    padding: 0 72px;
+  }
+  .ink {
+    position: absolute; border-radius: 50%; mix-blend-mode: multiply; opacity: .5;
+    background-image: radial-gradient(var(--c) 1.6px, transparent 1.7px);
+    background-size: 8px 8px;
+  }
+  .a { --c: #ff3d9a; width: 460px; height: 460px; top: -150px; left: -140px; }
+  .b { --c: #00b3d1; width: 380px; height: 380px; bottom: -130px; right: -80px; }
+  .eyebrow {
+    font-family: "Bricolage Grotesque", sans-serif; font-weight: 800;
+    font-size: 20px; letter-spacing: .22em; text-transform: uppercase;
+    color: #8a7f70; margin-bottom: 20px;
+  }
+  h1 {
+    font-family: "Bricolage Grotesque", sans-serif; font-weight: 800;
+    font-size: 108px; line-height: .95; letter-spacing: -.04em;
+    display: flex; align-items: center; gap: 24px; flex-wrap: wrap;
+  }
+  .stamp {
+    font-size: 26px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase;
+    padding: 10px 20px; border: 5px solid #ff3d9a; border-radius: 6px;
+    color: #ff3d9a; transform: rotate(-3.5deg);
+  }
+  p.lead { font-size: 30px; line-height: 1.7; margin-top: 30px; max-width: 22em; color: #4a4239; }
+  ul { list-style: none; display: flex; gap: 12px; margin-top: 34px; padding: 0; }
+  li {
+    font-size: 20px; font-weight: 700; line-height: 1;
+    padding: 12px 18px; border: 3px solid; border-radius: 999px; background: #fffdf8;
+  }
+  li:nth-child(1) { border-color: #00b3d1; color: #00b3d1; }
+  li:nth-child(2) { border-color: #ff6a13; color: #ff6a13; }
+  li:nth-child(3) { border-color: #00a55c; color: #00a55c; }
+  li:nth-child(4) { border-color: #3554f0; color: #3554f0; }
+</style>
+</head>
+<body>
+  <div class="ink a"></div>
+  <div class="ink b"></div>
+  <p class="eyebrow">Standalone Markdown Previewer</p>
+  <h1>MD Previewer <span class="stamp">for Windows</span></h1>
+  <p class="lead">.md をダブルクリックするだけ。図・数式・Marp スライド・縦書きの文庫レイアウトを、完全オフラインで。</p>
+  <ul><li>Mermaid</li><li>KaTeX</li><li>Marp</li><li>縦書き・文庫組み</li></ul>
+</body>
+</html>
