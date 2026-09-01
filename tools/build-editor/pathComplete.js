@@ -1,4 +1,5 @@
-import { startCompletion } from '@codemirror/autocomplete';
+import { startCompletion } from '@codemirror/autocomplete';
+import { t } from './i18n.js';
 
 // Local-path completion for markdown link / image targets:
 //   [label](|)   →  sibling files & folders
@@ -151,7 +152,7 @@ export function pathCompletionSource(getFile) {
         label: '../',
         displayLabel: '../',
         type: 'folder',
-        detail: '親フォルダへ',
+        detail: t('ed.complete.parentDir'),
         boost: 2,
         apply: (view, _completion, from, to) => {
           view.dispatch({

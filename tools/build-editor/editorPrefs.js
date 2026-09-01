@@ -36,25 +36,29 @@ export function stepFontSize(cur, delta) {
 // Monospace-ish stacks that all render Japanese acceptably. Only the `key` is
 // persisted, so entry.js's existing enum validator (readPref) can vet it and no
 // arbitrary CSS string can ever reach a style attribute.
+//
+// `labelKey` is an i18n key resolved at render time (the label must follow a
+// language switch). ⚠️ `stack` is NOT copy — "BIZ UDゴシック" there is a real
+// font name and translating it makes font selection fail silently.
 export const FONT_FAMILIES = [
   {
     key: 'cascadia',
-    label: 'Cascadia Code（既定）',
+    labelKey: 'ed.font.cascadia',
     stack: '"Cascadia Code", "Source Han Code JP", "Yu Gothic UI", Consolas, monospace',
   },
   {
     key: 'consolas',
-    label: 'Consolas',
+    labelKey: 'ed.font.consolas',
     stack: 'Consolas, "Yu Gothic UI", monospace',
   },
   {
     key: 'bizud',
-    label: 'BIZ UDゴシック',
+    labelKey: 'ed.font.bizud',
     stack: '"BIZ UDGothic", "BIZ UDゴシック", "Yu Gothic UI", monospace',
   },
   {
     key: 'yugothic',
-    label: '游ゴシック',
+    labelKey: 'ed.font.yugothic',
     stack: '"Yu Gothic UI", "Yu Gothic", "Meiryo", monospace',
   },
 ];

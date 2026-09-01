@@ -14,7 +14,8 @@
 // Value candidates are offered for the enum-like keys (see VALUE_OPTIONS);
 // free-text keys (header/footer/title/style/color/class) yield no value menu.
 
-import { startCompletion } from '@codemirror/autocomplete';
+import { startCompletion } from '@codemirror/autocomplete';
+import { t } from './i18n.js';
 
 // marp-core built-in themes; user themes (assets/marp/*.css @theme names) are
 // injected by the Rust host as window.__marpUserThemes at editor spawn time.
@@ -26,26 +27,26 @@ const CLASS_VALUES = ['title', 'section', 'lead', 'invert', 'split', 'split-2', 
 
 // Keys offered in every document.
 const COMMON_KEYS = [
-  { name: 'marp', detail: 'Marpスライドモード (true)' },
-  { name: 'confidential', detail: '機密透かし (true)' },
-  { name: 'watermark', detail: '背景透かし文字 (任意文字列, 例: DRAFT)' },
-  { name: 'title', detail: 'タイトル (メタ情報・任意)' },
+  { name: 'marp', detail: t('ed.complete.fm.marp') },
+  { name: 'confidential', detail: t('ed.complete.fm.confidential') },
+  { name: 'watermark', detail: t('ed.complete.fm.watermark') },
+  { name: 'title', detail: t('ed.complete.fm.title') },
 ];
 
 // Keys offered only once `marp: true` is present.
 const MARP_KEYS = [
-  { name: 'theme', detail: 'スライドテーマ' },
-  { name: 'paginate', detail: 'ページ番号 (true/false)' },
-  { name: 'header', detail: 'ヘッダー (全スライド)' },
-  { name: 'footer', detail: 'フッター (全スライド)' },
-  { name: 'size', detail: 'スライド比率 (16:9 / 4:3)' },
-  { name: 'class', detail: 'スライドクラス' },
-  { name: '_class', detail: 'スライドクラス (このスライドのみ)' },
-  { name: 'backgroundColor', detail: '背景色 (CSS color)' },
-  { name: 'backgroundImage', detail: '背景画像 (url(...))' },
-  { name: 'color', detail: '文字色 (CSS color)' },
-  { name: 'style', detail: '追加CSS' },
-  { name: 'math', detail: '数式エンジン (katex/mathjax)' },
+  { name: 'theme', detail: t('ed.complete.fm.theme') },
+  { name: 'paginate', detail: t('ed.complete.fm.paginate') },
+  { name: 'header', detail: t('ed.complete.fm.header') },
+  { name: 'footer', detail: t('ed.complete.fm.footer') },
+  { name: 'size', detail: t('ed.complete.fm.size') },
+  { name: 'class', detail: t('ed.complete.fm.class') },
+  { name: '_class', detail: t('ed.complete.fm.classOne') },
+  { name: 'backgroundColor', detail: t('ed.complete.fm.bgColor') },
+  { name: 'backgroundImage', detail: t('ed.complete.fm.bgImage') },
+  { name: 'color', detail: t('ed.complete.fm.color') },
+  { name: 'style', detail: t('ed.complete.fm.style') },
+  { name: 'math', detail: t('ed.complete.fm.math') },
 ];
 
 // Keys whose value list is worth re-triggering completion for after the `: `.

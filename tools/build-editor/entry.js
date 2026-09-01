@@ -38,6 +38,7 @@ import { installJpWordMotion } from './jpWordMotion.js';
 import {
   KEY_LAYOUTS, DEFAULT_KEY_LAYOUT, keyLayoutKeys, applyKeyLayout,
 } from './keyLayout.js';
+import { t, applyI18n, initLang, setLang, readLangPref, getLang } from './i18n.js';
 import { numberedListIndentKeymap } from './numberedListIndent.js';
 import { installClipboardSync } from './clipboardSync.js';
 import {
@@ -169,7 +170,7 @@ export function create(root, opts = {}) {
   const statusInfo = document.createElement('span');
   statusInfo.className = 'status-info';
   statusInfo.style.cursor = 'pointer';
-  statusInfo.title = 'Click for character count';
+  statusInfo.dataset.i18nAttr = 'title:ed.status.charCountHint';
   const statusCtrls = document.createElement('span');
   statusCtrls.className = 'status-ctrls';
   // The bar carries ACTIONS only. Every preference (font size / family, theme,
@@ -180,34 +181,34 @@ export function create(root, opts = {}) {
   const btnSettings = document.createElement('button');
   btnSettings.className = 'status-btn';
   btnSettings.type = 'button';
-  btnSettings.title = '表示・編集の設定（文字サイズ / フォント / テーマ / Vim / セルモード …）  ·  :pref';
-  btnSettings.textContent = '⚙ 設定';
+  btnSettings.dataset.i18n = 'ed.status.settings';
+  btnSettings.dataset.i18nAttr = 'title:ed.status.settingsTitle';
   // Markdown table insert. An action, not a preference, so it stays on the bar.
   // Unlike the Marp trio it is visible in every document: inserting a table is
   // meaningful anywhere.
   const btnTable = document.createElement('button');
   btnTable.className = 'status-btn';
   btnTable.type = 'button';
-  btnTable.title = 'Insert a Markdown table (rows × columns)  ·  :table [R C] / gti / Ctrl+Alt+T';
-  btnTable.textContent = '⊞ Table';
+  btnTable.dataset.i18n = 'ed.status.table';
+  btnTable.dataset.i18nAttr = 'title:ed.status.tableTitle';
   // Marp slide helpers — only shown for Marp documents (see updateMarpButtons).
   const btnSlideAdd = document.createElement('button');
   btnSlideAdd.className = 'status-btn';
   btnSlideAdd.type = 'button';
-  btnSlideAdd.title = 'Insert a new slide (pick a class)  ·  :slide / gsi / Ctrl+Alt+N';
-  btnSlideAdd.textContent = '+ Slide';
+  btnSlideAdd.dataset.i18n = 'ed.status.slideAdd';
+  btnSlideAdd.dataset.i18nAttr = 'title:ed.status.slideAddTitle';
   btnSlideAdd.style.display = 'none';
   const btnSlideCopy = document.createElement('button');
   btnSlideCopy.className = 'status-btn';
   btnSlideCopy.type = 'button';
-  btnSlideCopy.title = 'Copy the current slide  ·  :slideyank / gsy / Ctrl+Alt+C';
-  btnSlideCopy.textContent = '⧉ Slide';
+  btnSlideCopy.dataset.i18n = 'ed.status.slideCopy';
+  btnSlideCopy.dataset.i18nAttr = 'title:ed.status.slideCopyTitle';
   btnSlideCopy.style.display = 'none';
   const btnSlideCut = document.createElement('button');
   btnSlideCut.className = 'status-btn';
   btnSlideCut.type = 'button';
-  btnSlideCut.title = 'Cut the current slide  ·  :slidecut / gsd / Ctrl+Alt+X';
-  btnSlideCut.textContent = '✂ Slide';
+  btnSlideCut.dataset.i18n = 'ed.status.slideCut';
+  btnSlideCut.dataset.i18nAttr = 'title:ed.status.slideCutTitle';
   btnSlideCut.style.display = 'none';
   statusCtrls.append(btnSettings, btnTable,
                      btnSlideAdd, btnSlideCopy, btnSlideCut);
@@ -235,10 +236,10 @@ export function create(root, opts = {}) {
   modal.style.display = 'none';
   modal.innerHTML = `
     <div class="cc-panel" role="dialog" aria-modal="true">
-      <button class="cc-close" type="button" aria-label="Close">&times;</button>
-      <h2>Character Count</h2>
+      <button class="cc-close" type="button" data-i18n-attr="aria-label:common.close">&times;</button>
+      <h2 data-i18n="ed.cc.title"></h2>
       <table class="cc-table"><tbody></tbody></table>
-      <div class="cc-hint">Click the status bar to reopen · <kbd>Esc</kbd> to close</div>
+      <div class="cc-hint" data-i18n-html="ed.cc.hint"></div>
     </div>`;
   document.body.appendChild(modal);
   modal.querySelector('.cc-close').addEventListener('click', () => closeModal());
@@ -250,18 +251,18 @@ export function create(root, opts = {}) {
     const selText = sel.empty ? '' : view.state.sliceDoc(sel.from, sel.to);
     const stats = charCount(text);
     const rows = [
-      ['Total characters (incl. whitespace)', stats.charsAll],
-      ['Total characters (excl. whitespace)', stats.charsNoSpace],
-      ['Body characters (excl. YAML/code/math, no whitespace)', stats.bodyChars],
-      ['Words (whitespace-separated)', stats.words],
-      ['Lines', stats.lines],
-      ['Paragraphs', stats.paragraphs],
+      [t('ed.cc.charsAll'), stats.charsAll],
+      [t('ed.cc.charsNoSpace'), stats.charsNoSpace],
+      [t('ed.cc.bodyChars'), stats.bodyChars],
+      [t('ed.cc.words'), stats.words],
+      [t('ed.cc.lines'), stats.lines],
+      [t('ed.cc.paragraphs'), stats.paragraphs],
     ];
     if (selText) {
       const s = charCount(selText);
       rows.push(['—', '']);
-      rows.push(['Selection: characters (excl. whitespace)', s.charsNoSpace]);
-      rows.push(['Selection: words', s.words]);
+      rows.push([t('ed.cc.selChars'), s.charsNoSpace]);
+      rows.push([t('ed.cc.selWords'), s.words]);
     }
     const tbody = modal.querySelector('tbody');
     tbody.innerHTML = rows.map(([k, v]) =>
@@ -279,10 +280,10 @@ export function create(root, opts = {}) {
   slideModal.style.display = 'none';
   slideModal.innerHTML = `
     <div class="cc-panel" role="dialog" aria-modal="true">
-      <button class="cc-close" type="button" aria-label="Close">&times;</button>
-      <h2>Insert Slide</h2>
+      <button class="cc-close" type="button" data-i18n-attr="aria-label:common.close">&times;</button>
+      <h2 data-i18n="ed.slide.title"></h2>
       <div class="slide-class-grid"></div>
-      <div class="cc-hint">Pick a class · <kbd>Esc</kbd> to cancel</div>
+      <div class="cc-hint" data-i18n-html="ed.slide.hint"></div>
     </div>`;
   document.body.appendChild(slideModal);
   slideModal.querySelector('.cc-close').addEventListener('click', () => closeSlideModal());
@@ -293,7 +294,7 @@ export function create(root, opts = {}) {
       const b = document.createElement('button');
       b.className = 'slide-class-btn';
       b.type = 'button';
-      b.textContent = name === 'none' ? '(no class)' : name;
+      if (name === 'none') b.dataset.i18n = 'ed.slide.noClass'; else b.textContent = name;
       b.addEventListener('click', () => {
         closeSlideModal();
         insertSlideAfter(view, name === 'none' ? '' : name);
@@ -320,18 +321,18 @@ export function create(root, opts = {}) {
   tableModal.style.display = 'none';
   tableModal.innerHTML = `
     <div class="cc-panel" role="dialog" aria-modal="true">
-      <button class="cc-close" type="button" aria-label="Close">&times;</button>
-      <h2>Insert Table</h2>
+      <button class="cc-close" type="button" data-i18n-attr="aria-label:common.close">&times;</button>
+      <h2 data-i18n="ed.table.title"></h2>
       <div class="table-size-form">
-        <label>Rows (incl. header)<input type="number" class="tbl-rows" min="1" max="50" value="3"></label>
-        <label>Columns<input type="number" class="tbl-cols" min="1" max="20" value="3"></label>
-        <label>Align<select class="tbl-align">
-          <option value="">default</option>
+        <label><span data-i18n="ed.table.rows"></span><input type="number" class="tbl-rows" min="1" max="50" value="3"></label>
+        <label><span data-i18n="ed.table.cols"></span><input type="number" class="tbl-cols" min="1" max="20" value="3"></label>
+        <label><span data-i18n="ed.table.align"></span><select class="tbl-align">
+          <option value="" data-i18n="ed.table.alignDefault"></option>
           ${TABLE_ALIGNS.map((a) => `<option value="${a}">${a}</option>`).join('')}
         </select></label>
       </div>
-      <div class="cc-actions"><button class="cc-btn tbl-insert" type="button">Insert</button></div>
-      <div class="cc-hint"><kbd>Enter</kbd> to insert · <kbd>Esc</kbd> to cancel · <kbd>:table 3 4</kbd> for any size</div>
+      <div class="cc-actions"><button class="cc-btn tbl-insert" type="button" data-i18n="ed.table.insert"></button></div>
+      <div class="cc-hint" data-i18n-html="ed.table.hint"></div>
     </div>`;
   document.body.appendChild(tableModal);
   const tblRows = tableModal.querySelector('.tbl-rows');
@@ -373,13 +374,13 @@ export function create(root, opts = {}) {
   cellHelpModal.style.display = 'none';
   cellHelpModal.innerHTML = `
     <div class="cc-panel" role="dialog" aria-modal="true">
-      <button class="cc-close" type="button" aria-label="Close">&times;</button>
-      <h2>セルモード キー一覧</h2>
+      <button class="cc-close" type="button" data-i18n-attr="aria-label:common.close">&times;</button>
+      <h2 data-i18n="ed.cells.title"></h2>
       <div class="cell-help-grid">
-        ${CELL_HELP.map(([k, d]) =>
-          `<div class="cell-help-key">${k}</div><div class="cell-help-desc">${d}</div>`).join('')}
+        ${CELL_HELP.map(([k, key]) =>
+          `<div class="cell-help-key">${k}</div><div class="cell-help-desc" data-i18n="${key}"></div>`).join('')}
       </div>
-      <div class="cc-hint"><kbd>Esc</kbd> で閉じる · セル区切りは <kbd>---</kbd> 行</div>
+      <div class="cc-hint" data-i18n-html="ed.cells.hint"></div>
     </div>`;
   document.body.appendChild(cellHelpModal);
   cellHelpModal.querySelector('.cc-close').addEventListener('click', () => closeCellHelp());
@@ -407,38 +408,55 @@ export function create(root, opts = {}) {
   const settingsModal = document.createElement('div');
   settingsModal.className = 'cc-modal';
   settingsModal.style.display = 'none';
+  // data-i18n on each <option>, not a resolved label: this innerHTML is assigned
+  // ONCE at boot, so a resolved string would freeze the language. applyI18n()
+  // rewrites option text in place, which keeps every cached element reference
+  // (settingsCtl) valid — that is what makes live switching possible here
+  // without rebuilding any modal.
   const fontOptions = FONT_FAMILIES
-    .map((f) => `<option value="${f.key}">${f.label}</option>`).join('');
+    .map((f) => `<option value="${f.key}" data-i18n="${f.labelKey}"></option>`).join('');
   const keyLayoutOptions = keyLayoutKeys()
-    .map((k) => `<option value="${k}">${KEY_LAYOUTS[k].label}</option>`).join('');
+    .map((k) => `<option value="${k}" data-i18n="${KEY_LAYOUTS[k].labelKey}"></option>`).join('');
   settingsModal.innerHTML = `
-    <div class="cc-panel" role="dialog" aria-modal="true" aria-label="エディター設定">
-      <button class="cc-close" type="button" aria-label="閉じる">&times;</button>
-      <h2>⚙ 設定</h2>
+    <div class="cc-panel" role="dialog" aria-modal="true" data-modal="settings" data-i18n-attr="aria-label:ed.settings.aria">
+      <button class="cc-close" type="button" data-i18n-attr="aria-label:common.close">&times;</button>
+      <h2 data-i18n="ed.settings.title"></h2>
       <div class="settings-body">
         <div class="settings-section">
-          <h3>表示</h3>
+          <h3 data-i18n="ed.settings.secDisplay"></h3>
           <div class="settings-row">
-            <span class="settings-label">文字サイズ
-              <span class="settings-hint"><code>Ctrl</code>+<code>+</code> / <code>-</code> / <code>0</code> · <code>Ctrl</code>+ホイール · <code>:fontsize</code></span>
+            <span class="settings-label"><span data-i18n="ed.settings.lang"></span>
+              <span class="settings-hint" data-i18n="ed.settings.langHint"></span>
             </span>
             <span class="settings-control">
-              <button class="settings-step" type="button" data-act="font-minus" aria-label="小さく">−</button>
+              <span class="settings-seg" data-seg="uiLang">
+                <button type="button" data-val="auto" data-i18n="common.lang.auto"></button>
+                <button type="button" data-val="ja" data-i18n="common.lang.ja"></button>
+                <button type="button" data-val="en" data-i18n="common.lang.en"></button>
+              </span>
+            </span>
+          </div>
+          <div class="settings-row">
+            <span class="settings-label"><span data-i18n="ed.settings.fontSize"></span>
+              <span class="settings-hint" data-i18n-html="ed.settings.fontSizeHint"></span>
+            </span>
+            <span class="settings-control">
+              <button class="settings-step" type="button" data-act="font-minus" data-i18n-attr="aria-label:ed.settings.smaller">−</button>
               <span class="settings-value" data-el="font-value">15px</span>
-              <button class="settings-step" type="button" data-act="font-plus" aria-label="大きく">＋</button>
-              <button class="settings-reset" type="button" data-act="font-reset">戻す</button>
+              <button class="settings-step" type="button" data-act="font-plus" data-i18n-attr="aria-label:ed.settings.larger">＋</button>
+              <button class="settings-reset" type="button" data-act="font-reset" data-i18n="ed.settings.reset"></button>
             </span>
           </div>
           <div class="settings-row">
-            <span class="settings-label">フォント
-              <span class="settings-hint">編集領域のみ。ステータスバー等は固定サイズです</span>
+            <span class="settings-label"><span data-i18n="ed.settings.fontFamily"></span>
+              <span class="settings-hint" data-i18n="ed.settings.fontFamilyHint"></span>
             </span>
             <span class="settings-control">
-              <select data-el="font-family" aria-label="フォント">${fontOptions}</select>
+              <select data-el="font-family" data-i18n-attr="aria-label:ed.settings.fontFamily">${fontOptions}</select>
             </span>
           </div>
           <div class="settings-row">
-            <span class="settings-label">テーマ</span>
+            <span class="settings-label" data-i18n="ed.settings.theme"></span>
             <span class="settings-control">
               <span class="settings-seg" data-seg="theme">
                 <button type="button" data-val="light">Light</button>
@@ -447,64 +465,64 @@ export function create(root, opts = {}) {
             </span>
           </div>
           <div class="settings-row">
-            <span class="settings-label">行番号
+            <span class="settings-label"><span data-i18n="ed.settings.lineNo"></span>
               <span class="settings-hint"><code>:set nu</code> / <code>rnu</code> / <code>nonu</code></span>
             </span>
             <span class="settings-control">
               <span class="settings-seg" data-seg="lineNo">
-                <button type="button" data-val="absolute">絶対</button>
-                <button type="button" data-val="relative">相対</button>
-                <button type="button" data-val="off">なし</button>
+                <button type="button" data-val="absolute" data-i18n="ed.settings.lineNoAbs"></button>
+                <button type="button" data-val="relative" data-i18n="ed.settings.lineNoRel"></button>
+                <button type="button" data-val="off" data-i18n="ed.settings.lineNoOff"></button>
               </span>
             </span>
           </div>
         </div>
         <div class="settings-section">
-          <h3>編集</h3>
+          <h3 data-i18n="ed.settings.secEditing"></h3>
           <div class="settings-row">
-            <span class="settings-label">Vim キーバインド
-              <span class="settings-hint">OFF で CodeMirror 標準のキー操作</span>
+            <span class="settings-label"><span data-i18n="ed.settings.vim"></span>
+              <span class="settings-hint" data-i18n="ed.settings.vimHint"></span>
             </span>
-            <span class="settings-control"><input type="checkbox" data-el="vim" aria-label="Vim キーバインド"></span>
+            <span class="settings-control"><input type="checkbox" data-el="vim" data-i18n-attr="aria-label:ed.settings.vim"></span>
           </div>
           <div class="settings-row">
-            <span class="settings-label">キー配列（Vim コマンド）
-              <span class="settings-hint">Dvorak エミュレータ使用時に、コマンドモードのキーを QWERTY の位置で解釈 · <code>:set dvorak</code> / <code>:keylayout</code></span>
+            <span class="settings-label"><span data-i18n="ed.settings.keyLayout"></span>
+              <span class="settings-hint" data-i18n-html="ed.settings.keyLayoutHint"></span>
             </span>
             <span class="settings-control">
-              <select data-el="key-layout" aria-label="キー配列">${keyLayoutOptions}</select>
+              <select data-el="key-layout" data-i18n-attr="aria-label:ed.settings.keyLayout">${keyLayoutOptions}</select>
             </span>
           </div>
           <div class="settings-row">
-            <span class="settings-label">セルモード
-              <span class="settings-hint"><code>---</code> 区切りの Jupyter 風編集 · <code>:cellmode</code> / <code>gmc</code></span>
+            <span class="settings-label"><span data-i18n="ed.settings.cells"></span>
+              <span class="settings-hint" data-i18n-html="ed.settings.cellsHint"></span>
             </span>
-            <span class="settings-control"><input type="checkbox" data-el="cells" aria-label="セルモード"></span>
+            <span class="settings-control"><input type="checkbox" data-el="cells" data-i18n-attr="aria-label:ed.settings.cells"></span>
           </div>
           <div class="settings-row">
-            <span class="settings-label">表の列ハイライト
+            <span class="settings-label"><span data-i18n="ed.settings.tableCol"></span>
               <span class="settings-hint"><code>:tablecol</code> / <code>gtc</code> / <code>Ctrl</code>+<code>Alt</code>+<code>H</code></span>
             </span>
-            <span class="settings-control"><input type="checkbox" data-el="table-col" aria-label="表の列ハイライト"></span>
+            <span class="settings-control"><input type="checkbox" data-el="table-col" data-i18n-attr="aria-label:ed.settings.tableCol"></span>
           </div>
           <div class="settings-row">
-            <span class="settings-label">表の貼り付け変換
-              <span class="settings-hint">Excel / Word の表を GFM 表に · 一回だけ素で貼るのは <code>Ctrl</code>+<code>Shift</code>+<code>V</code></span>
+            <span class="settings-label"><span data-i18n="ed.settings.tablePaste"></span>
+              <span class="settings-hint" data-i18n-html="ed.settings.tablePasteHint"></span>
             </span>
-            <span class="settings-control"><input type="checkbox" data-el="table-paste" aria-label="表の貼り付け変換"></span>
+            <span class="settings-control"><input type="checkbox" data-el="table-paste" data-i18n-attr="aria-label:ed.settings.tablePaste"></span>
           </div>
         </div>
         <div class="settings-section">
-          <h3>連携</h3>
+          <h3 data-i18n="ed.settings.secIntegration"></h3>
           <div class="settings-row">
-            <span class="settings-label">ライブプレビュー
-              <span class="settings-hint">OFF なら保存時のみプレビュー更新（重い文書向け）</span>
+            <span class="settings-label"><span data-i18n="ed.settings.live"></span>
+              <span class="settings-hint" data-i18n="ed.settings.liveHint"></span>
             </span>
-            <span class="settings-control"><input type="checkbox" data-el="live" aria-label="ライブプレビュー"></span>
+            <span class="settings-control"><input type="checkbox" data-el="live" data-i18n-attr="aria-label:ed.settings.live"></span>
           </div>
         </div>
       </div>
-      <div class="cc-hint"><kbd>Esc</kbd> で閉じる</div>
+      <div class="cc-hint" data-i18n-html="ed.settings.hint"></div>
     </div>`;
   document.body.appendChild(settingsModal);
 
@@ -547,6 +565,8 @@ export function create(root, opts = {}) {
     settingsCtl.tablePaste.addEventListener('change', (e) => setTablePaste(e.target.checked));
     settingsCtl.keyLayout.addEventListener('change', (e) => setKeyLayout(e.target.value));
     settingsCtl.live.addEventListener('change', (e) => setLive(e.target.checked));
+    segButtons('uiLang').forEach((b) =>
+      b.addEventListener('click', () => setUiLangPref(b.dataset.val === 'auto' ? null : b.dataset.val)));
   }
   settingsModal.querySelector('.cc-close').addEventListener('click', () => closeSettings());
   settingsModal.addEventListener('click', (e) => {
@@ -762,6 +782,7 @@ export function create(root, opts = {}) {
     settingsCtl.tableCol.checked = tableColState;
     settingsCtl.tablePaste.checked = tablePasteState;
     settingsCtl.live.checked = liveState;
+    settingsCtl.setSeg('uiLang', readLangPref() || 'auto');
   }
   function setVim(on) {
     vimState = !!on;
@@ -829,10 +850,34 @@ export function create(root, opts = {}) {
     // `:set notablepaste` has no other feedback, but inside the modal the
     // checkbox is the feedback and the hint would render behind the backdrop.
     if (settingsModal.style.display !== 'flex') {
-      showHint('表の貼り付け変換: ' + (tablePasteState ? 'ON' : 'OFF'));
+      showHint(t('ed.hint.tablePaste', { state: t(tablePasteState ? 'common.on' : 'common.off') }));
     }
     refocusEditor();
   }
+  // UI language. Shared with the preview window through the unprefixed `uiLang`
+  // localStorage key (same origin, same user-data folder), so this setter also
+  // changes the preview's language and vice versa — see i18n.js's initLang().
+  // No Compartment: applyI18n only rewrites text and attributes, never
+  // structure, so every cached settingsCtl reference stays valid.
+  function setUiLangPref(pref) {
+    setLang(pref, true);
+    relabelChrome();
+    updateSettingsUI();
+    if (settingsModal.style.display !== 'flex') {
+      showHint(t('ed.hint.lang', { lang: t('common.lang.' + (readLangPref() || 'auto')) }));
+    }
+    refocusEditor();
+  }
+
+  // Re-translate every piece of chrome. The editor assigns each modal's and the
+  // status bar's innerHTML ONCE at boot, so without this a language change would
+  // leave all of it stale.
+  function relabelChrome() {
+    applyI18n(document);
+    updateMarpButtons();
+    updateStatus();
+  }
+
   // Keyboard-layout translation for Vim command mode. No Compartment and no
   // reconfigure: this drives Vim's global `langmap`, which lives on the Vim
   // singleton and renders nothing, so there is no state to go stale — the same
@@ -845,7 +890,7 @@ export function create(root, opts = {}) {
     try { applyKeyLayout(Vim, keyLayoutState); } catch (_) {}
     updateSettingsUI();
     if (settingsModal.style.display !== 'flex') {
-      showHint('キー配列: ' + KEY_LAYOUTS[keyLayoutState].label);
+      showHint(t('ed.hint.keyLayout', { name: t(KEY_LAYOUTS[keyLayoutState].labelKey) }));
     }
     refocusEditor();
   }
@@ -865,8 +910,7 @@ export function create(root, opts = {}) {
     updateSettingsUI();
     if (!quiet) {
       // At a clamp boundary say so, otherwise a repeated keypress looks broken.
-      showHint(changed ? '文字サイズ ' + fontSizeState + 'px'
-                       : '文字サイズ ' + fontSizeState + 'px（下限/上限）');
+      showHint(t(changed ? 'ed.hint.fontSize' : 'ed.hint.fontSizeLimit', { size: fontSizeState }));
       setTimeout(() => view.focus(), 0);
     }
   }
@@ -1164,7 +1208,7 @@ export function create(root, opts = {}) {
       const arg = (params && params.args && params.args[0]) || '';
       const next = parseFontSizeArg(arg, fontSizeState);
       if (next == null) {
-        showHint('E488: 引数が不正です: :fontsize ' + arg);
+        showHint(t('ed.hint.badFontSize', { arg: arg }));
         return;
       }
       setFontSize(next);
@@ -1175,12 +1219,11 @@ export function create(root, opts = {}) {
     Vim.defineEx('keylayout', undefined, (_cm, params) => {
       const arg = ((params && params.args && params.args[0]) || '').toLowerCase();
       if (!arg) {
-        showHint('キー配列: ' + KEY_LAYOUTS[keyLayoutState].label);
+        showHint(t('ed.hint.keyLayout', { name: t(KEY_LAYOUTS[keyLayoutState].labelKey) }));
         return;
       }
       if (keyLayoutKeys().indexOf(arg) < 0) {
-        showHint('E488: 引数が不正です: :keylayout ' + arg
-          + '  (' + keyLayoutKeys().join(' / ') + ')');
+        showHint(t('ed.hint.badKeyLayout', { arg: arg }));
         return;
       }
       setKeyLayout(arg);
@@ -1355,8 +1398,7 @@ export function create(root, opts = {}) {
       tablePaste({
         isEnabled: () => tablePasteState,
         onConvert: (rows, cols) =>
-          showHint(rows + '行 × ' + cols + '列の表として貼り付け'
-                 + '  Ctrl+Z で取消 / Ctrl+Shift+V でそのまま貼付'),
+          showHint(t('ed.hint.tablePasted', { rows: rows, cols: cols })),
       }),
       search(),
       autocompletion({
@@ -1433,6 +1475,12 @@ export function create(root, opts = {}) {
     ],
   });
   const view = new EditorView({ state, parent: editorHost });
+  // Resolve the shared language and translate all the chrome built above. Also
+  // starts following the preview window: a change there arrives as a storage
+  // event (both windows are app://localhost), with a focus re-read as a fallback
+  // for any environment where that event does not cross two WebView2 windows.
+  initLang(() => relabelChrome());
+  relabelChrome();
   updateSettingsUI();
   updateMarpButtons();
 
