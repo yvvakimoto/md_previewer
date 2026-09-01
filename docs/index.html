@@ -264,37 +264,104 @@
 <!-- ══════════════════════════ FEATURES ══════════════════════════ -->
 <section id="features" class="features">
   <header class="sec-head reveal">
-    <p class="sec-kicker" data-i18n="feat.kicker">EVERYTHING INCLUDED</p>
-    <h2 class="sec-title" data-i18n="feat.title">全部、はじめから入っています。</h2>
-    <p class="sec-lead" data-i18n="feat.lead">プラグインの追加も、ネットワークも要りません。すべて本体に入っています。</p>
+    <p class="sec-kicker" data-i18n="feat.kicker">THE LITTLE THINGS</p>
+    <h2 class="sec-title" data-i18n="feat.title">かゆいところに、手が届きます。</h2>
+    <p class="sec-lead" data-i18n="feat.lead">素の Markdown では足りない、と思ったときの記法とエンジンをひととおり揃えました。追加インストールも、ネットワークも要りません。</p>
   </header>
 
   <ul class="feat-grid reveal">
-    <li class="feat"><b>Mermaid</b><span data-i18n="feat.mermaid">フロー・シーケンス・ガント</span></li>
-    <li class="feat"><b>KaTeX</b><span data-i18n="feat.katex">インライン / ディスプレイ数式</span></li>
-    <li class="feat"><b>Marp</b><span data-i18n="feat.marp">16:9 スライド・PDF 出力</span></li>
-    <li class="feat"><b>tikz-cd</b><span data-i18n="feat.tikz">WASM TeX で可換図式</span></li>
-    <li class="feat"><b>Plotly</b><span data-i18n="feat.plotly">外部 CSV から対話グラフ</span></li>
-    <li class="feat"><b>CSV / TSV</b><span data-i18n="feat.csv">フェンスがそのまま表に</span></li>
-    <li class="feat"><b>Markwhen</b><span data-i18n="feat.markwhen">年表・カレンダー</span></li>
-    <li class="feat"><b>ABC</b><span data-i18n="feat.abc">五線譜のレンダリング</span></li>
-    <li class="feat"><b data-i18n="feat.rubyT">ルビ</b><span data-i18n="feat.ruby">振り仮名・モノルビ</span></li>
-    <li class="feat"><b data-i18n="feat.tateT">縦書き</b><span data-i18n="feat.tate">禁則・縦中横・文庫組み</span></li>
-    <li class="feat"><b data-i18n="feat.tblT">表の往復</b><span data-i18n="feat.tbl">PowerPoint と相互に貼付</span></li>
-    <li class="feat"><b data-i18n="feat.exportT">書き出し</b><span data-i18n="feat.export">単独 HTML / しおり付き PDF</span></li>
-    <li class="feat"><b data-i18n="feat.themeT">テーマ</b><span data-i18n="feat.theme">CSS を 1 枚置くだけ</span></li>
-    <li class="feat"><b data-i18n="feat.wsT">ワークスペース</b><span data-i18n="feat.ws">フォルダをツリーで</span></li>
-    <li class="feat"><b data-i18n="feat.vidT">動画</b><span data-i18n="feat.vid">ローカル動画・YouTube</span></li>
-    <li class="feat"><b data-i18n="feat.i18nT">日英 UI</b><span data-i18n="feat.i18n">両ウィンドウとも切替可</span></li>
+    <li class="feat feat-ext">
+      <a href="https://marked.js.org/" target="_blank" rel="noopener noreferrer">marked</a>
+      <span data-i18n="lib.marked">Markdown 本文の解析</span><em class="lic">MIT</em>
+    </li>
+    <li class="feat feat-ext">
+      <a href="https://highlightjs.org/" target="_blank" rel="noopener noreferrer">highlight.js</a>
+      <span data-i18n="lib.hljs">コードの色分け</span><em class="lic">BSD-3-Clause</em>
+    </li>
+    <li class="feat feat-ext">
+      <a href="https://katex.org/" target="_blank" rel="noopener noreferrer">KaTeX</a>
+      <span data-i18n="lib.katex">インライン / ディスプレイ数式</span><em class="lic">MIT</em>
+    </li>
+    <li class="feat feat-ext">
+      <a href="https://mermaid.js.org/" target="_blank" rel="noopener noreferrer">Mermaid</a>
+      <span data-i18n="lib.mermaid">フロー・シーケンス・ガント</span><em class="lic">MIT</em>
+    </li>
+    <li class="feat feat-ext">
+      <a href="https://marp.app/" target="_blank" rel="noopener noreferrer">Marp Core</a>
+      <span data-i18n="lib.marp">16:9 スライドの組版</span><em class="lic">MIT</em>
+    </li>
+    <li class="feat feat-ext">
+      <a href="https://plotly.com/javascript/" target="_blank" rel="noopener noreferrer">Plotly.js</a>
+      <span data-i18n="lib.plotly">外部 CSV から対話グラフ</span><em class="lic">MIT</em>
+    </li>
+    <li class="feat feat-ext">
+      <a href="https://www.abcjs.net/" target="_blank" rel="noopener noreferrer">abcjs</a>
+      <span data-i18n="lib.abcjs">ABC 記譜法を五線譜に</span><em class="lic">MIT</em>
+    </li>
+    <li class="feat feat-ext">
+      <a href="https://markwhen.com/" target="_blank" rel="noopener noreferrer">Markwhen</a>
+      <span data-i18n="lib.markwhen">年表・カレンダー</span><em class="lic">MIT</em>
+    </li>
+    <li class="feat feat-ext">
+      <a href="https://www.npmjs.com/package/@rod2ik/tikzjax" target="_blank" rel="noopener noreferrer">TikZJax</a>
+      <span data-i18n="lib.tikz">tikz-cd の可換図式（任意導入）</span><em class="lic">GPL-3.0</em>
+    </li>
+    <li class="feat feat-ext">
+      <a href="https://codemirror.net/" target="_blank" rel="noopener noreferrer">CodeMirror 6</a>
+      <span data-i18n="lib.cm">内蔵エディタの土台</span><em class="lic">MIT</em>
+    </li>
+    <li class="feat feat-ext">
+      <a href="https://github.com/replit/codemirror-vim" target="_blank" rel="noopener noreferrer">codemirror-vim</a>
+      <span data-i18n="lib.cmvim">Vim キーバインド</span><em class="lic">MIT</em>
+    </li>
+    <li class="feat feat-ext">
+      <a href="https://conv.denshochan.com/markdown" target="_blank" rel="noopener noreferrer" data-i18n="lib.dendenT">でんでんマークダウン</a>
+      <span data-i18n="lib.denden">ルビ記法のもとにした仕様</span><em class="lic" data-i18n="lic.spec">記法仕様</em>
+    </li>
+
+    <li class="feat feat-own">
+      <b data-i18n="own.tateT">縦書き・文庫組み</b>
+      <span data-i18n="own.tate">禁則・縦中横・39 字 × 16 行</span><em class="lic" data-i18n="lic.own">本体実装</em>
+    </li>
+    <li class="feat feat-own">
+      <b data-i18n="own.rubyT">ルビ</b>
+      <span data-i18n="own.ruby">グループルビ・モノルビ</span><em class="lic" data-i18n="lic.own">本体実装</em>
+    </li>
+    <li class="feat feat-own">
+      <b data-i18n="own.layoutT">配置と多段組み</b>
+      <span data-i18n="own.layout"><code>::: center</code> / <code>::: columns</code></span><em class="lic" data-i18n="lic.own">本体実装</em>
+    </li>
+    <li class="feat feat-own">
+      <b data-i18n="own.spanT">インラインスタイル</b>
+      <span data-i18n="own.span">文字色・サイズ・書体を部分指定</span><em class="lic" data-i18n="lic.own">本体実装</em>
+    </li>
+    <li class="feat feat-own">
+      <b data-i18n="own.tblT">表の往復</b>
+      <span data-i18n="own.tbl">PowerPoint と相互に貼付</span><em class="lic" data-i18n="lic.own">本体実装</em>
+    </li>
+    <li class="feat feat-own">
+      <b data-i18n="own.vidT">動画</b>
+      <span data-i18n="own.vid">ローカル動画・YouTube</span><em class="lic" data-i18n="lic.own">本体実装</em>
+    </li>
+    <li class="feat feat-own">
+      <b data-i18n="own.exportT">書き出し</b>
+      <span data-i18n="own.export">単独 HTML・しおり付き PDF</span><em class="lic" data-i18n="lic.own">本体実装</em>
+    </li>
+    <li class="feat feat-own">
+      <b data-i18n="own.themeT">テーマ</b>
+      <span data-i18n="own.theme">CSS を 1 枚置くだけ</span><em class="lic" data-i18n="lic.own">本体実装</em>
+    </li>
   </ul>
+
+  <p class="feat-note reveal" data-i18n="feat.credit">描画の中身は、上に挙げた各オープンソースプロジェクトの成果です。タイルをクリックすると本家のサイトへ移動します。ライセンス全文はアプリに収録してあり、ヘルプ（<kbd>H</kbd>）→ サードパーティ表記から読めます。作者のみなさんに感謝します。ほかに CSV / TSV 表、脚注、定義リスト、タスクリスト、機密透かし、ワークスペースなども使えます。</p>
 </section>
 
 <!-- ══════════════════════════ COMPARE ══════════════════════════ -->
 <section id="compare" class="compare">
   <header class="sec-head reveal">
-    <p class="sec-kicker" data-i18n="cmp.kicker">WHY ANOTHER ONE</p>
-    <h2 class="sec-title" data-i18n="cmp.title">読むためだけに、つくりました。</h2>
-    <p class="sec-lead" data-i18n="cmp.lead">編集を主役にしたツールは既にたくさんあります。これは「渡された <code>.md</code> を、きれいに読む」ほうに寄せた道具です。</p>
+    <p class="sec-kicker" data-i18n="cmp.kicker">WHAT IT ADDS</p>
+    <h2 class="sec-title" data-i18n="cmp.title">Markdown で書けることを、増やしました。</h2>
+    <p class="sec-lead" data-i18n="cmp.lead">素の Markdown では表せないもの — 縦書きの文庫組み、ルビ、可換図式、楽譜、年表、多段組み — を記法ごと足しています。読むのも書くのも同じ場所で済むよう、<kbd>E</kbd> キーのエディタも Vim・数式入力支援・セルモードまで用意しました。</p>
   </header>
 
   <div class="table-wrap reveal">
@@ -311,38 +378,38 @@
       <tbody>
         <tr>
           <th data-i18n="cmp.r1">開きかた</th>
-          <td class="me" data-i18n="cmp.r1a"><b><code>.md</code> をダブルクリック</b></td>
-          <td data-i18n="cmp.r1b">アプリ起動 → プレビューを開く</td>
-          <td data-i18n="cmp.r1c">vault を開く</td>
-          <td data-i18n="cmp.r1d">アプリ起動 → ファイルを開く</td>
+          <td class="me" data-i18n="cmp.r1a"><b><code>.md</code> をダブルクリック</b>（関連付けと右クリックメニューをインストーラが登録）</td>
+          <td data-i18n="cmp.r1b">関連付け可。表示は <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>V</kbd> でプレビューを開く</td>
+          <td data-i18n="cmp.r1c">vault が前提（単体ファイルは扱いにくい）</td>
+          <td data-i18n="cmp.r1d">関連付けでダブルクリック</td>
         </tr>
         <tr>
-          <th data-i18n="cmp.r2">主眼</th>
-          <td class="me" data-i18n="cmp.r2a"><b>閲覧</b>（編集は <kbd>E</kbd> で）</td>
-          <td data-i18n="cmp.r2b">エディタ</td>
-          <td data-i18n="cmp.r2c">ノート編集</td>
-          <td data-i18n="cmp.r2d">WYSIWYG 編集</td>
+          <th data-i18n="cmp.r2">拡張記法</th>
+          <td class="me" data-i18n="cmp.r2a"><b>Mermaid・数式・Marp・楽譜・年表・可換図式を標準搭載</b></td>
+          <td data-i18n="cmp.r2b">多くは拡張機能を追加</td>
+          <td data-i18n="cmp.r2c">コアとプラグイン</td>
+          <td data-i18n="cmp.r2d">Mermaid・数式を内蔵（Marp は非対応）</td>
         </tr>
         <tr>
-          <th data-i18n="cmp.r3">テーマの足しかた</th>
-          <td class="me" data-i18n="cmp.r3a"><b><code>assets/</code> に CSS を 1 枚</b></td>
-          <td data-i18n="cmp.r3b">設定ファイルにパスを列挙</td>
-          <td data-i18n="cmp.r3c">テーマ導入 / snippets</td>
-          <td data-i18n="cmp.r3d">テーマフォルダに配置</td>
-        </tr>
-        <tr>
-          <th data-i18n="cmp.r4">縦書き・文庫組み</th>
+          <th data-i18n="cmp.r3">縦書き・文庫組み・ルビ</th>
           <td class="me ok" data-i18n="cmp.yes">対応</td>
           <td class="no" data-i18n="cmp.no">—</td>
           <td class="no" data-i18n="cmp.no">—</td>
           <td class="no" data-i18n="cmp.no">—</td>
         </tr>
         <tr>
-          <th data-i18n="cmp.r5">Marp スライド</th>
-          <td class="me ok" data-i18n="cmp.builtin">標準搭載</td>
-          <td data-i18n="cmp.ext">拡張機能</td>
-          <td data-i18n="cmp.plugin">プラグイン</td>
-          <td class="no" data-i18n="cmp.no">—</td>
+          <th data-i18n="cmp.r4">エディタ</th>
+          <td class="me" data-i18n="cmp.r4a"><b>内蔵</b>（Vim・数式入力支援・セルモード）</td>
+          <td data-i18n="cmp.r4b">本体がエディタ</td>
+          <td data-i18n="cmp.r4c">本体がエディタ</td>
+          <td data-i18n="cmp.r4d">WYSIWYG エディタ</td>
+        </tr>
+        <tr>
+          <th data-i18n="cmp.r5">テーマの足しかた</th>
+          <td class="me" data-i18n="cmp.r5a"><b><code>assets/</code> に CSS を 1 枚</b></td>
+          <td data-i18n="cmp.r5b">設定ファイルにパスを列挙</td>
+          <td data-i18n="cmp.r5c">テーマ導入 / snippets</td>
+          <td data-i18n="cmp.r5d">テーマフォルダに配置</td>
         </tr>
         <tr>
           <th data-i18n="cmp.r6">ライセンス</th>

@@ -504,17 +504,47 @@ kbd {
   grid-template-columns: repeat(auto-fill, minmax(236px, 1fr));
 }
 .feat {
+  position: relative;
+  display: flex; flex-direction: column;
   padding: 16px 16px 14px;
   border: 2px solid var(--rule); border-radius: 5px;
   background: var(--paper-2);
   transition: transform .12s, box-shadow .12s;
 }
 .feat:hover { transform: translate(-2px, -2px); box-shadow: 4px 4px 0 var(--rule); }
-.feat b {
+.feat b, .feat-ext > a {
   display: block; font-family: var(--display); font-size: 16px; font-weight: 700;
-  letter-spacing: -.01em; margin-bottom: 2px;
+  letter-spacing: -.01em; margin-bottom: 2px; text-decoration: none;
 }
 .feat span { display: block; font-size: 12.5px; line-height: 1.65; color: var(--ink-3); }
+/* span takes the slack so the licence chip always sits on the tile's floor,
+   which keeps the chips aligned across a row of uneven descriptions. */
+.feat span { flex: 1 1 auto; }
+
+/* Stretched link: the whole tile is the hit area, so the anchor stays a single
+   inline word for screen readers while the card behaves like one button. */
+.feat-ext > a::after { content: ""; position: absolute; inset: 0; }
+.feat-ext::before {
+  content: "↗"; position: absolute; top: 9px; right: 11px;
+  font-size: 12px; line-height: 1; color: var(--ink-3); opacity: .55;
+}
+.feat-ext:hover::before { opacity: 1; color: var(--ink); }
+.feat-ext > a { padding-right: 18px; }   /* clear of the arrow */
+
+.lic {
+  align-self: flex-start; margin-top: 10px;
+  font-family: var(--mono); font-style: normal; font-size: 10px;
+  letter-spacing: .02em; line-height: 1;
+  padding: 4px 7px; border-radius: 3px;
+  color: var(--ink-3); background: color-mix(in srgb, var(--ink) 7%, transparent);
+}
+.feat-own .lic { color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
+
+.feat-note {
+  max-width: 62em; margin: 26px 0 0;
+  font-size: 13px; line-height: 1.85; color: var(--ink-3);
+}
+.feat-note kbd { font-size: .9em; }
 .feat:nth-child(6n+1) { border-color: var(--pink); }
 .feat:nth-child(6n+2) { border-color: var(--aqua); }
 .feat:nth-child(6n+3) { border-color: var(--blue); }
