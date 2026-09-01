@@ -89,8 +89,10 @@ def main():
                 sys.stderr.write("ERROR: no Chromium available\n")
                 sys.exit(3)
 
-            ctx = browser.new_context(viewport={"width": 1440, "height": 900})
+            ctx = browser.new_context(viewport={"width": 1440, "height": 900},
+                                      locale="ja-JP")
             page = ctx.new_page()
+            page.add_init_script(shoot.ui_lang_init_script("ja"))
             page.set_default_timeout(20000)
 
             def load(doc):

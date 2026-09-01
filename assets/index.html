@@ -2118,6 +2118,46 @@
         body.dark-mode #help-modal .help-footer { border-top-color: #30363d; }
         body.dark-mode #help-modal .help-footer a { color: #8b949e; }
         body.dark-mode #help-modal .help-footer .app-version { color: #6e7681; }
+        /* Language picker. No shortcut key: this is a set-once preference and
+           every single letter is already taken (H M S N L W E X P F A Z). The
+           help modal is where "what is this app" questions go, so it lives here. */
+        #help-modal #lang-switch {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
+        #help-modal #lang-switch .lang-label {
+            color: #959da5;
+            margin-right: 2px;
+        }
+        #help-modal #lang-switch button {
+            font: inherit;
+            font-size: 11px;
+            line-height: 1.6;
+            padding: 1px 8px;
+            color: #586069;
+            background: transparent;
+            border: 1px solid #d1d5da;
+            border-radius: 10px;
+            cursor: pointer;
+        }
+        #help-modal #lang-switch button:hover { background: #f6f8fa; }
+        #help-modal #lang-switch button.active {
+            color: #fff;
+            background: #0366d6;
+            border-color: #0366d6;
+        }
+        body.dark-mode #help-modal #lang-switch .lang-label { color: #6e7681; }
+        body.dark-mode #help-modal #lang-switch button {
+            color: #8b949e;
+            border-color: #30363d;
+        }
+        body.dark-mode #help-modal #lang-switch button:hover { background: #21262d; }
+        body.dark-mode #help-modal #lang-switch button.active {
+            color: #fff;
+            background: #1f6feb;
+            border-color: #1f6feb;
+        }
         #licenses-pane {
             margin-top: 12px;
             padding: 12px;
@@ -2451,25 +2491,25 @@
 <body>
     <div id="splash">
         <div class="spinner"></div>
-        <div class="label">読み込み中…</div>
+        <div class="label" data-i18n="splash.loading">読み込み中…</div>
     </div>
     <div id="drop-zone">
         <div class="drop-icon">📄</div>
-        <div class="drop-text">ファイルをここにドロップ</div>
-        <div class="drop-hint">Markdownと画像をまとめて、または画像ファイルを直接ドロップできます</div>
+        <div class="drop-text" data-i18n="drop.text">ファイルをここにドロップ</div>
+        <div class="drop-hint" data-i18n="drop.hint">Markdownと画像をまとめて、または画像ファイルを直接ドロップできます</div>
     </div>
 
     <div id="app-container">
         <div id="toc-sidebar">
-            <button id="toc-toggle" title="目次の表示切り替え">
+            <button id="toc-toggle" title="目次の表示切り替え" data-i18n-attr="title:toc.toggle">
                 <span class="toggle-icon"></span>
             </button>
             <section id="file-tree" class="empty">
-                <div id="file-tree-title">Files</div>
+                <div id="file-tree-title" data-i18n="toc.files">Files</div>
                 <ul id="file-tree-root"></ul>
             </section>
             <div id="toc-content">
-                <div id="toc-title">Contents</div>
+                <div id="toc-title" data-i18n="toc.contents">Contents</div>
                 <nav id="toc-nav"></nav>
             </div>
         </div>
@@ -2480,6 +2520,219 @@
 
 
     <script>
+        // ===== UI language (ja / en) =========================================
+        // The app's own chrome is translatable; the reader's document is not.
+        //
+        // ⚠️ Mirror of the table in tools/build-editor/i18n.js. The two key
+        // spaces are disjoint by construction (this file owns everything except
+        // `ed.*`), so the ONLY keys that must stay byte-identical across the two
+        // are `common.*`. tools/preview-harness/i18ncheck.py enforces that.
+        //
+        // Key-major, not language-major: a 250-string change is reviewed for its
+        // *copy*, and this shape puts each pair on adjacent lines, so an `en`
+        // cannot be added without seeing the `ja` beside it.
+        //
+        // ⚠️ DO NOT TRANSLATE — these look like Japanese UI text but are not:
+        //   * RUBY_KANJI_SRC (this file) and allow_re (src/main.rs) — regex
+        //     character classes.
+        //   * `stack` in tools/build-editor/editorPrefs.js — a real font name.
+        //   * --confidential-label in assets/tategaki.css — the reader's
+        //     watermark, i.e. document content, not chrome.
+        //   * SLIDE_CLASSES / TABLE_ALIGNS — identifiers used as data.
+        // Internal keys (localStorage values, CSS class names, dataset values)
+        // stay English always; only display labels are localized.
+        const I18N = {
+            'common.close':        { ja: '閉じる',   en: 'Close' },
+            'common.on':           { ja: 'オン',     en: 'On' },
+            'common.off':          { ja: 'オフ',     en: 'Off' },
+            'common.lang.auto':    { ja: '自動',     en: 'Auto' },
+            'common.lang.ja':      { ja: '日本語',   en: '日本語' },
+            'common.lang.en':      { ja: 'English',  en: 'English' },
+
+            'splash.loading':      { ja: '読み込み中…', en: 'Loading…' },
+            'drop.text':           { ja: 'ファイルをここにドロップ', en: 'Drop a file here' },
+            'drop.hint':           { ja: 'Markdownと画像をまとめて、または画像ファイルを直接ドロップできます',
+                                     en: 'Drop a Markdown file together with its images, or an image file on its own' },
+
+            'toc.toggle':          { ja: '目次の表示切り替え', en: 'Toggle the table of contents' },
+            'toc.files':           { ja: 'ファイル', en: 'Files' },
+            'toc.contents':        { ja: '目次',     en: 'Contents' },
+
+            'banner.install':      { ja: '今すぐ更新',     en: 'Update now' },
+            'banner.onexit':       { ja: '終了後に更新',   en: 'Update on exit' },
+            'banner.optout':       { ja: '今後表示しない', en: 'Never show again' },
+
+            'help.title':          { ja: 'キーボードショートカット', en: 'Keyboard Shortcuts' },
+            'help.licenses':       { ja: 'サードパーティライセンス', en: 'Third-party licenses' },
+            'help.lang':           { ja: '表示言語', en: 'Language' },
+
+            'help.key.h':          { ja: 'このヘルプの表示 / 非表示', en: 'Show / hide this help' },
+            'help.key.m':          { ja: 'ダーク / ライト表示の切り替え', en: 'Toggle dark / light appearance' },
+            'help.key.s':          { ja: 'スタイルの選択（行末の ⚙ でそのスタイル固有の設定。Marpモードでは Marpテーマ。フロントマターを書き換え）',
+                                     en: 'Choose a style (the ⚙ at the end of a row opens that style’s own settings; in Marp mode this picks the Marp theme and rewrites the front matter)' },
+            'help.key.n':          { ja: 'セクション自動番号の切り替え', en: 'Toggle automatic section numbering' },
+            'help.key.l':          { ja: '行番号の表示切り替え', en: 'Toggle line numbers' },
+            'help.key.w':          { ja: '全幅レイアウトの切り替え', en: 'Toggle full-width layout' },
+            'help.key.e':          { ja: 'エディタウィンドウを開く（Vimモード・数式入力補助・文字数カウント）',
+                                     en: 'Open the editor window (Vim mode, math input assist, character count)' },
+            'help.key.ctrlN':      { ja: '新規の空Markdownファイルを作成', en: 'Create a new empty Markdown file' },
+            'help.key.ctrlD':      { ja: 'インストール先フォルダを Explorer で開く', en: 'Open the install folder in Explorer' },
+            'help.key.x':          { ja: '現在の文書をエクスポート（保存ダイアログで HTML / PDF を選択。PDFはクリック可能なリンクと見出しのしおりを保持）',
+                                     en: 'Export the current document (pick HTML or PDF in the save dialog; PDF keeps clickable links and heading bookmarks)' },
+            'help.key.zoom':       { ja: 'ズームイン / アウト / リセット', en: 'Zoom in / out / reset' },
+            'help.key.history':    { ja: '開いたファイルの履歴を戻る / 進む', en: 'Go back / forward through opened files' },
+            'help.key.ctrlClick':  { ja: '.md リンクを新しいプレビュアのウィンドウで開く（通常のクリックは同じウィンドウで遷移）',
+                                     en: 'Open a .md link in a new previewer window (a plain click navigates in this window)' },
+            'help.key.p':          { ja: 'Marp表示の切り替え: スクロール → デッキ → 一覧（一覧でサムネイルをクリックするとデッキで開く）',
+                                     en: 'Cycle the Marp view: scroll → deck → list (clicking a thumbnail in list view opens it in deck view)' },
+            'help.key.f':          { ja: '全画面表示の切り替え（Marp文書）', en: 'Toggle fullscreen (Marp documents)' },
+            'help.key.a':          { ja: 'スライドの自動縮小の切り替え（Marp）', en: 'Toggle shrink-to-fit for slides (Marp)' },
+            'help.key.slideNav':   { ja: 'Marpデッキモードでのスライド移動', en: 'Move between slides in Marp deck mode' },
+            'help.key.zoomPan':    { ja: 'カーソル位置でズーム / スライドをパン（Marpデッキモード）',
+                                     en: 'Zoom at the cursor / pan the slide (Marp deck mode)' },
+            'help.key.z':          { ja: '軌跡付きレーザーポインタの切り替え（Marpデッキモード）',
+                                     en: 'Toggle the laser pointer with trail (Marp deck mode)' },
+            'help.key.esc':        { ja: 'このダイアログを閉じる', en: 'Close this dialog' },
+
+            // Key cells that mix <kbd> markup with prose — these are the ONLY
+            // values ever fed to data-i18n-html. Never let a filename or a
+            // @user-vars label reach that path.
+            'help.cell.ctrlClick': { ja: '<kbd>Ctrl</kbd>+クリック', en: '<kbd>Ctrl</kbd>+Click' },
+            'help.cell.zoomPan':   { ja: '<kbd>Ctrl</kbd>+<kbd>Wheel</kbd> / ドラッグ',
+                                     en: '<kbd>Ctrl</kbd>+<kbd>Wheel</kbd> / Drag' },
+
+            'style.title':         { ja: 'スタイルを選択', en: 'Choose a style' },
+
+            'toast.lang':          { ja: '表示言語: {lang}', en: 'Language: {lang}' },
+        };
+
+        // Assigned by __resolveInitialState(); declared here so every string
+        // site below can read it. 'ja' is only a placeholder for the few
+        // microseconds before resolution runs.
+        let uiLang = 'ja';
+
+        // Fallback chain: uiLang -> ja -> the key itself. A missing translation
+        // renders as `toast.lang` on screen, which is loud in dev and never blank.
+        // The `if (params)` guard matters: t() is called per node while rendering
+        // the table / copy buttons, so the no-params path must stay a bare lookup.
+        function t(key, params) {
+            const m = I18N[key];
+            let s = (m && (m[uiLang] || m.ja)) || key;
+            if (params) {
+                s = s.replace(/\{(\w+)\}/g, (_, k) =>
+                    (Object.prototype.hasOwnProperty.call(params, k) ? String(params[k]) : '{' + k + '}'));
+            }
+            return s;
+        }
+
+        // Walk navigator.languages rather than navigator.language: a user whose
+        // Windows *display* language is English but whose preferred-language
+        // list leads with Japanese should get Japanese. 'ja-' not 'ja', so that
+        // 'jam' (Jamaican Creole) cannot match.
+        function __detectUiLang() {
+            const cands = (navigator.languages && navigator.languages.length)
+                ? navigator.languages : [navigator.language || ''];
+            for (const l of cands) {
+                const tag = String(l).toLowerCase();
+                if (tag === 'ja' || tag.startsWith('ja-')) return 'ja';
+                if (tag === 'en' || tag.startsWith('en-')) return 'en';
+            }
+            return 'en';
+        }
+
+        // The ABSENCE of the key is "auto" — there is no 'auto' sentinel, so
+        // "back to automatic" is removeItem(), the same shape used to clear
+        // styleName.
+        function __readUiLangPref() {
+            try {
+                const v = localStorage.getItem('uiLang');
+                return (v === 'ja' || v === 'en') ? v : null;
+            } catch (e) { return null; }
+        }
+
+        // Translate every [data-i18n*] node under `root`.
+        //
+        // ⚠️ Must be called on DOMContentLoaded, not only here. This script sits
+        // at the TOP of <body>; #help-modal / #style-modal / #update-banner are
+        // parsed AFTER it and do not exist yet. Calling it once early *looks*
+        // like it works — the splash and drop zone do translate — while silently
+        // no-opping on every modal. It is idempotent, so calling it 3x is free.
+        function applyI18n(root) {
+            const r = root || document;
+            r.querySelectorAll('[data-i18n]').forEach((el) => { el.textContent = t(el.dataset.i18n); });
+            // innerHTML, fed only from the constant table above.
+            r.querySelectorAll('[data-i18n-html]').forEach((el) => { el.innerHTML = t(el.dataset.i18nHtml); });
+            r.querySelectorAll('[data-i18n-attr]').forEach((el) => {
+                el.dataset.i18nAttr.split(';').forEach((pair) => {
+                    const i = pair.indexOf(':');
+                    if (i > 0) el.setAttribute(pair.slice(0, i).trim(), t(pair.slice(i + 1).trim()));
+                });
+            });
+            // Drives CJK line breaking and font fallback — this app ships
+            // vertical-writing themes, so it is not cosmetic.
+            document.documentElement.lang = uiLang;
+            __syncLangSwitch();
+        }
+
+        // Reflect the current choice in the help-modal segmented control. `null`
+        // (auto) is a distinct visual state from an explicit ja/en that happens
+        // to agree with the OS.
+        function __syncLangSwitch() {
+            const pref = __readUiLangPref();
+            document.querySelectorAll('#lang-switch [data-lang]').forEach((b) => {
+                const v = b.dataset.lang;
+                b.classList.toggle('active', v === (pref || 'auto'));
+            });
+        }
+
+        // `persist` is false when the change arrived from the other window via a
+        // storage event — re-persisting there would be a no-op today, but it also
+        // guarantees a future broadcast cannot ping-pong.
+        function setUiLang(pref, persist) {
+            const next = (pref === 'ja' || pref === 'en') ? pref : null;
+            if (persist !== false) {
+                try {
+                    if (next) localStorage.setItem('uiLang', next);
+                    else localStorage.removeItem('uiLang');
+                } catch (e) { /* private mode — the choice just won't survive a restart */ }
+            }
+            uiLang = next || __detectUiLang();
+            applyI18n(document);
+            // Normalized @user-vars specs are cached per style and carry the
+            // localized labels, so they go stale on a switch. Forgetting this is
+            // the easiest bug to ship here; the symptom is "style settings labels
+            // don't change until restart".
+            if (typeof __styleVarSpecCache !== 'undefined') __styleVarSpecCache.clear();
+            // #preview itself carries localized output (markwhen calendar, the
+            // renderer error blocks, the table hover/copy buttons), so the chrome
+            // pass alone is not enough. Anchored re-render, mirroring
+            // __schedulePaginateRefresh().
+            if (typeof currentMarkdown !== 'undefined' && currentMarkdown) {
+                const anchor = capturePreviewAnchor();
+                Promise.resolve(renderMarkdown(currentMarkdown)).then(() => {
+                    requestAnimationFrame(() => restorePreviewAnchor(anchor));
+                });
+            }
+            showToast(t('toast.lang', { lang: t('common.lang.' + (next || 'auto')) }));
+        }
+
+        // Cross-window sync with no IPC and no Rust change: the preview
+        // (app://localhost/index.html) and the editor
+        // (app://localhost/editor.html) are the same origin in the same
+        // user-data folder, so they share localStorage. `storage` fires only in
+        // OTHER documents, never the writer, so there is no loop.
+        window.addEventListener('storage', (e) => {
+            if (e.key !== 'uiLang' && e.key !== null) return;   // null === clear()
+            const next = __readUiLangPref();
+            if ((next || __detectUiLang()) !== uiLang) setUiLang(next, false);
+        });
+        // Belt-and-braces for any environment where the storage event does not
+        // cross WebView2 windows. Same shape as clipboardSync.js's focus re-read.
+        window.addEventListener('focus', () => {
+            const next = __readUiLangPref();
+            if ((next || __detectUiLang()) !== uiLang) setUiLang(next, false);
+        });
+
         // Two orthogonal axes:
         //   darkMode    — boolean. Drives body.dark-mode + mermaid theme.
         //                 Persisted in localStorage.darkMode ('true' / 'false').
@@ -2502,15 +2755,35 @@
                 localStorage.setItem('darkMode', 'false');
                 localStorage.removeItem('styleName');
             }
+            // Migrate users who predate the UI language setting. Everyone has
+            // been looking at a Japanese UI, so letting OS auto-detect apply to
+            // them would silently flip an existing install to English — which is
+            // exactly the wrong surprise for someone running English Windows who
+            // chose this app *because* it is Japanese-first. Auto-detect is for
+            // genuinely new installs; the presence of any older pref key is what
+            // identifies an existing one. Same shape as the styleName migration
+            // above.
+            if (localStorage.getItem('uiLang') === null) {
+                const PRIOR_KEYS = ['darkMode', 'styleName', 'marpView', 'numbered',
+                                    'wide', 'showLineNumbers', 'tocCollapsed', 'marpAutofit'];
+                if (PRIOR_KEYS.some((k) => localStorage.getItem(k) !== null)) {
+                    localStorage.setItem('uiLang', 'ja');
+                }
+            }
             const dark = localStorage.getItem('darkMode') === 'true';
             const style = localStorage.getItem('styleName');
             const known = __userStyleList();
             return {
                 darkMode: dark,
                 currentStyle: (style && known.includes(style)) ? style : null,
+                uiLang: __readUiLangPref() || __detectUiLang(),
             };
         }
-        let { darkMode, currentStyle } = __resolveInitialState();
+        let { darkMode, currentStyle, uiLang: __initialUiLang } = __resolveInitialState();
+        uiLang = __initialUiLang;
+        // Translate what is already parsed (splash, drop zone). The modals live
+        // further down the file and are handled by the DOMContentLoaded pass.
+        applyI18n(document);
         // Which axis the reader actually scrolls along. Writing mode alone cannot
         // answer this: tategaki.css is vertical-rl and runs off to the left
         // (horizontal scroll), while bunko.css is *also* vertical-rl but
@@ -4236,6 +4509,22 @@
             }
             m.classList.toggle('visible', open);
         }
+
+        // The modals, the update banner and the language switch are all parsed
+        // AFTER the script block that defines applyI18n(), so the early call up
+        // there cannot have reached them. See the warning on applyI18n().
+        document.addEventListener('DOMContentLoaded', () => {
+            applyI18n(document);
+            const sw = document.getElementById('lang-switch');
+            if (sw) {
+                sw.addEventListener('click', (e) => {
+                    const btn = e.target.closest('button[data-lang]');
+                    if (!btn) return;
+                    const v = btn.dataset.lang;
+                    setUiLang(v === 'auto' ? null : v, true);
+                });
+            }
+        });
         onShortcutKey((e) => {
             const m = __helpModal();
             if (!m) return;
@@ -11070,46 +11359,52 @@ ${previewClone.outerHTML}
     </script>
     <div id="toast"></div>
     <div id="update-banner" role="status" aria-live="polite">
-        <button type="button" id="update-later-btn" aria-label="閉じる" title="閉じる">&times;</button>
+        <button type="button" id="update-later-btn" aria-label="閉じる" title="閉じる" data-i18n-attr="aria-label:common.close;title:common.close">&times;</button>
         <span id="update-banner-msg"></span>
         <span id="update-banner-actions">
-            <button type="button" id="update-install-btn">今すぐ更新</button>
-            <button type="button" id="update-onexit-btn">終了後に更新</button>
-            <button type="button" id="update-optout-btn">今後表示しない</button>
+            <button type="button" id="update-install-btn" data-i18n="banner.install">今すぐ更新</button>
+            <button type="button" id="update-onexit-btn" data-i18n="banner.onexit">終了後に更新</button>
+            <button type="button" id="update-optout-btn" data-i18n="banner.optout">今後表示しない</button>
         </span>
     </div>
     <div id="slide-counter"></div>
     <canvas id="laser-canvas"></canvas>
     <div id="help-modal" role="dialog" aria-modal="true" aria-labelledby="help-modal-title">
         <div class="panel">
-            <button class="close" type="button" aria-label="閉じる">&times;</button>
-            <h2 id="help-modal-title">キーボードショートカット</h2>
+            <button class="close" type="button" aria-label="閉じる" data-i18n-attr="aria-label:common.close">&times;</button>
+            <h2 id="help-modal-title" data-i18n="help.title">キーボードショートカット</h2>
             <table>
                 <tbody>
-                    <tr><td class="keys"><kbd>H</kbd></td><td>このヘルプの表示 / 非表示</td></tr>
-                    <tr><td class="keys"><kbd>M</kbd></td><td>ダーク / ライト表示の切り替え</td></tr>
-                    <tr><td class="keys"><kbd>S</kbd></td><td>スタイルの選択（行末の ⚙ でそのスタイル固有の設定。Marpモードでは Marpテーマ。フロントマターを書き換え）</td></tr>
-                    <tr><td class="keys"><kbd>N</kbd></td><td>セクション自動番号の切り替え</td></tr>
-                    <tr><td class="keys"><kbd>L</kbd></td><td>行番号の表示切り替え</td></tr>
-                    <tr><td class="keys"><kbd>W</kbd></td><td>全幅レイアウトの切り替え</td></tr>
-                    <tr><td class="keys"><kbd>E</kbd></td><td>エディタウィンドウを開く（Vimモード・数式入力補助・文字数カウント）</td></tr>
-                    <tr><td class="keys"><kbd>Ctrl</kbd>+<kbd>N</kbd></td><td>新規の空Markdownファイルを作成</td></tr>
-                    <tr><td class="keys"><kbd>Ctrl</kbd>+<kbd>D</kbd></td><td>インストール先フォルダを Explorer で開く</td></tr>
-                    <tr><td class="keys"><kbd>X</kbd></td><td>現在の文書をエクスポート（保存ダイアログで HTML / PDF を選択。PDFはクリック可能なリンクと見出しのしおりを保持）</td></tr>
-                    <tr><td class="keys"><kbd>Ctrl</kbd>+<kbd>+</kbd> / <kbd>Ctrl</kbd>+<kbd>-</kbd> / <kbd>Ctrl</kbd>+<kbd>0</kbd></td><td>ズームイン / アウト / リセット</td></tr>
-                    <tr><td class="keys"><kbd>Alt</kbd>+<kbd>←</kbd> / <kbd>Alt</kbd>+<kbd>→</kbd></td><td>開いたファイルの履歴を戻る / 進む</td></tr>
-                    <tr><td class="keys"><kbd>Ctrl</kbd>+クリック</td><td>.md リンクを新しいプレビュアのウィンドウで開く（通常のクリックは同じウィンドウで遷移）</td></tr>
-                    <tr><td class="keys"><kbd>P</kbd></td><td>Marp表示の切り替え: スクロール → デッキ → 一覧（一覧でサムネイルをクリックするとデッキで開く）</td></tr>
-                    <tr><td class="keys"><kbd>F</kbd></td><td>全画面表示の切り替え（Marp文書）</td></tr>
-                    <tr><td class="keys"><kbd>A</kbd></td><td>スライドの自動縮小の切り替え（Marp）</td></tr>
-                    <tr><td class="keys"><kbd>←</kbd> / <kbd>→</kbd> / <kbd>PgUp</kbd> / <kbd>PgDn</kbd> / <kbd>Home</kbd> / <kbd>End</kbd></td><td>Marpデッキモードでのスライド移動</td></tr>
-                    <tr><td class="keys"><kbd>Ctrl</kbd>+<kbd>Wheel</kbd> / ドラッグ</td><td>カーソル位置でズーム / スライドをパン（Marpデッキモード）</td></tr>
-                    <tr><td class="keys"><kbd>Z</kbd></td><td>軌跡付きレーザーポインタの切り替え（Marpデッキモード）</td></tr>
-                    <tr><td class="keys"><kbd>Esc</kbd></td><td>このダイアログを閉じる</td></tr>
+                    <tr><td class="keys"><kbd>H</kbd></td><td data-i18n="help.key.h">このヘルプの表示 / 非表示</td></tr>
+                    <tr><td class="keys"><kbd>M</kbd></td><td data-i18n="help.key.m">ダーク / ライト表示の切り替え</td></tr>
+                    <tr><td class="keys"><kbd>S</kbd></td><td data-i18n="help.key.s">スタイルの選択（行末の ⚙ でそのスタイル固有の設定。Marpモードでは Marpテーマ。フロントマターを書き換え）</td></tr>
+                    <tr><td class="keys"><kbd>N</kbd></td><td data-i18n="help.key.n">セクション自動番号の切り替え</td></tr>
+                    <tr><td class="keys"><kbd>L</kbd></td><td data-i18n="help.key.l">行番号の表示切り替え</td></tr>
+                    <tr><td class="keys"><kbd>W</kbd></td><td data-i18n="help.key.w">全幅レイアウトの切り替え</td></tr>
+                    <tr><td class="keys"><kbd>E</kbd></td><td data-i18n="help.key.e">エディタウィンドウを開く（Vimモード・数式入力補助・文字数カウント）</td></tr>
+                    <tr><td class="keys"><kbd>Ctrl</kbd>+<kbd>N</kbd></td><td data-i18n="help.key.ctrlN">新規の空Markdownファイルを作成</td></tr>
+                    <tr><td class="keys"><kbd>Ctrl</kbd>+<kbd>D</kbd></td><td data-i18n="help.key.ctrlD">インストール先フォルダを Explorer で開く</td></tr>
+                    <tr><td class="keys"><kbd>X</kbd></td><td data-i18n="help.key.x">現在の文書をエクスポート（保存ダイアログで HTML / PDF を選択。PDFはクリック可能なリンクと見出しのしおりを保持）</td></tr>
+                    <tr><td class="keys"><kbd>Ctrl</kbd>+<kbd>+</kbd> / <kbd>Ctrl</kbd>+<kbd>-</kbd> / <kbd>Ctrl</kbd>+<kbd>0</kbd></td><td data-i18n="help.key.zoom">ズームイン / アウト / リセット</td></tr>
+                    <tr><td class="keys"><kbd>Alt</kbd>+<kbd>←</kbd> / <kbd>Alt</kbd>+<kbd>→</kbd></td><td data-i18n="help.key.history">開いたファイルの履歴を戻る / 進む</td></tr>
+                    <tr><td class="keys" data-i18n-html="help.cell.ctrlClick"><kbd>Ctrl</kbd>+クリック</td><td data-i18n="help.key.ctrlClick">.md リンクを新しいプレビュアのウィンドウで開く（通常のクリックは同じウィンドウで遷移）</td></tr>
+                    <tr><td class="keys"><kbd>P</kbd></td><td data-i18n="help.key.p">Marp表示の切り替え: スクロール → デッキ → 一覧（一覧でサムネイルをクリックするとデッキで開く）</td></tr>
+                    <tr><td class="keys"><kbd>F</kbd></td><td data-i18n="help.key.f">全画面表示の切り替え（Marp文書）</td></tr>
+                    <tr><td class="keys"><kbd>A</kbd></td><td data-i18n="help.key.a">スライドの自動縮小の切り替え（Marp）</td></tr>
+                    <tr><td class="keys"><kbd>←</kbd> / <kbd>→</kbd> / <kbd>PgUp</kbd> / <kbd>PgDn</kbd> / <kbd>Home</kbd> / <kbd>End</kbd></td><td data-i18n="help.key.slideNav">Marpデッキモードでのスライド移動</td></tr>
+                    <tr><td class="keys" data-i18n-html="help.cell.zoomPan"><kbd>Ctrl</kbd>+<kbd>Wheel</kbd> / ドラッグ</td><td data-i18n="help.key.zoomPan">カーソル位置でズーム / スライドをパン（Marpデッキモード）</td></tr>
+                    <tr><td class="keys"><kbd>Z</kbd></td><td data-i18n="help.key.z">軌跡付きレーザーポインタの切り替え（Marpデッキモード）</td></tr>
+                    <tr><td class="keys"><kbd>Esc</kbd></td><td data-i18n="help.key.esc">このダイアログを閉じる</td></tr>
                 </tbody>
             </table>
             <div class="help-footer">
-                <a href="#" id="show-licenses">サードパーティライセンス</a>
+                <a href="#" id="show-licenses" data-i18n="help.licenses">サードパーティライセンス</a>
+                <span id="lang-switch" role="group">
+                    <span class="lang-label" data-i18n="help.lang">表示言語</span>
+                    <button type="button" data-lang="auto" data-i18n="common.lang.auto">自動</button>
+                    <button type="button" data-lang="ja" data-i18n="common.lang.ja">日本語</button>
+                    <button type="button" data-lang="en" data-i18n="common.lang.en">English</button>
+                </span>
                 <span id="app-version" class="app-version"></span>
             </div>
             <pre id="licenses-pane" hidden></pre>
@@ -11117,8 +11412,8 @@ ${previewClone.outerHTML}
     </div>
     <div id="style-modal" role="dialog" aria-modal="true" aria-labelledby="style-modal-title">
         <div class="panel">
-            <button class="close" type="button" aria-label="閉じる">&times;</button>
-            <h2 id="style-modal-title">スタイルを選択</h2>
+            <button class="close" type="button" aria-label="閉じる" data-i18n-attr="aria-label:common.close">&times;</button>
+            <h2 id="style-modal-title" data-i18n="style.title">スタイルを選択</h2>
             <table>
                 <tbody id="style-modal-rows"></tbody>
             </table>
