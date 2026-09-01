@@ -12,6 +12,24 @@ $CollectLicenses = Join-Path $RepoRoot 'tools\collect-licenses.ps1'
 $IssScript = Join-Path $RepoRoot 'installer\md-previewer.iss'
 $DistDir = Join-Path $RepoRoot 'dist'
 
+# Hash HISTORY.md's CONTENT, not its bytes.
+#
+# This clone has core.autocrlf=true, so git rewrites HISTORY.md with CRLF on
+# checkout while release-on-main.ps1 writes it with LF. A raw-byte hash then
+# differs for a file whose content never changed, and `-Verify` reports the
+# bundled notes as stale on a perfectly good release (measured on v0.30.0:
+# stamp 2DDC..., working tree ED14...). Normalizing to LF first is the same
+# rule tools/preview-harness/tablecheck.py already applies to its payloads.
+#
+# MIRROR: release-on-main.ps1 has the same function -- keep in sync.
+function Get-NotesHash($path) {
+    $text  = [System.IO.File]::ReadAllText($path) -replace "`r`n", "`n"
+    $bytes = [System.Text.Encoding]::UTF8.GetBytes($text)
+    $ms    = [System.IO.MemoryStream]::new($bytes)
+    try { (Get-FileHash -InputStream $ms -Algorithm SHA256).Hash }
+    finally { $ms.Dispose() }
+}
+
 function Invoke-External {
     param(
         [Parameter(Mandatory)][string]$File,
@@ -90,12 +108,14 @@ if (Test-Path -LiteralPath $artifact) {
     # Record which release notes went INTO this installer. The .iss bundles
     # HISTORY.md and auto-opens it after install, so editing HISTORY.md after a
     # build silently leaves the artifact shipping stale notes.
-    # `release-on-main.ps1 -Verify` compares this hash against the current file;
-    # a content hash rather than a timestamp so a git checkout that rewrites
-    # HISTORY.md byte-identically doesn't raise a false alarm.
+    # `release-on-main.ps1 -Verify` / `-Publish` compare this hash against the
+    # current file; a content hash rather than a timestamp so a git checkout
+    # that rewrites HISTORY.md byte-identically doesn't raise a false alarm.
+    #
+    # MIRROR: release-on-main.ps1 has the same Get-NotesHash -- keep in sync.
     $historyMd = Join-Path $PSScriptRoot 'HISTORY.md'
     if (Test-Path -LiteralPath $historyMd) {
-        $hash = (Get-FileHash -LiteralPath $historyMd -Algorithm SHA256).Hash
+        $hash = Get-NotesHash $historyMd
         Set-Content -LiteralPath "$artifact.notes.sha256" -Value $hash -NoNewline -Encoding ascii
     }
 } else {

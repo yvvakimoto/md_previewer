@@ -118,6 +118,20 @@ def style_init_script(style):
     return STYLE_INIT_JS % ("localStorage.setItem('styleName', %s);" % json.dumps(style))
 
 
+def ui_lang_init_script(lang):
+    """Pin the UI language the way the help-modal switch does: localStorage.uiLang.
+
+    Without this the language falls back to OS auto-detect (navigator.languages),
+    so any harness that asserts on UI text would pass in Japan and fail on an
+    en-US machine. Absence of the key is "auto", so `None` clears it -- which is
+    how you exercise the auto-detect path itself (pair it with new_context's
+    `locale=` to make navigator.languages deterministic).
+    """
+    if not lang or str(lang).lower() in ("auto", "none", ""):
+        return STYLE_INIT_JS % "localStorage.removeItem('uiLang');"
+    return STYLE_INIT_JS % ("localStorage.setItem('uiLang', %s);" % json.dumps(lang))
+
+
 def wait_for_render(page):
     """Wait for async figures to finish, then for layout height to stabilize."""
     try:

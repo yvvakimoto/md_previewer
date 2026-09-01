@@ -10,13 +10,15 @@
 // completion sources are unaffected.
 
 // Recognized keys (canonical name + short form) and their UI detail.
+import { t } from './i18n.js';
+
 const KEYS = [
-  { name: 'color',  detail: '文字色' },
-  { name: 'size',   detail: '文字サイズ' },
-  { name: 'font',   detail: 'フォント' },
-  { name: 'bg',     detail: '背景色' },
-  { name: 'weight', detail: '文字の太さ' },
-  { name: 'valign', detail: '縦位置(ベースライン)' },
+  { name: 'color',  detail: t('ed.complete.span.color') },
+  { name: 'size',   detail: t('ed.complete.span.size') },
+  { name: 'font',   detail: t('ed.complete.span.font') },
+  { name: 'bg',     detail: t('ed.complete.span.bg') },
+  { name: 'weight', detail: t('ed.complete.span.weight') },
+  { name: 'valign', detail: t('ed.complete.span.valign') },
 ];
 
 const KEY_OPTIONS = KEYS.map(k => ({

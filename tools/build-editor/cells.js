@@ -64,6 +64,7 @@ import {
 } from './mdBlocks.js';
 import { writeClipboard } from './marpSlides.js';
 import { mapCommandKey } from './keyLayout.js';
+import { t } from './i18n.js';
 
 // ───────────────────────────── cell model ─────────────────────────────
 
@@ -562,35 +563,40 @@ function vimPanelOpen() {
   }
 }
 
-// Every entry in the Command-mode table. Exported so the help modal and the
-// keymap have a single source of truth.
+// Every entry in the Command-mode table, as [keys, i18nKey]. The ORDER and the
+// key names live here with the feature; the descriptions live in i18n.js under
+// `ed.cells.*` with the rest of the copy.
+//
+// This table is DISPLAY-ONLY — it feeds the help modal in entry.js and nothing
+// else. The keymap is separate switch logic in cellGate() below, so localizing a
+// description can never affect a binding.
 export const CELL_HELP = [
-  ['Esc', 'コマンドモードへ / 保留キーをクリア'],
-  ['Enter', 'セルを編集（Edit モード）'],
-  ['i', '編集して INSERT モードへ'],
-  ['j / k', '次 / 前のセルを選択'],
-  ['↓ / ↑', '次 / 前のセルを選択'],
-  ['g g / Home', '最初のセル'],
-  ['G / End', '最後のセル'],
-  ['a / b', '上 / 下にセルを挿入'],
-  ['d d', 'セルを削除'],
-  ['x', 'セルをカット'],
-  ['c / y', 'セルをコピー'],
-  ['v / V', '下 / 上に貼り付け'],
-  ['M', '下のセルと結合'],
-  ['1〜6 / 0', '見出しレベルを設定 / 解除'],
-  ['z / u', '元に戻す'],
-  ['Z / Ctrl+r', 'やり直す'],
-  ['s', '保存'],
-  ['l', '行番号モードを切り替え'],
-  ['f', '検索'],
-  ['m', 'Marp スライドクラスを変更（Marp 文書のみ）'],
-  ['h', 'このヘルプ'],
-  ['Shift+Enter', '実行して次のセルへ'],
-  ['Ctrl+Enter', '実行してとどまる'],
-  ['Alt+Enter', '実行して下にセルを挿入'],
-  ['Ctrl+Shift+-', 'カーソル位置でセルを分割'],
-  ['Ctrl+Shift+↑ / ↓', 'セルを上 / 下へ移動'],
+  ['Esc', 'ed.cells.esc'],
+  ['Enter', 'ed.cells.enter'],
+  ['i', 'ed.cells.i'],
+  ['j / k', 'ed.cells.jk'],
+  ['↓ / ↑', 'ed.cells.arrows'],
+  ['g g / Home', 'ed.cells.gg'],
+  ['G / End', 'ed.cells.G'],
+  ['a / b', 'ed.cells.ab'],
+  ['d d', 'ed.cells.dd'],
+  ['x', 'ed.cells.x'],
+  ['c / y', 'ed.cells.cy'],
+  ['v / V', 'ed.cells.vV'],
+  ['M', 'ed.cells.M'],
+  ['1〜6 / 0', 'ed.cells.heading'],
+  ['z / u', 'ed.cells.undo'],
+  ['Z / Ctrl+r', 'ed.cells.redo'],
+  ['s', 'ed.cells.save'],
+  ['l', 'ed.cells.lineNo'],
+  ['f', 'ed.cells.find'],
+  ['m', 'ed.cells.marpClass'],
+  ['h', 'ed.cells.help'],
+  ['Shift+Enter', 'ed.cells.runNext'],
+  ['Ctrl+Enter', 'ed.cells.runStay'],
+  ['Alt+Enter', 'ed.cells.runInsert'],
+  ['Ctrl+Shift+-', 'ed.cells.split'],
+  ['Ctrl+Shift+↑ / ↓', 'ed.cells.move'],
 ];
 
 // Prec.highest ViewPlugin keydown handler — see the header comment for why this,
@@ -699,14 +705,14 @@ export function cellGate(cb) {
         case 'h': if (cb.onHelp) cb.onHelp(); return handled(e);
         case 'm':
           if (cb.isMarp && cb.isMarp()) { if (cb.onClassPicker) cb.onClassPicker(); }
-          else if (cb.onHint) cb.onHint('m: Marp 文書ではありません');
+          else if (cb.onHint) cb.onHint(t('ed.cells.notMarp'));
           return handled(e);
 
         // Jupyter extends the cell selection with Shift+J/K. Multi-cell selection
         // is phase 2 (planDelete already takes a range and cellModeField already
         // carries anchorIndex); hint rather than die silently.
         case 'J': case 'K':
-          if (cb.onHint) cb.onHint('複数セル選択は未対応です');
+          if (cb.onHint) cb.onHint(t('ed.cells.multiUnsupported'));
           return handled(e);
 
         default: break;

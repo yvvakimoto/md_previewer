@@ -1,0 +1,592 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title data-i18n="meta.title">MD Previewer for Windows — .md をダブルクリックするだけ</title>
+<meta name="description" content="Windows 専用のスタンドアロン Markdown プレビューア。Mermaid・KaTeX 数式・Marp スライド・縦書き文庫レイアウトを、インストール直後から完全オフラインで。">
+<link rel="icon" href="assets/favicon.ico" sizes="any">
+
+<meta property="og:type" content="website">
+<meta property="og:title" content="MD Previewer for Windows">
+<meta property="og:description" content=".md をダブルクリックするだけ。図・数式・スライド・縦書き文庫を、完全オフラインで。">
+<meta property="og:image" content="https://yvvakimoto.github.io/md_previewer/assets/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:site_name" content="MD Previewer for Windows">
+<meta property="og:locale" content="ja_JP">
+<meta property="og:url" content="https://yvvakimoto.github.io/md_previewer/">
+<meta name="twitter:card" content="summary_large_image">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,700;12..96,800&family=Zen+Kaku+Gothic+New:wght@400;500;700;900&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<div class="grain" aria-hidden="true"></div>
+
+<a class="skip" href="#main" data-i18n="nav.skip">本文へスキップ</a>
+
+<header class="site-head">
+  <a class="brand" href="#top">
+    <span class="brand-mark" aria-hidden="true">MD</span>
+    <span class="brand-name">MD&nbsp;Previewer<b class="brand-win">for Windows</b></span>
+  </a>
+
+  <nav class="site-nav" aria-label="Sections">
+    <a href="#uses" data-i18n="nav.uses">使い方</a>
+    <a href="#features" data-i18n="nav.features">できること</a>
+    <a href="#gallery" data-i18n="nav.gallery">実例</a>
+  </nav>
+
+  <div class="head-tools">
+    <div class="seg" role="group" data-i18n-attr="aria-label:nav.langLabel" aria-label="表示言語">
+      <button type="button" data-lang="ja" class="seg-btn">日本語</button>
+      <button type="button" data-lang="en" class="seg-btn">EN</button>
+    </div>
+    <button type="button" id="theme-btn" class="icon-btn"
+            data-i18n-attr="title:nav.theme;aria-label:nav.theme" title="配色を切り替え">
+      <span class="theme-ic" aria-hidden="true"></span>
+    </button>
+    <a class="btn btn-sm" href="https://github.com/yvvakimoto/md_previewer/releases/latest"
+       data-i18n="nav.download">ダウンロード</a>
+  </div>
+</header>
+
+<main id="main">
+
+<!-- ══════════════════════════ HERO ══════════════════════════ -->
+<section class="hero" id="top">
+  <div class="hero-ink hero-ink-a" aria-hidden="true"></div>
+  <div class="hero-ink hero-ink-b" aria-hidden="true"></div>
+
+  <div class="hero-copy reveal">
+    <p class="eyebrow" data-i18n="hero.eyebrow">スタンドアロン Markdown プレビューア</p>
+
+    <h1 class="hero-title">
+      <span class="ht-line">MD Previewer</span>
+      <span class="stamp">for Windows</span>
+    </h1>
+
+    <p class="hero-lead" data-i18n="hero.lead">
+      <code>.md</code> をダブルクリックするだけ。図も数式も Marp スライドも縦書きの文庫レイアウトも、インストールした直後から <b>完全オフライン</b>で表示できます。
+    </p>
+
+    <div class="cta-row">
+      <a class="btn btn-primary" href="https://github.com/yvvakimoto/md_previewer/releases/latest">
+        <span data-i18n="hero.cta1">無料でダウンロード</span>
+        <b class="ver" id="latest-ver"></b>
+      </a>
+      <a class="btn btn-ghost" href="https://github.com/yvvakimoto/md_previewer"
+         data-i18n="hero.cta2">GitHub で見る</a>
+    </div>
+
+    <p class="hero-note" data-i18n="hero.note">
+      <b>Windows 10 / 11 専用です。</b> macOS・Linux には対応していません。
+    </p>
+
+    <ul class="tag-row" aria-label="Highlights">
+      <li class="tag tag-aqua" data-i18n="hero.tag1">管理者権限なし</li>
+      <li class="tag tag-yellow" data-i18n="hero.tag2">CDN 不使用</li>
+      <li class="tag tag-green" data-i18n="hero.tag3">MIT ライセンス</li>
+      <li class="tag tag-blue" data-i18n="hero.tag4">WebView2 のみ</li>
+    </ul>
+  </div>
+
+  <figure class="hero-shot reveal">
+    <div class="frame">
+      <div class="frame-bar" aria-hidden="true"><i></i><i></i><i></i></div>
+      <img src="assets/img/read/app.webp" width="1600" height="1000"
+           data-i18n-attr="alt:hero.shotAlt"
+           alt="目次サイドバー付きで Markdown 文書を表示している MD Previewer のウィンドウ">
+    </div>
+  </figure>
+</section>
+
+<!-- ══════════════════════════ STEPS ══════════════════════════ -->
+<section class="steps reveal">
+  <ol class="step-list">
+    <li class="step">
+      <span class="step-n">1</span>
+      <h3 data-i18n="step1.t">インストーラを実行</h3>
+      <p data-i18n="step1.d">管理者権限は要りません。ユーザー単位で入ります。</p>
+    </li>
+    <li class="step">
+      <span class="step-n">2</span>
+      <h3 data-i18n="step2.t"><code>.md</code> をダブルクリック</h3>
+      <p data-i18n="step2.d">ドラッグ＆ドロップ、フォルダの右クリックでも開けます。</p>
+    </li>
+    <li class="step">
+      <span class="step-n">3</span>
+      <h3 data-i18n="step3.t">保存すれば、すぐ映る</h3>
+      <p data-i18n="step3.d">使い慣れたエディタで保存すると、その場で描き直します。</p>
+    </li>
+  </ol>
+</section>
+
+<!-- ══════════════════════════ PERSONAS ══════════════════════════ -->
+<section id="uses" class="personas">
+  <header class="sec-head reveal">
+    <p class="sec-kicker" data-i18n="uses.kicker">USE CASES</p>
+    <h2 class="sec-title" data-i18n="uses.title">5 とおりの、ちょうどいい使い道。</h2>
+    <p class="sec-lead" data-i18n="uses.lead">機能の数より、どう効くか。よく使われている 5 つの場面を挙げます。</p>
+  </header>
+
+  <!-- 01 -->
+  <article class="use use-aqua reveal">
+    <div class="use-copy">
+      <p class="use-chip"><span class="use-n">01</span><span data-i18n="use1.chip">だれでも</span></p>
+      <h3 class="use-title" data-i18n="use1.title">開いて、読むだけ。</h3>
+      <p class="use-body" data-i18n="use1.body">同僚から、あるいは AI から受け取った <code>.md</code> を、何の準備もなく読めます。見出しから目次が自動で組まれ、外部エディタで保存すればその場で再読込。フォルダごと渡されたときは、ファイルツリー付きのワークスペースとして開きます。</p>
+      <ul class="use-pills">
+        <li data-i18n="use1.p1">目次サイドバー</li>
+        <li data-i18n="use1.p2">ファイル関連付け</li>
+        <li data-i18n="use1.p3">保存を検知して再読込</li>
+        <li data-i18n="use1.p4">単独 HTML / PDF 書き出し</li>
+      </ul>
+    </div>
+    <figure class="use-shot">
+      <div class="frame">
+        <img loading="lazy" src="assets/img/read/app.webp" width="1600" height="1000"
+             data-i18n-attr="alt:use1.alt" alt="目次サイドバーと本文を並べて表示している画面">
+      </div>
+    </figure>
+  </article>
+
+  <!-- 02 -->
+  <article class="use use-pink use-flip reveal">
+    <div class="use-copy">
+      <p class="use-chip"><span class="use-n">02</span><span data-i18n="use2.chip">プレゼンする人へ</span></p>
+      <h3 class="use-title" data-i18n="use2.title">Markdown のまま、発表する。</h3>
+      <p class="use-body" data-i18n="use2.body">冒頭に <code>marp: true</code> と 1 行書けば、その文書はもう 16:9 のスライドです。<kbd>P</kbd> で「1 枚ずつ / サムネイル一覧 / 縦並び」を切り替え、<kbd>Z</kbd> でレーザーポインタ。下にはみ出した本文は見出しを固定したまま自動で縮み、PDF は 1 ページ 1 スライドで出ます。</p>
+      <ul class="use-pills">
+        <li data-i18n="use2.p1">Marp Core を内蔵</li>
+        <li data-i18n="use2.p2">3 つの表示モード</li>
+        <li data-i18n="use2.p3">レーザーポインタ</li>
+        <li data-i18n="use2.p4">スライドの自動縮小</li>
+      </ul>
+    </div>
+    <figure class="use-shot deck">
+      <img loading="lazy" class="deck-c" src="assets/img/marp/slide-12.webp" width="1600" height="900"
+           data-i18n-attr="alt:use2.alt3" alt="Plotly の 3D サーフェスを載せたスライド">
+      <img loading="lazy" class="deck-b" src="assets/img/marp/slide-08.webp" width="1600" height="900"
+           data-i18n-attr="alt:use2.alt2" alt="Mermaid のフローチャートを載せたスライド">
+      <img loading="lazy" class="deck-a" src="assets/img/marp/slide-02.webp" width="1600" height="902"
+           data-i18n-attr="alt:use2.alt1" alt="グラデーションの章扉スライド">
+    </figure>
+  </article>
+
+  <!-- 03 -->
+  <article class="use use-blue use-top reveal">
+    <div class="use-copy">
+      <p class="use-chip"><span class="use-n">03</span><span data-i18n="use3.chip">研究する人へ</span></p>
+      <h3 class="use-title" data-i18n="use3.title">数式を、書く速さで。</h3>
+      <p class="use-body" data-i18n="use3.body">KaTeX がインラインもディスプレイも組みます。数式を右クリックすれば <b>MathML</b> と <b>LaTeX</b> をコピーでき、Word にそのまま貼れます。内蔵エディタには YaTeX 風の入力支援 — <code>$</code>+Tab、<code>\begin{}</code>+Tab、<code>a.</code>→<code>\alpha</code>。可換図式は tikz-cd をそのまま書けば、WASM 版 TeX がオフラインで組みます。</p>
+      <ul class="use-pills">
+        <li data-i18n="use3.p1">KaTeX</li>
+        <li data-i18n="use3.p2">MathML / LaTeX コピー</li>
+        <li data-i18n="use3.p3">数式入力支援</li>
+        <li data-i18n="use3.p4">tikz-cd 可換図式</li>
+      </ul>
+    </div>
+    <figure class="use-shot pair">
+      <div class="frame">
+        <img loading="lazy" src="assets/img/editor-math/app.webp" width="1600" height="1015"
+             data-i18n-attr="alt:use3.alt1" alt="\begin{ の入力で環境名の補完候補が出ているエディタ">
+      </div>
+      <div class="frame frame-sm">
+        <img loading="lazy" src="assets/img/tikzcd/app.webp" width="1600" height="1000"
+             data-i18n-attr="alt:use3.alt2" alt="tikz-cd で描かれた可換図式">
+      </div>
+    </figure>
+  </article>
+
+  <!-- 04 -->
+  <article class="use use-orange use-flip reveal">
+    <div class="use-copy">
+      <p class="use-chip"><span class="use-n">04</span><span data-i18n="use4.chip">書く人へ</span></p>
+      <h3 class="use-title" data-i18n="use4.title">文庫のかたちで、書く。</h3>
+      <p class="use-body" data-i18n="use4.body">付属テーマ <code>bunko.css</code> を選ぶと、本文は <b>1 行 39 字 × 16 行</b>の縦組みページに流し込まれ、ページの地にノンブルが入ります。段落は本物の本と同じようにページをまたいで割れる。字数と行数を見ながら書けて、ルビも振れます。字数・行送り・書体は歯車から動かせて、その場で組み直します。</p>
+      <ul class="use-pills">
+        <li data-i18n="use4.p1">39 字 × 16 行の行取り</li>
+        <li data-i18n="use4.p2">ノンブル</li>
+        <li data-i18n="use4.p3">ルビ（振り仮名）</li>
+        <li data-i18n="use4.p4">A4 横に見開き 2 ページの PDF</li>
+      </ul>
+    </div>
+    <figure class="use-shot">
+      <div class="frame">
+        <img loading="lazy" src="assets/img/bunko/app.webp" width="1600" height="1000"
+             data-i18n-attr="alt:use4.alt" alt="縦書き・ノンブル付きの文庫レイアウトで表示された小説">
+      </div>
+    </figure>
+  </article>
+
+  <!-- 05 -->
+  <article class="use use-green use-top reveal">
+    <div class="use-copy">
+      <p class="use-chip"><span class="use-n">05</span><span data-i18n="use5.chip">こだわる人へ</span></p>
+      <h3 class="use-title" data-i18n="use5.title">指の記憶に、道具を合わせる。</h3>
+      <p class="use-body" data-i18n="use5.body">内蔵エディタは Vim キーバインドに対応し、<kbd>w</kbd> <kbd>b</kbd> <kbd>e</kbd> は漢字・ひらがな・カタカナの切れ目で止まります。そして Dvorak 配列エミュレータを使っている人のために、<b>コマンドモードのキーだけ</b>を、押した物理キーの QWERTY 位置で解釈できます。文章の入力は Dvorak のまま。</p>
+      <ul class="use-pills">
+        <li data-i18n="use5.p1">Vim キーバインド</li>
+        <li data-i18n="use5.p2">日本語のワード境界</li>
+        <li data-i18n="use5.p3">Jupyter 風セルモード</li>
+        <li data-i18n="use5.p4">Dvorak → QWERTY 転送</li>
+      </ul>
+    </div>
+
+    <div class="use-shot dvorak">
+      <figure class="keymap">
+        <figcaption data-i18n="use5.mapCap">Dvorak エミュレータ使用時 · <code>:set dvorak</code></figcaption>
+        <ol class="keyrow">
+          <li><span class="kc-phys">h</span><span class="kc-out">j</span><span class="kc-cmd">h<i>←</i></span></li>
+          <li><span class="kc-phys">j</span><span class="kc-out">c</span><span class="kc-cmd">j<i>↓</i></span></li>
+          <li><span class="kc-phys">k</span><span class="kc-out">v</span><span class="kc-cmd">k<i>↑</i></span></li>
+          <li><span class="kc-phys">l</span><span class="kc-out">p</span><span class="kc-cmd">l<i>→</i></span></li>
+        </ol>
+        <dl class="keylegend">
+          <div><dt data-i18n="use5.legend1">押した物理キー</dt></div>
+          <div><dt data-i18n="use5.legend2">Dvorak が送る文字</dt></div>
+          <div><dt data-i18n="use5.legend3">Vim が受け取るコマンド</dt></div>
+        </dl>
+        <p class="keynote" data-i18n="use5.mapNote"><code>dd</code> <code>dw</code> <code>gg</code> <code>3j</code> <code>[[</code> のような複数キーや回数指定もそのまま。インサートモードと <code>:</code> <code>/</code> の入力は Dvorak のままです。</p>
+      </figure>
+      <div class="frame frame-sm">
+        <img loading="lazy" src="assets/img/editor-vim/app.webp" width="1600" height="1015"
+             data-i18n-attr="alt:use5.alt" alt="Vim の ex コマンド :set dvorak を入力している内蔵エディタ">
+      </div>
+    </div>
+  </article>
+</section>
+
+<!-- ══════════════════════════ FEATURES ══════════════════════════ -->
+<section id="features" class="features">
+  <header class="sec-head reveal">
+    <p class="sec-kicker" data-i18n="feat.kicker">THE LITTLE THINGS</p>
+    <h2 class="sec-title" data-i18n="feat.title">かゆいところに、手が届きます。</h2>
+    <p class="sec-lead" data-i18n="feat.lead">素の Markdown で足りないときの記法とエンジンを、ひととおり揃えました。追加インストールもネットワークも要りません。</p>
+  </header>
+
+  <ul class="feat-grid reveal">
+    <li class="feat feat-ext">
+      <a href="https://marked.js.org/" target="_blank" rel="noopener noreferrer">marked</a>
+      <span data-i18n="lib.marked">Markdown 本文の解析</span><em class="lic">MIT</em>
+    </li>
+    <li class="feat feat-ext">
+      <a href="https://highlightjs.org/" target="_blank" rel="noopener noreferrer">highlight.js</a>
+      <span data-i18n="lib.hljs">コードの色分け</span><em class="lic">BSD-3-Clause</em>
+    </li>
+    <li class="feat feat-ext">
+      <a href="https://katex.org/" target="_blank" rel="noopener noreferrer">KaTeX</a>
+      <span data-i18n="lib.katex">インライン / ディスプレイ数式</span><em class="lic">MIT</em>
+    </li>
+    <li class="feat feat-ext">
+      <a href="https://mermaid.js.org/" target="_blank" rel="noopener noreferrer">Mermaid</a>
+      <span data-i18n="lib.mermaid">フロー・シーケンス・ガント</span><em class="lic">MIT</em>
+    </li>
+    <li class="feat feat-ext">
+      <a href="https://marp.app/" target="_blank" rel="noopener noreferrer">Marp Core</a>
+      <span data-i18n="lib.marp">16:9 スライドの組版</span><em class="lic">MIT</em>
+    </li>
+    <li class="feat feat-ext">
+      <a href="https://plotly.com/javascript/" target="_blank" rel="noopener noreferrer">Plotly.js</a>
+      <span data-i18n="lib.plotly">外部 CSV から対話グラフ</span><em class="lic">MIT</em>
+    </li>
+    <li class="feat feat-ext">
+      <a href="https://www.abcjs.net/" target="_blank" rel="noopener noreferrer">abcjs</a>
+      <span data-i18n="lib.abcjs">ABC 記譜法を五線譜に</span><em class="lic">MIT</em>
+    </li>
+    <li class="feat feat-ext">
+      <a href="https://markwhen.com/" target="_blank" rel="noopener noreferrer">Markwhen</a>
+      <span data-i18n="lib.markwhen">年表・カレンダー</span><em class="lic">MIT</em>
+    </li>
+    <li class="feat feat-ext">
+      <a href="https://www.npmjs.com/package/@rod2ik/tikzjax" target="_blank" rel="noopener noreferrer">TikZJax</a>
+      <span data-i18n="lib.tikz">tikz-cd の可換図式（任意導入）</span><em class="lic">GPL-3.0</em>
+    </li>
+    <li class="feat feat-ext">
+      <a href="https://codemirror.net/" target="_blank" rel="noopener noreferrer">CodeMirror 6</a>
+      <span data-i18n="lib.cm">内蔵エディタの土台</span><em class="lic">MIT</em>
+    </li>
+    <li class="feat feat-ext">
+      <a href="https://github.com/replit/codemirror-vim" target="_blank" rel="noopener noreferrer">codemirror-vim</a>
+      <span data-i18n="lib.cmvim">Vim キーバインド</span><em class="lic">MIT</em>
+    </li>
+    <li class="feat feat-ext">
+      <a href="https://conv.denshochan.com/markdown" target="_blank" rel="noopener noreferrer" data-i18n="lib.dendenT">でんでんマークダウン</a>
+      <span data-i18n="lib.denden">ルビ記法のもとにした仕様</span><em class="lic" data-i18n="lic.spec">記法仕様</em>
+    </li>
+
+    <li class="feat feat-own">
+      <b data-i18n="own.tateT">縦書き・文庫組み</b>
+      <span data-i18n="own.tate">禁則・縦中横・39 字 × 16 行</span><em class="lic" data-i18n="lic.own">本体実装</em>
+    </li>
+    <li class="feat feat-own">
+      <b data-i18n="own.rubyT">ルビ</b>
+      <span data-i18n="own.ruby">グループルビ・モノルビ</span><em class="lic" data-i18n="lic.own">本体実装</em>
+    </li>
+    <li class="feat feat-own">
+      <b data-i18n="own.layoutT">配置と多段組み</b>
+      <span data-i18n="own.layout"><code>::: center</code> / <code>::: columns</code></span><em class="lic" data-i18n="lic.own">本体実装</em>
+    </li>
+    <li class="feat feat-own">
+      <b data-i18n="own.spanT">インラインスタイル</b>
+      <span data-i18n="own.span">文字色・サイズ・書体を部分指定</span><em class="lic" data-i18n="lic.own">本体実装</em>
+    </li>
+    <li class="feat feat-own">
+      <b data-i18n="own.tblT">表の往復</b>
+      <span data-i18n="own.tbl">PowerPoint と相互に貼付</span><em class="lic" data-i18n="lic.own">本体実装</em>
+    </li>
+    <li class="feat feat-own">
+      <b data-i18n="own.vidT">動画</b>
+      <span data-i18n="own.vid">ローカル動画・YouTube</span><em class="lic" data-i18n="lic.own">本体実装</em>
+    </li>
+    <li class="feat feat-own">
+      <b data-i18n="own.exportT">書き出し</b>
+      <span data-i18n="own.export">単独 HTML・しおり付き PDF</span><em class="lic" data-i18n="lic.own">本体実装</em>
+    </li>
+    <li class="feat feat-own">
+      <b data-i18n="own.themeT">テーマ</b>
+      <span data-i18n="own.theme">CSS を 1 枚置くだけ</span><em class="lic" data-i18n="lic.own">本体実装</em>
+    </li>
+  </ul>
+
+  <p class="feat-note reveal" data-i18n="feat.credit">描画の中身は、上に挙げた各オープンソースプロジェクトの成果です。タイルをクリックすると本家のサイトへ移動します。ライセンス全文はアプリに収録してあり、ヘルプ（<kbd>H</kbd>）→ サードパーティ表記から読めます。作者のみなさんに感謝します。ほかに CSV / TSV 表、脚注、定義リスト、タスクリスト、機密透かし、ワークスペースなども使えます。</p>
+</section>
+
+<!-- ══════════════════════════ GALLERY ══════════════════════════ -->
+<!-- Every <pre> below must match GALLERY in tools/preview-harness/shoot-docs.py
+     verbatim (HTML-escaped) — that script renders the snippet and shoots the
+     picture next to it, and warns when the two have drifted apart. -->
+<section id="gallery" class="gallery">
+  <header class="sec-head reveal">
+    <p class="sec-kicker" data-i18n="gal.kicker">SEE IT</p>
+    <h2 class="sec-title" data-i18n="gal.title">書き方と、出てくるもの。</h2>
+    <p class="sec-lead" data-i18n="gal.lead">それぞれ、書く Markdown と、プレビューでの見え方です。どれも追加の設定なしで、そのまま出ます。</p>
+  </header>
+
+  <div class="gallery-grid reveal">
+
+    <article class="g-card g-6">
+      <h3 class="g-title"><span data-i18n="gal.mathT">数式</span><em class="g-tag">KaTeX</em></h3>
+      <div class="g-body">
+<pre class="g-src"><code>$$
+x = \frac{-b \pm \sqrt{b^2 - 4ac}}{2a}
+$$</code></pre>
+        <figure class="g-out">
+          <img loading="lazy" src="assets/img/gallery/math.webp" width="357" height="82"
+               data-i18n-attr="alt:gal.mathAlt" alt="二次方程式の解の公式が組版されたもの">
+        </figure>
+      </div>
+    </article>
+
+    <article class="g-card g-6">
+      <h3 class="g-title"><span data-i18n="gal.tikzT">可換図式</span><em class="g-tag">tikz-cd</em></h3>
+      <div class="g-body">
+<pre class="g-src"><code>```tikzcd
+A \arrow[r, "f"] \arrow[d, "g"'] &amp; B \arrow[d, "h"] \\
+C \arrow[r, "k"']                &amp; D
+```</code></pre>
+        <figure class="g-out">
+          <img loading="lazy" src="assets/img/gallery/tikzcd.webp" width="278" height="254"
+               data-i18n-attr="alt:gal.tikzAlt" alt="A・B・C・D を矢印で結んだ可換正方形">
+        </figure>
+      </div>
+    </article>
+
+    <article class="g-card g-6">
+      <h3 class="g-title"><span data-i18n="gal.mermaidT">図</span><em class="g-tag">Mermaid</em></h3>
+      <div class="g-body">
+<pre class="g-src"><code>```mermaid
+flowchart LR
+  A[編集] --&gt; B{保存}
+  B --&gt;|marp: true| C[スライド]
+  B --&gt;|通常| D[プレビュー]
+```</code></pre>
+        <figure class="g-out">
+          <img loading="lazy" src="assets/img/gallery/mermaid.webp" width="853" height="296"
+               data-i18n-attr="alt:gal.mermaidAlt" alt="編集から保存を経てスライドとプレビューへ分岐するフローチャート">
+        </figure>
+      </div>
+    </article>
+
+    <article class="g-card g-6">
+      <h3 class="g-title"><span data-i18n="gal.csvT">表</span><em class="g-tag" data-i18n="gal.csvTag">CSV フェンス</em></h3>
+      <div class="g-body">
+<pre class="g-src"><code>```csv
+項目,Q1,Q2,Q3
+売上,120,150,170
+利益,30,42,55
+```</code></pre>
+        <figure class="g-out">
+          <img loading="lazy" src="assets/img/gallery/csv.webp" width="1360" height="224"
+               data-i18n-attr="alt:gal.csvAlt" alt="CSV から組まれた見出し付きの表">
+        </figure>
+      </div>
+    </article>
+
+    <article class="g-card g-12">
+      <h3 class="g-title"><span data-i18n="gal.rubyT">ルビ</span><em class="g-tag" data-i18n="gal.rubyTag">でんでん記法</em></h3>
+      <div class="g-body">
+<pre class="g-src"><code>｜吾輩《わがはい》は{猫|ねこ}である。</code></pre>
+        <figure class="g-out">
+          <img loading="lazy" src="assets/img/gallery/ruby.webp" width="272" height="66"
+               data-i18n-attr="alt:gal.rubyAlt" alt="吾輩と猫に振り仮名が添えられた一文">
+        </figure>
+      </div>
+    </article>
+
+    <article class="g-card g-12">
+      <h3 class="g-title"><span data-i18n="gal.abcT">楽譜</span><em class="g-tag" data-i18n="gal.abcTag">ABC 記譜法</em></h3>
+      <div class="g-body">
+<pre class="g-src"><code>```abc
+X:1
+T:きらきら星
+M:4/4
+L:1/4
+K:C
+C C G G | A A G2 | F F E E | D D C2 |
+```</code></pre>
+        <figure class="g-out">
+          <img loading="lazy" src="assets/img/gallery/abc.webp" width="1360" height="218"
+               data-i18n-attr="alt:gal.abcAlt" alt="きらきら星の旋律が五線譜に描かれたもの">
+        </figure>
+      </div>
+    </article>
+
+    <article class="g-card g-12">
+      <h3 class="g-title"><span data-i18n="gal.mwT">年表</span><em class="g-tag">Markwhen</em></h3>
+      <div class="g-body">
+<pre class="g-src"><code>```markwhen
+---
+title: プロジェクト計画
+#design: blue
+#dev: green
+---
+
+# 企画
+2023-01-01 / 2023-02-15: 要件定義 #design
+2023-02-01: キックオフ
+
+# 開発
+2023-03-01 / 2023-06-30: API 実装 #dev
+```</code></pre>
+        <figure class="g-out">
+          <img loading="lazy" src="assets/img/gallery/markwhen.webp" width="1359" height="316"
+               data-i18n-attr="alt:gal.mwAlt" alt="企画と開発の期間が横棒で並んだタイムライン">
+        </figure>
+      </div>
+    </article>
+
+    <article class="g-card g-12">
+      <h3 class="g-title"><span data-i18n="gal.calT">カレンダー</span><em class="g-tag">display: calendar</em></h3>
+      <div class="g-body">
+<pre class="g-src"><code>```markwhen
+---
+title: 4月の予定
+display: calendar
+country: JP
+#plan: blue
+#trip: green
+---
+
+2024-04-03: 企画会議 #plan
+2024-04-08 / 2024-04-12: 出張 #trip
+2024-04-22: 締め切り
+```</code></pre>
+        <figure class="g-out">
+          <img loading="lazy" src="assets/img/gallery/markwhen-cal.webp" width="1360" height="823"
+               data-i18n-attr="alt:gal.calAlt" alt="4 月の月間カレンダー。予定が色付きの帯で並び、祝日が強調表示されている">
+        </figure>
+      </div>
+    </article>
+
+    <article class="g-card g-6">
+      <h3 class="g-title"><span data-i18n="gal.colT">多段組み</span><em class="g-tag" data-i18n="gal.colTag">フェンス記法</em></h3>
+      <div class="g-body">
+<pre class="g-src"><code>::: columns
+### 左カラム
+段の途中から多段組みにできます。
++++
+### 右カラム
+`:::` で 1 カラムに戻ります。
+:::</code></pre>
+        <figure class="g-out">
+          <img loading="lazy" src="assets/img/gallery/columns.webp" width="1144" height="140"
+               data-i18n-attr="alt:gal.colAlt" alt="左右 2 カラムに分かれた見出しと本文">
+        </figure>
+      </div>
+    </article>
+
+    <article class="g-card g-6">
+      <h3 class="g-title"><span data-i18n="gal.plotlyT">チャート</span><em class="g-tag" data-i18n="gal.plotlyTag">外部 CSV + Plotly</em></h3>
+      <div class="g-body">
+<pre class="g-src"><code>```plotly
+file: data/sales.csv
+type: line
+x: month
+y: revenue
+```</code></pre>
+        <figure class="g-out">
+          <img loading="lazy" src="assets/img/gallery/plotly.webp" width="1318" height="803"
+               data-i18n-attr="alt:gal.plotlyAlt" alt="外部 CSV から描かれた月次売上の折れ線グラフ">
+        </figure>
+      </div>
+    </article>
+
+  </div>
+
+  <p class="feat-note reveal" data-i18n="gal.note">画像はどれも、添えたソースをこのプレビューアで実際に描画したものです。カレンダーの祝日はオンラインのときだけ取得します（取れなければ祝日なしで描きます）。縦書き・文庫組みの例は上の「文庫のかたちで、書く。」を、スライドの例は「Markdown のまま、発表する。」をご覧ください。</p>
+</section>
+
+<!-- ══════════════════════════ DOWNLOAD ══════════════════════════ -->
+<section id="download" class="download reveal">
+  <div class="dl-card">
+    <p class="sec-kicker" data-i18n="dl.kicker">GET IT</p>
+    <h2 class="dl-title" data-i18n="dl.title">1 分で、使いはじめられます。</h2>
+    <p class="dl-lead" data-i18n="dl.lead">インストーラは <code>%LOCALAPPDATA%</code> の下に入るので、管理者権限は要りません。アンインストールは Windows の「設定 → アプリ」から。</p>
+
+    <a class="btn btn-primary btn-lg" href="https://github.com/yvvakimoto/md_previewer/releases/latest">
+      <span data-i18n="dl.cta">インストーラをダウンロード</span>
+      <b class="ver" id="latest-ver-2"></b>
+    </a>
+
+    <dl class="req">
+      <div>
+        <dt data-i18n="dl.req1t">動作環境</dt>
+        <dd data-i18n="dl.req1d">Windows 10 / 11（64-bit）。<b>macOS・Linux には対応していません。</b></dd>
+      </div>
+      <div>
+        <dt data-i18n="dl.req2t">必要なランタイム</dt>
+        <dd data-i18n="dl.req2d">Microsoft Edge WebView2。Windows 11 には標準搭載、Windows 10 でも最近の Edge が入っていれば揃っています。</dd>
+      </div>
+      <div>
+        <dt data-i18n="dl.req3t">ネットワーク</dt>
+        <dd data-i18n="dl.req3d">表示にはインターネット接続を使いません。tikz-cd のエンジンだけ、インストール時に取得するか選べます。</dd>
+      </div>
+    </dl>
+  </div>
+</section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="foot-brand">
+    <span class="brand-mark" aria-hidden="true">MD</span>
+    <span>MD Previewer <b>for Windows</b></span>
+  </div>
+  <nav class="foot-links" aria-label="Links">
+    <a href="https://github.com/yvvakimoto/md_previewer">GitHub</a>
+    <a href="https://github.com/yvvakimoto/md_previewer/blob/main/README.md" data-i18n="foot.readme">使い方</a>
+    <a href="https://github.com/yvvakimoto/md_previewer/blob/main/HISTORY.md" data-i18n="foot.history">更新履歴</a>
+    <a href="https://github.com/yvvakimoto/md_previewer/releases" data-i18n="foot.releases">リリース</a>
+    <a href="https://github.com/yvvakimoto/md_previewer/blob/main/LICENSE" data-i18n="foot.license">ライセンス</a>
+  </nav>
+  <p class="foot-note" data-i18n="foot.note">MIT License · 収録ライブラリの表記はアプリ内のヘルプ（<kbd>H</kbd>）からご覧いただけます。</p>
+</footer>
+
+<script src="assets/site.js"></script>
+</body>
+</html>
