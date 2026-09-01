@@ -1,4 +1,6 @@
-# md-previewer
+# MD Previewer for Windows
+
+**紹介ページ: <https://yvvakimoto.github.io/md_previewer/>** ／ **ダウンロード: [最新リリース](https://github.com/yvvakimoto/md_previewer/releases/latest)**
 
 Windows 専用の、軽量なスタンドアロン Markdown プレビューアです。  
 インターネット接続不要で動作する **閲覧主眼** のビューアで、GitHub Flavored Markdown に加え、図・数式・スライドなど多彩な拡張記法に対応しています。補助機能として、`E` キーで開く内蔵エディタ（CodeMirror 6 + Vim 対応）も同梱しています。
@@ -16,7 +18,7 @@ Windows 専用の、軽量なスタンドアロン Markdown プレビューア�
 
 代表的な既存ツール（VS Code の Markdown Preview / Obsidian / Typora）と並べた比較を以下に示します。
 
-| 観点 | md-previewer（本ツール） | VS Code Markdown Preview | Obsidian | Typora |
+| 観点 | MD Previewer（本ツール） | VS Code Markdown Preview | Obsidian | Typora |
 | --- | --- | --- | --- | --- |
 | 想定ユーザー | 非エンジニア含む閲覧者全般 | エンジニア | ノート編集者（個人 KMS 用途） | ライター／ドキュメント作成者 |
 | 起動方法 | `.md` をダブルクリック／フォルダ右クリック | VS Code を起動 →ファイルを開く →プレビューを開く | アプリ起動 → vault を開く | アプリ起動 → ファイルを開く |
@@ -160,7 +162,7 @@ md-previewer.exe path\to\bundle.mdx
   - **今すぐ更新** — アプリ終了 → サイレント更新（管理者権限不要）→ **自動再起動**（開いていた文書も開き直します）。
   - **終了後に更新** — 更新を**予約するだけ**でその場は何も起きないので、読みかけ・書きかけの作業をそのまま続けられます。自分でアプリを閉じたときに静かに更新が実行され、**次に起動したときから新しいバージョン**になります（再起動はしません）。予約はそのとき限りなので、更新せずに閉じてしまった場合は次回起動時にまたカードが出ます。
   - **×** — 今回だけ閉じます（次回起動時にまた出ます）。**今後表示しない** — その端末では以後カードを出しません。
-- 有効化・共有フォルダの準備・新版公開の手順は、社内配布パッケージ `nwc-addon` の README「社内自動更新のセットアップ」を参照してください（設定例は `assets/update.example.json`）。
+- 有効化するには、配布元が `assets/update.json` を用意して共有フォルダを指す設定を書きます（設定例は `assets/update.example.json`）。手順の詳細は組織の配布パッケージ側のドキュメントを参照してください。
 
 ---
 
