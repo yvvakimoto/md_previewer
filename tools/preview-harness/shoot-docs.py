@@ -252,6 +252,23 @@ title: プロジェクト計画
 2023-03-01 / 2023-06-30: API 実装 #dev
 ```"""),
 
+    # Same notation as the timeline above plus one header line. `country: JP`
+    # pulls public holidays, which is online-only by design -- the capture just
+    # renders without them when there is no network, and never fails.
+    ("markwhen-cal", ".markwhen-timeline", r"""```markwhen
+---
+title: 4月の予定
+display: calendar
+country: JP
+#plan: blue
+#trip: green
+---
+
+2024-04-03: 企画会議 #plan
+2024-04-08 / 2024-04-12: 出張 #trip
+2024-04-22: 締め切り
+```"""),
+
     ("columns", ".inline-cols", r"""::: columns
 ### 左カラム
 段の途中から多段組みにできます。

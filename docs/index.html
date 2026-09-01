@@ -480,6 +480,29 @@ title: プロジェクト計画
       </div>
     </article>
 
+    <article class="g-card g-12">
+      <h3 class="g-title"><span data-i18n="gal.calT">カレンダー</span><em class="g-tag">display: calendar</em></h3>
+      <div class="g-body">
+<pre class="g-src"><code>```markwhen
+---
+title: 4月の予定
+display: calendar
+country: JP
+#plan: blue
+#trip: green
+---
+
+2024-04-03: 企画会議 #plan
+2024-04-08 / 2024-04-12: 出張 #trip
+2024-04-22: 締め切り
+```</code></pre>
+        <figure class="g-out">
+          <img loading="lazy" src="assets/img/gallery/markwhen-cal.webp" width="1360" height="823"
+               data-i18n-attr="alt:gal.calAlt" alt="4 月の月間カレンダー。予定が色付きの帯で並び、祝日が強調表示されている">
+        </figure>
+      </div>
+    </article>
+
     <article class="g-card g-6">
       <h3 class="g-title"><span data-i18n="gal.colT">多段組み</span><em class="g-tag" data-i18n="gal.colTag">フェンス記法</em></h3>
       <div class="g-body">
@@ -515,7 +538,7 @@ y: revenue
 
   </div>
 
-  <p class="feat-note reveal" data-i18n="gal.note">画像はどれも、左のソースをこのプレビューアで実際に描画したものです（<code>tools/preview-harness/shoot-docs.py</code> が生成しています）。縦書き・文庫組みの例は上の「文庫のかたちで、書く。」を、スライドの例は「Markdown のまま、発表する。」をご覧ください。</p>
+  <p class="feat-note reveal" data-i18n="gal.note">画像はどれも、左のソースをこのプレビューアで実際に描画したものです（<code>tools/preview-harness/shoot-docs.py</code> が生成しています）。カレンダーの祝日はオンラインのときだけ取得します（取れなければ祝日なしで描きます）。縦書き・文庫組みの例は上の「文庫のかたちで、書く。」を、スライドの例は「Markdown のまま、発表する。」をご覧ください。</p>
 </section>
 
 <!-- ══════════════════════════ DOWNLOAD ══════════════════════════ -->
