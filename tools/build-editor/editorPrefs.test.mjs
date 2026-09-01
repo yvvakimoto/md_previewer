@@ -65,8 +65,13 @@ eq('arg sign only is null', parseFontSizeArg('+', 15), null);
 eq('default key present', fontFamilyKeys().includes(FONT_FAMILY_DEFAULT), true);
 eq('default is first', FONT_FAMILIES[0].key, FONT_FAMILY_DEFAULT);
 eq('keys unique', fontFamilyKeys().length, new Set(fontFamilyKeys()).size);
-eq('every family has label+stack',
-   FONT_FAMILIES.every((f) => !!f.key && !!f.label && !!f.stack), true);
+// labelKey, not label: the display label is resolved through i18n.js at render
+// time so it follows a language switch. `stack` stays a literal font list --
+// it contains real font names and must never be translated.
+eq('every family has labelKey+stack',
+   FONT_FAMILIES.every((f) => !!f.key && !!f.labelKey && !!f.stack), true);
+eq('labelKey is namespaced for the editor table',
+   FONT_FAMILIES.every((f) => f.labelKey.startsWith('ed.font.')), true);
 eq('unknown key falls back', fontStackOf('nope'), FONT_FAMILIES[0].stack);
 eq('null key falls back', fontStackOf(null), FONT_FAMILIES[0].stack);
 eq('known key resolves', fontStackOf('consolas'), FONT_FAMILIES[1].stack);

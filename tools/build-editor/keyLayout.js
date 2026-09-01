@@ -95,9 +95,12 @@ const DVORAK_PAIRS = [
 ];
 
 // `pairs: null` means "no translation" — the off switch, not a layout.
+// `labelKey` is an i18n key resolved at render time, so the label follows a
+// language switch. The map's own keys stay English: they are the persisted
+// `editor:keyLayout` values and the :keylayout argument.
 export const KEY_LAYOUTS = {
-  qwerty: { label: 'なし (QWERTY)', pairs: null },
-  dvorak: { label: 'Dvorak → QWERTY', pairs: DVORAK_PAIRS },
+  qwerty: { labelKey: 'ed.keyLayout.qwerty', pairs: null },
+  dvorak: { labelKey: 'ed.keyLayout.dvorak', pairs: DVORAK_PAIRS },
 };
 
 export function keyLayoutKeys() {

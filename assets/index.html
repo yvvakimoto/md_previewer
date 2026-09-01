@@ -2118,6 +2118,46 @@
         body.dark-mode #help-modal .help-footer { border-top-color: #30363d; }
         body.dark-mode #help-modal .help-footer a { color: #8b949e; }
         body.dark-mode #help-modal .help-footer .app-version { color: #6e7681; }
+        /* Language picker. No shortcut key: this is a set-once preference and
+           every single letter is already taken (H M S N L W E X P F A Z). The
+           help modal is where "what is this app" questions go, so it lives here. */
+        #help-modal #lang-switch {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
+        #help-modal #lang-switch .lang-label {
+            color: #959da5;
+            margin-right: 2px;
+        }
+        #help-modal #lang-switch button {
+            font: inherit;
+            font-size: 11px;
+            line-height: 1.6;
+            padding: 1px 8px;
+            color: #586069;
+            background: transparent;
+            border: 1px solid #d1d5da;
+            border-radius: 10px;
+            cursor: pointer;
+        }
+        #help-modal #lang-switch button:hover { background: #f6f8fa; }
+        #help-modal #lang-switch button.active {
+            color: #fff;
+            background: #0366d6;
+            border-color: #0366d6;
+        }
+        body.dark-mode #help-modal #lang-switch .lang-label { color: #6e7681; }
+        body.dark-mode #help-modal #lang-switch button {
+            color: #8b949e;
+            border-color: #30363d;
+        }
+        body.dark-mode #help-modal #lang-switch button:hover { background: #21262d; }
+        body.dark-mode #help-modal #lang-switch button.active {
+            color: #fff;
+            background: #1f6feb;
+            border-color: #1f6feb;
+        }
         #licenses-pane {
             margin-top: 12px;
             padding: 12px;
@@ -2451,25 +2491,25 @@
 <body>
     <div id="splash">
         <div class="spinner"></div>
-        <div class="label">読み込み中…</div>
+        <div class="label" data-i18n="splash.loading">読み込み中…</div>
     </div>
     <div id="drop-zone">
         <div class="drop-icon">📄</div>
-        <div class="drop-text">ファイルをここにドロップ</div>
-        <div class="drop-hint">Markdownと画像をまとめて、または画像ファイルを直接ドロップできます</div>
+        <div class="drop-text" data-i18n="drop.text">ファイルをここにドロップ</div>
+        <div class="drop-hint" data-i18n="drop.hint">Markdownと画像をまとめて、または画像ファイルを直接ドロップできます</div>
     </div>
 
     <div id="app-container">
         <div id="toc-sidebar">
-            <button id="toc-toggle" title="目次の表示切り替え">
+            <button id="toc-toggle" title="目次の表示切り替え" data-i18n-attr="title:toc.toggle">
                 <span class="toggle-icon"></span>
             </button>
             <section id="file-tree" class="empty">
-                <div id="file-tree-title">Files</div>
+                <div id="file-tree-title" data-i18n="toc.files">Files</div>
                 <ul id="file-tree-root"></ul>
             </section>
             <div id="toc-content">
-                <div id="toc-title">Contents</div>
+                <div id="toc-title" data-i18n="toc.contents">Contents</div>
                 <nav id="toc-nav"></nav>
             </div>
         </div>
@@ -2480,6 +2520,355 @@
 
 
     <script>
+        // ===== UI language (ja / en) =========================================
+        // The app's own chrome is translatable; the reader's document is not.
+        //
+        // ⚠️ Mirror of the table in tools/build-editor/i18n.js. The two key
+        // spaces are disjoint by construction (this file owns everything except
+        // `ed.*`), so the ONLY keys that must stay byte-identical across the two
+        // are `common.*`. tools/preview-harness/i18ncheck.py enforces that.
+        //
+        // Key-major, not language-major: a 250-string change is reviewed for its
+        // *copy*, and this shape puts each pair on adjacent lines, so an `en`
+        // cannot be added without seeing the `ja` beside it.
+        //
+        // ⚠️ DO NOT TRANSLATE — these look like Japanese UI text but are not:
+        //   * RUBY_KANJI_SRC (this file) and allow_re (src/main.rs) — regex
+        //     character classes.
+        //   * `stack` in tools/build-editor/editorPrefs.js — a real font name.
+        //   * --confidential-label in assets/tategaki.css — the reader's
+        //     watermark, i.e. document content, not chrome.
+        //   * SLIDE_CLASSES / TABLE_ALIGNS — identifiers used as data.
+        // Internal keys (localStorage values, CSS class names, dataset values)
+        // stay English always; only display labels are localized.
+        const I18N = {
+            'common.close':        { ja: '閉じる',   en: 'Close' },
+            'common.on':           { ja: 'オン',     en: 'On' },
+            'common.off':          { ja: 'オフ',     en: 'Off' },
+            'common.lang.auto':    { ja: '自動',     en: 'Auto' },
+            'common.lang.ja':      { ja: '日本語',   en: '日本語' },
+            'common.lang.en':      { ja: 'English',  en: 'English' },
+
+            'splash.loading':      { ja: '読み込み中…', en: 'Loading…' },
+            'drop.text':           { ja: 'ファイルをここにドロップ', en: 'Drop a file here' },
+            'drop.hint':           { ja: 'Markdownと画像をまとめて、または画像ファイルを直接ドロップできます',
+                                     en: 'Drop a Markdown file together with its images, or an image file on its own' },
+
+            'toc.toggle':          { ja: '目次の表示切り替え', en: 'Toggle the table of contents' },
+            'toc.files':           { ja: 'ファイル', en: 'Files' },
+            'toc.contents':        { ja: '目次',     en: 'Contents' },
+
+            'banner.install':      { ja: '今すぐ更新',     en: 'Update now' },
+            'banner.onexit':       { ja: '終了後に更新',   en: 'Update on exit' },
+            'banner.optout':       { ja: '今後表示しない', en: 'Never show again' },
+
+            'help.title':          { ja: 'キーボードショートカット', en: 'Keyboard Shortcuts' },
+            'help.licenses':       { ja: 'サードパーティライセンス', en: 'Third-party licenses' },
+            'help.lang':           { ja: '表示言語', en: 'Language' },
+
+            'help.key.h':          { ja: 'このヘルプの表示 / 非表示', en: 'Show / hide this help' },
+            'help.key.m':          { ja: 'ダーク / ライト表示の切り替え', en: 'Toggle dark / light appearance' },
+            'help.key.s':          { ja: 'スタイルの選択（行末の ⚙ でそのスタイル固有の設定。Marpモードでは Marpテーマ。フロントマターを書き換え）',
+                                     en: 'Choose a style (the ⚙ at the end of a row opens that style’s own settings; in Marp mode this picks the Marp theme and rewrites the front matter)' },
+            'help.key.n':          { ja: 'セクション自動番号の切り替え', en: 'Toggle automatic section numbering' },
+            'help.key.l':          { ja: '行番号の表示切り替え', en: 'Toggle line numbers' },
+            'help.key.w':          { ja: '全幅レイアウトの切り替え', en: 'Toggle full-width layout' },
+            'help.key.e':          { ja: 'エディタウィンドウを開く（Vimモード・数式入力補助・文字数カウント）',
+                                     en: 'Open the editor window (Vim mode, math input assist, character count)' },
+            'help.key.ctrlN':      { ja: '新規の空Markdownファイルを作成', en: 'Create a new empty Markdown file' },
+            'help.key.ctrlD':      { ja: 'インストール先フォルダを Explorer で開く', en: 'Open the install folder in Explorer' },
+            'help.key.x':          { ja: '現在の文書をエクスポート（保存ダイアログで HTML / PDF を選択。PDFはクリック可能なリンクと見出しのしおりを保持）',
+                                     en: 'Export the current document (pick HTML or PDF in the save dialog; PDF keeps clickable links and heading bookmarks)' },
+            'help.key.zoom':       { ja: 'ズームイン / アウト / リセット', en: 'Zoom in / out / reset' },
+            'help.key.history':    { ja: '開いたファイルの履歴を戻る / 進む', en: 'Go back / forward through opened files' },
+            'help.key.ctrlClick':  { ja: '.md リンクを新しいプレビュアのウィンドウで開く（通常のクリックは同じウィンドウで遷移）',
+                                     en: 'Open a .md link in a new previewer window (a plain click navigates in this window)' },
+            'help.key.p':          { ja: 'Marp表示の切り替え: スクロール → デッキ → 一覧（一覧でサムネイルをクリックするとデッキで開く）',
+                                     en: 'Cycle the Marp view: scroll → deck → list (clicking a thumbnail in list view opens it in deck view)' },
+            'help.key.f':          { ja: '全画面表示の切り替え（Marp文書）', en: 'Toggle fullscreen (Marp documents)' },
+            'help.key.a':          { ja: 'スライドの自動縮小の切り替え（Marp）', en: 'Toggle shrink-to-fit for slides (Marp)' },
+            'help.key.slideNav':   { ja: 'Marpデッキモードでのスライド移動', en: 'Move between slides in Marp deck mode' },
+            'help.key.zoomPan':    { ja: 'カーソル位置でズーム / スライドをパン（Marpデッキモード）',
+                                     en: 'Zoom at the cursor / pan the slide (Marp deck mode)' },
+            'help.key.z':          { ja: '軌跡付きレーザーポインタの切り替え（Marpデッキモード）',
+                                     en: 'Toggle the laser pointer with trail (Marp deck mode)' },
+            'help.key.esc':        { ja: 'このダイアログを閉じる', en: 'Close this dialog' },
+
+            // Key cells that mix <kbd> markup with prose — these are the ONLY
+            // values ever fed to data-i18n-html. Never let a filename or a
+            // @user-vars label reach that path.
+            'help.cell.ctrlClick': { ja: '<kbd>Ctrl</kbd>+クリック', en: '<kbd>Ctrl</kbd>+Click' },
+            'help.cell.zoomPan':   { ja: '<kbd>Ctrl</kbd>+<kbd>Wheel</kbd> / ドラッグ',
+                                     en: '<kbd>Ctrl</kbd>+<kbd>Wheel</kbd> / Drag' },
+
+            'style.title':         { ja: 'スタイルを選択', en: 'Choose a style' },
+            'style.marpTitle':     { ja: 'Marpテーマを選択', en: 'Choose a Marp theme' },
+            'style.default':       { ja: 'デフォルト', en: 'Default' },
+            'style.gearTitle':     { ja: '{name} の詳細設定', en: '{name} — advanced settings' },
+            'style.settingsFor':   { ja: '{name} の設定',     en: '{name} settings' },
+            'style.varShow':       { ja: '表示',       en: 'Show' },
+            'style.backToList':    { ja: '← 一覧へ',   en: '← Back to the list' },
+            'style.resetDefaults': { ja: '既定に戻す', en: 'Reset to defaults' },
+
+            'lic.loadFailed':      { ja: 'THIRD_PARTY_LICENSES.txt の読み込みに失敗しました ({error})',
+                                     en: 'Could not load THIRD_PARTY_LICENSES.txt ({error})' },
+
+            // Copy / edit affordances. These were English-only before the toggle
+            // existed, so the Japanese side is new copy.
+            'copy.copy':           { ja: 'コピー',       en: 'Copy' },
+            'copy.copied':         { ja: 'コピーしました', en: 'Copied!' },
+            'copy.failed':         { ja: '失敗しました',  en: 'Failed' },
+            'copy.table':          { ja: '表をコピー',   en: 'Copy table' },
+            'menu.copyMathML':     { ja: 'MathML をコピー', en: 'Copy MathML' },
+            'menu.copyLatex':      { ja: 'LaTeX をコピー',  en: 'Copy LaTeX' },
+            'menu.collapseAll':    { ja: 'すべて閉じる', en: 'Collapse all' },
+            'menu.expandAll':      { ja: 'すべて開く',   en: 'Expand all' },
+            'fn.backToRef':        { ja: '参照元に戻る', en: 'Back to reference' },
+
+            'table.edit':          { ja: '表を編集',     en: 'Edit table' },
+            'table.cancel':        { ja: 'キャンセル',   en: 'Cancel' },
+            'table.save':          { ja: '保存',         en: 'Save' },
+            'table.editing':       { ja: '表を編集中 — セルを直接編集し、行や列の操作は右クリック',
+                                     en: 'Editing table — edit cells directly, right-click for row / column actions' },
+            'table.cancelled':     { ja: '表の編集を取り消しました', en: 'Table editing cancelled' },
+            'table.fileChanged':   { ja: 'ファイルが変更されました', en: 'The file changed' },
+            'table.tableChanged':  { ja: '表が変更されました — 編集し直してください',
+                                     en: 'The table changed — reopen it to edit' },
+            'table.saveFailed':    { ja: '表の保存に失敗しました', en: 'Failed to save the table' },
+            'table.noChanges':     { ja: '変更はありません', en: 'No changes' },
+            'table.saved':         { ja: '表を保存しました', en: 'Table saved' },
+            'table.opUnavailable': { ja: 'その操作は利用できません', en: "That operation isn't available" },
+            'table.errMarp':       { ja: 'Marp スライドの表は編集できません', en: "Marp slide tables can't be edited" },
+            'table.errNoFile':     { ja: 'ファイルが開かれていません', en: 'No file is currently open' },
+            'table.errNested':     { ja: 'この表は編集できません（入れ子の表は未対応）',
+                                     en: "This table can't be edited (nested tables are unsupported)" },
+            'table.errCsv':        { ja: 'csv / tsv ブロックの表は編集できません',
+                                     en: "csv / tsv block tables can't be edited" },
+            'table.errLocate':     { ja: 'この表のソース位置を特定できません',
+                                     en: "Can't locate this table in the source" },
+            'table.errParse':      { ja: 'この表のソースを解析できません',
+                                     en: "Can't parse this table's source" },
+            'table.errMismatch':   { ja: '表のソースと表示が一致しません',
+                                     en: "Table source and rendering don't match" },
+
+            'menu.rowAbove':       { ja: '上に行を挿入',     en: 'Insert row above' },
+            'menu.rowBelow':       { ja: '下に行を挿入',     en: 'Insert row below' },
+            'menu.rowDelete':      { ja: '行を削除',         en: 'Delete row' },
+            'menu.colLeft':        { ja: '左に列を挿入',     en: 'Insert column left' },
+            'menu.colRight':       { ja: '右に列を挿入',     en: 'Insert column right' },
+            'menu.colDelete':      { ja: '列を削除',         en: 'Delete column' },
+            'menu.alignLeft':      { ja: '列を左揃え',       en: 'Align column left' },
+            'menu.alignCenter':    { ja: '列を中央揃え',     en: 'Align column center' },
+            'menu.alignRight':     { ja: '列を右揃え',       en: 'Align column right' },
+
+            // Renderer diagnostics. The engine names are proper nouns and stay
+            // literal; the exception text itself is library-authored and is
+            // never translated.
+            'err.prefix':          { ja: '{engine} エラー: ', en: '{engine} error: ' },
+            'err.tikzMissing':     { ja: 'TikZ コンポーネントが未インストールです。インストーラーを再実行し、「TikZ・可換図式コンポーネントをダウンロード」にチェックを入れてください。',
+                                     en: 'The TikZ component is not installed. Re-run the installer and tick “Download the TikZ / commutative-diagram component”.' },
+            'err.tikzLoadFail':    { ja: 'TikZ エンジンを読み込めませんでした（libs/tikzjax）',
+                                     en: 'Could not load the TikZ engine (libs/tikzjax)' },
+            'err.tikzTimeout':     { ja: 'TikZ: レンダリングがタイムアウトしました',
+                                     en: 'TikZ: rendering timed out' },
+            'err.tikzCompile':     { ja: 'TikZ: コンパイルに失敗しました（TeX 構文を確認してください）',
+                                     en: 'TikZ: compilation failed (check the TeX syntax)' },
+            'tikz.compiling':      { ja: 'TikZ をコンパイル中…', en: 'Compiling TikZ…' },
+
+            // Calendar. One message keeps the seven weekdays in order, so a
+            // six-item translation is impossible to miss in review.
+            'cal.dow':             { ja: '日,月,火,水,木,金,土', en: 'Sun,Mon,Tue,Wed,Thu,Fri,Sat' },
+            // Timeline axis tick labels. Comma-joined for the same reason as
+            // cal.dow: it keeps all twelve in order and makes a short
+            // translation visible in review.
+            'cal.monthsShort':     { ja: '1月,2月,3月,4月,5月,6月,7月,8月,9月,10月,11月,12月',
+                                     en: 'Jan,Feb,Mar,Apr,May,Jun,Jul,Aug,Sep,Oct,Nov,Dec' },
+            'cal.monthTitle':      { ja: '{year}年 {month}月', en: '{monthName} {year}', params: ['year','month','monthName'] },
+            'cal.month.1':  { ja: '1月',  en: 'January' },
+            'cal.month.2':  { ja: '2月',  en: 'February' },
+            'cal.month.3':  { ja: '3月',  en: 'March' },
+            'cal.month.4':  { ja: '4月',  en: 'April' },
+            'cal.month.5':  { ja: '5月',  en: 'May' },
+            'cal.month.6':  { ja: '6月',  en: 'June' },
+            'cal.month.7':  { ja: '7月',  en: 'July' },
+            'cal.month.8':  { ja: '8月',  en: 'August' },
+            'cal.month.9':  { ja: '9月',  en: 'September' },
+            'cal.month.10': { ja: '10月', en: 'October' },
+            'cal.month.11': { ja: '11月', en: 'November' },
+            'cal.month.12': { ja: '12月', en: 'December' },
+            'cal.spanTooWide':     { ja: '期間が広い（約{months}ヶ月）ため、カレンダー表示ではなくタイムライン表示にフォールバックしました。',
+                                     en: 'The span is too wide (about {months} months), so this fell back to the timeline view instead of the calendar.' },
+
+            'export.untitled':     { ja: 'エクスポートした文書', en: 'Exported document' },
+            'err.plotlyInit':      { ja: 'Plotly の初期化に失敗しました: ', en: 'Plotly init failed: ' },
+
+            'toast.lang':          { ja: '表示言語: {lang}', en: 'Language: {lang}' },
+
+            // Marp view mode. The INTERNAL keys (scroll / deck / list) are also
+            // the localStorage value and CSS class names — only these display
+            // labels are localized. Never build a reverse lookup off a label.
+            'marp.view.scroll':    { ja: 'スクロール', en: 'Scroll' },
+            'marp.view.deck':      { ja: 'デッキ',     en: 'Deck' },
+            'marp.view.list':      { ja: '一覧',       en: 'List' },
+
+            'toast.toggle':        { ja: '{label}: {state}', en: '{label}: {state}' },
+            'toast.marpView':      { ja: '表示: {view}',     en: 'View: {view}' },
+            'toggle.wide':         { ja: '全幅表示',         en: 'Full width' },
+            'toggle.numbered':     { ja: 'セクション番号',   en: 'Section numbers' },
+            'toggle.autofit':      { ja: '自動縮小',         en: 'Shrink to fit' },
+            'toggle.laser':        { ja: 'レーザー',         en: 'Laser pointer' },
+            'toast.dark':          { ja: 'ダーク',           en: 'Dark' },
+            'toast.light':         { ja: 'ライト',           en: 'Light' },
+            'toast.styleDefault':  { ja: 'デフォルト',       en: 'Default' },
+            'toast.marpFixedTheme':{ ja: 'テーマはMarpディレクティブで固定されています',
+                                     en: 'The theme is pinned by a Marp directive' },
+            'toast.pdfExport':     { ja: 'PDF出力: {name}',  en: 'Exported PDF: {name}' },
+            'toast.pdfExportFail': { ja: 'PDF出力に失敗しました', en: 'PDF export failed' },
+            'toast.openingWindow': { ja: '新しいウィンドウで開いています…', en: 'Opening in a new window…' },
+            'toast.noFile':        { ja: '更新するファイルがありません', en: 'There is no file to update' },
+            'toast.notMarp':       { ja: 'Marp文書ではありません', en: 'This is not a Marp document' },
+            'toast.marpTheme':     { ja: 'Marpテーマ: {name}', en: 'Marp theme: {name}' },
+            'toast.themeSaveFail': { ja: 'テーマの保存に失敗しました', en: 'Could not save the theme' },
+            'toast.updateOnExit':  { ja: '終了時に更新します', en: 'Will update on exit' },
+
+            'banner.available':    { ja: '新しいバージョン <span class="ver">v{version}</span> があります',
+                                     en: 'Version <span class="ver">v{version}</span> is available' },
+            'banner.installing':   { ja: '更新中…', en: 'Updating…' },
+        };
+
+        // Assigned by __resolveInitialState(); declared here so every string
+        // site below can read it. 'ja' is only a placeholder for the few
+        // microseconds before resolution runs.
+        let uiLang = 'ja';
+
+        // Test hook. tools/preview-harness/i18ncheck.py reads this to verify the
+        // table's integrity, and keycheck.py reads expected copy out of it so its
+        // assertions test the wiring rather than the wording. Same forensic
+        // posture as window.__editorView in the editor.
+        window.__I18N = I18N;
+
+        // Fallback chain: uiLang -> ja -> the key itself. A missing translation
+        // renders as `toast.lang` on screen, which is loud in dev and never blank.
+        // The `if (params)` guard matters: t() is called per node while rendering
+        // the table / copy buttons, so the no-params path must stay a bare lookup.
+        function t(key, params) {
+            const m = I18N[key];
+            let s = (m && (m[uiLang] || m.ja)) || key;
+            if (params) {
+                s = s.replace(/\{(\w+)\}/g, (_, k) =>
+                    (Object.prototype.hasOwnProperty.call(params, k) ? String(params[k]) : '{' + k + '}'));
+            }
+            return s;
+        }
+
+        // Walk navigator.languages rather than navigator.language: a user whose
+        // Windows *display* language is English but whose preferred-language
+        // list leads with Japanese should get Japanese. 'ja-' not 'ja', so that
+        // 'jam' (Jamaican Creole) cannot match.
+        function __detectUiLang() {
+            const cands = (navigator.languages && navigator.languages.length)
+                ? navigator.languages : [navigator.language || ''];
+            for (const l of cands) {
+                const tag = String(l).toLowerCase();
+                if (tag === 'ja' || tag.startsWith('ja-')) return 'ja';
+                if (tag === 'en' || tag.startsWith('en-')) return 'en';
+            }
+            return 'en';
+        }
+
+        // The ABSENCE of the key is "auto" — there is no 'auto' sentinel, so
+        // "back to automatic" is removeItem(), the same shape used to clear
+        // styleName.
+        function __readUiLangPref() {
+            try {
+                const v = localStorage.getItem('uiLang');
+                return (v === 'ja' || v === 'en') ? v : null;
+            } catch (e) { return null; }
+        }
+
+        // Translate every [data-i18n*] node under `root`.
+        //
+        // ⚠️ Must be called on DOMContentLoaded, not only here. This script sits
+        // at the TOP of <body>; #help-modal / #style-modal / #update-banner are
+        // parsed AFTER it and do not exist yet. Calling it once early *looks*
+        // like it works — the splash and drop zone do translate — while silently
+        // no-opping on every modal. It is idempotent, so calling it 3x is free.
+        function applyI18n(root) {
+            const r = root || document;
+            r.querySelectorAll('[data-i18n]').forEach((el) => { el.textContent = t(el.dataset.i18n); });
+            // innerHTML, fed only from the constant table above.
+            r.querySelectorAll('[data-i18n-html]').forEach((el) => { el.innerHTML = t(el.dataset.i18nHtml); });
+            r.querySelectorAll('[data-i18n-attr]').forEach((el) => {
+                el.dataset.i18nAttr.split(';').forEach((pair) => {
+                    const i = pair.indexOf(':');
+                    if (i > 0) el.setAttribute(pair.slice(0, i).trim(), t(pair.slice(i + 1).trim()));
+                });
+            });
+            // Drives CJK line breaking and font fallback — this app ships
+            // vertical-writing themes, so it is not cosmetic.
+            document.documentElement.lang = uiLang;
+            __syncLangSwitch();
+        }
+
+        // Reflect the current choice in the help-modal segmented control. `null`
+        // (auto) is a distinct visual state from an explicit ja/en that happens
+        // to agree with the OS.
+        function __syncLangSwitch() {
+            const pref = __readUiLangPref();
+            document.querySelectorAll('#lang-switch [data-lang]').forEach((b) => {
+                const v = b.dataset.lang;
+                b.classList.toggle('active', v === (pref || 'auto'));
+            });
+        }
+
+        // `persist` is false when the change arrived from the other window via a
+        // storage event — re-persisting there would be a no-op today, but it also
+        // guarantees a future broadcast cannot ping-pong.
+        function setUiLang(pref, persist) {
+            const next = (pref === 'ja' || pref === 'en') ? pref : null;
+            if (persist !== false) {
+                try {
+                    if (next) localStorage.setItem('uiLang', next);
+                    else localStorage.removeItem('uiLang');
+                } catch (e) { /* private mode — the choice just won't survive a restart */ }
+            }
+            uiLang = next || __detectUiLang();
+            applyI18n(document);
+            // Normalized @user-vars specs are cached per style and carry the
+            // localized labels, so they go stale on a switch. Forgetting this is
+            // the easiest bug to ship here; the symptom is "style settings labels
+            // don't change until restart".
+            if (typeof __styleVarSpecCache !== 'undefined') __styleVarSpecCache.clear();
+            // #preview itself carries localized output (markwhen calendar, the
+            // renderer error blocks, the table hover/copy buttons), so the chrome
+            // pass alone is not enough. Anchored re-render, mirroring
+            // __schedulePaginateRefresh().
+            if (typeof currentMarkdown !== 'undefined' && currentMarkdown) {
+                const anchor = capturePreviewAnchor();
+                Promise.resolve(renderMarkdown(currentMarkdown)).then(() => {
+                    requestAnimationFrame(() => restorePreviewAnchor(anchor));
+                });
+            }
+            showToast(t('toast.lang', { lang: t('common.lang.' + (next || 'auto')) }));
+        }
+
+        // Cross-window sync with no IPC and no Rust change: the preview
+        // (app://localhost/index.html) and the editor
+        // (app://localhost/editor.html) are the same origin in the same
+        // user-data folder, so they share localStorage. `storage` fires only in
+        // OTHER documents, never the writer, so there is no loop.
+        window.addEventListener('storage', (e) => {
+            if (e.key !== 'uiLang' && e.key !== null) return;   // null === clear()
+            const next = __readUiLangPref();
+            if ((next || __detectUiLang()) !== uiLang) setUiLang(next, false);
+        });
+        // Belt-and-braces for any environment where the storage event does not
+        // cross WebView2 windows. Same shape as clipboardSync.js's focus re-read.
+        window.addEventListener('focus', () => {
+            const next = __readUiLangPref();
+            if ((next || __detectUiLang()) !== uiLang) setUiLang(next, false);
+        });
+
         // Two orthogonal axes:
         //   darkMode    — boolean. Drives body.dark-mode + mermaid theme.
         //                 Persisted in localStorage.darkMode ('true' / 'false').
@@ -2502,15 +2891,35 @@
                 localStorage.setItem('darkMode', 'false');
                 localStorage.removeItem('styleName');
             }
+            // Migrate users who predate the UI language setting. Everyone has
+            // been looking at a Japanese UI, so letting OS auto-detect apply to
+            // them would silently flip an existing install to English — which is
+            // exactly the wrong surprise for someone running English Windows who
+            // chose this app *because* it is Japanese-first. Auto-detect is for
+            // genuinely new installs; the presence of any older pref key is what
+            // identifies an existing one. Same shape as the styleName migration
+            // above.
+            if (localStorage.getItem('uiLang') === null) {
+                const PRIOR_KEYS = ['darkMode', 'styleName', 'marpView', 'numbered',
+                                    'wide', 'showLineNumbers', 'tocCollapsed', 'marpAutofit'];
+                if (PRIOR_KEYS.some((k) => localStorage.getItem(k) !== null)) {
+                    localStorage.setItem('uiLang', 'ja');
+                }
+            }
             const dark = localStorage.getItem('darkMode') === 'true';
             const style = localStorage.getItem('styleName');
             const known = __userStyleList();
             return {
                 darkMode: dark,
                 currentStyle: (style && known.includes(style)) ? style : null,
+                uiLang: __readUiLangPref() || __detectUiLang(),
             };
         }
-        let { darkMode, currentStyle } = __resolveInitialState();
+        let { darkMode, currentStyle, uiLang: __initialUiLang } = __resolveInitialState();
+        uiLang = __initialUiLang;
+        // Translate what is already parsed (splash, drop zone). The modals live
+        // further down the file and are handled by the DOMContentLoaded pass.
+        applyI18n(document);
         // Which axis the reader actually scrolls along. Writing mode alone cannot
         // answer this: tategaki.css is vertical-rl and runs off to the left
         // (horizontal scroll), while bunko.css is *also* vertical-rl but
@@ -2618,6 +3027,13 @@
         // `length` (number + CSS unit), `select` (one of the declared options),
         // `color`. `unit` is a real CSS unit for `length` and a display-only
         // suffix ("字" / "行" / "倍") for `number`.
+        //
+        // Localization: a declaration MAY carry `labelEn` / `labelJa` beside
+        // `label` (and the same on each `options[]` entry), plus `unitEn` /
+        // `unitJa` beside `unit`. They are optional — a style that declares only
+        // `label` shows it in both languages, so no existing or third-party CSS
+        // is affected. ⚠️ `unitEn` / `unitJa` apply to `number` ONLY: a `length`
+        // unit ends up in the emitted CSS value and must stay a real CSS unit.
         const __STYLE_VARS_RE = /\/\*\s*@user-vars\b([\s\S]*?)\*\//;
         const __styleVarSpecCache = new Map();
 
@@ -2632,6 +3048,21 @@
         function __isCssColor(v) {
             return __styleVarValueSafe(v) && CSS.supports('color', v);
         }
+        // A style MAY declare `labelEn` / `labelJa` (and `unitEn` / `unitJa`)
+        // beside `label` / `unit`. A style that does not — every third-party or
+        // user-authored CSS today — keeps its single label in both languages,
+        // which is the correct degradation: nothing an existing style ships can
+        // break, because unknown keys were always ignored.
+        //
+        // Both variants are kept on the normalized spec and picked at RENDER
+        // time (see __buildStyleVarRow), never here: __styleVarSpecCache
+        // memoizes the normalized spec per style file, so baking the language in
+        // at parse time would serve stale labels after a switch.
+        function __styleVarLabel(obj, base) {
+            const k = base + (uiLang === 'en' ? 'En' : 'Ja');
+            if (typeof obj[k] === 'string' && obj[k]) return obj[k];
+            return (typeof obj[base] === 'string' && obj[base]) ? obj[base] : null;
+        }
         function __normalizeStyleVarSpec(raw) {
             if (!Array.isArray(raw)) return [];
             const out = [];
@@ -2641,15 +3072,22 @@
                 if (typeof name !== 'string' || !/^--[A-Za-z0-9_-]+$/.test(name)) continue;
                 const type = it.type;
                 const label = (typeof it.label === 'string' && it.label) ? it.label : name;
+                const labelJa = (typeof it.labelJa === 'string') ? it.labelJa : null;
+                const labelEn = (typeof it.labelEn === 'string') ? it.labelEn : null;
                 if (type === 'select') {
                     const options = (Array.isArray(it.options) ? it.options : [])
                         .filter(o => o && __styleVarValueSafe(o.value))
-                        .map(o => ({ value: o.value, label: (typeof o.label === 'string' && o.label) ? o.label : o.value }));
+                        .map(o => ({
+                            value: o.value,
+                            label: (typeof o.label === 'string' && o.label) ? o.label : o.value,
+                            labelJa: (typeof o.labelJa === 'string') ? o.labelJa : null,
+                            labelEn: (typeof o.labelEn === 'string') ? o.labelEn : null,
+                        }));
                     if (!options.length) continue;
                     const def = options.some(o => o.value === it.default) ? it.default : options[0].value;
-                    out.push({ var: name, label, type, options, default: def });
+                    out.push({ var: name, label, labelJa, labelEn, type, options, default: def });
                 } else if (type === 'color') {
-                    out.push({ var: name, label, type, default: __isCssColor(it.default) ? it.default : 'transparent' });
+                    out.push({ var: name, label, labelJa, labelEn, type, default: __isCssColor(it.default) ? it.default : 'transparent' });
                 } else if (type === 'number' || type === 'length') {
                     const min = Number(it.min), max = Number(it.max), def = Number(it.default);
                     const step = Number(it.step);
@@ -2657,8 +3095,16 @@
                     const unit = (typeof it.unit === 'string') ? it.unit : '';
                     // For `length` the unit lands in the CSS value, so it must be one.
                     if (type === 'length' && !/^(%|[a-z]{1,4})$/.test(unit)) continue;
+                    // ⚠️ unitEn / unitJa are honoured for `number` ONLY. A
+                    // `number` unit is a display-only suffix (字 / 行 / 倍), but a
+                    // `length` unit is interpolated into the emitted CSS value —
+                    // a translated one there would write e.g. `39chars` into the
+                    // stylesheet. The validator above is what makes that unsafe
+                    // rather than merely odd.
+                    const unitJa = (type === 'number' && typeof it.unitJa === 'string') ? it.unitJa : null;
+                    const unitEn = (type === 'number' && typeof it.unitEn === 'string') ? it.unitEn : null;
                     out.push({
-                        var: name, label, type, min, max, unit,
+                        var: name, label, labelJa, labelEn, type, min, max, unit, unitJa, unitEn,
                         step: (Number.isFinite(step) && step > 0) ? step : 1,
                         default: Math.min(max, Math.max(min, def)),
                     });
@@ -2792,9 +3238,11 @@
         // to #preview and into Marp <section> content, where ::before/::after read it.
         document.documentElement.style.setProperty('--current-year', JSON.stringify(String(new Date().getFullYear())));
 
-        // Japanese labels for the Marp view modes (internal keys stay in English
-        // for localStorage / class names; only the toast text is localized).
-        const MARP_VIEW_LABELS = { scroll: 'スクロール', deck: 'デッキ', list: '一覧' };
+        // Display label for a Marp view mode. A function, not a const map: a map
+        // captured at boot would freeze the language at the value it had then.
+        // The internal keys stay English for localStorage / class names; only the
+        // toast text is localized.
+        function __marpViewLabel(v) { return t('marp.view.' + v); }
 
         let toastTimer = null;
         function showToast(msg) {
@@ -2809,7 +3257,7 @@
         // Called by the Rust host when a PDF export finishes (X → PDF filter).
         // See src/pdf_win.rs / CustomEvent::PdfExportDone.
         window.__pdfExportDone = function (ok, name) {
-            showToast(ok ? ('PDF出力: ' + (name || '')) : 'PDF出力に失敗しました');
+            showToast(ok ? t('toast.pdfExport', { name: name || '' }) : t('toast.pdfExportFail'));
         };
 
         // ---- PDF video-frame rasterization -----------------------------------
@@ -3304,7 +3752,7 @@
                 if (!b || !msg) return;
                 const ver = (info && info.version) ? String(info.version) : '';
                 const notes = (info && info.notes) ? String(info.notes) : '';
-                let html = '新しいバージョン <span class="ver">v' + escapeHtml(ver) + '</span> があります';
+                let html = t('banner.available', { version: escapeHtml(ver) });
                 if (notes) html += '<span class="notes">' + escapeHtml(notes) + '</span>';
                 msg.innerHTML = html;
                 b.classList.add('visible');
@@ -3338,7 +3786,7 @@
                         window.ipc.postMessage('update:install');
                     }
                     install.disabled = true;
-                    install.textContent = '更新中…';
+                    install.textContent = t('banner.installing');
                 });
                 if (onexit) onexit.addEventListener('click', function () {
                     // Reservation only: the host installs when the user closes the
@@ -3347,7 +3795,7 @@
                         window.ipc.postMessage('update:onexit');
                     }
                     hideBanner();
-                    showToast('終了時に更新します');
+                    showToast(t('toast.updateOnExit'));
                     __dbgLog('update deferred to exit');
                 });
                 if (later) later.addEventListener('click', hideBanner);
@@ -3433,10 +3881,11 @@
         }
         // Distinguish "never installed" (actionable) from "installed but failed to
         // load" (a real fault). Single source of truth for both pipelines.
-        const __TIKZ_MISSING_HTML  = '<div class="tikz-error">TikZ コンポーネントが未インストールです。インストーラーを再実行し、「TikZ・可換図式コンポーネントをダウンロード」にチェックを入れてください。</div>';
-        const __TIKZ_LOADFAIL_HTML = '<div class="tikz-error">TikZ エンジンを読み込めませんでした（libs/tikzjax）</div>';
+        // Built on demand, not stored in a const: a string captured at boot would
+        // freeze the language at whatever it was then.
+        function __tikzErrorHtml(key) { return '<div class="tikz-error">' + t(key) + '</div>'; }
         function __tikzUnavailableHtml() {
-            return __tikzUnavailable() ? __TIKZ_MISSING_HTML : __TIKZ_LOADFAIL_HTML;
+            return __tikzErrorHtml(__tikzUnavailable() ? 'err.tikzMissing' : 'err.tikzLoadFail');
         }
         let __tikzFontsLinked = false;
         function ensureTikz() {
@@ -3583,16 +4032,16 @@
         // via the existing EditorSavedContent → loadFileFromRust path.
         function applyMarpTheme(name) {
             if (!currentFilePath) {
-                showToast('更新するファイルがありません');
+                showToast(t('toast.noFile'));
                 return;
             }
             if (!isMarpDocument(currentMarkdownRaw)) {
-                showToast('Marp文書ではありません');
+                showToast(t('toast.notMarp'));
                 return;
             }
             const next = setMarpTheme(currentMarkdownRaw, name);
             if (next === currentMarkdownRaw) {
-                showToast('Marpテーマ: ' + name);
+                showToast(t('toast.marpTheme', { name: name }));
                 return;
             }
             try {
@@ -3600,10 +4049,10 @@
                     path: currentFilePath,
                     content: next,
                 }));
-                showToast('Marpテーマ: ' + name);
+                showToast(t('toast.marpTheme', { name: name }));
             } catch (e) {
                 console.warn('applyMarpTheme: postMessage failed', e);
-                showToast('テーマの保存に失敗しました');
+                showToast(t('toast.themeSaveFail'));
             }
         }
 
@@ -3806,12 +4255,13 @@
 
         // Restore a persisted body-class flag and bind `key` to toggle + persist it
         // (optionally announcing the new state via a toast).
-        function bindBodyClassToggle(key, cls, storeKey, toastLabel) {
+        function bindBodyClassToggle(key, cls, storeKey, toastLabelKey) {
             if (localStorage.getItem(storeKey) === 'true') document.body.classList.add(cls);
             onPlainKey(key, () => {
                 const on = document.body.classList.toggle(cls);
                 localStorage.setItem(storeKey, on);
-                if (toastLabel) showToast(toastLabel + ': ' + (on ? 'オン' : 'オフ'));
+                if (toastLabelKey) showToast(t('toast.toggle', {
+                    label: t(toastLabelKey), state: t(on ? 'common.on' : 'common.off') }));
             });
         }
 
@@ -3821,7 +4271,7 @@
         // Full-width layout toggle (W key). Same pattern as L/N; pure body-class
         // toggle, persisted in localStorage. CSS scoped to body.wide #preview;
         // no-op in Marp mode (the later body.marp #preview rule wins).
-        bindBodyClassToggle('w', 'wide', 'wide', '全幅表示');
+        bindBodyClassToggle('w', 'wide', 'wide', 'toggle.wide');
 
         // Auto-shrink Marp slides to fit (A key). When on (default), slides whose
         // content overflows the 1280x720 box are scaled down uniformly to fit;
@@ -3832,26 +4282,26 @@
             localStorage.setItem('marpAutofit', __marpAutofit);
             fitMarpSlides();   // re-fit on / clear on off
             if (document.body.classList.contains('marp')) {
-                showToast('自動縮小: ' + (__marpAutofit ? 'オン' : 'オフ'));
+                showToast(t('toast.toggle', { label: t('toggle.autofit'), state: t(__marpAutofit ? 'common.on' : 'common.off') }));
             }
         });
 
         // Section numbering toggle (N key). Baseline counter rules live in the inline <style>
         // above so numbering works on every theme by default; user themes may
         // override the ::before content/styling for their custom number presentation.
-        bindBodyClassToggle('n', 'numbered', 'numbered', 'セクション番号');
+        bindBodyClassToggle('n', 'numbered', 'numbered', 'toggle.numbered');
 
         // Dark / Light toggle (M key). Orthogonal to the user-style picker (S).
         onPlainKey('m', async () => {
             if (document.body.classList.contains('marp')) {
-                showToast('テーマはMarpディレクティブで固定されています');
+                showToast(t('toast.marpFixedTheme'));
                 return;
             }
             // Anchor by source-line BEFORE re-render — mermaid theme switch
             // requires re-rendering, which rebuilds the DOM.
             const anchor = capturePreviewAnchor();
             applyDarkMode(!darkMode);
-            showToast(darkMode ? 'ダーク' : 'ライト');
+            showToast(t(darkMode ? 'toast.dark' : 'toast.light'));
             if (currentMarkdown) await renderMarkdown(currentMarkdown);
             requestAnimationFrame(() => restorePreviewAnchor(anchor));
         });
@@ -3865,14 +4315,14 @@
             const tbody = document.getElementById('style-modal-rows');
             if (!tbody) return;
             const title = document.getElementById('style-modal-title');
-            if (title) title.textContent = isMarp ? 'Marpテーマを選択' : 'スタイルを選択';
+            if (title) title.textContent = t(isMarp ? 'style.marpTitle' : 'style.title');
             let entries;
             let activeKey;
             if (isMarp) {
                 entries = __marpThemeNames();
                 activeKey = getMarpTheme(currentMarkdown) || 'default';
             } else {
-                entries = [{ name: null, label: 'Default' }]
+                entries = [{ name: null, label: t('style.default') }]
                     .concat(__userStyleList().map(n => ({ name: n, label: n })));
                 activeKey = currentStyle || null;
             }
@@ -3924,8 +4374,8 @@
                     btn.type = 'button';
                     btn.className = 'style-gear';
                     btn.textContent = '⚙';
-                    btn.title = name + ' の詳細設定';
-                    btn.setAttribute('aria-label', name + ' の詳細設定');
+                    btn.title = t('style.gearTitle', { name: name });
+                    btn.setAttribute('aria-label', t('style.gearTitle', { name: name }));
                     cell.appendChild(btn);
                 });
             }
@@ -3945,7 +4395,7 @@
             const tbl = document.querySelector('#style-modal table');
             if (tbl) tbl.hidden = false;
             const title = document.getElementById('style-modal-title');
-            if (title) title.textContent = 'スタイルを選択';
+            if (title) title.textContent = t('style.title');
             __styleVarsState = null;
         }
         async function setStyleVarsPaneOpen(name) {
@@ -3970,7 +4420,7 @@
             const tbl = document.querySelector('#style-modal table');
             if (tbl) tbl.hidden = true;
             const title = document.getElementById('style-modal-title');
-            if (title) title.textContent = name + ' の設定';
+            if (title) title.textContent = t('style.settingsFor', { name: name });
             pane.hidden = false;
             __renderStyleVarsForm();
         }
@@ -4021,7 +4471,7 @@
             row.className = 'sv-row';
             const label = document.createElement('label');
             label.className = 'sv-label';
-            label.textContent = spec.label;
+            label.textContent = __styleVarLabel(spec, 'label') || spec.var;
             label.htmlFor = id;
             const ctl = document.createElement('div');
             ctl.className = 'sv-control';
@@ -4035,7 +4485,7 @@
                 for (const o of spec.options) {
                     const opt = document.createElement('option');
                     opt.value = o.value;
-                    opt.textContent = o.label;
+                    opt.textContent = __styleVarLabel(o, 'label') || o.value;
                     sel.appendChild(opt);
                 }
                 sel.value = spec.options.some(o => o.value === current) ? current : spec.default;
@@ -4062,7 +4512,7 @@
                 swatch.addEventListener('input', () => push(false));
                 swatch.addEventListener('change', () => push(true));
                 wrap.appendChild(on);
-                wrap.appendChild(document.createTextNode('表示'));
+                wrap.appendChild(document.createTextNode(t('style.varShow')));
                 ctl.appendChild(wrap);
                 ctl.appendChild(swatch);
             } else {
@@ -4076,7 +4526,7 @@
                 range.value = String(Number.isFinite(n) ? Math.min(spec.max, Math.max(spec.min, n)) : spec.default);
                 const out = document.createElement('span');
                 out.className = 'sv-value';
-                const paint = () => { out.textContent = range.value + (spec.unit || ''); };
+                const paint = () => { out.textContent = range.value + (__styleVarLabel(spec, 'unit') || ''); };
                 paint();
                 range.addEventListener('input', () => { paint(); __setStyleVar(spec, range.value, false); });
                 range.addEventListener('change', () => __setStyleVar(spec, range.value, true));
@@ -4096,11 +4546,11 @@
             const back = document.createElement('button');
             back.type = 'button';
             back.className = 'sv-back';
-            back.textContent = '← 一覧へ';
+            back.textContent = t('style.backToList');
             const reset = document.createElement('button');
             reset.type = 'button';
             reset.className = 'sv-reset';
-            reset.textContent = '既定に戻す';
+            reset.textContent = t('style.resetDefaults');
             foot.appendChild(back);
             foot.appendChild(reset);
             pane.appendChild(foot);
@@ -4176,7 +4626,7 @@
             if ((next || null) === (currentStyle || null)) return;
             const anchor = capturePreviewAnchor();
             const cssReady = applyUserStyle(next);
-            showToast(next || 'デフォルト');
+            showToast(next || t('toast.styleDefault'));
             const renderDone = currentMarkdown ? renderMarkdown(currentMarkdown) : Promise.resolve();
             await Promise.all([cssReady, renderDone]);
             requestAnimationFrame(() => restorePreviewAnchor(anchor));
@@ -4194,7 +4644,7 @@
                 const next = order[(order.indexOf(cur) + 1) % order.length];
                 setMarpView(next);
                 if (next === 'deck') __marpUpdateDeck();
-                showToast('表示: ' + (MARP_VIEW_LABELS[next] || next));
+                showToast(t('toast.marpView', { view: __marpViewLabel(next) }));
                 return;
             }
             if (e.key === 'f' || e.key === 'F') {
@@ -4206,7 +4656,7 @@
             if (e.key === 'z' || e.key === 'Z') {
                 e.preventDefault();
                 setLaser(!__laserOn);
-                showToast('レーザー: ' + (__laserOn ? 'オン' : 'オフ'));
+                showToast(t('toast.toggle', { label: t('toggle.laser'), state: t(__laserOn ? 'common.on' : 'common.off') }));
                 return;
             }
             if (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === ' ') {
@@ -4236,6 +4686,22 @@
             }
             m.classList.toggle('visible', open);
         }
+
+        // The modals, the update banner and the language switch are all parsed
+        // AFTER the script block that defines applyI18n(), so the early call up
+        // there cannot have reached them. See the warning on applyI18n().
+        document.addEventListener('DOMContentLoaded', () => {
+            applyI18n(document);
+            const sw = document.getElementById('lang-switch');
+            if (sw) {
+                sw.addEventListener('click', (e) => {
+                    const btn = e.target.closest('button[data-lang]');
+                    if (!btn) return;
+                    const v = btn.dataset.lang;
+                    setUiLang(v === 'auto' ? null : v, true);
+                });
+            }
+        });
         onShortcutKey((e) => {
             const m = __helpModal();
             if (!m) return;
@@ -4259,11 +4725,11 @@
                 if (!pane.hidden) { pane.hidden = true; return; }
                 pane.hidden = false;
                 if (!pane.dataset.loaded) {
-                    pane.textContent = '読み込み中…';
+                    pane.textContent = t('splash.loading');
                     fetch('THIRD_PARTY_LICENSES.txt')
                         .then(r => r.ok ? r.text() : Promise.reject(r.status))
                         .then(t => { pane.textContent = t; pane.dataset.loaded = '1'; })
-                        .catch(err => { pane.textContent = 'THIRD_PARTY_LICENSES.txt の読み込みに失敗しました (' + err + ')'; });
+                        .catch(err => { pane.textContent = t('lic.loadFailed', { error: err }); });
                 }
                 return;
             }
@@ -4654,7 +5120,7 @@
                     const stripped = base.replace(/\.(md|markdown)$/i, '');
                     if (stripped) return stripped;
                 }
-                return document.title || 'Exported document';
+                return document.title || t('export.untitled');
             })();
             const titleText = rawTitle
                 .replace(/&/g, '&amp;')
@@ -4839,7 +5305,7 @@
         if (!spec) return;
         Plotly.newPlot(el, spec.traces || [], spec.layout || {}, spec.config || {});
       } catch (e) {
-        el.textContent = 'Plotly init failed: ' + e.message;
+        el.textContent = ${JSON.stringify(t('err.plotlyInit'))} + e.message;
       }
     });
   }
@@ -4848,7 +5314,7 @@
 
             const html =
 `<!DOCTYPE html>
-<html lang="en">
+<html lang="${uiLang}">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -6034,7 +6500,7 @@ ${previewClone.outerHTML}
                             __marpDeckIndex = slideIdx;
                             setMarpView('deck');
                             __marpUpdateDeck();
-                            showToast('表示: デッキ');
+                            showToast(t('toast.marpView', { view: __marpViewLabel('deck') }));
                         } else {
                             // scroll mode (deck hides the sidebar, so no deck click path)
                             svg.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -6724,7 +7190,7 @@ ${previewClone.outerHTML}
                     let backlinks = '';
                     for (let n = 1; n <= occ; n++) {
                         const sup = occ > 1 ? '<sup>' + n + '</sup>' : '';
-                        backlinks += '<a href="#fnref-' + sid + '-' + n + '" class="footnote-backref" aria-label="Back to reference">↩' + sup + '</a> ';
+                        backlinks += '<a href="#fnref-' + sid + '-' + n + '" class="footnote-backref" aria-label="' + t('fn.backToRef') + '">↩' + sup + '</a> ';
                     }
                     // `data-fn-id` is the stable lookup hook for the hover tooltip.
                     // The `id` stays the anchor target for `href="#fn-…"`.
@@ -7048,7 +7514,7 @@ ${previewClone.outerHTML}
         function __plotlyShowError(container, msg) {
             const pre = document.createElement('pre');
             pre.className = 'plotly-error';
-            pre.textContent = 'Plotly error: ' + msg;
+            pre.textContent = t('err.prefix', { engine: 'Plotly' }) + msg;
             container.replaceWith(pre);
         }
 
@@ -7886,7 +8352,7 @@ ${previewClone.outerHTML}
                     }
                     __diagCacheSet(__abcCache, src, el.innerHTML);
                 } catch (error) {
-                    el.innerHTML = '<div class="abc-error">ABC Error: ' + (error && error.message) + '</div>';
+                    el.innerHTML = '<div class="abc-error">' + t('err.prefix', { engine: 'ABC' }) + (error && error.message) + '</div>';
                 }
             });
         }
@@ -8044,7 +8510,7 @@ ${previewClone.outerHTML}
                 const step = Math.max(1, Math.ceil((yEnd - y + 1) / 12));
                 for (; y <= yEnd; y += step) ticks.push({ t: new Date(y, 0, 1).getTime(), label: String(y) });
             } else if (spanDays > 70) {
-                const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+                const months = t('cal.monthsShort').split(',');
                 let d = new Date(dFrom.getFullYear(), dFrom.getMonth(), 1);
                 while (d.getTime() <= tMax) {
                     ticks.push({ t: d.getTime(), label: (d.getMonth() === 0 ? d.getFullYear() + ' ' : '') + months[d.getMonth()] });
@@ -8099,7 +8565,7 @@ ${previewClone.outerHTML}
         function __mwBuildCalendar(mw, events, holidays) {
             const pad2 = (n) => (n < 10 ? '0' + n : '' + n);
             const dayStart = (ms) => { const d = new Date(ms); return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime(); };
-            const DOW = ['日', '月', '火', '水', '木', '金', '土'];
+            const DOW = t('cal.dow').split(',');
 
             const palette = __mwPalette();
             const tagColors = new Map();
@@ -8151,7 +8617,8 @@ ${previewClone.outerHTML}
             monthDefs.forEach(md => {
                 const year = md.yy, month = md.mm, daysInMonth = md.daysInMonth, startWeekday = md.startWeekday, weeks = md.weeks, top = md.top;
                 // Month title.
-                s += '<text x="' + PAD + '" y="' + (top + 20) + '" fill="' + cal.month + '" font-size="15" font-weight="700">' + year + '年 ' + (month + 1) + '月</text>';
+                s += '<text x="' + PAD + '" y="' + (top + 20) + '" fill="' + cal.month + '" font-size="15" font-weight="700">'
+                    + __mwEscape(t('cal.monthTitle', { year: year, month: month + 1, monthName: t('cal.month.' + (month + 1)) })) + '</text>';
                 // Weekday header.
                 const dowTop = top + monthHdrH;
                 for (let cCol = 0; cCol < 7; cCol++) {
@@ -8275,13 +8742,13 @@ ${previewClone.outerHTML}
                     const monthCount = (eM.getFullYear() - sM.getFullYear()) * 12 + (eM.getMonth() - sM.getMonth()) + 1;
 
                     if (monthCount > __MW_CAL_MAX_MONTHS) {
-                        const note = '<div class="markwhen-note">期間が広い（約' + monthCount + 'ヶ月）ため、カレンダー表示ではなくタイムライン表示にフォールバックしました。</div>';
+                        const note = '<div class="markwhen-note">' + t('cal.spanTooWide', { months: monthCount }) + '</div>';
                         el.innerHTML = titleHtml + note + __mwBuildTimeline(MW, mw, rows, events);
                         return;
                     }
 
                     const online = navigator.onLine;
-                    const calKey = __diagKey(src) + '|cal|' + country + '|' + (online ? 'on' : 'off');
+                    const calKey = __diagKey(src) + '|cal|' + country + '|' + (online ? 'on' : 'off') + '|' + uiLang;
                     if (__diagCacheHit(__markwhenCalCache, calKey, el)) return;
 
                     const years = new Set();
@@ -8294,12 +8761,16 @@ ${previewClone.outerHTML}
                 }
 
                 // Timeline view (default).
-                const key = __diagKey(src);
+                // Salted with uiLang because the axis tick labels are localized
+                // and baked into the SVG string — without it a language switch
+                // re-attaches the previous language's months. mermaid / abc /
+                // tikz need no such salt: none of them bake UI text.
+                const key = __diagKey(src) + '|' + uiLang;
                 if (__diagCacheHit(__markwhenCache, key, el)) return;
                 el.innerHTML = titleHtml + __mwBuildTimeline(MW, mw, rows, events);
                 __diagCacheSet(__markwhenCache, key, el.innerHTML);
             } catch (error) {
-                el.innerHTML = '<div class="markwhen-error">Markwhen Error: ' + __mwEscape(error && error.message) + '</div>';
+                el.innerHTML = '<div class="markwhen-error">' + t('err.prefix', { engine: 'Markwhen' }) + __mwEscape(error && error.message) + '</div>';
             }
         }
 
@@ -8409,7 +8880,7 @@ ${previewClone.outerHTML}
                 const outcome = await __tikzAwait(el);
                 if (outcome === 'timeout') {
                     // Leave uncached so a subsequent render retries the compile.
-                    el.innerHTML = '<div class="tikz-error">TikZ: レンダリングがタイムアウトしました</div>';
+                    el.innerHTML = __tikzErrorHtml('err.tikzTimeout');
                     return;
                 }
                 // On a failed compile tikzjax swaps in a generic broken-image
@@ -8417,7 +8888,7 @@ ${previewClone.outerHTML}
                 // surface it as our own styled error instead so the failure reads
                 // clearly and matches the rest of the diagram error blocks.
                 if (outcome === 'error' || el.querySelector('.tikzjax-broken-wrapper, .tikzjax-broken-image')) {
-                    el.innerHTML = '<div class="tikz-error">TikZ: コンパイルに失敗しました（TeX 構文を確認してください）</div>';
+                    el.innerHTML = __tikzErrorHtml('err.tikzCompile');
                 } else {
                     // Enlarge the (intrinsically small) diagram before caching so the
                     // scaled SVG is what gets memoized / exported.
@@ -8427,7 +8898,7 @@ ${previewClone.outerHTML}
                 // identical sources don't recompile on every live-edit keystroke.
                 __diagCacheSet(__tikzCache, key, el.innerHTML);
             } catch (error) {
-                el.innerHTML = '<div class="tikz-error">TikZ Error: ' + escapeHtml(error && error.message) + '</div>';
+                el.innerHTML = '<div class="tikz-error">' + t('err.prefix', { engine: 'TikZ' }) + escapeHtml(error && error.message) + '</div>';
             }
         }
 
@@ -9001,7 +9472,7 @@ ${previewClone.outerHTML}
                     div.id = 'marp-tikz-' + (tikzCounter++);
                     div.setAttribute('data-tikz-kind', lang === 'tikzcd' ? 'cd' : 'raw');
                     div.setAttribute('data-tikz-source', encodeURIComponent(code.textContent));
-                    div.innerHTML = '<span class="tikz-loading">TikZ をコンパイル中…</span>';
+                    div.innerHTML = '<span class="tikz-loading">' + t('tikz.compiling') + '</span>';
                     pre.replaceWith(div);
                 }
             });
@@ -9157,7 +9628,7 @@ ${previewClone.outerHTML}
                     let tikzOk = !__tikzUnavailable();
                     try { if (tikzOk) await ensureTikz(); } catch (e) { tikzOk = false; }
                     await Promise.all(Array.from(marpTikzEls).map(el => tikzOk
-                        ? renderTikzCached(el).catch(err => { el.innerHTML = '<div class="tikz-error">TikZ Error: ' + escapeHtml(String((err && err.message) || err)) + '</div>'; })
+                        ? renderTikzCached(el).catch(err => { el.innerHTML = '<div class="tikz-error">' + t('err.prefix', { engine: 'TikZ' }) + escapeHtml(String((err && err.message) || err)) + '</div>'; })
                         : Promise.resolve().then(() => { el.innerHTML = __tikzUnavailableHtml(); })));
                 })();
             }
@@ -9192,7 +9663,7 @@ ${previewClone.outerHTML}
             __marpDeckIndex = idx;
             setMarpView('deck');
             __marpUpdateDeck();
-            showToast('表示: デッキ');
+            showToast(t('toast.marpView', { view: __marpViewLabel('deck') }));
         }
 
         // Detect a Marp document: must have a YAML front-matter block with `marp: true`.
@@ -9372,7 +9843,7 @@ ${previewClone.outerHTML}
                 const st = __tableEdit;
                 __tableEdit = null;
                 if (st.wrapper) st.wrapper.classList.remove('table-editing');
-                showToast('Table editing cancelled');
+                showToast(t('table.cancelled'));
             }
 
             // Normalize line endings: Windows files reach us as CRLF, and several
@@ -9507,7 +9978,7 @@ ${previewClone.outerHTML}
             // tikzjax compiles to inline SVG in a Web Worker. `tikzcd` auto-wraps its
             // body in the tikz-cd environment (commutative diagrams); `tikz` is a raw
             // tikzpicture. data-tikz-kind selects the wrapping/packages.
-            const tikzPlaceholder = '<span class="tikz-loading">TikZ をコンパイル中…</span>';
+            const tikzPlaceholder = '<span class="tikz-loading">' + t('tikz.compiling') + '</span>';
             html = html.replace(/<pre><code class="language-tikzcd">([\s\S]*?)<\/code><\/pre>/g, (match, code) => {
                 const id = `tikz-${tikzCounter++}`;
                 const ta = document.createElement('textarea');
@@ -9640,7 +10111,7 @@ ${previewClone.outerHTML}
                     let tikzOk = !__tikzUnavailable();
                     try { if (tikzOk && tikzReady) await tikzReady; } catch (e) { tikzOk = false; }
                     await Promise.all(Array.from(tikzEls).map(el => tikzOk
-                        ? renderTikzCached(el).catch(err => { el.innerHTML = '<div class="tikz-error">TikZ Error: ' + escapeHtml(String((err && err.message) || err)) + '</div>'; })
+                        ? renderTikzCached(el).catch(err => { el.innerHTML = '<div class="tikz-error">' + t('err.prefix', { engine: 'TikZ' }) + escapeHtml(String((err && err.message) || err)) + '</div>'; })
                         : Promise.resolve().then(() => { el.innerHTML = __tikzUnavailableHtml(); })));
                 })();
             }
@@ -10089,22 +10560,22 @@ ${previewClone.outerHTML}
 
                 const copyButton = document.createElement('button');
                 copyButton.className = 'copy-button table-copy-button';
-                copyButton.textContent = 'Copy table';
+                copyButton.textContent = t('copy.table');
 
                 copyButton.addEventListener('click', () => {
                     const { wrapper: cloneWrapper, clone } = buildStyledTableClone(table);
                     const ok = copyHtmlViaSelection(clone);
                     cloneWrapper.remove();
                     if (ok) {
-                        copyButton.textContent = 'Copied!';
+                        copyButton.textContent = t('copy.copied');
                         copyButton.classList.add('copied');
                         setTimeout(() => {
-                            copyButton.textContent = 'Copy table';
+                            copyButton.textContent = t('copy.table');
                             copyButton.classList.remove('copied');
                         }, 2000);
                     } else {
-                        copyButton.textContent = 'Failed';
-                        setTimeout(() => { copyButton.textContent = 'Copy table'; }, 2000);
+                        copyButton.textContent = t('copy.failed');
+                        setTimeout(() => { copyButton.textContent = t('copy.table'); }, 2000);
                     }
                 });
 
@@ -10132,9 +10603,9 @@ ${previewClone.outerHTML}
                         return b;
                     };
                     // Order in the bar = left-to-right on screen.
-                    mkButton('table-edit-button', 'Edit table', () => __tableEnterEdit(table), false);
-                    mkButton('table-cancel-button', 'Cancel', () => __tableExitEdit(true), true);
-                    mkButton('table-commit-button', 'Save', () => __tableCommit(), true);
+                    mkButton('table-edit-button', t('table.edit'), () => __tableEnterEdit(table), false);
+                    mkButton('table-cancel-button', t('table.cancel'), () => __tableExitEdit(true), true);
+                    mkButton('table-commit-button', t('table.save'), () => __tableCommit(), true);
                 }
             });
         }
@@ -10155,21 +10626,21 @@ ${previewClone.outerHTML}
                 // Create copy button
                 const copyButton = document.createElement('button');
                 copyButton.className = 'copy-button';
-                copyButton.textContent = 'Copy';
+                copyButton.textContent = t('copy.copy');
 
                 // Add click handler
                 copyButton.addEventListener('click', () => {
                     const code = pre.querySelector('code')?.textContent || pre.textContent;
                     if (copyTextViaTextarea(code)) {
-                        copyButton.textContent = 'Copied!';
+                        copyButton.textContent = t('copy.copied');
                         copyButton.classList.add('copied');
                         setTimeout(() => {
-                            copyButton.textContent = 'Copy';
+                            copyButton.textContent = t('copy.copy');
                             copyButton.classList.remove('copied');
                         }, 2000);
                     } else {
-                        copyButton.textContent = 'Failed';
-                        setTimeout(() => { copyButton.textContent = 'Copy'; }, 2000);
+                        copyButton.textContent = t('copy.failed');
+                        setTimeout(() => { copyButton.textContent = t('copy.copy'); }, 2000);
                     }
                 });
 
@@ -10265,7 +10736,7 @@ ${previewClone.outerHTML}
             // A copy item: `value` null/empty → disabled; on click, flash the result.
             const addCopyItem = (label, value) => addItem(label, () => {
                 const ok = copyTextViaTextarea(value);
-                return { label: ok ? 'Copied!' : 'Failed', copied: ok, delay: ok ? 600 : 800 };
+                return { label: t(ok ? 'copy.copied' : 'copy.failed'), copied: ok, delay: ok ? 600 : 800 };
             }, { disabled: !value });
 
             preview.addEventListener('contextmenu', (e) => {
@@ -10278,8 +10749,8 @@ ${previewClone.outerHTML}
                 const latex = (k.querySelector('annotation[encoding="application/x-tex"]')?.textContent || '').trim();
 
                 show(e, () => {
-                    addCopyItem('Copy MathML', mathml);
-                    addCopyItem('Copy LaTeX', latex);
+                    addCopyItem(t('menu.copyMathML'), mathml);
+                    addCopyItem(t('menu.copyLatex'), latex);
                 });
             });
         }
@@ -10308,8 +10779,8 @@ ${previewClone.outerHTML}
                 if (!ftEl.querySelector('details')) { hide(); return; }
                 e.preventDefault();
                 show(e, () => {
-                    addItem('すべて閉じる', () => setAllDetails(false));
-                    addItem('すべて開く', () => setAllDetails(true));
+                    addItem(t('menu.collapseAll'), () => setAllDetails(false));
+                    addItem(t('menu.expandAll'), () => setAllDetails(true));
                 });
             });
             // Outside-click / Esc / scroll dismissal is wired by __createContextMenu.
@@ -10334,32 +10805,32 @@ ${previewClone.outerHTML}
         // Resolve a rendered <table> back to its source span. Refuse-first: anything we
         // cannot prove is returned as an error so a bad data-line can never splice.
         function __tableLocate(tableEl) {
-            if (document.body.classList.contains('marp')) return { error: "Marp slide tables can't be edited" };
-            if (!currentFilePath) return { error: 'No file is currently open' };
+            if (document.body.classList.contains('marp')) return { error: t('table.errMarp') };
+            if (!currentFilePath) return { error: t('table.errNoFile') };
             const lineEl = tableEl.closest('[data-line]');
             // The stamped element must be the table itself (GFM) or its own wrapper.
             // A table nested in a blockquote / list / column resolves to that ancestor
             // instead, and its real span is unknown — refuse rather than guess.
             const own = lineEl === tableEl
                 || (lineEl && lineEl.contains(tableEl) && lineEl.classList.contains('table-block-wrapper'));
-            if (!lineEl || !own) return { error: "This table can't be edited (nested tables are unsupported)" };
-            if (lineEl.classList.contains('csv-table')) return { error: "csv / tsv block tables can't be edited" };
+            if (!lineEl || !own) return { error: t('table.errNested') };
+            if (lineEl.classList.contains('csv-table')) return { error: t('table.errCsv') };
             const startLine = parseInt(lineEl.getAttribute('data-line'), 10);
-            if (!Number.isFinite(startLine)) return { error: "Can't locate this table in the source" };
+            if (!Number.isFinite(startLine)) return { error: t('table.errLocate') };
             const entry = __blockTokens.find((b) => b.line === startLine && b.token && b.token.type === 'table');
-            if (!entry) return { error: "Can't parse this table's source" };
+            if (!entry) return { error: t('table.errParse') };
             const span = (entry.token.raw || '').replace(/\n+$/, '');
             const endLine = startLine + (span.match(/\n/g) || []).length;
             const lines = tblReadLines(currentMarkdownRaw, startLine, endLine);
-            if (!lines) return { error: "Can't locate this table in the source" };
+            if (!lines) return { error: t('table.errLocate') };
             const model = tblParse(lines);
-            if (!model) return { error: "Can't parse this table's source" };
+            if (!model) return { error: t('table.errParse') };
             // Final cross-check: the parsed source must have the same shape as what is
             // actually on screen. Catches a data-line that drifted for any reason.
             const domCols = tableEl.tHead ? (tableEl.tHead.rows[0] || { cells: [] }).cells.length : 0;
             const domRows = tableEl.tBodies[0] ? tableEl.tBodies[0].rows.length : 0;
             if (domCols !== model.header.length || domRows !== model.rows.length) {
-                return { error: "Table source and rendering don't match" };
+                return { error: t('table.errMismatch') };
             }
             return { startLine, endLine, lines, model };
         }
@@ -10403,7 +10874,7 @@ ${previewClone.outerHTML}
             if (wrapper) wrapper.classList.add('table-editing');
             __tableRenderGrid();
             __tableSetButtons(wrapper, true);
-            showToast('Editing table — edit cells directly, right-click for row / column actions');
+            showToast(t('table.editing'));
             return true;
         }
 
@@ -10455,23 +10926,23 @@ ${previewClone.outerHTML}
             const st = __tableEdit;
             if (!st) return;
             __tableSyncFromDom();
-            if (st.path !== currentFilePath) { showToast('The file changed'); __tableExitEdit(true); return; }
+            if (st.path !== currentFilePath) { showToast(t('table.fileChanged')); __tableExitEdit(true); return; }
             // Optimistic concurrency: refuse if the span changed under us (an external
             // edit, or the companion editor's live buffer) instead of clobbering it.
             const now = tblReadLines(currentMarkdownRaw, st.startLine, st.endLine);
             if (!now || now.join('\n') !== st.sourceText) {
-                showToast('The table changed — reopen it to edit');
+                showToast(t('table.tableChanged'));
                 __tableExitEdit(true);
                 return;
             }
             const next = tblReplaceLines(currentMarkdownRaw, st.startLine, st.endLine, tblEmit(st.model));
             if (next == null) { showToast('Failed to save the table'); __tableExitEdit(true); return; }
-            if (next === currentMarkdownRaw) { showToast('No changes'); __tableExitEdit(true); return; }
+            if (next === currentMarkdownRaw) { showToast(t('table.noChanges')); __tableExitEdit(true); return; }
             try {
                 // One write per commit. Each savefile: costs a 1.5s watcher-suppression
                 // entry plus a full re-render, so per-keystroke saving is not an option.
                 window.ipc.postMessage('savefile:' + JSON.stringify({ path: st.path, content: next }));
-                showToast('Table saved');
+                showToast(t('table.saved'));
                 // No local re-render: the savefile: round trip (EditorSavedContent →
                 // loadFileFromRust) re-renders from the saved content, as applyMarpTheme does.
                 __tableExitEdit(false);
@@ -10502,7 +10973,7 @@ ${previewClone.outerHTML}
                 case 'alignNone': ok = tblSetAlign(m, colIdx, null); break;
                 default: ok = false;
             }
-            if (!ok) { showToast("That operation isn't available"); return; }
+            if (!ok) { showToast(t('table.opUnavailable')); return; }
             __tableRenderGrid();
         }
 
@@ -10524,17 +10995,17 @@ ${previewClone.outerHTML}
                 const colIdx = cell.cellIndex;
                 const m = __tableEdit.model;
                 show(e, () => {
-                    addItem('Insert row above', () => __tableOp('rowAbove', rowIdx, colIdx), { disabled: isHeader });
-                    addItem('Insert row below', () => __tableOp('rowBelow', rowIdx, colIdx), { disabled: isHeader });
-                    addItem('Delete row', () => __tableOp('rowDelete', rowIdx, colIdx),
+                    addItem(t('menu.rowAbove'), () => __tableOp('rowAbove', rowIdx, colIdx), { disabled: isHeader });
+                    addItem(t('menu.rowBelow'), () => __tableOp('rowBelow', rowIdx, colIdx), { disabled: isHeader });
+                    addItem(t('menu.rowDelete'), () => __tableOp('rowDelete', rowIdx, colIdx),
                             { disabled: isHeader || m.rows.length <= 1 });
-                    addItem('Insert column left', () => __tableOp('colLeft', rowIdx, colIdx));
-                    addItem('Insert column right', () => __tableOp('colRight', rowIdx, colIdx));
-                    addItem('Delete column', () => __tableOp('colDelete', rowIdx, colIdx),
+                    addItem(t('menu.colLeft'), () => __tableOp('colLeft', rowIdx, colIdx));
+                    addItem(t('menu.colRight'), () => __tableOp('colRight', rowIdx, colIdx));
+                    addItem(t('menu.colDelete'), () => __tableOp('colDelete', rowIdx, colIdx),
                             { disabled: m.header.length <= 1 });
-                    addItem('Align column left', () => __tableOp('alignLeft', rowIdx, colIdx));
-                    addItem('Align column center', () => __tableOp('alignCenter', rowIdx, colIdx));
-                    addItem('Align column right', () => __tableOp('alignRight', rowIdx, colIdx));
+                    addItem(t('menu.alignLeft'), () => __tableOp('alignLeft', rowIdx, colIdx));
+                    addItem(t('menu.alignCenter'), () => __tableOp('alignCenter', rowIdx, colIdx));
+                    addItem(t('menu.alignRight'), () => __tableOp('alignRight', rowIdx, colIdx));
                 });
             });
         }
@@ -10774,7 +11245,7 @@ ${previewClone.outerHTML}
             if (window.ipc && typeof window.ipc.postMessage === 'function') {
                 if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey) {
                     window.ipc.postMessage('openmdnew:' + localPath);
-                    showToast('新しいウィンドウで開いています…');
+                    showToast(t('toast.openingWindow'));
                 } else {
                     window.ipc.postMessage('openmd:' + localPath);
                 }
@@ -11070,46 +11541,52 @@ ${previewClone.outerHTML}
     </script>
     <div id="toast"></div>
     <div id="update-banner" role="status" aria-live="polite">
-        <button type="button" id="update-later-btn" aria-label="閉じる" title="閉じる">&times;</button>
+        <button type="button" id="update-later-btn" aria-label="閉じる" title="閉じる" data-i18n-attr="aria-label:common.close;title:common.close">&times;</button>
         <span id="update-banner-msg"></span>
         <span id="update-banner-actions">
-            <button type="button" id="update-install-btn">今すぐ更新</button>
-            <button type="button" id="update-onexit-btn">終了後に更新</button>
-            <button type="button" id="update-optout-btn">今後表示しない</button>
+            <button type="button" id="update-install-btn" data-i18n="banner.install">今すぐ更新</button>
+            <button type="button" id="update-onexit-btn" data-i18n="banner.onexit">終了後に更新</button>
+            <button type="button" id="update-optout-btn" data-i18n="banner.optout">今後表示しない</button>
         </span>
     </div>
     <div id="slide-counter"></div>
     <canvas id="laser-canvas"></canvas>
     <div id="help-modal" role="dialog" aria-modal="true" aria-labelledby="help-modal-title">
         <div class="panel">
-            <button class="close" type="button" aria-label="閉じる">&times;</button>
-            <h2 id="help-modal-title">キーボードショートカット</h2>
+            <button class="close" type="button" aria-label="閉じる" data-i18n-attr="aria-label:common.close">&times;</button>
+            <h2 id="help-modal-title" data-i18n="help.title">キーボードショートカット</h2>
             <table>
                 <tbody>
-                    <tr><td class="keys"><kbd>H</kbd></td><td>このヘルプの表示 / 非表示</td></tr>
-                    <tr><td class="keys"><kbd>M</kbd></td><td>ダーク / ライト表示の切り替え</td></tr>
-                    <tr><td class="keys"><kbd>S</kbd></td><td>スタイルの選択（行末の ⚙ でそのスタイル固有の設定。Marpモードでは Marpテーマ。フロントマターを書き換え）</td></tr>
-                    <tr><td class="keys"><kbd>N</kbd></td><td>セクション自動番号の切り替え</td></tr>
-                    <tr><td class="keys"><kbd>L</kbd></td><td>行番号の表示切り替え</td></tr>
-                    <tr><td class="keys"><kbd>W</kbd></td><td>全幅レイアウトの切り替え</td></tr>
-                    <tr><td class="keys"><kbd>E</kbd></td><td>エディタウィンドウを開く（Vimモード・数式入力補助・文字数カウント）</td></tr>
-                    <tr><td class="keys"><kbd>Ctrl</kbd>+<kbd>N</kbd></td><td>新規の空Markdownファイルを作成</td></tr>
-                    <tr><td class="keys"><kbd>Ctrl</kbd>+<kbd>D</kbd></td><td>インストール先フォルダを Explorer で開く</td></tr>
-                    <tr><td class="keys"><kbd>X</kbd></td><td>現在の文書をエクスポート（保存ダイアログで HTML / PDF を選択。PDFはクリック可能なリンクと見出しのしおりを保持）</td></tr>
-                    <tr><td class="keys"><kbd>Ctrl</kbd>+<kbd>+</kbd> / <kbd>Ctrl</kbd>+<kbd>-</kbd> / <kbd>Ctrl</kbd>+<kbd>0</kbd></td><td>ズームイン / アウト / リセット</td></tr>
-                    <tr><td class="keys"><kbd>Alt</kbd>+<kbd>←</kbd> / <kbd>Alt</kbd>+<kbd>→</kbd></td><td>開いたファイルの履歴を戻る / 進む</td></tr>
-                    <tr><td class="keys"><kbd>Ctrl</kbd>+クリック</td><td>.md リンクを新しいプレビュアのウィンドウで開く（通常のクリックは同じウィンドウで遷移）</td></tr>
-                    <tr><td class="keys"><kbd>P</kbd></td><td>Marp表示の切り替え: スクロール → デッキ → 一覧（一覧でサムネイルをクリックするとデッキで開く）</td></tr>
-                    <tr><td class="keys"><kbd>F</kbd></td><td>全画面表示の切り替え（Marp文書）</td></tr>
-                    <tr><td class="keys"><kbd>A</kbd></td><td>スライドの自動縮小の切り替え（Marp）</td></tr>
-                    <tr><td class="keys"><kbd>←</kbd> / <kbd>→</kbd> / <kbd>PgUp</kbd> / <kbd>PgDn</kbd> / <kbd>Home</kbd> / <kbd>End</kbd></td><td>Marpデッキモードでのスライド移動</td></tr>
-                    <tr><td class="keys"><kbd>Ctrl</kbd>+<kbd>Wheel</kbd> / ドラッグ</td><td>カーソル位置でズーム / スライドをパン（Marpデッキモード）</td></tr>
-                    <tr><td class="keys"><kbd>Z</kbd></td><td>軌跡付きレーザーポインタの切り替え（Marpデッキモード）</td></tr>
-                    <tr><td class="keys"><kbd>Esc</kbd></td><td>このダイアログを閉じる</td></tr>
+                    <tr><td class="keys"><kbd>H</kbd></td><td data-i18n="help.key.h">このヘルプの表示 / 非表示</td></tr>
+                    <tr><td class="keys"><kbd>M</kbd></td><td data-i18n="help.key.m">ダーク / ライト表示の切り替え</td></tr>
+                    <tr><td class="keys"><kbd>S</kbd></td><td data-i18n="help.key.s">スタイルの選択（行末の ⚙ でそのスタイル固有の設定。Marpモードでは Marpテーマ。フロントマターを書き換え）</td></tr>
+                    <tr><td class="keys"><kbd>N</kbd></td><td data-i18n="help.key.n">セクション自動番号の切り替え</td></tr>
+                    <tr><td class="keys"><kbd>L</kbd></td><td data-i18n="help.key.l">行番号の表示切り替え</td></tr>
+                    <tr><td class="keys"><kbd>W</kbd></td><td data-i18n="help.key.w">全幅レイアウトの切り替え</td></tr>
+                    <tr><td class="keys"><kbd>E</kbd></td><td data-i18n="help.key.e">エディタウィンドウを開く（Vimモード・数式入力補助・文字数カウント）</td></tr>
+                    <tr><td class="keys"><kbd>Ctrl</kbd>+<kbd>N</kbd></td><td data-i18n="help.key.ctrlN">新規の空Markdownファイルを作成</td></tr>
+                    <tr><td class="keys"><kbd>Ctrl</kbd>+<kbd>D</kbd></td><td data-i18n="help.key.ctrlD">インストール先フォルダを Explorer で開く</td></tr>
+                    <tr><td class="keys"><kbd>X</kbd></td><td data-i18n="help.key.x">現在の文書をエクスポート（保存ダイアログで HTML / PDF を選択。PDFはクリック可能なリンクと見出しのしおりを保持）</td></tr>
+                    <tr><td class="keys"><kbd>Ctrl</kbd>+<kbd>+</kbd> / <kbd>Ctrl</kbd>+<kbd>-</kbd> / <kbd>Ctrl</kbd>+<kbd>0</kbd></td><td data-i18n="help.key.zoom">ズームイン / アウト / リセット</td></tr>
+                    <tr><td class="keys"><kbd>Alt</kbd>+<kbd>←</kbd> / <kbd>Alt</kbd>+<kbd>→</kbd></td><td data-i18n="help.key.history">開いたファイルの履歴を戻る / 進む</td></tr>
+                    <tr><td class="keys" data-i18n-html="help.cell.ctrlClick"><kbd>Ctrl</kbd>+クリック</td><td data-i18n="help.key.ctrlClick">.md リンクを新しいプレビュアのウィンドウで開く（通常のクリックは同じウィンドウで遷移）</td></tr>
+                    <tr><td class="keys"><kbd>P</kbd></td><td data-i18n="help.key.p">Marp表示の切り替え: スクロール → デッキ → 一覧（一覧でサムネイルをクリックするとデッキで開く）</td></tr>
+                    <tr><td class="keys"><kbd>F</kbd></td><td data-i18n="help.key.f">全画面表示の切り替え（Marp文書）</td></tr>
+                    <tr><td class="keys"><kbd>A</kbd></td><td data-i18n="help.key.a">スライドの自動縮小の切り替え（Marp）</td></tr>
+                    <tr><td class="keys"><kbd>←</kbd> / <kbd>→</kbd> / <kbd>PgUp</kbd> / <kbd>PgDn</kbd> / <kbd>Home</kbd> / <kbd>End</kbd></td><td data-i18n="help.key.slideNav">Marpデッキモードでのスライド移動</td></tr>
+                    <tr><td class="keys" data-i18n-html="help.cell.zoomPan"><kbd>Ctrl</kbd>+<kbd>Wheel</kbd> / ドラッグ</td><td data-i18n="help.key.zoomPan">カーソル位置でズーム / スライドをパン（Marpデッキモード）</td></tr>
+                    <tr><td class="keys"><kbd>Z</kbd></td><td data-i18n="help.key.z">軌跡付きレーザーポインタの切り替え（Marpデッキモード）</td></tr>
+                    <tr><td class="keys"><kbd>Esc</kbd></td><td data-i18n="help.key.esc">このダイアログを閉じる</td></tr>
                 </tbody>
             </table>
             <div class="help-footer">
-                <a href="#" id="show-licenses">サードパーティライセンス</a>
+                <a href="#" id="show-licenses" data-i18n="help.licenses">サードパーティライセンス</a>
+                <span id="lang-switch" role="group">
+                    <span class="lang-label" data-i18n="help.lang">表示言語</span>
+                    <button type="button" data-lang="auto" data-i18n="common.lang.auto">自動</button>
+                    <button type="button" data-lang="ja" data-i18n="common.lang.ja">日本語</button>
+                    <button type="button" data-lang="en" data-i18n="common.lang.en">English</button>
+                </span>
                 <span id="app-version" class="app-version"></span>
             </div>
             <pre id="licenses-pane" hidden></pre>
@@ -11117,8 +11594,8 @@ ${previewClone.outerHTML}
     </div>
     <div id="style-modal" role="dialog" aria-modal="true" aria-labelledby="style-modal-title">
         <div class="panel">
-            <button class="close" type="button" aria-label="閉じる">&times;</button>
-            <h2 id="style-modal-title">スタイルを選択</h2>
+            <button class="close" type="button" aria-label="閉じる" data-i18n-attr="aria-label:common.close">&times;</button>
+            <h2 id="style-modal-title" data-i18n="style.title">スタイルを選択</h2>
             <table>
                 <tbody id="style-modal-rows"></tbody>
             </table>
