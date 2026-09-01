@@ -2699,6 +2699,9 @@
             'cal.spanTooWide':     { ja: '期間が広い（約{months}ヶ月）ため、カレンダー表示ではなくタイムライン表示にフォールバックしました。',
                                      en: 'The span is too wide (about {months} months), so this fell back to the timeline view instead of the calendar.' },
 
+            'export.untitled':     { ja: 'エクスポートした文書', en: 'Exported document' },
+            'err.plotlyInit':      { ja: 'Plotly の初期化に失敗しました: ', en: 'Plotly init failed: ' },
+
             'toast.lang':          { ja: '表示言語: {lang}', en: 'Language: {lang}' },
 
             // Marp view mode. The INTERNAL keys (scroll / deck / list) are also
@@ -5117,7 +5120,7 @@
                     const stripped = base.replace(/\.(md|markdown)$/i, '');
                     if (stripped) return stripped;
                 }
-                return document.title || 'Exported document';
+                return document.title || t('export.untitled');
             })();
             const titleText = rawTitle
                 .replace(/&/g, '&amp;')
@@ -5302,7 +5305,7 @@
         if (!spec) return;
         Plotly.newPlot(el, spec.traces || [], spec.layout || {}, spec.config || {});
       } catch (e) {
-        el.textContent = 'Plotly init failed: ' + e.message;
+        el.textContent = ${JSON.stringify(t('err.plotlyInit'))} + e.message;
       }
     });
   }
@@ -5311,7 +5314,7 @@
 
             const html =
 `<!DOCTYPE html>
-<html lang="en">
+<html lang="${uiLang}">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">

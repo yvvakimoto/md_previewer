@@ -219,6 +219,10 @@ export const I18N = {
   'ed.complete.span.valign': { ja: '縦位置(ベースライン)', en: 'Vertical align (baseline)' },
 };
 
+// Test hook, mirroring window.__I18N in assets/index.html.
+// tools/preview-harness/i18ncheck.py reads both to check table integrity.
+try { window.__editorI18n = I18N; } catch (_) {}
+
 // Resolved once at boot and updated by setLang(). Read through getLang().
 let uiLang = 'ja';
 const listeners = [];
