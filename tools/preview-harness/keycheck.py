@@ -159,9 +159,13 @@ def main():
                 "() => document.querySelector"
                 "('tr.style-row[data-style=\"bunko.css\"] .style-gear').click()")
             page.wait_for_function("() => !document.getElementById('style-vars-pane').hidden")
+            # Read the expectation out of the page's own I18N table rather than
+            # hard-coding the copy: this asserts the WIRING (that the title goes
+            # through t('style.settingsFor', {name})) and survives a wording change.
             check("the gear opens the settings pane for that style",
                   page.evaluate("() => document.getElementById('style-modal-title').textContent"),
-                  "bunko.css の設定")
+                  page.evaluate("() => window.__I18N['style.settingsFor'].ja"
+                                ".replace('{name}', 'bunko.css')"))
             check("...and hides the style list",
                   page.evaluate("() => document.querySelector('#style-modal table').hidden"), True)
             check("...with one control per declared variable",
@@ -379,7 +383,11 @@ def main():
             labels = page.evaluate(
                 "() => [...document.querySelectorAll('.app-context-menu .app-menu-item')]"
                 ".map(i => i.textContent)")
-            check("...labelled Copy MathML / Copy LaTeX", labels, ["Copy MathML", "Copy LaTeX"])
+            # Expected copy comes from the page's own table, so this asserts the
+            # wiring rather than the wording (the harness pins uiLang=ja).
+            check("...labelled Copy MathML / Copy LaTeX", labels,
+                  page.evaluate("() => [window.__I18N['menu.copyMathML'].ja,"
+                                " window.__I18N['menu.copyLatex'].ja]"))
             check("...and neither is disabled",
                   page.evaluate("() => [...document.querySelectorAll("
                                 "'.app-context-menu .app-menu-item.disabled')].length"), 0)

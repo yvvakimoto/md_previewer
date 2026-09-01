@@ -2602,14 +2602,147 @@
                                      en: '<kbd>Ctrl</kbd>+<kbd>Wheel</kbd> / Drag' },
 
             'style.title':         { ja: 'スタイルを選択', en: 'Choose a style' },
+            'style.marpTitle':     { ja: 'Marpテーマを選択', en: 'Choose a Marp theme' },
+            'style.default':       { ja: 'デフォルト', en: 'Default' },
+            'style.gearTitle':     { ja: '{name} の詳細設定', en: '{name} — advanced settings' },
+            'style.settingsFor':   { ja: '{name} の設定',     en: '{name} settings' },
+            'style.varShow':       { ja: '表示',       en: 'Show' },
+            'style.backToList':    { ja: '← 一覧へ',   en: '← Back to the list' },
+            'style.resetDefaults': { ja: '既定に戻す', en: 'Reset to defaults' },
+
+            'lic.loadFailed':      { ja: 'THIRD_PARTY_LICENSES.txt の読み込みに失敗しました ({error})',
+                                     en: 'Could not load THIRD_PARTY_LICENSES.txt ({error})' },
+
+            // Copy / edit affordances. These were English-only before the toggle
+            // existed, so the Japanese side is new copy.
+            'copy.copy':           { ja: 'コピー',       en: 'Copy' },
+            'copy.copied':         { ja: 'コピーしました', en: 'Copied!' },
+            'copy.failed':         { ja: '失敗しました',  en: 'Failed' },
+            'copy.table':          { ja: '表をコピー',   en: 'Copy table' },
+            'menu.copyMathML':     { ja: 'MathML をコピー', en: 'Copy MathML' },
+            'menu.copyLatex':      { ja: 'LaTeX をコピー',  en: 'Copy LaTeX' },
+            'menu.collapseAll':    { ja: 'すべて閉じる', en: 'Collapse all' },
+            'menu.expandAll':      { ja: 'すべて開く',   en: 'Expand all' },
+            'fn.backToRef':        { ja: '参照元に戻る', en: 'Back to reference' },
+
+            'table.edit':          { ja: '表を編集',     en: 'Edit table' },
+            'table.cancel':        { ja: 'キャンセル',   en: 'Cancel' },
+            'table.save':          { ja: '保存',         en: 'Save' },
+            'table.editing':       { ja: '表を編集中 — セルを直接編集し、行や列の操作は右クリック',
+                                     en: 'Editing table — edit cells directly, right-click for row / column actions' },
+            'table.cancelled':     { ja: '表の編集を取り消しました', en: 'Table editing cancelled' },
+            'table.fileChanged':   { ja: 'ファイルが変更されました', en: 'The file changed' },
+            'table.tableChanged':  { ja: '表が変更されました — 編集し直してください',
+                                     en: 'The table changed — reopen it to edit' },
+            'table.saveFailed':    { ja: '表の保存に失敗しました', en: 'Failed to save the table' },
+            'table.noChanges':     { ja: '変更はありません', en: 'No changes' },
+            'table.saved':         { ja: '表を保存しました', en: 'Table saved' },
+            'table.opUnavailable': { ja: 'その操作は利用できません', en: "That operation isn't available" },
+            'table.errMarp':       { ja: 'Marp スライドの表は編集できません', en: "Marp slide tables can't be edited" },
+            'table.errNoFile':     { ja: 'ファイルが開かれていません', en: 'No file is currently open' },
+            'table.errNested':     { ja: 'この表は編集できません（入れ子の表は未対応）',
+                                     en: "This table can't be edited (nested tables are unsupported)" },
+            'table.errCsv':        { ja: 'csv / tsv ブロックの表は編集できません',
+                                     en: "csv / tsv block tables can't be edited" },
+            'table.errLocate':     { ja: 'この表のソース位置を特定できません',
+                                     en: "Can't locate this table in the source" },
+            'table.errParse':      { ja: 'この表のソースを解析できません',
+                                     en: "Can't parse this table's source" },
+            'table.errMismatch':   { ja: '表のソースと表示が一致しません',
+                                     en: "Table source and rendering don't match" },
+
+            'menu.rowAbove':       { ja: '上に行を挿入',     en: 'Insert row above' },
+            'menu.rowBelow':       { ja: '下に行を挿入',     en: 'Insert row below' },
+            'menu.rowDelete':      { ja: '行を削除',         en: 'Delete row' },
+            'menu.colLeft':        { ja: '左に列を挿入',     en: 'Insert column left' },
+            'menu.colRight':       { ja: '右に列を挿入',     en: 'Insert column right' },
+            'menu.colDelete':      { ja: '列を削除',         en: 'Delete column' },
+            'menu.alignLeft':      { ja: '列を左揃え',       en: 'Align column left' },
+            'menu.alignCenter':    { ja: '列を中央揃え',     en: 'Align column center' },
+            'menu.alignRight':     { ja: '列を右揃え',       en: 'Align column right' },
+
+            // Renderer diagnostics. The engine names are proper nouns and stay
+            // literal; the exception text itself is library-authored and is
+            // never translated.
+            'err.prefix':          { ja: '{engine} エラー: ', en: '{engine} error: ' },
+            'err.tikzMissing':     { ja: 'TikZ コンポーネントが未インストールです。インストーラーを再実行し、「TikZ・可換図式コンポーネントをダウンロード」にチェックを入れてください。',
+                                     en: 'The TikZ component is not installed. Re-run the installer and tick “Download the TikZ / commutative-diagram component”.' },
+            'err.tikzLoadFail':    { ja: 'TikZ エンジンを読み込めませんでした（libs/tikzjax）',
+                                     en: 'Could not load the TikZ engine (libs/tikzjax)' },
+            'err.tikzTimeout':     { ja: 'TikZ: レンダリングがタイムアウトしました',
+                                     en: 'TikZ: rendering timed out' },
+            'err.tikzCompile':     { ja: 'TikZ: コンパイルに失敗しました（TeX 構文を確認してください）',
+                                     en: 'TikZ: compilation failed (check the TeX syntax)' },
+            'tikz.compiling':      { ja: 'TikZ をコンパイル中…', en: 'Compiling TikZ…' },
+
+            // Calendar. One message keeps the seven weekdays in order, so a
+            // six-item translation is impossible to miss in review.
+            'cal.dow':             { ja: '日,月,火,水,木,金,土', en: 'Sun,Mon,Tue,Wed,Thu,Fri,Sat' },
+            // Timeline axis tick labels. Comma-joined for the same reason as
+            // cal.dow: it keeps all twelve in order and makes a short
+            // translation visible in review.
+            'cal.monthsShort':     { ja: '1月,2月,3月,4月,5月,6月,7月,8月,9月,10月,11月,12月',
+                                     en: 'Jan,Feb,Mar,Apr,May,Jun,Jul,Aug,Sep,Oct,Nov,Dec' },
+            'cal.monthTitle':      { ja: '{year}年 {month}月', en: '{monthName} {year}', params: ['year','month','monthName'] },
+            'cal.month.1':  { ja: '1月',  en: 'January' },
+            'cal.month.2':  { ja: '2月',  en: 'February' },
+            'cal.month.3':  { ja: '3月',  en: 'March' },
+            'cal.month.4':  { ja: '4月',  en: 'April' },
+            'cal.month.5':  { ja: '5月',  en: 'May' },
+            'cal.month.6':  { ja: '6月',  en: 'June' },
+            'cal.month.7':  { ja: '7月',  en: 'July' },
+            'cal.month.8':  { ja: '8月',  en: 'August' },
+            'cal.month.9':  { ja: '9月',  en: 'September' },
+            'cal.month.10': { ja: '10月', en: 'October' },
+            'cal.month.11': { ja: '11月', en: 'November' },
+            'cal.month.12': { ja: '12月', en: 'December' },
+            'cal.spanTooWide':     { ja: '期間が広い（約{months}ヶ月）ため、カレンダー表示ではなくタイムライン表示にフォールバックしました。',
+                                     en: 'The span is too wide (about {months} months), so this fell back to the timeline view instead of the calendar.' },
 
             'toast.lang':          { ja: '表示言語: {lang}', en: 'Language: {lang}' },
+
+            // Marp view mode. The INTERNAL keys (scroll / deck / list) are also
+            // the localStorage value and CSS class names — only these display
+            // labels are localized. Never build a reverse lookup off a label.
+            'marp.view.scroll':    { ja: 'スクロール', en: 'Scroll' },
+            'marp.view.deck':      { ja: 'デッキ',     en: 'Deck' },
+            'marp.view.list':      { ja: '一覧',       en: 'List' },
+
+            'toast.toggle':        { ja: '{label}: {state}', en: '{label}: {state}' },
+            'toast.marpView':      { ja: '表示: {view}',     en: 'View: {view}' },
+            'toggle.wide':         { ja: '全幅表示',         en: 'Full width' },
+            'toggle.numbered':     { ja: 'セクション番号',   en: 'Section numbers' },
+            'toggle.autofit':      { ja: '自動縮小',         en: 'Shrink to fit' },
+            'toggle.laser':        { ja: 'レーザー',         en: 'Laser pointer' },
+            'toast.dark':          { ja: 'ダーク',           en: 'Dark' },
+            'toast.light':         { ja: 'ライト',           en: 'Light' },
+            'toast.styleDefault':  { ja: 'デフォルト',       en: 'Default' },
+            'toast.marpFixedTheme':{ ja: 'テーマはMarpディレクティブで固定されています',
+                                     en: 'The theme is pinned by a Marp directive' },
+            'toast.pdfExport':     { ja: 'PDF出力: {name}',  en: 'Exported PDF: {name}' },
+            'toast.pdfExportFail': { ja: 'PDF出力に失敗しました', en: 'PDF export failed' },
+            'toast.openingWindow': { ja: '新しいウィンドウで開いています…', en: 'Opening in a new window…' },
+            'toast.noFile':        { ja: '更新するファイルがありません', en: 'There is no file to update' },
+            'toast.notMarp':       { ja: 'Marp文書ではありません', en: 'This is not a Marp document' },
+            'toast.marpTheme':     { ja: 'Marpテーマ: {name}', en: 'Marp theme: {name}' },
+            'toast.themeSaveFail': { ja: 'テーマの保存に失敗しました', en: 'Could not save the theme' },
+            'toast.updateOnExit':  { ja: '終了時に更新します', en: 'Will update on exit' },
+
+            'banner.available':    { ja: '新しいバージョン <span class="ver">v{version}</span> があります',
+                                     en: 'Version <span class="ver">v{version}</span> is available' },
+            'banner.installing':   { ja: '更新中…', en: 'Updating…' },
         };
 
         // Assigned by __resolveInitialState(); declared here so every string
         // site below can read it. 'ja' is only a placeholder for the few
         // microseconds before resolution runs.
         let uiLang = 'ja';
+
+        // Test hook. tools/preview-harness/i18ncheck.py reads this to verify the
+        // table's integrity, and keycheck.py reads expected copy out of it so its
+        // assertions test the wiring rather than the wording. Same forensic
+        // posture as window.__editorView in the editor.
+        window.__I18N = I18N;
 
         // Fallback chain: uiLang -> ja -> the key itself. A missing translation
         // renders as `toast.lang` on screen, which is loud in dev and never blank.
@@ -3065,9 +3198,11 @@
         // to #preview and into Marp <section> content, where ::before/::after read it.
         document.documentElement.style.setProperty('--current-year', JSON.stringify(String(new Date().getFullYear())));
 
-        // Japanese labels for the Marp view modes (internal keys stay in English
-        // for localStorage / class names; only the toast text is localized).
-        const MARP_VIEW_LABELS = { scroll: 'スクロール', deck: 'デッキ', list: '一覧' };
+        // Display label for a Marp view mode. A function, not a const map: a map
+        // captured at boot would freeze the language at the value it had then.
+        // The internal keys stay English for localStorage / class names; only the
+        // toast text is localized.
+        function __marpViewLabel(v) { return t('marp.view.' + v); }
 
         let toastTimer = null;
         function showToast(msg) {
@@ -3082,7 +3217,7 @@
         // Called by the Rust host when a PDF export finishes (X → PDF filter).
         // See src/pdf_win.rs / CustomEvent::PdfExportDone.
         window.__pdfExportDone = function (ok, name) {
-            showToast(ok ? ('PDF出力: ' + (name || '')) : 'PDF出力に失敗しました');
+            showToast(ok ? t('toast.pdfExport', { name: name || '' }) : t('toast.pdfExportFail'));
         };
 
         // ---- PDF video-frame rasterization -----------------------------------
@@ -3577,7 +3712,7 @@
                 if (!b || !msg) return;
                 const ver = (info && info.version) ? String(info.version) : '';
                 const notes = (info && info.notes) ? String(info.notes) : '';
-                let html = '新しいバージョン <span class="ver">v' + escapeHtml(ver) + '</span> があります';
+                let html = t('banner.available', { version: escapeHtml(ver) });
                 if (notes) html += '<span class="notes">' + escapeHtml(notes) + '</span>';
                 msg.innerHTML = html;
                 b.classList.add('visible');
@@ -3611,7 +3746,7 @@
                         window.ipc.postMessage('update:install');
                     }
                     install.disabled = true;
-                    install.textContent = '更新中…';
+                    install.textContent = t('banner.installing');
                 });
                 if (onexit) onexit.addEventListener('click', function () {
                     // Reservation only: the host installs when the user closes the
@@ -3620,7 +3755,7 @@
                         window.ipc.postMessage('update:onexit');
                     }
                     hideBanner();
-                    showToast('終了時に更新します');
+                    showToast(t('toast.updateOnExit'));
                     __dbgLog('update deferred to exit');
                 });
                 if (later) later.addEventListener('click', hideBanner);
@@ -3706,10 +3841,11 @@
         }
         // Distinguish "never installed" (actionable) from "installed but failed to
         // load" (a real fault). Single source of truth for both pipelines.
-        const __TIKZ_MISSING_HTML  = '<div class="tikz-error">TikZ コンポーネントが未インストールです。インストーラーを再実行し、「TikZ・可換図式コンポーネントをダウンロード」にチェックを入れてください。</div>';
-        const __TIKZ_LOADFAIL_HTML = '<div class="tikz-error">TikZ エンジンを読み込めませんでした（libs/tikzjax）</div>';
+        // Built on demand, not stored in a const: a string captured at boot would
+        // freeze the language at whatever it was then.
+        function __tikzErrorHtml(key) { return '<div class="tikz-error">' + t(key) + '</div>'; }
         function __tikzUnavailableHtml() {
-            return __tikzUnavailable() ? __TIKZ_MISSING_HTML : __TIKZ_LOADFAIL_HTML;
+            return __tikzErrorHtml(__tikzUnavailable() ? 'err.tikzMissing' : 'err.tikzLoadFail');
         }
         let __tikzFontsLinked = false;
         function ensureTikz() {
@@ -3856,16 +3992,16 @@
         // via the existing EditorSavedContent → loadFileFromRust path.
         function applyMarpTheme(name) {
             if (!currentFilePath) {
-                showToast('更新するファイルがありません');
+                showToast(t('toast.noFile'));
                 return;
             }
             if (!isMarpDocument(currentMarkdownRaw)) {
-                showToast('Marp文書ではありません');
+                showToast(t('toast.notMarp'));
                 return;
             }
             const next = setMarpTheme(currentMarkdownRaw, name);
             if (next === currentMarkdownRaw) {
-                showToast('Marpテーマ: ' + name);
+                showToast(t('toast.marpTheme', { name: name }));
                 return;
             }
             try {
@@ -3873,10 +4009,10 @@
                     path: currentFilePath,
                     content: next,
                 }));
-                showToast('Marpテーマ: ' + name);
+                showToast(t('toast.marpTheme', { name: name }));
             } catch (e) {
                 console.warn('applyMarpTheme: postMessage failed', e);
-                showToast('テーマの保存に失敗しました');
+                showToast(t('toast.themeSaveFail'));
             }
         }
 
@@ -4079,12 +4215,13 @@
 
         // Restore a persisted body-class flag and bind `key` to toggle + persist it
         // (optionally announcing the new state via a toast).
-        function bindBodyClassToggle(key, cls, storeKey, toastLabel) {
+        function bindBodyClassToggle(key, cls, storeKey, toastLabelKey) {
             if (localStorage.getItem(storeKey) === 'true') document.body.classList.add(cls);
             onPlainKey(key, () => {
                 const on = document.body.classList.toggle(cls);
                 localStorage.setItem(storeKey, on);
-                if (toastLabel) showToast(toastLabel + ': ' + (on ? 'オン' : 'オフ'));
+                if (toastLabelKey) showToast(t('toast.toggle', {
+                    label: t(toastLabelKey), state: t(on ? 'common.on' : 'common.off') }));
             });
         }
 
@@ -4094,7 +4231,7 @@
         // Full-width layout toggle (W key). Same pattern as L/N; pure body-class
         // toggle, persisted in localStorage. CSS scoped to body.wide #preview;
         // no-op in Marp mode (the later body.marp #preview rule wins).
-        bindBodyClassToggle('w', 'wide', 'wide', '全幅表示');
+        bindBodyClassToggle('w', 'wide', 'wide', 'toggle.wide');
 
         // Auto-shrink Marp slides to fit (A key). When on (default), slides whose
         // content overflows the 1280x720 box are scaled down uniformly to fit;
@@ -4105,26 +4242,26 @@
             localStorage.setItem('marpAutofit', __marpAutofit);
             fitMarpSlides();   // re-fit on / clear on off
             if (document.body.classList.contains('marp')) {
-                showToast('自動縮小: ' + (__marpAutofit ? 'オン' : 'オフ'));
+                showToast(t('toast.toggle', { label: t('toggle.autofit'), state: t(__marpAutofit ? 'common.on' : 'common.off') }));
             }
         });
 
         // Section numbering toggle (N key). Baseline counter rules live in the inline <style>
         // above so numbering works on every theme by default; user themes may
         // override the ::before content/styling for their custom number presentation.
-        bindBodyClassToggle('n', 'numbered', 'numbered', 'セクション番号');
+        bindBodyClassToggle('n', 'numbered', 'numbered', 'toggle.numbered');
 
         // Dark / Light toggle (M key). Orthogonal to the user-style picker (S).
         onPlainKey('m', async () => {
             if (document.body.classList.contains('marp')) {
-                showToast('テーマはMarpディレクティブで固定されています');
+                showToast(t('toast.marpFixedTheme'));
                 return;
             }
             // Anchor by source-line BEFORE re-render — mermaid theme switch
             // requires re-rendering, which rebuilds the DOM.
             const anchor = capturePreviewAnchor();
             applyDarkMode(!darkMode);
-            showToast(darkMode ? 'ダーク' : 'ライト');
+            showToast(t(darkMode ? 'toast.dark' : 'toast.light'));
             if (currentMarkdown) await renderMarkdown(currentMarkdown);
             requestAnimationFrame(() => restorePreviewAnchor(anchor));
         });
@@ -4138,14 +4275,14 @@
             const tbody = document.getElementById('style-modal-rows');
             if (!tbody) return;
             const title = document.getElementById('style-modal-title');
-            if (title) title.textContent = isMarp ? 'Marpテーマを選択' : 'スタイルを選択';
+            if (title) title.textContent = t(isMarp ? 'style.marpTitle' : 'style.title');
             let entries;
             let activeKey;
             if (isMarp) {
                 entries = __marpThemeNames();
                 activeKey = getMarpTheme(currentMarkdown) || 'default';
             } else {
-                entries = [{ name: null, label: 'Default' }]
+                entries = [{ name: null, label: t('style.default') }]
                     .concat(__userStyleList().map(n => ({ name: n, label: n })));
                 activeKey = currentStyle || null;
             }
@@ -4197,8 +4334,8 @@
                     btn.type = 'button';
                     btn.className = 'style-gear';
                     btn.textContent = '⚙';
-                    btn.title = name + ' の詳細設定';
-                    btn.setAttribute('aria-label', name + ' の詳細設定');
+                    btn.title = t('style.gearTitle', { name: name });
+                    btn.setAttribute('aria-label', t('style.gearTitle', { name: name }));
                     cell.appendChild(btn);
                 });
             }
@@ -4218,7 +4355,7 @@
             const tbl = document.querySelector('#style-modal table');
             if (tbl) tbl.hidden = false;
             const title = document.getElementById('style-modal-title');
-            if (title) title.textContent = 'スタイルを選択';
+            if (title) title.textContent = t('style.title');
             __styleVarsState = null;
         }
         async function setStyleVarsPaneOpen(name) {
@@ -4243,7 +4380,7 @@
             const tbl = document.querySelector('#style-modal table');
             if (tbl) tbl.hidden = true;
             const title = document.getElementById('style-modal-title');
-            if (title) title.textContent = name + ' の設定';
+            if (title) title.textContent = t('style.settingsFor', { name: name });
             pane.hidden = false;
             __renderStyleVarsForm();
         }
@@ -4335,7 +4472,7 @@
                 swatch.addEventListener('input', () => push(false));
                 swatch.addEventListener('change', () => push(true));
                 wrap.appendChild(on);
-                wrap.appendChild(document.createTextNode('表示'));
+                wrap.appendChild(document.createTextNode(t('style.varShow')));
                 ctl.appendChild(wrap);
                 ctl.appendChild(swatch);
             } else {
@@ -4369,11 +4506,11 @@
             const back = document.createElement('button');
             back.type = 'button';
             back.className = 'sv-back';
-            back.textContent = '← 一覧へ';
+            back.textContent = t('style.backToList');
             const reset = document.createElement('button');
             reset.type = 'button';
             reset.className = 'sv-reset';
-            reset.textContent = '既定に戻す';
+            reset.textContent = t('style.resetDefaults');
             foot.appendChild(back);
             foot.appendChild(reset);
             pane.appendChild(foot);
@@ -4449,7 +4586,7 @@
             if ((next || null) === (currentStyle || null)) return;
             const anchor = capturePreviewAnchor();
             const cssReady = applyUserStyle(next);
-            showToast(next || 'デフォルト');
+            showToast(next || t('toast.styleDefault'));
             const renderDone = currentMarkdown ? renderMarkdown(currentMarkdown) : Promise.resolve();
             await Promise.all([cssReady, renderDone]);
             requestAnimationFrame(() => restorePreviewAnchor(anchor));
@@ -4467,7 +4604,7 @@
                 const next = order[(order.indexOf(cur) + 1) % order.length];
                 setMarpView(next);
                 if (next === 'deck') __marpUpdateDeck();
-                showToast('表示: ' + (MARP_VIEW_LABELS[next] || next));
+                showToast(t('toast.marpView', { view: __marpViewLabel(next) }));
                 return;
             }
             if (e.key === 'f' || e.key === 'F') {
@@ -4479,7 +4616,7 @@
             if (e.key === 'z' || e.key === 'Z') {
                 e.preventDefault();
                 setLaser(!__laserOn);
-                showToast('レーザー: ' + (__laserOn ? 'オン' : 'オフ'));
+                showToast(t('toast.toggle', { label: t('toggle.laser'), state: t(__laserOn ? 'common.on' : 'common.off') }));
                 return;
             }
             if (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === ' ') {
@@ -4548,11 +4685,11 @@
                 if (!pane.hidden) { pane.hidden = true; return; }
                 pane.hidden = false;
                 if (!pane.dataset.loaded) {
-                    pane.textContent = '読み込み中…';
+                    pane.textContent = t('splash.loading');
                     fetch('THIRD_PARTY_LICENSES.txt')
                         .then(r => r.ok ? r.text() : Promise.reject(r.status))
                         .then(t => { pane.textContent = t; pane.dataset.loaded = '1'; })
-                        .catch(err => { pane.textContent = 'THIRD_PARTY_LICENSES.txt の読み込みに失敗しました (' + err + ')'; });
+                        .catch(err => { pane.textContent = t('lic.loadFailed', { error: err }); });
                 }
                 return;
             }
@@ -6323,7 +6460,7 @@ ${previewClone.outerHTML}
                             __marpDeckIndex = slideIdx;
                             setMarpView('deck');
                             __marpUpdateDeck();
-                            showToast('表示: デッキ');
+                            showToast(t('toast.marpView', { view: __marpViewLabel('deck') }));
                         } else {
                             // scroll mode (deck hides the sidebar, so no deck click path)
                             svg.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -7013,7 +7150,7 @@ ${previewClone.outerHTML}
                     let backlinks = '';
                     for (let n = 1; n <= occ; n++) {
                         const sup = occ > 1 ? '<sup>' + n + '</sup>' : '';
-                        backlinks += '<a href="#fnref-' + sid + '-' + n + '" class="footnote-backref" aria-label="Back to reference">↩' + sup + '</a> ';
+                        backlinks += '<a href="#fnref-' + sid + '-' + n + '" class="footnote-backref" aria-label="' + t('fn.backToRef') + '">↩' + sup + '</a> ';
                     }
                     // `data-fn-id` is the stable lookup hook for the hover tooltip.
                     // The `id` stays the anchor target for `href="#fn-…"`.
@@ -7337,7 +7474,7 @@ ${previewClone.outerHTML}
         function __plotlyShowError(container, msg) {
             const pre = document.createElement('pre');
             pre.className = 'plotly-error';
-            pre.textContent = 'Plotly error: ' + msg;
+            pre.textContent = t('err.prefix', { engine: 'Plotly' }) + msg;
             container.replaceWith(pre);
         }
 
@@ -8175,7 +8312,7 @@ ${previewClone.outerHTML}
                     }
                     __diagCacheSet(__abcCache, src, el.innerHTML);
                 } catch (error) {
-                    el.innerHTML = '<div class="abc-error">ABC Error: ' + (error && error.message) + '</div>';
+                    el.innerHTML = '<div class="abc-error">' + t('err.prefix', { engine: 'ABC' }) + (error && error.message) + '</div>';
                 }
             });
         }
@@ -8333,7 +8470,7 @@ ${previewClone.outerHTML}
                 const step = Math.max(1, Math.ceil((yEnd - y + 1) / 12));
                 for (; y <= yEnd; y += step) ticks.push({ t: new Date(y, 0, 1).getTime(), label: String(y) });
             } else if (spanDays > 70) {
-                const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+                const months = t('cal.monthsShort').split(',');
                 let d = new Date(dFrom.getFullYear(), dFrom.getMonth(), 1);
                 while (d.getTime() <= tMax) {
                     ticks.push({ t: d.getTime(), label: (d.getMonth() === 0 ? d.getFullYear() + ' ' : '') + months[d.getMonth()] });
@@ -8388,7 +8525,7 @@ ${previewClone.outerHTML}
         function __mwBuildCalendar(mw, events, holidays) {
             const pad2 = (n) => (n < 10 ? '0' + n : '' + n);
             const dayStart = (ms) => { const d = new Date(ms); return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime(); };
-            const DOW = ['日', '月', '火', '水', '木', '金', '土'];
+            const DOW = t('cal.dow').split(',');
 
             const palette = __mwPalette();
             const tagColors = new Map();
@@ -8440,7 +8577,8 @@ ${previewClone.outerHTML}
             monthDefs.forEach(md => {
                 const year = md.yy, month = md.mm, daysInMonth = md.daysInMonth, startWeekday = md.startWeekday, weeks = md.weeks, top = md.top;
                 // Month title.
-                s += '<text x="' + PAD + '" y="' + (top + 20) + '" fill="' + cal.month + '" font-size="15" font-weight="700">' + year + '年 ' + (month + 1) + '月</text>';
+                s += '<text x="' + PAD + '" y="' + (top + 20) + '" fill="' + cal.month + '" font-size="15" font-weight="700">'
+                    + __mwEscape(t('cal.monthTitle', { year: year, month: month + 1, monthName: t('cal.month.' + (month + 1)) })) + '</text>';
                 // Weekday header.
                 const dowTop = top + monthHdrH;
                 for (let cCol = 0; cCol < 7; cCol++) {
@@ -8564,13 +8702,13 @@ ${previewClone.outerHTML}
                     const monthCount = (eM.getFullYear() - sM.getFullYear()) * 12 + (eM.getMonth() - sM.getMonth()) + 1;
 
                     if (monthCount > __MW_CAL_MAX_MONTHS) {
-                        const note = '<div class="markwhen-note">期間が広い（約' + monthCount + 'ヶ月）ため、カレンダー表示ではなくタイムライン表示にフォールバックしました。</div>';
+                        const note = '<div class="markwhen-note">' + t('cal.spanTooWide', { months: monthCount }) + '</div>';
                         el.innerHTML = titleHtml + note + __mwBuildTimeline(MW, mw, rows, events);
                         return;
                     }
 
                     const online = navigator.onLine;
-                    const calKey = __diagKey(src) + '|cal|' + country + '|' + (online ? 'on' : 'off');
+                    const calKey = __diagKey(src) + '|cal|' + country + '|' + (online ? 'on' : 'off') + '|' + uiLang;
                     if (__diagCacheHit(__markwhenCalCache, calKey, el)) return;
 
                     const years = new Set();
@@ -8583,12 +8721,16 @@ ${previewClone.outerHTML}
                 }
 
                 // Timeline view (default).
-                const key = __diagKey(src);
+                // Salted with uiLang because the axis tick labels are localized
+                // and baked into the SVG string — without it a language switch
+                // re-attaches the previous language's months. mermaid / abc /
+                // tikz need no such salt: none of them bake UI text.
+                const key = __diagKey(src) + '|' + uiLang;
                 if (__diagCacheHit(__markwhenCache, key, el)) return;
                 el.innerHTML = titleHtml + __mwBuildTimeline(MW, mw, rows, events);
                 __diagCacheSet(__markwhenCache, key, el.innerHTML);
             } catch (error) {
-                el.innerHTML = '<div class="markwhen-error">Markwhen Error: ' + __mwEscape(error && error.message) + '</div>';
+                el.innerHTML = '<div class="markwhen-error">' + t('err.prefix', { engine: 'Markwhen' }) + __mwEscape(error && error.message) + '</div>';
             }
         }
 
@@ -8698,7 +8840,7 @@ ${previewClone.outerHTML}
                 const outcome = await __tikzAwait(el);
                 if (outcome === 'timeout') {
                     // Leave uncached so a subsequent render retries the compile.
-                    el.innerHTML = '<div class="tikz-error">TikZ: レンダリングがタイムアウトしました</div>';
+                    el.innerHTML = __tikzErrorHtml('err.tikzTimeout');
                     return;
                 }
                 // On a failed compile tikzjax swaps in a generic broken-image
@@ -8706,7 +8848,7 @@ ${previewClone.outerHTML}
                 // surface it as our own styled error instead so the failure reads
                 // clearly and matches the rest of the diagram error blocks.
                 if (outcome === 'error' || el.querySelector('.tikzjax-broken-wrapper, .tikzjax-broken-image')) {
-                    el.innerHTML = '<div class="tikz-error">TikZ: コンパイルに失敗しました（TeX 構文を確認してください）</div>';
+                    el.innerHTML = __tikzErrorHtml('err.tikzCompile');
                 } else {
                     // Enlarge the (intrinsically small) diagram before caching so the
                     // scaled SVG is what gets memoized / exported.
@@ -8716,7 +8858,7 @@ ${previewClone.outerHTML}
                 // identical sources don't recompile on every live-edit keystroke.
                 __diagCacheSet(__tikzCache, key, el.innerHTML);
             } catch (error) {
-                el.innerHTML = '<div class="tikz-error">TikZ Error: ' + escapeHtml(error && error.message) + '</div>';
+                el.innerHTML = '<div class="tikz-error">' + t('err.prefix', { engine: 'TikZ' }) + escapeHtml(error && error.message) + '</div>';
             }
         }
 
@@ -9290,7 +9432,7 @@ ${previewClone.outerHTML}
                     div.id = 'marp-tikz-' + (tikzCounter++);
                     div.setAttribute('data-tikz-kind', lang === 'tikzcd' ? 'cd' : 'raw');
                     div.setAttribute('data-tikz-source', encodeURIComponent(code.textContent));
-                    div.innerHTML = '<span class="tikz-loading">TikZ をコンパイル中…</span>';
+                    div.innerHTML = '<span class="tikz-loading">' + t('tikz.compiling') + '</span>';
                     pre.replaceWith(div);
                 }
             });
@@ -9446,7 +9588,7 @@ ${previewClone.outerHTML}
                     let tikzOk = !__tikzUnavailable();
                     try { if (tikzOk) await ensureTikz(); } catch (e) { tikzOk = false; }
                     await Promise.all(Array.from(marpTikzEls).map(el => tikzOk
-                        ? renderTikzCached(el).catch(err => { el.innerHTML = '<div class="tikz-error">TikZ Error: ' + escapeHtml(String((err && err.message) || err)) + '</div>'; })
+                        ? renderTikzCached(el).catch(err => { el.innerHTML = '<div class="tikz-error">' + t('err.prefix', { engine: 'TikZ' }) + escapeHtml(String((err && err.message) || err)) + '</div>'; })
                         : Promise.resolve().then(() => { el.innerHTML = __tikzUnavailableHtml(); })));
                 })();
             }
@@ -9481,7 +9623,7 @@ ${previewClone.outerHTML}
             __marpDeckIndex = idx;
             setMarpView('deck');
             __marpUpdateDeck();
-            showToast('表示: デッキ');
+            showToast(t('toast.marpView', { view: __marpViewLabel('deck') }));
         }
 
         // Detect a Marp document: must have a YAML front-matter block with `marp: true`.
@@ -9661,7 +9803,7 @@ ${previewClone.outerHTML}
                 const st = __tableEdit;
                 __tableEdit = null;
                 if (st.wrapper) st.wrapper.classList.remove('table-editing');
-                showToast('Table editing cancelled');
+                showToast(t('table.cancelled'));
             }
 
             // Normalize line endings: Windows files reach us as CRLF, and several
@@ -9796,7 +9938,7 @@ ${previewClone.outerHTML}
             // tikzjax compiles to inline SVG in a Web Worker. `tikzcd` auto-wraps its
             // body in the tikz-cd environment (commutative diagrams); `tikz` is a raw
             // tikzpicture. data-tikz-kind selects the wrapping/packages.
-            const tikzPlaceholder = '<span class="tikz-loading">TikZ をコンパイル中…</span>';
+            const tikzPlaceholder = '<span class="tikz-loading">' + t('tikz.compiling') + '</span>';
             html = html.replace(/<pre><code class="language-tikzcd">([\s\S]*?)<\/code><\/pre>/g, (match, code) => {
                 const id = `tikz-${tikzCounter++}`;
                 const ta = document.createElement('textarea');
@@ -9929,7 +10071,7 @@ ${previewClone.outerHTML}
                     let tikzOk = !__tikzUnavailable();
                     try { if (tikzOk && tikzReady) await tikzReady; } catch (e) { tikzOk = false; }
                     await Promise.all(Array.from(tikzEls).map(el => tikzOk
-                        ? renderTikzCached(el).catch(err => { el.innerHTML = '<div class="tikz-error">TikZ Error: ' + escapeHtml(String((err && err.message) || err)) + '</div>'; })
+                        ? renderTikzCached(el).catch(err => { el.innerHTML = '<div class="tikz-error">' + t('err.prefix', { engine: 'TikZ' }) + escapeHtml(String((err && err.message) || err)) + '</div>'; })
                         : Promise.resolve().then(() => { el.innerHTML = __tikzUnavailableHtml(); })));
                 })();
             }
@@ -10378,22 +10520,22 @@ ${previewClone.outerHTML}
 
                 const copyButton = document.createElement('button');
                 copyButton.className = 'copy-button table-copy-button';
-                copyButton.textContent = 'Copy table';
+                copyButton.textContent = t('copy.table');
 
                 copyButton.addEventListener('click', () => {
                     const { wrapper: cloneWrapper, clone } = buildStyledTableClone(table);
                     const ok = copyHtmlViaSelection(clone);
                     cloneWrapper.remove();
                     if (ok) {
-                        copyButton.textContent = 'Copied!';
+                        copyButton.textContent = t('copy.copied');
                         copyButton.classList.add('copied');
                         setTimeout(() => {
-                            copyButton.textContent = 'Copy table';
+                            copyButton.textContent = t('copy.table');
                             copyButton.classList.remove('copied');
                         }, 2000);
                     } else {
-                        copyButton.textContent = 'Failed';
-                        setTimeout(() => { copyButton.textContent = 'Copy table'; }, 2000);
+                        copyButton.textContent = t('copy.failed');
+                        setTimeout(() => { copyButton.textContent = t('copy.table'); }, 2000);
                     }
                 });
 
@@ -10421,9 +10563,9 @@ ${previewClone.outerHTML}
                         return b;
                     };
                     // Order in the bar = left-to-right on screen.
-                    mkButton('table-edit-button', 'Edit table', () => __tableEnterEdit(table), false);
-                    mkButton('table-cancel-button', 'Cancel', () => __tableExitEdit(true), true);
-                    mkButton('table-commit-button', 'Save', () => __tableCommit(), true);
+                    mkButton('table-edit-button', t('table.edit'), () => __tableEnterEdit(table), false);
+                    mkButton('table-cancel-button', t('table.cancel'), () => __tableExitEdit(true), true);
+                    mkButton('table-commit-button', t('table.save'), () => __tableCommit(), true);
                 }
             });
         }
@@ -10444,21 +10586,21 @@ ${previewClone.outerHTML}
                 // Create copy button
                 const copyButton = document.createElement('button');
                 copyButton.className = 'copy-button';
-                copyButton.textContent = 'Copy';
+                copyButton.textContent = t('copy.copy');
 
                 // Add click handler
                 copyButton.addEventListener('click', () => {
                     const code = pre.querySelector('code')?.textContent || pre.textContent;
                     if (copyTextViaTextarea(code)) {
-                        copyButton.textContent = 'Copied!';
+                        copyButton.textContent = t('copy.copied');
                         copyButton.classList.add('copied');
                         setTimeout(() => {
-                            copyButton.textContent = 'Copy';
+                            copyButton.textContent = t('copy.copy');
                             copyButton.classList.remove('copied');
                         }, 2000);
                     } else {
-                        copyButton.textContent = 'Failed';
-                        setTimeout(() => { copyButton.textContent = 'Copy'; }, 2000);
+                        copyButton.textContent = t('copy.failed');
+                        setTimeout(() => { copyButton.textContent = t('copy.copy'); }, 2000);
                     }
                 });
 
@@ -10554,7 +10696,7 @@ ${previewClone.outerHTML}
             // A copy item: `value` null/empty → disabled; on click, flash the result.
             const addCopyItem = (label, value) => addItem(label, () => {
                 const ok = copyTextViaTextarea(value);
-                return { label: ok ? 'Copied!' : 'Failed', copied: ok, delay: ok ? 600 : 800 };
+                return { label: t(ok ? 'copy.copied' : 'copy.failed'), copied: ok, delay: ok ? 600 : 800 };
             }, { disabled: !value });
 
             preview.addEventListener('contextmenu', (e) => {
@@ -10567,8 +10709,8 @@ ${previewClone.outerHTML}
                 const latex = (k.querySelector('annotation[encoding="application/x-tex"]')?.textContent || '').trim();
 
                 show(e, () => {
-                    addCopyItem('Copy MathML', mathml);
-                    addCopyItem('Copy LaTeX', latex);
+                    addCopyItem(t('menu.copyMathML'), mathml);
+                    addCopyItem(t('menu.copyLatex'), latex);
                 });
             });
         }
@@ -10597,8 +10739,8 @@ ${previewClone.outerHTML}
                 if (!ftEl.querySelector('details')) { hide(); return; }
                 e.preventDefault();
                 show(e, () => {
-                    addItem('すべて閉じる', () => setAllDetails(false));
-                    addItem('すべて開く', () => setAllDetails(true));
+                    addItem(t('menu.collapseAll'), () => setAllDetails(false));
+                    addItem(t('menu.expandAll'), () => setAllDetails(true));
                 });
             });
             // Outside-click / Esc / scroll dismissal is wired by __createContextMenu.
@@ -10623,32 +10765,32 @@ ${previewClone.outerHTML}
         // Resolve a rendered <table> back to its source span. Refuse-first: anything we
         // cannot prove is returned as an error so a bad data-line can never splice.
         function __tableLocate(tableEl) {
-            if (document.body.classList.contains('marp')) return { error: "Marp slide tables can't be edited" };
-            if (!currentFilePath) return { error: 'No file is currently open' };
+            if (document.body.classList.contains('marp')) return { error: t('table.errMarp') };
+            if (!currentFilePath) return { error: t('table.errNoFile') };
             const lineEl = tableEl.closest('[data-line]');
             // The stamped element must be the table itself (GFM) or its own wrapper.
             // A table nested in a blockquote / list / column resolves to that ancestor
             // instead, and its real span is unknown — refuse rather than guess.
             const own = lineEl === tableEl
                 || (lineEl && lineEl.contains(tableEl) && lineEl.classList.contains('table-block-wrapper'));
-            if (!lineEl || !own) return { error: "This table can't be edited (nested tables are unsupported)" };
-            if (lineEl.classList.contains('csv-table')) return { error: "csv / tsv block tables can't be edited" };
+            if (!lineEl || !own) return { error: t('table.errNested') };
+            if (lineEl.classList.contains('csv-table')) return { error: t('table.errCsv') };
             const startLine = parseInt(lineEl.getAttribute('data-line'), 10);
-            if (!Number.isFinite(startLine)) return { error: "Can't locate this table in the source" };
+            if (!Number.isFinite(startLine)) return { error: t('table.errLocate') };
             const entry = __blockTokens.find((b) => b.line === startLine && b.token && b.token.type === 'table');
-            if (!entry) return { error: "Can't parse this table's source" };
+            if (!entry) return { error: t('table.errParse') };
             const span = (entry.token.raw || '').replace(/\n+$/, '');
             const endLine = startLine + (span.match(/\n/g) || []).length;
             const lines = tblReadLines(currentMarkdownRaw, startLine, endLine);
-            if (!lines) return { error: "Can't locate this table in the source" };
+            if (!lines) return { error: t('table.errLocate') };
             const model = tblParse(lines);
-            if (!model) return { error: "Can't parse this table's source" };
+            if (!model) return { error: t('table.errParse') };
             // Final cross-check: the parsed source must have the same shape as what is
             // actually on screen. Catches a data-line that drifted for any reason.
             const domCols = tableEl.tHead ? (tableEl.tHead.rows[0] || { cells: [] }).cells.length : 0;
             const domRows = tableEl.tBodies[0] ? tableEl.tBodies[0].rows.length : 0;
             if (domCols !== model.header.length || domRows !== model.rows.length) {
-                return { error: "Table source and rendering don't match" };
+                return { error: t('table.errMismatch') };
             }
             return { startLine, endLine, lines, model };
         }
@@ -10692,7 +10834,7 @@ ${previewClone.outerHTML}
             if (wrapper) wrapper.classList.add('table-editing');
             __tableRenderGrid();
             __tableSetButtons(wrapper, true);
-            showToast('Editing table — edit cells directly, right-click for row / column actions');
+            showToast(t('table.editing'));
             return true;
         }
 
@@ -10744,23 +10886,23 @@ ${previewClone.outerHTML}
             const st = __tableEdit;
             if (!st) return;
             __tableSyncFromDom();
-            if (st.path !== currentFilePath) { showToast('The file changed'); __tableExitEdit(true); return; }
+            if (st.path !== currentFilePath) { showToast(t('table.fileChanged')); __tableExitEdit(true); return; }
             // Optimistic concurrency: refuse if the span changed under us (an external
             // edit, or the companion editor's live buffer) instead of clobbering it.
             const now = tblReadLines(currentMarkdownRaw, st.startLine, st.endLine);
             if (!now || now.join('\n') !== st.sourceText) {
-                showToast('The table changed — reopen it to edit');
+                showToast(t('table.tableChanged'));
                 __tableExitEdit(true);
                 return;
             }
             const next = tblReplaceLines(currentMarkdownRaw, st.startLine, st.endLine, tblEmit(st.model));
             if (next == null) { showToast('Failed to save the table'); __tableExitEdit(true); return; }
-            if (next === currentMarkdownRaw) { showToast('No changes'); __tableExitEdit(true); return; }
+            if (next === currentMarkdownRaw) { showToast(t('table.noChanges')); __tableExitEdit(true); return; }
             try {
                 // One write per commit. Each savefile: costs a 1.5s watcher-suppression
                 // entry plus a full re-render, so per-keystroke saving is not an option.
                 window.ipc.postMessage('savefile:' + JSON.stringify({ path: st.path, content: next }));
-                showToast('Table saved');
+                showToast(t('table.saved'));
                 // No local re-render: the savefile: round trip (EditorSavedContent →
                 // loadFileFromRust) re-renders from the saved content, as applyMarpTheme does.
                 __tableExitEdit(false);
@@ -10791,7 +10933,7 @@ ${previewClone.outerHTML}
                 case 'alignNone': ok = tblSetAlign(m, colIdx, null); break;
                 default: ok = false;
             }
-            if (!ok) { showToast("That operation isn't available"); return; }
+            if (!ok) { showToast(t('table.opUnavailable')); return; }
             __tableRenderGrid();
         }
 
@@ -10813,17 +10955,17 @@ ${previewClone.outerHTML}
                 const colIdx = cell.cellIndex;
                 const m = __tableEdit.model;
                 show(e, () => {
-                    addItem('Insert row above', () => __tableOp('rowAbove', rowIdx, colIdx), { disabled: isHeader });
-                    addItem('Insert row below', () => __tableOp('rowBelow', rowIdx, colIdx), { disabled: isHeader });
-                    addItem('Delete row', () => __tableOp('rowDelete', rowIdx, colIdx),
+                    addItem(t('menu.rowAbove'), () => __tableOp('rowAbove', rowIdx, colIdx), { disabled: isHeader });
+                    addItem(t('menu.rowBelow'), () => __tableOp('rowBelow', rowIdx, colIdx), { disabled: isHeader });
+                    addItem(t('menu.rowDelete'), () => __tableOp('rowDelete', rowIdx, colIdx),
                             { disabled: isHeader || m.rows.length <= 1 });
-                    addItem('Insert column left', () => __tableOp('colLeft', rowIdx, colIdx));
-                    addItem('Insert column right', () => __tableOp('colRight', rowIdx, colIdx));
-                    addItem('Delete column', () => __tableOp('colDelete', rowIdx, colIdx),
+                    addItem(t('menu.colLeft'), () => __tableOp('colLeft', rowIdx, colIdx));
+                    addItem(t('menu.colRight'), () => __tableOp('colRight', rowIdx, colIdx));
+                    addItem(t('menu.colDelete'), () => __tableOp('colDelete', rowIdx, colIdx),
                             { disabled: m.header.length <= 1 });
-                    addItem('Align column left', () => __tableOp('alignLeft', rowIdx, colIdx));
-                    addItem('Align column center', () => __tableOp('alignCenter', rowIdx, colIdx));
-                    addItem('Align column right', () => __tableOp('alignRight', rowIdx, colIdx));
+                    addItem(t('menu.alignLeft'), () => __tableOp('alignLeft', rowIdx, colIdx));
+                    addItem(t('menu.alignCenter'), () => __tableOp('alignCenter', rowIdx, colIdx));
+                    addItem(t('menu.alignRight'), () => __tableOp('alignRight', rowIdx, colIdx));
                 });
             });
         }
@@ -11063,7 +11205,7 @@ ${previewClone.outerHTML}
             if (window.ipc && typeof window.ipc.postMessage === 'function') {
                 if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey) {
                     window.ipc.postMessage('openmdnew:' + localPath);
-                    showToast('新しいウィンドウで開いています…');
+                    showToast(t('toast.openingWindow'));
                 } else {
                     window.ipc.postMessage('openmd:' + localPath);
                 }

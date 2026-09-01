@@ -217,6 +217,10 @@ def main():
                     help="Marp view modes to dump, comma-separated (scroll,deck,list)")
     ap.add_argument("--dark", action="store_true", help="also dump each doc in dark mode")
     ap.add_argument("--sidebar", action="store_true", help="include the TOC sidebar text")
+    ap.add_argument("--lang", default="ja", choices=["ja", "en"],
+                    help="UI language to pin (default: ja). Chrome text such as the "
+                         "table Copy/Edit buttons is localized, so leaving this to OS "
+                         "auto-detect would make the digest machine-dependent.")
     ap.add_argument("--style", default=None,
                     help="user style to apply, e.g. bunko.css (default: the built-in style)")
     ap.add_argument("--round", type=int, default=2, dest="places",
@@ -267,10 +271,12 @@ def main():
                 sys.stderr.write("ERROR: could not launch a Chromium browser: %s\n" % last_err)
                 sys.exit(3)
 
-            ctx = browser.new_context(viewport={"width": 1440, "height": 900})
+            ctx = browser.new_context(viewport={"width": 1440, "height": 900},
+                                      locale="ja-JP" if args.lang == "ja" else "en-US")
             page = ctx.new_page()
             page.set_default_timeout(args.timeout)
             page.add_init_script(shoot.style_init_script(args.style))
+            page.add_init_script(shoot.ui_lang_init_script(args.lang))
 
             for md_path in paths:
                 url = "http://127.0.0.1:%d/index.html?file=%s" % (args.port, md_path)

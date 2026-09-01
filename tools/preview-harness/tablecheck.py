@@ -93,6 +93,11 @@ try:
     with sync_playwright() as p:
         b = p.chromium.launch(channel="msedge", headless=True)
         pg = b.new_page(viewport={"width": 1280, "height": 900})
+        # The context-menu assertions below are written against the English
+        # labels, so pin the UI language instead of inheriting OS auto-detect
+        # (which would make them pass in Japan and fail elsewhere). What this
+        # harness actually tests -- the savefile: payload -- is language-neutral.
+        pg.add_init_script(shoot.ui_lang_init_script("en"))
         errors = []
         pg.on("pageerror", lambda e: errors.append(str(e)))
 
