@@ -24,6 +24,11 @@
         いつでも実行できる機械的な検査 (バージョン整合性 / レビューマーカー /
         タグ位置 / インストーラーが HISTORY.md より新しいか)。push 前の確認用。
 
+    -Publish (push 後):
+        GitHub Release を作成し、インストーラーを添付する。本文は HISTORY.md の
+        '## v<X.Y.Z>' 節をそのまま使う。gh CLI が必要。タグが origin に無い場合は
+        中止する (gh が既定ブランチから別物のタグを作ってしまうため)。
+
 .PARAMETER Bump
     バンプ種別を明示指定 (major / minor / patch)。省略時はコミットメッセージから判定。
 
@@ -36,11 +41,16 @@
 .PARAMETER Verify
     公開前の機械的検査のみ実行。
 
+.PARAMETER Publish
+    push 済みのタグに対して GitHub Release を作成し、インストーラーを添付する。
+    -DryRun と併用すると実行せず内容だけ表示する。
+
 .PARAMETER SkipBuild
     -Finalize 時にインストーラービルドを省略 (検証用)。
 
 .PARAMETER Force
     main ブランチ判定・作業ツリー判定のガードを無視 (検証用)。
+    -Publish では「既存リリースを上書きする」意味になる。
 #>
 param(
     [ValidateSet('major', 'minor', 'patch')]
@@ -48,6 +58,7 @@ param(
     [switch]$DryRun,
     [switch]$Finalize,
     [switch]$Verify,
+    [switch]$Publish,
     [switch]$SkipBuild,
     [switch]$Force
 )
@@ -98,6 +109,24 @@ function Get-IssVersion {
 
 function Test-ReviewPending {
     (Get-FileText $HistoryMd).Contains($ReviewToken)
+}
+
+# HISTORY.md の「内容」のハッシュ (生バイトではなく)。
+#
+# このリポジトリは core.autocrlf=true なので、git は checkout のたびに
+# HISTORY.md を CRLF で書き戻す一方、このスクリプトは LF で書く。生バイトの
+# ハッシュだと内容が変わっていなくても値がずれ、正常なリリースに対して
+# 「同梱ノートが古い」と誤検知する (v0.30.0 で実測: stamp 2DDC... / 作業ツリー
+# ED14...)。LF に正規化してから取るのは tools/preview-harness/tablecheck.py が
+# ペイロード比較で既に採っている規約と同じ。
+#
+# MIRROR: build-installer.ps1 に同じ関数がある — 同期を保つこと。
+function Get-NotesHash($path) {
+    $text  = [System.IO.File]::ReadAllText($path) -replace "`r`n", "`n"
+    $bytes = [System.Text.Encoding]::UTF8.GetBytes($text)
+    $ms    = [System.IO.MemoryStream]::new($bytes)
+    try { (Get-FileHash -InputStream $ms -Algorithm SHA256).Hash }
+    finally { $ms.Dispose() }
 }
 
 # ------------------------------------------------------------------
@@ -208,7 +237,7 @@ function Invoke-Verify {
         }
     } else {
         $want = (Get-Content -LiteralPath $stamp -Raw).Trim()
-        $have = (Get-FileHash -LiteralPath $HistoryMd -Algorithm SHA256).Hash
+        $have = Get-NotesHash $HistoryMd
         if ($want -eq $have) {
             Write-Ok "インストーラー同梱のリリースノートが現在の HISTORY.md と一致"
         } else {
@@ -221,6 +250,7 @@ function Invoke-Verify {
     if ($ok) {
         Write-Host "検査に合格しました。公開するには:" -ForegroundColor Green
         Write-Host "    git push origin main; git push origin v$cargoVer" -ForegroundColor Yellow
+        Write-Host "    pwsh -NoProfile -File tools/release-on-main.ps1 -Publish" -ForegroundColor Yellow
         exit 0
     }
     Write-Warning "検査に失敗しました。上の NG を解消してください。"
@@ -314,15 +344,165 @@ HISTORY.md にレビューマーカーが残っています。確定を中止し
         Write-Host ''
         Write-Host "公開するには次を実行してください:" -ForegroundColor Yellow
         Write-Host "    git push origin main; git push origin $tag" -ForegroundColor Yellow
+        Write-Host "    pwsh -NoProfile -File tools/release-on-main.ps1 -Publish" -ForegroundColor Yellow
         Write-Skip "念のための最終検査: pwsh -NoProfile -File tools/release-on-main.ps1 -Verify"
     }
     exit 0
 }
 
 # ------------------------------------------------------------------
+# -Publish: GitHub Release の作成 + インストーラーの添付
+# ------------------------------------------------------------------
+# HISTORY.md の該当節を切り出して gh へ渡す。先頭/末尾の空行は落とす。
+function Get-ReleaseNotes($version) {
+    $hist  = Get-FileText $HistoryMd
+    $head  = "(?m)^##\s+v$([regex]::Escape($version))\s*$"
+    $m     = [regex]::Match($hist, $head)
+    if (-not $m.Success) { throw "HISTORY.md に '## v$version' の節がありません。" }
+    $rest  = $hist.Substring($m.Index + $m.Length)
+    $next  = [regex]::Match($rest, '(?m)^##\s')
+    $body  = if ($next.Success) { $rest.Substring(0, $next.Index) } else { $rest }
+    $body.Trim("`r", "`n", ' ')
+}
+
+function Invoke-Publish {
+    Write-Step "GitHub Release を公開します。"
+
+    # gh CLI は必須。無い場合の導線まで出す (winget があれば 1 コマンド)。
+    if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
+        Write-Warning @"
+GitHub CLI (gh) が見つかりません。
+
+  インストール:  winget install --id GitHub.cli
+  認証:          gh auth login
+
+  導入後にもう一度 -Publish を実行してください。
+"@
+        exit 1
+    }
+
+    # 公開前検査は -Verify と同じ観点を再実行する。-Verify は exit するので
+    # 関数としては呼べず、ここでは公開を壊す条件だけを個別に見ている。
+    $version = Get-CargoVersion
+    $issVer  = Get-IssVersion
+    if ($version -ne $issVer) {
+        Write-Warning "バージョンが一致しません (Cargo.toml=$version installer=$issVer)。中止します。"
+        exit 1
+    }
+    if (Test-ReviewPending) {
+        Write-Warning "HISTORY.md にレビューマーカー ($ReviewToken) が残っています。リリース本文になるため中止します。"
+        exit 1
+    }
+    $tag = "v$version"
+
+    # タグがローカルにあるだけでは足りない。origin に無い状態で gh release create を
+    # 走らせると、gh は既定ブランチの HEAD から勝手にタグを作ってしまい、
+    # 中身の違うリリースが静かに出来上がる。
+    $localTag = Invoke-Git -GitArgs @('rev-parse', '-q', '--verify', "refs/tags/$tag") 2>$null
+    if (-not $localTag) {
+        Write-Warning "タグ $tag がローカルにありません (-Finalize 未実行?)。中止します。"
+        exit 1
+    }
+    $remoteTag = Invoke-Git -GitArgs @('ls-remote', '--tags', 'origin', "refs/tags/$tag")
+    if (-not $remoteTag) {
+        Write-Warning @"
+タグ $tag が origin にありません。先に push してください:
+
+    git push origin main; git push origin $tag
+
+(タグが無いまま gh release create すると、既定ブランチの先頭から
+ 別物のタグが作られてしまいます)
+"@
+        exit 1
+    }
+
+    $artifact = Join-Path $RepoRoot "dist\MdPreviewer-Setup-$version.exe"
+    if (-not (Test-Path -LiteralPath $artifact)) {
+        Write-Warning "インストーラー $artifact がありません。build-installer.ps1 を実行してください。"
+        exit 1
+    }
+
+    # インストーラーに同梱された HISTORY.md が現行と一致するか (-Verify と同じ判定)。
+    # 古いノートを抱えた exe を配ってしまうのが最悪なので、ここでも止める。
+    $stamp = "$artifact.notes.sha256"
+    if (Test-Path -LiteralPath $stamp) {
+        $want = (Get-Content -LiteralPath $stamp -Raw).Trim()
+        $have = Get-NotesHash $HistoryMd
+        if ($want -ne $have) {
+            Write-Warning @"
+インストーラー同梱のリリースノートが現在の HISTORY.md と一致しません。
+古いノートを含む exe を配布してしまうため中止しました。
+
+    pwsh -NoProfile -File build-installer.ps1 -SkipBuild -SkipLicenses
+"@
+            exit 1
+        }
+    }
+
+    $exists = $false
+    & gh release view $tag --repo (Get-RepoSlug) 2>$null | Out-Null
+    if ($LASTEXITCODE -eq 0) { $exists = $true }
+    if ($exists -and -not $Force) {
+        Write-Warning @"
+リリース $tag は既に存在します。上書きするには -Force を付けてください
+(資産を --clobber で差し替え、本文を HISTORY.md から作り直します)。
+"@
+        exit 1
+    }
+
+    $notes     = Get-ReleaseNotes $version
+    $notesPath = Join-Path ([System.IO.Path]::GetTempPath()) "mdp-release-notes-$version.md"
+    Set-FileText $notesPath $notes      # utf8NoBOM: BOM は本文先頭のゴミ文字になる
+
+    try {
+        if ($DryRun) {
+            Write-Skip "-DryRun のため実行しません。実行される内容:"
+            if ($exists) {
+                Write-Host "    gh release upload $tag `"$artifact`" --clobber" -ForegroundColor Yellow
+                Write-Host "    gh release edit   $tag --notes-file <tmp>"      -ForegroundColor Yellow
+            } else {
+                Write-Host "    gh release create $tag `"$artifact`" --title $tag --notes-file <tmp>" -ForegroundColor Yellow
+            }
+            Write-Host ''
+            Write-Host "--- リリース本文 (HISTORY.md の ## $tag 節) ---" -ForegroundColor DarkGray
+            Write-Host $notes
+            exit 0
+        }
+
+        if ($exists) {
+            Write-Step "既存のリリース $tag を更新します (-Force)。"
+            & gh release upload $tag $artifact --clobber
+            if ($LASTEXITCODE -ne 0) { Write-Warning "資産のアップロードに失敗しました。"; exit 1 }
+            & gh release edit $tag --notes-file $notesPath
+            if ($LASTEXITCODE -ne 0) { Write-Warning "本文の更新に失敗しました。"; exit 1 }
+        } else {
+            & gh release create $tag $artifact --title $tag --notes-file $notesPath
+            if ($LASTEXITCODE -ne 0) { Write-Warning "リリースの作成に失敗しました。"; exit 1 }
+        }
+    } finally {
+        Remove-Item -LiteralPath $notesPath -ErrorAction SilentlyContinue
+    }
+
+    Write-Host ''
+    Write-Host "リリース $tag を公開しました。" -ForegroundColor Green
+    Write-Skip "紹介ページの版番号バッジは releases/latest を見ているので、自動で追従します。"
+    exit 0
+}
+
+# gh に渡すリポジトリ。origin の URL から owner/repo を取り出す
+# (カレントディレクトリ依存を避けるため明示する)。
+function Get-RepoSlug {
+    $url = (Invoke-Git -GitArgs @('remote', 'get-url', 'origin')).Trim()
+    $m = [regex]::Match($url, '[:/]([^/:]+/[^/]+?)(\.git)?$')
+    if (-not $m.Success) { throw "origin の URL から owner/repo を判定できません: $url" }
+    $m.Groups[1].Value
+}
+
+# ------------------------------------------------------------------
 # モード分岐
 # ------------------------------------------------------------------
 if ($Verify)   { Invoke-Verify }
+if ($Publish)  { Invoke-Publish }
 if ($Finalize) { Invoke-Finalize }
 
 # ==================================================================

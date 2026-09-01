@@ -652,7 +652,9 @@ Releases are automated by a tracked git hook that fires when the **`main`** bran
 
   **`-Verify`** — mechanical pre-publish check, runnable any time: the three version sites agree, `## v<X.Y.Z>` exists, no review marker, no leftover `## 未リリース`, the tag is HEAD or an ancestor, and **the release notes bundled into the installer match the current `HISTORY.md`**. That last one compares a SHA-256 recorded by `build-installer.ps1` (`dist/…exe.notes.sha256`) rather than timestamps, so a `git checkout` that rewrites `HISTORY.md` byte-identically doesn't raise a false alarm; artifacts predating the stamp fall back to an mtime comparison.
 
-  Push is never automatic unless `MDP_RELEASE_PUSH=1`. Other flags: `-DryRun` (phase-1 report only), `-SkipBuild` (`-Finalize` without the installer build), `-Force`.
+  **`-Publish`** — after the tag is pushed, creates the GitHub Release and attaches the installer via the `gh` CLI, taking the body from `HISTORY.md`'s section for that version. Separate from `-Finalize` on purpose: `gh release create` invents the tag from the default branch when it is missing on the remote, so this step requires the tag to already be on `origin`.
+
+  Push is never automatic unless `MDP_RELEASE_PUSH=1`. Other flags: `-DryRun` (phase-1 report, or `-Publish` preview), `-SkipBuild` (`-Finalize` without the installer build), `-Force` (also "overwrite the existing release" under `-Publish`).
 - `tools/install-hooks.ps1` — sets `git config core.hooksPath tools/hooks`. This is **per-clone local config**, so it must run once after cloning; `install-deps.ps1` calls it automatically (right after `fetch-libs.ps1`, so even `-SkipNode` enables the hook).
 
 #### The release flow in practice — merge, review, finalize
@@ -703,6 +705,25 @@ git add HISTORY.md && git commit --amend --no-edit && git tag -f v0.18.0
 ```
 
 (`git tag -f` is required — the tag still points at the pre-amend commit otherwise.)
+
+**6. Create the GitHub Release.** The installer is distributed as a release asset (`dist/` is git-ignored), and the landing page's download button points at `releases/latest`, so a tag with no release means the page keeps offering the previous version.
+
+```bash
+pwsh -NoProfile -File tools/release-on-main.ps1 -Publish
+```
+
+`-Publish` needs the [GitHub CLI](https://cli.github.com/) (`winget install --id GitHub.cli`, then `gh auth login`). It reads the version from `Cargo.toml`, takes the release body from `HISTORY.md`'s `## v<X.Y.Z>` section verbatim, and attaches `dist/MdPreviewer-Setup-<ver>.exe`. Add `-DryRun` to see the command and the body without publishing.
+
+Four things it refuses on, each because publishing anyway would be worse than stopping:
+
+- **The tag is not on `origin`.** `gh release create` would then *create* the tag from the default branch's HEAD, quietly publishing something other than what was tagged. This is the reason `-Publish` is a separate step after `git push` rather than part of `-Finalize`.
+- **The bundled release notes are stale** (same hash check as `-Verify`) — the artifact would ship a `HISTORY.md` that doesn't match the notes on the release page.
+- **The review marker is still in `HISTORY.md`** — it would become the release body.
+- **The release already exists.** `-Force` then re-uploads the asset with `--clobber` and rewrites the body.
+
+The `.notes.sha256` stamp is deliberately **not** attached — it is an internal build stamp that only `-Verify` reads, and it is noise next to the installer on a public release page. (v0.30.0 has one because that release was created by hand.)
+
+⚠ **The notes hash is taken over LF-normalized content, not raw bytes.** This clone has `core.autocrlf=true`, so git rewrites `HISTORY.md` with CRLF on checkout while `release-on-main.ps1` writes it with LF — a raw-byte hash then differs for a file whose content never changed, and `-Verify` reported the bundled notes as stale on a perfectly good release (measured on v0.30.0: stamp `2DDC…`, working tree `ED14…`). `Get-NotesHash` normalizes first; it is a **mirror implementation** in `build-installer.ps1` (which writes the stamp) and `release-on-main.ps1` (which checks it), so the two must stay in sync. Same rule `tools/preview-harness/tablecheck.py` already applies to its payload comparisons.
 
 **If the installer build fails during `-Finalize`**, there is no commit and no tag and the version edits stay in the working tree. Fix the build and re-run `-Finalize`; do not hand-commit.
 
