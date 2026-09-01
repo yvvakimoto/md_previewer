@@ -1921,6 +1921,10 @@
             padding: 24px 28px;
             position: relative;
         }
+        /* The help table's key column is fixed-width (see #help-modal td.keys),
+           so the description column gets whatever is left. 520px left it about
+           150px wide and every long description wrapped to 4+ lines. */
+        #help-modal .panel { width: min(680px, calc(100vw - 40px)); }
         #help-modal h2,
         #style-modal h2 {
             margin: 0 0 16px 0;
@@ -1953,6 +1957,11 @@
             width: 100%;
             border-collapse: collapse;
         }
+        /* Required for td.keys's width to be honoured: under the default auto
+           layout a declared width is only a suggestion, and the key column's
+           max-content (the 6-key slide-nav row, ~300px) wins instead. Scoped to
+           #help-modal — #style-modal's columns are content-sized on purpose. */
+        #help-modal table { table-layout: fixed; }
         #help-modal td,
         #style-modal td {
             padding: 6px 4px;
@@ -1961,11 +1970,18 @@
             border: none;
         }
         #help-modal td.keys {
-            white-space: nowrap;
-            width: 1%;
+            /* Wraps at the separators so a long key list becomes two lines
+               instead of stretching the column. A combination (Ctrl+N) is kept
+               together by .kc; every row therefore ends up the same width and
+               the descriptions all line up. A new shortcut row with more than
+               one key must wrap each combination in a .kc span. */
+            white-space: normal;
+            width: 200px;
             padding-right: 14px;
             text-align: right;
+            line-height: 2;
         }
+        #help-modal td.keys .kc { white-space: nowrap; }
         #help-modal kbd {
             display: inline-block;
             padding: 2px 7px;
@@ -2569,7 +2585,7 @@
             'help.key.h':          { ja: 'このヘルプの表示 / 非表示', en: 'Show / hide this help' },
             'help.key.m':          { ja: 'ダーク / ライト表示の切り替え', en: 'Toggle dark / light appearance' },
             'help.key.s':          { ja: 'スタイルの選択（行末の ⚙ でそのスタイル固有の設定。Marpモードでは Marpテーマ。フロントマターを書き換え）',
-                                     en: 'Choose a style (the ⚙ at the end of a row opens that style’s own settings; in Marp mode this picks the Marp theme and rewrites the front matter)' },
+                                     en: 'Choose a style (⚙ opens that style’s own settings; in Marp mode it picks the Marp theme and rewrites the front matter)' },
             'help.key.n':          { ja: 'セクション自動番号の切り替え', en: 'Toggle automatic section numbering' },
             'help.key.l':          { ja: '行番号の表示切り替え', en: 'Toggle line numbers' },
             'help.key.w':          { ja: '全幅レイアウトの切り替え', en: 'Toggle full-width layout' },
@@ -2597,9 +2613,10 @@
             // Key cells that mix <kbd> markup with prose — these are the ONLY
             // values ever fed to data-i18n-html. Never let a filename or a
             // @user-vars label reach that path.
-            'help.cell.ctrlClick': { ja: '<kbd>Ctrl</kbd>+クリック', en: '<kbd>Ctrl</kbd>+Click' },
-            'help.cell.zoomPan':   { ja: '<kbd>Ctrl</kbd>+<kbd>Wheel</kbd> / ドラッグ',
-                                     en: '<kbd>Ctrl</kbd>+<kbd>Wheel</kbd> / Drag' },
+            'help.cell.ctrlClick': { ja: '<span class="kc"><kbd>Ctrl</kbd>+クリック</span>',
+                                     en: '<span class="kc"><kbd>Ctrl</kbd>+Click</span>' },
+            'help.cell.zoomPan':   { ja: '<span class="kc"><kbd>Ctrl</kbd>+<kbd>Wheel</kbd> /</span> <span class="kc">ドラッグ</span>',
+                                     en: '<span class="kc"><kbd>Ctrl</kbd>+<kbd>Wheel</kbd> /</span> <span class="kc">Drag</span>' },
 
             'style.title':         { ja: 'スタイルを選択', en: 'Choose a style' },
             'style.marpTitle':     { ja: 'Marpテーマを選択', en: 'Choose a Marp theme' },
@@ -11564,17 +11581,17 @@ ${previewClone.outerHTML}
                     <tr><td class="keys"><kbd>L</kbd></td><td data-i18n="help.key.l">行番号の表示切り替え</td></tr>
                     <tr><td class="keys"><kbd>W</kbd></td><td data-i18n="help.key.w">全幅レイアウトの切り替え</td></tr>
                     <tr><td class="keys"><kbd>E</kbd></td><td data-i18n="help.key.e">エディタウィンドウを開く（Vimモード・数式入力補助・文字数カウント）</td></tr>
-                    <tr><td class="keys"><kbd>Ctrl</kbd>+<kbd>N</kbd></td><td data-i18n="help.key.ctrlN">新規の空Markdownファイルを作成</td></tr>
-                    <tr><td class="keys"><kbd>Ctrl</kbd>+<kbd>D</kbd></td><td data-i18n="help.key.ctrlD">インストール先フォルダを Explorer で開く</td></tr>
+                    <tr><td class="keys"><span class="kc"><kbd>Ctrl</kbd>+<kbd>N</kbd></span></td><td data-i18n="help.key.ctrlN">新規の空Markdownファイルを作成</td></tr>
+                    <tr><td class="keys"><span class="kc"><kbd>Ctrl</kbd>+<kbd>D</kbd></span></td><td data-i18n="help.key.ctrlD">インストール先フォルダを Explorer で開く</td></tr>
                     <tr><td class="keys"><kbd>X</kbd></td><td data-i18n="help.key.x">現在の文書をエクスポート（保存ダイアログで HTML / PDF を選択。PDFはクリック可能なリンクと見出しのしおりを保持）</td></tr>
-                    <tr><td class="keys"><kbd>Ctrl</kbd>+<kbd>+</kbd> / <kbd>Ctrl</kbd>+<kbd>-</kbd> / <kbd>Ctrl</kbd>+<kbd>0</kbd></td><td data-i18n="help.key.zoom">ズームイン / アウト / リセット</td></tr>
-                    <tr><td class="keys"><kbd>Alt</kbd>+<kbd>←</kbd> / <kbd>Alt</kbd>+<kbd>→</kbd></td><td data-i18n="help.key.history">開いたファイルの履歴を戻る / 進む</td></tr>
-                    <tr><td class="keys" data-i18n-html="help.cell.ctrlClick"><kbd>Ctrl</kbd>+クリック</td><td data-i18n="help.key.ctrlClick">.md リンクを新しいプレビュアのウィンドウで開く（通常のクリックは同じウィンドウで遷移）</td></tr>
+                    <tr><td class="keys"><span class="kc"><kbd>Ctrl</kbd>+<kbd>+</kbd> /</span> <span class="kc"><kbd>Ctrl</kbd>+<kbd>-</kbd> /</span> <span class="kc"><kbd>Ctrl</kbd>+<kbd>0</kbd></span></td><td data-i18n="help.key.zoom">ズームイン / アウト / リセット</td></tr>
+                    <tr><td class="keys"><span class="kc"><kbd>Alt</kbd>+<kbd>←</kbd> /</span> <span class="kc"><kbd>Alt</kbd>+<kbd>→</kbd></span></td><td data-i18n="help.key.history">開いたファイルの履歴を戻る / 進む</td></tr>
+                    <tr><td class="keys" data-i18n-html="help.cell.ctrlClick"><span class="kc"><kbd>Ctrl</kbd>+クリック</span></td><td data-i18n="help.key.ctrlClick">.md リンクを新しいプレビュアのウィンドウで開く（通常のクリックは同じウィンドウで遷移）</td></tr>
                     <tr><td class="keys"><kbd>P</kbd></td><td data-i18n="help.key.p">Marp表示の切り替え: スクロール → デッキ → 一覧（一覧でサムネイルをクリックするとデッキで開く）</td></tr>
                     <tr><td class="keys"><kbd>F</kbd></td><td data-i18n="help.key.f">全画面表示の切り替え（Marp文書）</td></tr>
                     <tr><td class="keys"><kbd>A</kbd></td><td data-i18n="help.key.a">スライドの自動縮小の切り替え（Marp）</td></tr>
-                    <tr><td class="keys"><kbd>←</kbd> / <kbd>→</kbd> / <kbd>PgUp</kbd> / <kbd>PgDn</kbd> / <kbd>Home</kbd> / <kbd>End</kbd></td><td data-i18n="help.key.slideNav">Marpデッキモードでのスライド移動</td></tr>
-                    <tr><td class="keys" data-i18n-html="help.cell.zoomPan"><kbd>Ctrl</kbd>+<kbd>Wheel</kbd> / ドラッグ</td><td data-i18n="help.key.zoomPan">カーソル位置でズーム / スライドをパン（Marpデッキモード）</td></tr>
+                    <tr><td class="keys"><span class="kc"><kbd>←</kbd> /</span> <span class="kc"><kbd>→</kbd> /</span> <span class="kc"><kbd>PgUp</kbd> /</span> <span class="kc"><kbd>PgDn</kbd> /</span> <span class="kc"><kbd>Home</kbd> /</span> <span class="kc"><kbd>End</kbd></span></td><td data-i18n="help.key.slideNav">Marpデッキモードでのスライド移動</td></tr>
+                    <tr><td class="keys" data-i18n-html="help.cell.zoomPan"><span class="kc"><kbd>Ctrl</kbd>+<kbd>Wheel</kbd> /</span> <span class="kc">ドラッグ</span></td><td data-i18n="help.key.zoomPan">カーソル位置でズーム / スライドをパン（Marpデッキモード）</td></tr>
                     <tr><td class="keys"><kbd>Z</kbd></td><td data-i18n="help.key.z">軌跡付きレーザーポインタの切り替え（Marpデッキモード）</td></tr>
                     <tr><td class="keys"><kbd>Esc</kbd></td><td data-i18n="help.key.esc">このダイアログを閉じる</td></tr>
                 </tbody>
