@@ -399,10 +399,22 @@ body.numbered #preview h4::before {
     --confidential-size: 22vh;
 }
 
+/* NOTE on the @user-vars block below: its body is parsed with JSON.parse(),
+ * so it must contain the JSON array and nothing else — prose inside the same
+ * comment makes the whole declaration fail to parse (the style then simply
+ * shows no gear).
+ *
+ * `labelEn` / `labelJa` are optional siblings of `label` (and of each
+ * options[] entry's `label`), picked when the UI language is English and
+ * falling back to `label` otherwise — so a style declaring only `label` is
+ * unaffected. Same for `unitEn` / `unitJa`, but those are honoured for
+ * "number" ONLY: a "length" unit (px / em) is interpolated into the emitted
+ * CSS value and must stay a real CSS unit.
+ */
 /* @user-vars
 [
-  { "var": "--tategaki-font-size",      "label": "文字サイズ", "type": "length", "min": 12,  "max": 28,  "step": 1,    "default": 17,   "unit": "px" },
-  { "var": "--tategaki-line-height",    "label": "行送り",     "type": "number", "min": 1.2, "max": 2.6, "step": 0.05, "default": 1.9,  "unit": "倍" },
-  { "var": "--tategaki-letter-spacing", "label": "字間",       "type": "length", "min": 0,   "max": 0.3, "step": 0.01, "default": 0.02, "unit": "em" }
+  { "var": "--tategaki-font-size",      "label": "文字サイズ", "labelEn": "Font size",      "type": "length", "min": 12,  "max": 28,  "step": 1,    "default": 17,   "unit": "px" },
+  { "var": "--tategaki-line-height",    "label": "行送り",     "labelEn": "Line spacing",   "type": "number", "min": 1.2, "max": 2.6, "step": 0.05, "default": 1.9,  "unit": "倍", "unitEn": "×" },
+  { "var": "--tategaki-letter-spacing", "label": "字間",       "labelEn": "Letter spacing", "type": "length", "min": 0,   "max": 0.3, "step": 0.01, "default": 0.02, "unit": "em" }
 ]
 */

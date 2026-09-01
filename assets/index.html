@@ -3024,6 +3024,13 @@
         // `length` (number + CSS unit), `select` (one of the declared options),
         // `color`. `unit` is a real CSS unit for `length` and a display-only
         // suffix ("字" / "行" / "倍") for `number`.
+        //
+        // Localization: a declaration MAY carry `labelEn` / `labelJa` beside
+        // `label` (and the same on each `options[]` entry), plus `unitEn` /
+        // `unitJa` beside `unit`. They are optional — a style that declares only
+        // `label` shows it in both languages, so no existing or third-party CSS
+        // is affected. ⚠️ `unitEn` / `unitJa` apply to `number` ONLY: a `length`
+        // unit ends up in the emitted CSS value and must stay a real CSS unit.
         const __STYLE_VARS_RE = /\/\*\s*@user-vars\b([\s\S]*?)\*\//;
         const __styleVarSpecCache = new Map();
 
@@ -3038,6 +3045,21 @@
         function __isCssColor(v) {
             return __styleVarValueSafe(v) && CSS.supports('color', v);
         }
+        // A style MAY declare `labelEn` / `labelJa` (and `unitEn` / `unitJa`)
+        // beside `label` / `unit`. A style that does not — every third-party or
+        // user-authored CSS today — keeps its single label in both languages,
+        // which is the correct degradation: nothing an existing style ships can
+        // break, because unknown keys were always ignored.
+        //
+        // Both variants are kept on the normalized spec and picked at RENDER
+        // time (see __buildStyleVarRow), never here: __styleVarSpecCache
+        // memoizes the normalized spec per style file, so baking the language in
+        // at parse time would serve stale labels after a switch.
+        function __styleVarLabel(obj, base) {
+            const k = base + (uiLang === 'en' ? 'En' : 'Ja');
+            if (typeof obj[k] === 'string' && obj[k]) return obj[k];
+            return (typeof obj[base] === 'string' && obj[base]) ? obj[base] : null;
+        }
         function __normalizeStyleVarSpec(raw) {
             if (!Array.isArray(raw)) return [];
             const out = [];
@@ -3047,15 +3069,22 @@
                 if (typeof name !== 'string' || !/^--[A-Za-z0-9_-]+$/.test(name)) continue;
                 const type = it.type;
                 const label = (typeof it.label === 'string' && it.label) ? it.label : name;
+                const labelJa = (typeof it.labelJa === 'string') ? it.labelJa : null;
+                const labelEn = (typeof it.labelEn === 'string') ? it.labelEn : null;
                 if (type === 'select') {
                     const options = (Array.isArray(it.options) ? it.options : [])
                         .filter(o => o && __styleVarValueSafe(o.value))
-                        .map(o => ({ value: o.value, label: (typeof o.label === 'string' && o.label) ? o.label : o.value }));
+                        .map(o => ({
+                            value: o.value,
+                            label: (typeof o.label === 'string' && o.label) ? o.label : o.value,
+                            labelJa: (typeof o.labelJa === 'string') ? o.labelJa : null,
+                            labelEn: (typeof o.labelEn === 'string') ? o.labelEn : null,
+                        }));
                     if (!options.length) continue;
                     const def = options.some(o => o.value === it.default) ? it.default : options[0].value;
-                    out.push({ var: name, label, type, options, default: def });
+                    out.push({ var: name, label, labelJa, labelEn, type, options, default: def });
                 } else if (type === 'color') {
-                    out.push({ var: name, label, type, default: __isCssColor(it.default) ? it.default : 'transparent' });
+                    out.push({ var: name, label, labelJa, labelEn, type, default: __isCssColor(it.default) ? it.default : 'transparent' });
                 } else if (type === 'number' || type === 'length') {
                     const min = Number(it.min), max = Number(it.max), def = Number(it.default);
                     const step = Number(it.step);
@@ -3063,8 +3092,16 @@
                     const unit = (typeof it.unit === 'string') ? it.unit : '';
                     // For `length` the unit lands in the CSS value, so it must be one.
                     if (type === 'length' && !/^(%|[a-z]{1,4})$/.test(unit)) continue;
+                    // ⚠️ unitEn / unitJa are honoured for `number` ONLY. A
+                    // `number` unit is a display-only suffix (字 / 行 / 倍), but a
+                    // `length` unit is interpolated into the emitted CSS value —
+                    // a translated one there would write e.g. `39chars` into the
+                    // stylesheet. The validator above is what makes that unsafe
+                    // rather than merely odd.
+                    const unitJa = (type === 'number' && typeof it.unitJa === 'string') ? it.unitJa : null;
+                    const unitEn = (type === 'number' && typeof it.unitEn === 'string') ? it.unitEn : null;
                     out.push({
-                        var: name, label, type, min, max, unit,
+                        var: name, label, labelJa, labelEn, type, min, max, unit, unitJa, unitEn,
                         step: (Number.isFinite(step) && step > 0) ? step : 1,
                         default: Math.min(max, Math.max(min, def)),
                     });
@@ -4431,7 +4468,7 @@
             row.className = 'sv-row';
             const label = document.createElement('label');
             label.className = 'sv-label';
-            label.textContent = spec.label;
+            label.textContent = __styleVarLabel(spec, 'label') || spec.var;
             label.htmlFor = id;
             const ctl = document.createElement('div');
             ctl.className = 'sv-control';
@@ -4445,7 +4482,7 @@
                 for (const o of spec.options) {
                     const opt = document.createElement('option');
                     opt.value = o.value;
-                    opt.textContent = o.label;
+                    opt.textContent = __styleVarLabel(o, 'label') || o.value;
                     sel.appendChild(opt);
                 }
                 sel.value = spec.options.some(o => o.value === current) ? current : spec.default;
@@ -4486,7 +4523,7 @@
                 range.value = String(Number.isFinite(n) ? Math.min(spec.max, Math.max(spec.min, n)) : spec.default);
                 const out = document.createElement('span');
                 out.className = 'sv-value';
-                const paint = () => { out.textContent = range.value + (spec.unit || ''); };
+                const paint = () => { out.textContent = range.value + (__styleVarLabel(spec, 'unit') || ''); };
                 paint();
                 range.addEventListener('input', () => { paint(); __setStyleVar(spec, range.value, false); });
                 range.addEventListener('change', () => __setStyleVar(spec, range.value, true));

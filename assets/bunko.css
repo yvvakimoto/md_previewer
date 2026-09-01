@@ -262,30 +262,42 @@
     --confidential-size: 16vh;
 }
 
+/* NOTE on the @user-vars block below: its body is parsed with JSON.parse(),
+ * so it must contain the JSON array and nothing else — prose inside the same
+ * comment makes the whole declaration fail to parse (the style then simply
+ * shows no gear).
+ *
+ * `labelEn` / `labelJa` are optional siblings of `label` (and of each
+ * options[] entry's `label`), picked when the UI language is English and
+ * falling back to `label` otherwise — so a style declaring only `label` is
+ * unaffected. Same for `unitEn` / `unitJa`, but those are honoured for
+ * "number" ONLY: a "length" unit (px / em) is interpolated into the emitted
+ * CSS value and must stay a real CSS unit.
+ */
 /* @user-vars
 [
-  { "var": "--bunko-chars",       "label": "1行の文字数",     "type": "number", "min": 15,  "max": 60,  "step": 1,    "default": 39,   "unit": "字" },
-  { "var": "--bunko-lines",       "label": "1ページの行数",   "type": "number", "min": 6,   "max": 40,  "step": 1,    "default": 16,   "unit": "行" },
-  { "var": "--bunko-font-size",   "label": "文字サイズ",      "type": "length", "min": 12,  "max": 28,  "step": 1,    "default": 17,   "unit": "px" },
-  { "var": "--bunko-line-height", "label": "行送り",          "type": "number", "min": 1.5, "max": 2.6, "step": 0.05, "default": 1.75, "unit": "倍" },
-  { "var": "--bunko-margin",      "label": "天地の余白",      "type": "length", "min": 0,   "max": 80,  "step": 4,    "default": 24,   "unit": "px" },
-  { "var": "--bunko-indent",      "label": "段落の字下げ",    "type": "length", "min": 0,   "max": 2,   "step": 0.5,  "default": 1,    "unit": "em" },
-  { "var": "--bunko-font",        "label": "本文の書体",      "type": "select", "default": "\"Yu Mincho\", \"YuMincho\", \"MS Mincho\", serif",
+  { "var": "--bunko-chars",       "label": "1行の文字数",     "labelEn": "Characters per line", "type": "number", "min": 15,  "max": 60,  "step": 1,    "default": 39,   "unit": "字", "unitEn": " chars" },
+  { "var": "--bunko-lines",       "label": "1ページの行数",   "labelEn": "Lines per page",      "type": "number", "min": 6,   "max": 40,  "step": 1,    "default": 16,   "unit": "行", "unitEn": " lines" },
+  { "var": "--bunko-font-size",   "label": "文字サイズ",      "labelEn": "Font size",           "type": "length", "min": 12,  "max": 28,  "step": 1,    "default": 17,   "unit": "px" },
+  { "var": "--bunko-line-height", "label": "行送り",          "labelEn": "Line spacing",        "type": "number", "min": 1.5, "max": 2.6, "step": 0.05, "default": 1.75, "unit": "倍", "unitEn": "×" },
+  { "var": "--bunko-margin",      "label": "天地の余白",      "labelEn": "Top / bottom margin", "type": "length", "min": 0,   "max": 80,  "step": 4,    "default": 24,   "unit": "px" },
+  { "var": "--bunko-indent",      "label": "段落の字下げ",    "labelEn": "Paragraph indent",    "type": "length", "min": 0,   "max": 2,   "step": 0.5,  "default": 1,    "unit": "em" },
+  { "var": "--bunko-font",        "label": "本文の書体",      "labelEn": "Body typeface",       "type": "select", "default": "\"Yu Mincho\", \"YuMincho\", \"MS Mincho\", serif",
     "options": [
-      { "value": "\"Yu Mincho\", \"YuMincho\", \"MS Mincho\", serif", "label": "游明朝" },
-      { "value": "\"MS Mincho\", \"ＭＳ 明朝\", serif",               "label": "ＭＳ 明朝" },
-      { "value": "\"Yu Gothic\", \"Meiryo\", sans-serif",             "label": "游ゴシック" }
+      { "value": "\"Yu Mincho\", \"YuMincho\", \"MS Mincho\", serif", "label": "游明朝",     "labelEn": "Yu Mincho" },
+      { "value": "\"MS Mincho\", \"ＭＳ 明朝\", serif",               "label": "ＭＳ 明朝",   "labelEn": "MS Mincho" },
+      { "value": "\"Yu Gothic\", \"Meiryo\", sans-serif",             "label": "游ゴシック", "labelEn": "Yu Gothic" }
     ] },
-  { "var": "--bunko-palt",        "label": "約物の詰め",      "type": "select", "default": "normal",
+  { "var": "--bunko-palt",        "label": "約物の詰め",      "labelEn": "Punctuation kerning", "type": "select", "default": "normal",
     "options": [
-      { "value": "normal",   "label": "詰めない（字数が正確）" },
-      { "value": "'palt' 1", "label": "詰める（見た目重視）" }
+      { "value": "normal",   "label": "詰めない（字数が正確）", "labelEn": "Off (exact character count)" },
+      { "value": "'palt' 1", "label": "詰める（見た目重視）",   "labelEn": "On (tighter look)" }
     ] },
-  { "var": "--bunko-gap",         "label": "ページ間の余白",  "type": "length", "min": 0,   "max": 12,  "step": 0.5,  "default": 3,    "unit": "em" },
-  { "var": "--bunko-nombre",      "label": "ノンブル",        "type": "select", "default": "block",
+  { "var": "--bunko-gap",         "label": "ページ間の余白",  "labelEn": "Gap between pages",   "type": "length", "min": 0,   "max": 12,  "step": 0.5,  "default": 3,    "unit": "em" },
+  { "var": "--bunko-nombre",      "label": "ノンブル",        "labelEn": "Page numbers",        "type": "select", "default": "block",
     "options": [
-      { "value": "block", "label": "表示する" },
-      { "value": "none",  "label": "表示しない" }
+      { "value": "block", "label": "表示する",   "labelEn": "Show" },
+      { "value": "none",  "label": "表示しない", "labelEn": "Hide" }
     ] }
 ]
 */
