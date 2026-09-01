@@ -190,6 +190,168 @@ def shoot_editor(pw, port, name, md_rel, vim, cells, keys):
     return [dest]
 
 
+# --- gallery: one rendered figure per notation ----------------------------
+#
+# These snippets are the SINGLE SOURCE OF TRUTH for the landing page's gallery:
+# each is rendered by the real pipeline and screenshotted, and the same text is
+# shown verbatim in a <pre> beside the picture in index.html.
+# check_gallery_sources() asserts the page still carries them, so a snippet and
+# the picture of it cannot drift apart silently.
+#
+# Raw strings throughout -- the snippets are full of TeX backslashes.
+#
+# The fixture is written into samples/ rather than a temp dir because a snippet
+# may reference a sibling resource the way a real document would (the plotly
+# block reads data/sales.csv); it is removed in a finally.
+GALLERY = [
+    ("math", ".katex-display .katex", r"""$$
+x = \frac{-b \pm \sqrt{b^2 - 4ac}}{2a}
+$$"""),
+
+    ("tikzcd", ".tikzcd-diagram", r"""```tikzcd
+A \arrow[r, "f"] \arrow[d, "g"'] & B \arrow[d, "h"] \\
+C \arrow[r, "k"']                & D
+```"""),
+
+    ("ruby", "#preview p", r"""｜吾輩《わがはい》は{猫|ねこ}である。"""),
+
+    ("mermaid", ".mermaid", r"""```mermaid
+flowchart LR
+  A[編集] --> B{保存}
+  B -->|marp: true| C[スライド]
+  B -->|通常| D[プレビュー]
+```"""),
+
+    ("csv", ".csv-table", r"""```csv
+項目,Q1,Q2,Q3
+売上,120,150,170
+利益,30,42,55
+```"""),
+
+    ("abc", ".abc-notation", r"""```abc
+X:1
+T:きらきら星
+M:4/4
+L:1/4
+K:C
+C C G G | A A G2 | F F E E | D D C2 |
+```"""),
+
+    ("markwhen", ".markwhen-timeline", r"""```markwhen
+---
+title: プロジェクト計画
+#design: blue
+#dev: green
+---
+
+# 企画
+2023-01-01 / 2023-02-15: 要件定義 #design
+2023-02-01: キックオフ
+
+# 開発
+2023-03-01 / 2023-06-30: API 実装 #dev
+```"""),
+
+    ("columns", ".inline-cols", r"""::: columns
+### 左カラム
+段の途中から多段組みにできます。
++++
+### 右カラム
+`:::` で 1 カラムに戻ります。
+:::"""),
+
+    ("plotly", ".plotly-block", r"""```plotly
+file: data/sales.csv
+type: line
+x: month
+y: revenue
+```"""),
+]
+
+
+def trim_to_ink(png_path, pad=24):
+    """Crop a gallery shot down to its drawn content, plus `pad` device px.
+
+    The captured element is a block, so it spans the full text column however
+    small the figure inside it is: display math and a commutative diagram both
+    came out as a 1360px-wide strip of mostly empty paper. Trimming makes the
+    delivered aspect ratio match the figure, which is what lets the gallery
+    grid place them sensibly. A figure that really does fill its box (a table,
+    a chart) is unaffected.
+    """
+    from PIL import Image, ImageChops
+    im = Image.open(png_path).convert("RGB")
+    bg = Image.new("RGB", im.size, im.getpixel((0, 0)))
+    box = ImageChops.difference(im, bg).convert("L").point(lambda v: 255 if v > 8 else 0).getbbox()
+    if not box:
+        return                      # uniformly blank: leave it alone, and let it show
+    l, t, r, b = box
+    im.crop((max(0, l - pad), max(0, t - pad),
+             min(im.width, r + pad), min(im.height, b + pad))).save(png_path)
+
+
+def shoot_gallery(pw, port, wanted):
+    """Render each GALLERY snippet on its own page and shoot the one figure."""
+    out_dir = os.path.join(OUT_ROOT, "gallery")
+    os.makedirs(out_dir, exist_ok=True)
+    fixture = os.path.join(REPO_ROOT, "samples", "_gallery_fixture.md")
+    written = []
+
+    ctx = pw.new_context(viewport={"width": 1000, "height": 900},
+                         device_scale_factor=2, locale="ja-JP")
+    page = ctx.new_page()
+    page.set_default_timeout(45000)
+    page.add_init_script(shoot.style_init_script(None))
+    page.add_init_script(shoot.ui_lang_init_script("ja"))
+    try:
+        for key, sel, snippet in GALLERY:
+            if wanted and "gallery" not in wanted and ("gallery:" + key) not in wanted:
+                continue
+            with open(fixture, "w", encoding="utf-8", newline="\n") as fh:
+                fh.write(snippet + "\n")
+            page.goto("http://127.0.0.1:%d/index.html?file=%s" % (port, fixture),
+                      wait_until="domcontentloaded")
+            page.wait_for_function(
+                "() => { const p=document.getElementById('preview');"
+                " return p && p.children.length>0; }")
+            shoot.wait_for_render(page)
+            page.wait_for_timeout(500)
+            loc = page.locator(sel).first
+            try:
+                loc.wait_for(state="visible", timeout=35000)
+            except Exception:  # noqa: BLE001
+                sys.stderr.write("WARN: gallery %s: %r never appeared\n" % (key, sel))
+                continue
+            dest = os.path.join(out_dir, "%s.png" % key)
+            loc.screenshot(path=dest)
+            trim_to_ink(dest)
+            written.append(dest)
+    finally:
+        if os.path.exists(fixture):
+            os.remove(fixture)
+        ctx.close()
+    return written
+
+
+def check_gallery_sources():
+    """Warn loudly if index.html no longer shows exactly these snippets."""
+    page = os.path.join(REPO_ROOT, "docs", "index.html")
+    if not os.path.exists(page):
+        return
+    with open(page, encoding="utf-8") as fh:
+        html = fh.read()
+
+    def esc(t):
+        return t.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+    missing = [k for k, _sel, snip in GALLERY if esc(snip) not in html]
+    if missing:
+        sys.stderr.write(
+            "WARN: docs/index.html does not carry the gallery source for: %s\n"
+            "      The <pre> beside each picture must match GALLERY verbatim.\n"
+            % ", ".join(missing))
+
+
 def shoot_og(pw, _port):
     """Render docs/assets/og.html to the 1200x630 social card.
 
@@ -268,6 +430,10 @@ def main():
                     continue
                 written += shoot_editor(browser, args.port, name, md, vim, cells, keys)
 
+            if not wanted or any(w == "gallery" or w.startswith("gallery:")
+                                 for w in wanted):
+                written += shoot_gallery(browser, args.port, wanted)
+
             og = None
             if not wanted or "og" in wanted:
                 og = shoot_og(browser, args.port)
@@ -282,6 +448,7 @@ def main():
     for w in written:
         print("%s  %.0f KB" % (os.path.relpath(w, REPO_ROOT),
                                os.path.getsize(w) / 1024))
+    check_gallery_sources()
 
 
 if __name__ == "__main__":

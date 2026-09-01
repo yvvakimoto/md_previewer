@@ -37,6 +37,7 @@
   <nav class="site-nav" aria-label="Sections">
     <a href="#uses" data-i18n="nav.uses">使い方</a>
     <a href="#features" data-i18n="nav.features">できること</a>
+    <a href="#gallery" data-i18n="nav.gallery">実例</a>
   </nav>
 
   <div class="head-tools">
@@ -353,6 +354,168 @@
   </ul>
 
   <p class="feat-note reveal" data-i18n="feat.credit">描画の中身は、上に挙げた各オープンソースプロジェクトの成果です。タイルをクリックすると本家のサイトへ移動します。ライセンス全文はアプリに収録してあり、ヘルプ（<kbd>H</kbd>）→ サードパーティ表記から読めます。作者のみなさんに感謝します。ほかに CSV / TSV 表、脚注、定義リスト、タスクリスト、機密透かし、ワークスペースなども使えます。</p>
+</section>
+
+<!-- ══════════════════════════ GALLERY ══════════════════════════ -->
+<!-- Every <pre> below must match GALLERY in tools/preview-harness/shoot-docs.py
+     verbatim (HTML-escaped) — that script renders the snippet and shoots the
+     picture next to it, and warns when the two have drifted apart. -->
+<section id="gallery" class="gallery">
+  <header class="sec-head reveal">
+    <p class="sec-kicker" data-i18n="gal.kicker">SEE IT</p>
+    <h2 class="sec-title" data-i18n="gal.title">書き方と、出てくるもの。</h2>
+    <p class="sec-lead" data-i18n="gal.lead">それぞれ、書く Markdown と、プレビューでの見え方です。どれも追加の設定なしで、そのまま出ます。</p>
+  </header>
+
+  <div class="gallery-grid reveal">
+
+    <article class="g-card g-6">
+      <h3 class="g-title"><span data-i18n="gal.mathT">数式</span><em class="g-tag">KaTeX</em></h3>
+      <div class="g-body">
+<pre class="g-src"><code>$$
+x = \frac{-b \pm \sqrt{b^2 - 4ac}}{2a}
+$$</code></pre>
+        <figure class="g-out">
+          <img loading="lazy" src="assets/img/gallery/math.webp" width="357" height="82"
+               data-i18n-attr="alt:gal.mathAlt" alt="二次方程式の解の公式が組版されたもの">
+        </figure>
+      </div>
+    </article>
+
+    <article class="g-card g-6">
+      <h3 class="g-title"><span data-i18n="gal.tikzT">可換図式</span><em class="g-tag">tikz-cd</em></h3>
+      <div class="g-body">
+<pre class="g-src"><code>```tikzcd
+A \arrow[r, "f"] \arrow[d, "g"'] &amp; B \arrow[d, "h"] \\
+C \arrow[r, "k"']                &amp; D
+```</code></pre>
+        <figure class="g-out">
+          <img loading="lazy" src="assets/img/gallery/tikzcd.webp" width="278" height="254"
+               data-i18n-attr="alt:gal.tikzAlt" alt="A・B・C・D を矢印で結んだ可換正方形">
+        </figure>
+      </div>
+    </article>
+
+    <article class="g-card g-6">
+      <h3 class="g-title"><span data-i18n="gal.mermaidT">図</span><em class="g-tag">Mermaid</em></h3>
+      <div class="g-body">
+<pre class="g-src"><code>```mermaid
+flowchart LR
+  A[編集] --&gt; B{保存}
+  B --&gt;|marp: true| C[スライド]
+  B --&gt;|通常| D[プレビュー]
+```</code></pre>
+        <figure class="g-out">
+          <img loading="lazy" src="assets/img/gallery/mermaid.webp" width="853" height="296"
+               data-i18n-attr="alt:gal.mermaidAlt" alt="編集から保存を経てスライドとプレビューへ分岐するフローチャート">
+        </figure>
+      </div>
+    </article>
+
+    <article class="g-card g-6">
+      <h3 class="g-title"><span data-i18n="gal.csvT">表</span><em class="g-tag" data-i18n="gal.csvTag">CSV フェンス</em></h3>
+      <div class="g-body">
+<pre class="g-src"><code>```csv
+項目,Q1,Q2,Q3
+売上,120,150,170
+利益,30,42,55
+```</code></pre>
+        <figure class="g-out">
+          <img loading="lazy" src="assets/img/gallery/csv.webp" width="1360" height="224"
+               data-i18n-attr="alt:gal.csvAlt" alt="CSV から組まれた見出し付きの表">
+        </figure>
+      </div>
+    </article>
+
+    <article class="g-card g-12">
+      <h3 class="g-title"><span data-i18n="gal.rubyT">ルビ</span><em class="g-tag" data-i18n="gal.rubyTag">でんでん記法</em></h3>
+      <div class="g-body">
+<pre class="g-src"><code>｜吾輩《わがはい》は{猫|ねこ}である。</code></pre>
+        <figure class="g-out">
+          <img loading="lazy" src="assets/img/gallery/ruby.webp" width="272" height="66"
+               data-i18n-attr="alt:gal.rubyAlt" alt="吾輩と猫に振り仮名が添えられた一文">
+        </figure>
+      </div>
+    </article>
+
+    <article class="g-card g-12">
+      <h3 class="g-title"><span data-i18n="gal.abcT">楽譜</span><em class="g-tag" data-i18n="gal.abcTag">ABC 記譜法</em></h3>
+      <div class="g-body">
+<pre class="g-src"><code>```abc
+X:1
+T:きらきら星
+M:4/4
+L:1/4
+K:C
+C C G G | A A G2 | F F E E | D D C2 |
+```</code></pre>
+        <figure class="g-out">
+          <img loading="lazy" src="assets/img/gallery/abc.webp" width="1360" height="218"
+               data-i18n-attr="alt:gal.abcAlt" alt="きらきら星の旋律が五線譜に描かれたもの">
+        </figure>
+      </div>
+    </article>
+
+    <article class="g-card g-12">
+      <h3 class="g-title"><span data-i18n="gal.mwT">年表</span><em class="g-tag">Markwhen</em></h3>
+      <div class="g-body">
+<pre class="g-src"><code>```markwhen
+---
+title: プロジェクト計画
+#design: blue
+#dev: green
+---
+
+# 企画
+2023-01-01 / 2023-02-15: 要件定義 #design
+2023-02-01: キックオフ
+
+# 開発
+2023-03-01 / 2023-06-30: API 実装 #dev
+```</code></pre>
+        <figure class="g-out">
+          <img loading="lazy" src="assets/img/gallery/markwhen.webp" width="1359" height="316"
+               data-i18n-attr="alt:gal.mwAlt" alt="企画と開発の期間が横棒で並んだタイムライン">
+        </figure>
+      </div>
+    </article>
+
+    <article class="g-card g-6">
+      <h3 class="g-title"><span data-i18n="gal.colT">多段組み</span><em class="g-tag" data-i18n="gal.colTag">フェンス記法</em></h3>
+      <div class="g-body">
+<pre class="g-src"><code>::: columns
+### 左カラム
+段の途中から多段組みにできます。
++++
+### 右カラム
+`:::` で 1 カラムに戻ります。
+:::</code></pre>
+        <figure class="g-out">
+          <img loading="lazy" src="assets/img/gallery/columns.webp" width="1144" height="140"
+               data-i18n-attr="alt:gal.colAlt" alt="左右 2 カラムに分かれた見出しと本文">
+        </figure>
+      </div>
+    </article>
+
+    <article class="g-card g-6">
+      <h3 class="g-title"><span data-i18n="gal.plotlyT">チャート</span><em class="g-tag" data-i18n="gal.plotlyTag">外部 CSV + Plotly</em></h3>
+      <div class="g-body">
+<pre class="g-src"><code>```plotly
+file: data/sales.csv
+type: line
+x: month
+y: revenue
+```</code></pre>
+        <figure class="g-out">
+          <img loading="lazy" src="assets/img/gallery/plotly.webp" width="1318" height="803"
+               data-i18n-attr="alt:gal.plotlyAlt" alt="外部 CSV から描かれた月次売上の折れ線グラフ">
+        </figure>
+      </div>
+    </article>
+
+  </div>
+
+  <p class="feat-note reveal" data-i18n="gal.note">画像はどれも、左のソースをこのプレビューアで実際に描画したものです（<code>tools/preview-harness/shoot-docs.py</code> が生成しています）。縦書き・文庫組みの例は上の「文庫のかたちで、書く。」を、スライドの例は「Markdown のまま、発表する。」をご覧ください。</p>
 </section>
 
 <!-- ══════════════════════════ DOWNLOAD ══════════════════════════ -->

@@ -552,6 +552,86 @@ kbd {
 .feat:nth-child(6n+5) { border-color: var(--green); }
 @media (prefers-reduced-motion: reduce) { .feat:hover { transform: none; } }
 
+/* ---------- gallery: source beside its rendered figure ---------- */
+.gallery {
+  max-width: var(--wrap); margin: 0 auto;
+  padding: clamp(56px, 9vw, 100px) var(--pad);
+  border-top: 2px solid var(--rule-soft);
+  --accent: var(--orange);
+}
+
+/* One column on a phone, two in the middle, a real 12-track grid on a desktop
+   so a wide figure (a stave, a timeline) can take the full width while a small
+   one (display math, a commutative square) sits three-up. `align-items: start`
+   keeps each card its own height instead of stretching it to the row. */
+.gallery-grid {
+  display: grid; gap: 18px; align-items: start;
+  grid-template-columns: minmax(0, 1fr);
+}
+@media (min-width: 660px) {
+  .gallery-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .g-12 { grid-column: span 2; }
+}
+@media (min-width: 1000px) {
+  .gallery-grid { grid-template-columns: repeat(12, minmax(0, 1fr)); }
+  .g-card { grid-column: span 6; }   /* fallback; every card names its span */
+  .g-6    { grid-column: span 6; }
+  .g-12   { grid-column: span 12; }
+  /* Only the full-width cards have room to put the source beside the picture. */
+  .g-12 .g-body {
+    display: grid; gap: 20px; align-items: center;
+    grid-template-columns: minmax(0, 4fr) minmax(0, 7fr);
+  }
+}
+
+.g-card {
+  display: flex; flex-direction: column;
+  padding: 16px 16px 14px;
+  border: 2.5px solid var(--rule); border-radius: 6px;
+  background: var(--paper-2); box-shadow: var(--shadow);
+}
+
+.g-title {
+  display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+  margin: 0 0 12px;
+  font-family: var(--display); font-size: 17px; font-weight: 700;
+  letter-spacing: -.01em;
+}
+.g-tag {
+  font-family: var(--mono); font-style: normal; font-size: 10.5px; line-height: 1;
+  padding: 4px 7px; border-radius: 3px;
+  color: var(--accent); background: color-mix(in srgb, var(--accent) 15%, transparent);
+}
+
+.g-body { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.g-body > * { min-width: 0; }
+
+.g-src {
+  margin: 0; padding: 12px 13px; overflow-x: auto;
+  border-radius: 5px;
+  border: 1.5px dashed color-mix(in srgb, var(--ink) 26%, transparent);
+  background: color-mix(in srgb, var(--ink) 4%, transparent);
+  font-family: var(--mono); font-size: 11.5px; line-height: 1.65;
+  color: var(--ink-2);
+  tab-size: 2;
+}
+.g-src code {
+  background: none; padding: 0; white-space: pre; font-size: inherit; color: inherit;
+}
+
+/* The paper the figure was rendered on is white, so the panel is white in both
+   themes -- tinting it to the dark palette would put the screenshot on a
+   background it does not have. */
+.g-out {
+  margin: 0; padding: 12px; display: grid; place-items: center;
+  border-radius: 5px; background: #fff;
+  border: 1.5px solid color-mix(in srgb, var(--ink) 16%, transparent);
+}
+.g-out img { max-width: 100%; height: auto; }
+/* Small figures would blow up to the card width and go soft; cap them near
+   their natural size and centre the leftover space instead. */
+.g-card:not(.g-12) .g-out img { max-height: 260px; width: auto; }
+
 /* ---------- download ---------- */
 .download {
   max-width: var(--wrap); margin: 0 auto;
