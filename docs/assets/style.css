@@ -218,7 +218,11 @@ kbd {
 }
 
 /* ---------- shared section furniture ---------- */
-.sec-head { max-width: 720px; margin: 0 0 clamp(36px, 6vw, 64px); }
+/* No width cap: the leads are one or two sentences, and capping them at
+   720px inside a ~1050px column wrapped them a third of the way from the
+   right edge, which reads as a deliberate line break rather than a wrap.
+   The section titles are short enough that full width does not hurt them. */
+.sec-head { margin: 0 0 clamp(36px, 6vw, 64px); }
 .sec-kicker {
   font-family: var(--display); font-size: 12px; font-weight: 800;
   letter-spacing: .22em; text-transform: uppercase;
@@ -229,7 +233,7 @@ kbd {
 .sec-title {
   font-family: var(--display); font-weight: 800;
   font-size: clamp(28px, 4.6vw, 46px); line-height: 1.28; letter-spacing: -.02em;
-  margin: 0 0 14px;
+  margin: 0 0 14px; max-width: 22em;
 }
 .sec-lead { margin: 0; color: var(--ink-2); font-size: clamp(15px, 1.6vw, 17px); }
 

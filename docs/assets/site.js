@@ -122,7 +122,7 @@
 
     'feat.kicker':   { ja: 'THE LITTLE THINGS', en: 'THE LITTLE THINGS' },
     'feat.title':    { ja: 'かゆいところに、手が届きます。', en: 'Right down to the little things.' },
-    'feat.lead':     { ja: '素の Markdown では足りない、と思ったときの記法とエンジンをひととおり揃えました。追加インストールも、ネットワークも要りません。',
+    'feat.lead':     { ja: '素の Markdown で足りないときの記法とエンジンを、ひととおり揃えました。追加インストールもネットワークも要りません。',
                        en: 'The notations and engines you reach for when plain Markdown runs out — all here, with nothing to install and no network to reach.' },
     'feat.credit':   { ja: '描画の中身は、上に挙げた各オープンソースプロジェクトの成果です。タイルをクリックすると本家のサイトへ移動します。ライセンス全文はアプリに収録してあり、ヘルプ（<kbd>H</kbd>）→ サードパーティ表記から読めます。作者のみなさんに感謝します。ほかに CSV / TSV 表、脚注、定義リスト、タスクリスト、機密透かし、ワークスペースなども使えます。',
                        en: 'The rendering itself is the work of the open-source projects above — each tile links to its upstream, and the full licence texts ship with the app under Help (<kbd>H</kbd>) → Third-party licenses. Thank you to their authors. Also included: CSV / TSV tables, footnotes, definition lists, task lists, confidential watermarks and workspaces.' },
