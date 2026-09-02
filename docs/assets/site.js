@@ -75,9 +75,10 @@
     'use2.p2':    { ja: '3 つの表示モード', en: 'Three view modes' },
     'use2.p3':    { ja: 'レーザーポインタ', en: 'Laser pointer' },
     'use2.p4':    { ja: 'スライドの自動縮小', en: 'Shrink-to-fit slides' },
+    'use2.p5':    { ja: '2 カラム / 図・数式', en: 'Two columns, figures & math' },
     'use2.alt1':  { ja: 'グラデーションの章扉スライド', en: 'A gradient section-divider slide' },
     'use2.alt2':  { ja: 'Mermaid のフローチャートを載せたスライド', en: 'A slide carrying a Mermaid flowchart' },
-    'use2.alt3':  { ja: 'Plotly の 3D サーフェスを載せたスライド', en: 'A slide carrying a Plotly 3D surface' },
+    'use2.alt3':  { ja: '2 カラムに数式と Plotly の 3D サーフェスを並べたスライド', en: 'A two-column slide pairing math with a Plotly 3D surface' },
 
     'use3.chip':  { ja: '研究する人へ', en: 'for researchers' },
     'use3.title': { ja: '数式を、書く速さで。', en: 'Math at the speed of writing.' },
