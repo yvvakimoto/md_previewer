@@ -922,6 +922,92 @@
             color: #ffa198;
         }
 
+        /* Kataskeve — 2D Euclidean-geometry diagrams (libs/kataskeve/, MIT).
+           kataskeve.render() returns a complete inline <svg> carrying BOTH a
+           viewBox and fixed width/height attributes. The viewBox gives the
+           element an intrinsic aspect ratio, so the pair below SCALES it inside
+           a narrow container (a Marp split column is ~245-535px) rather than
+           clipping it — which is why, unlike abcjs (whose SVG has no viewBox
+           and therefore needs the surgery in renderAbcCached), this renderer
+           needs no post-render SVG patching.
+           Strokes and labels paint in currentColor; only the optional grid and
+           axis colours are baked, and the engine picks those from
+           body.dark-mode — this app's own convention — which is what the
+           theme-salted cache key in renderKataskeveCached covers.
+           These rules mirror the upstream dist/kataskeve.css, which is
+           deliberately not fetched: buildExportArtifact() inlines only the
+           document's FIRST <style>, so CSS arriving via <link> (or injected by
+           the library, hence injectStyles:false) is lost from every export. */
+        .kataskeve {
+            margin: 16px 0;
+            text-align: center;
+        }
+        .kataskeve svg {
+            max-width: 100%;
+            height: auto;
+        }
+        .kataskeve-error {
+            margin: 16px 0;
+            padding: 12px 16px;
+            border: 1px solid #d73a49;
+            border-radius: 4px;
+            background: #ffeef0;
+            color: #b31d28;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', monospace;
+            font-size: 0.9em;
+            white-space: pre-wrap;
+            text-align: left;
+        }
+        body.dark-mode .kataskeve-error {
+            background: #2a0d10;
+            border-color: #f85149;
+            color: #ffa198;
+        }
+
+        /* Kataskeve3D — 3D pen-and-ink geometry (libs/kataskeve3d/, MIT). The
+           engine appends a <canvas> sized settings.width x settings.height
+           (default 680x460; it does NOT scale by devicePixelRatio) and carrying
+           its own inline max-width/height/display. Because that box is
+           display:block, text-align cannot centre it — margin:0 auto does.
+           Ink is getComputedStyle(host).color (currentColor-like, so correct in
+           both themes for free) and the background stays transparent. The
+           penrose_triangle construction additionally walks ancestors for the
+           first opaque background-color to use as "paper", defaulting to WHITE
+           when it finds none — it finds #preview-container (white / #0d1117),
+           and in Marp the slide <section>, so no background is declared here.
+           A user style that made every ancestor transparent is the case that
+           would need one.
+           The img rule serves the HTML export, where buildExportArtifact swaps
+           the canvas for a PNG <img> — a canvas bitmap does not serialize. */
+        .kataskeve3d {
+            margin: 16px 0;
+            text-align: center;
+        }
+        .kataskeve3d canvas,
+        .kataskeve3d img {
+            max-width: 100%;
+            height: auto;
+            display: block;
+            margin: 0 auto;
+        }
+        .kataskeve3d-error {
+            margin: 16px 0;
+            padding: 12px 16px;
+            border: 1px solid #d73a49;
+            border-radius: 4px;
+            background: #ffeef0;
+            color: #b31d28;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', monospace;
+            font-size: 0.9em;
+            white-space: pre-wrap;
+            text-align: left;
+        }
+        body.dark-mode .kataskeve3d-error {
+            background: #2a0d10;
+            border-color: #f85149;
+            color: #ffa198;
+        }
+
         /* App container - flex layout for sidebar + content */
         #app-container {
             display: none;
@@ -1619,8 +1705,9 @@
                 max-width: 100%;
             }
 
-            /* Also prevent breaks in mermaid diagrams and math expressions */
-            .mermaid, .katex-display {
+            /* Also prevent breaks in mermaid diagrams, math expressions and
+               kataskeve geometry figures */
+            .mermaid, .katex-display, .kataskeve, .kataskeve3d {
                 break-inside: avoid;
                 page-break-inside: avoid;
             }
@@ -2269,6 +2356,7 @@
         body.marp #preview section .abc-notation.marp-fig,
         body.marp #preview section .tikzcd-diagram.marp-fig,
         body.marp #preview section .tikz-diagram.marp-fig,
+        body.marp #preview section .kataskeve.marp-fig,
         body.marp #preview section p.marp-fig {
             text-align: center;
         }
@@ -2682,6 +2770,8 @@
             // literal; the exception text itself is library-authored and is
             // never translated.
             'err.prefix':          { ja: '{engine} エラー: ', en: '{engine} error: ' },
+            'err.engineUnavailable': { ja: '{engine} エンジンを読み込めませんでした',
+                                     en: 'Could not load the {engine} engine' },
             'err.tikzMissing':     { ja: 'TikZ コンポーネントが未インストールです。インストーラーを再実行し、「TikZ・可換図式コンポーネントをダウンロード」にチェックを入れてください。',
                                      en: 'The TikZ component is not installed. Re-run the installer and tick “Download the TikZ / commutative-diagram component”.' },
             'err.tikzLoadFail':    { ja: 'TikZ エンジンを読み込めませんでした（libs/tikzjax）',
@@ -3928,6 +4018,61 @@
             }
             return loadLib('libs/tikzjax/dist/tikzjax.js');
         }
+        // kataskeve — 2D Euclidean-geometry diagrams for ```kataskeve blocks.
+        // render(src) is a pure string->string call needing no DOM, so its output
+        // is a cacheable HTML string exactly like mermaid's.
+        //
+        // initialize() MUST run before the library's own auto-init, and it does:
+        // on load the bundle schedules its boot with setTimeout(boot, 0) (the DOM
+        // is always already parsed here, since we inject lazily), and that boot
+        // scans `.kataskeve, pre code.language-kataskeve` and stamps
+        // data-kataskeve-processed on our still-empty host divs. loadLib resolves
+        // inside the script's onload TASK, so the continuation below is a
+        // microtask of that task and provably beats the setTimeout(0).
+        //
+        // injectStyles:false because our own .kataskeve / .kataskeve-error rules
+        // live in the <style> block at the top of this file: buildExportArtifact
+        // reads baseCss from the document's FIRST <style> only, so CSS injected by
+        // a library — or linked as libs/kataskeve/kataskeve.css — is silently
+        // dropped from the HTML artifact.
+        let __kataskeveInited = false;
+        async function ensureKataskeve() {
+            await loadLib('libs/kataskeve/kataskeve.min.js');
+            if (!__kataskeveInited) {
+                __kataskeveInited = true;
+                window.kataskeve.initialize({ startOnLoad: false, injectStyles: false });
+            }
+        }
+
+        // kataskeve3d — 3D pen-and-ink geometry for ```kataskeve3d blocks. It
+        // renders into an HTML5 <canvas> (2D context, CPU — no WebGL) via
+        // renderElement(source, host); there is deliberately no string-returning
+        // render(), which is what forces the different caching strategy in
+        // renderKataskeve3dBlocks.
+        //
+        // wasmUrl is pinned explicitly for the same reason ensureTikz pins
+        // assetBaseUrl: the library resolves it once at module-eval time from
+        // document.currentScript.src, which happens to be correct for a loadLib()
+        // injection today but cannot survive a change to how scripts are injected.
+        // src/main.rs's get_mime_type already serves .wasm as application/wasm.
+        // A missing or broken .wasm is NOT an error: ensureWasm() resolves null
+        // and the pure-JS core takes over, pixel-identically.
+        let __kataskeve3dInited = false;
+        async function ensureKataskeve3d() {
+            await loadLib('libs/kataskeve3d/kataskeve3d.min.js');
+            if (!__kataskeve3dInited) {
+                __kataskeve3dInited = true;
+                window.kataskeve3d.initialize({
+                    startOnLoad: false,
+                    injectStyles: false,
+                    wasmUrl: new URL('libs/kataskeve3d/kataskeve3d.wasm', document.baseURI).href
+                });
+            }
+            // Idempotent and promise-memoized inside the library, and it resolves
+            // null rather than rejecting on any failure — so this can never leave
+            // us in a broken render.
+            try { await window.kataskeve3d.ensureWasm(); } catch (e) {}
+        }
         // User-defined Marp theme CSS files discovered by the Rust host in
         // assets/marp/*.css. Fetched once, cached, and registered with
         // marp.themeSet.add() on each render. Themes must begin with a
@@ -4099,6 +4244,8 @@
         let abcCounter = 0;
         let markwhenCounter = 0;
         let tikzCounter = 0;
+        let kataskeveCounter = 0;
+        let kataskeve3dCounter = 0;
         let currentMarkdown = '';
         // Un-embedded source markdown (relative image paths intact). Mirrors
         // `currentMarkdown` but without base64-embedded images, so host-bound
@@ -4955,6 +5102,43 @@
                         cloneBlocks[i].innerHTML = '';
                     } catch (e) {
                         console.warn('export: failed to snapshot plotly spec', e);
+                    }
+                }
+            }
+
+            // Rasterize kataskeve3d canvases. A <canvas> serializes WITHOUT its
+            // bitmap, so previewClone carries an empty box; and unlike the plotly
+            // pass above there is no spec to hand a CDN script, because the engine
+            // is a CPU rasterizer with no re-render path inside the artifact.
+            // Pair live blocks with clone blocks BY INDEX (same shape as plotly —
+            // previewClone is a deep clone, so document order matches) and swap in
+            // a PNG <img>.
+            //
+            // No explicit width/height is set: the engine does NOT scale by
+            // devicePixelRatio, so the PNG's intrinsic size equals the canvas's
+            // natural CSS size and `.kataskeve3d img { max-width:100%; height:auto }`
+            // reproduces the preview. Measuring the live canvas instead would be
+            // actively wrong — __restoreMarpExportView() has already run by here, so
+            // in Marp deck mode the live canvas sits inside a display:none slide and
+            // getBoundingClientRect() returns 0x0.
+            //
+            // toDataURL is safe: the canvas is drawn purely by CPU from the source
+            // text, so it is never origin-tainted. The 2D sibling needs nothing at
+            // all here — its output is inline SVG, which the clone already carries.
+            {
+                const liveK3 = Array.from(preview.querySelectorAll('.kataskeve3d'));
+                const cloneK3 = Array.from(previewClone.querySelectorAll('.kataskeve3d'));
+                for (let i = 0; i < cloneK3.length && i < liveK3.length; i++) {
+                    const cv = liveK3[i].querySelector('canvas');
+                    if (!cv) continue; // an error block — leave the markup as-is
+                    try {
+                        const img = document.createElement('img');
+                        img.src = cv.toDataURL('image/png');
+                        img.alt = 'Kataskeve3D';
+                        cloneK3[i].innerHTML = '';
+                        cloneK3[i].appendChild(img);
+                    } catch (e) {
+                        console.warn('export: failed to rasterize kataskeve3d canvas', e);
                     }
                 }
             }
@@ -8214,14 +8398,18 @@ ${previewClone.outerHTML}
 
         // ---- Diagram render memoization (shared by renderMarp + renderMarkdown) ----
         // #preview is rebuilt via innerHTML on every render, so the previously
-        // rendered SVGs are discarded and the (expensive) mermaid
-        // renderer would re-run for every diagram on every live-edit
+        // rendered SVGs are discarded and the (expensive) mermaid / kataskeve
+        // renderers would re-run for every diagram on every live-edit
         // keystroke even when a diagram's source is unchanged. Cache the rendered
         // SVG/HTML keyed by (theme-salt + source) so an unchanged diagram just
-        // re-attaches its prior output. mermaid varies
-        // its output with the app dark/light theme (body.dark-mode), so the
+        // re-attaches its prior output. mermaid and kataskeve both vary
+        // their output with the app dark/light theme (body.dark-mode), so the
         // key is salted with the current mode. A simple FIFO cap bounds memory
         // across long sessions.
+        //
+        // This only works for a renderer whose output IS markup. kataskeve3d
+        // rasterizes to a canvas and is therefore absent here; its memoization
+        // lives in the library (see renderKataskeve3dBlocks).
         const __mermaidCache = new Map();
         // abcjs output is monochrome (dark mode is handled by CSS recolor, not by
         // varying the rendered bytes), so its cache is keyed by the raw source —
@@ -8229,6 +8417,15 @@ ${previewClone.outerHTML}
         // made responsive (viewBox added post-render in renderAbcCached) so it also
         // fits any container width without depending on layout state at render time.
         const __abcCache = new Map();
+        // kataskeve (2D) output is a plain HTML string, so it uses this shared
+        // cache exactly like mermaid, theme-salted because the engine bakes the
+        // grid and axis colours it picks from body.dark-mode.
+        //
+        // There is deliberately NO __kataskeve3dCache: that engine draws into a
+        // <canvas>, whose BITMAP is not part of its serialization, so nothing
+        // storable in an innerHTML string could reproduce it. It carries its own
+        // bitmap LRU instead — see renderKataskeve3dBlocks.
+        const __kataskeveCache = new Map();
         const __DIAGRAM_CACHE_MAX = 200;
         function __diagKey(src) { return (darkMode ? 'd|' : 'l|') + src; }
 
@@ -8370,6 +8567,117 @@ ${previewClone.outerHTML}
                     __diagCacheSet(__abcCache, src, el.innerHTML);
                 } catch (error) {
                     el.innerHTML = '<div class="abc-error">' + t('err.prefix', { engine: 'ABC' }) + (error && error.message) + '</div>';
+                }
+            });
+        }
+
+        // ---- Kataskeve geometry diagrams (2D SVG + 3D canvas) ----
+        // Both engines report a bad diagram as rendered MARKUP rather than a
+        // thrown exception — `<div class="kataskeve[3d]-error">Kataskeve[3D]
+        // error: …</div>`, in English. Swap the engine's own prefix for the
+        // localized one and keep the (upstream, untranslatable) message body.
+        // Returns an HTML string.
+        function __ksLocalizeError(html, engine, cls) {
+            const tpl = document.createElement('template');
+            tpl.innerHTML = html;
+            const div = tpl.content.querySelector('.' + cls);
+            const raw = div ? div.textContent : String(html);
+            const msg = raw.replace(/^\s*Kataskeve(3D)?\s+error\s*:\s*/i, '');
+            return '<div class="' + cls + '">' + t('err.prefix', { engine })
+                 + escapeHtml(msg) + '</div>';
+        }
+
+        // Engine-load failure: fill every still-empty host with a localized error
+        // instead of letting the exception abort the whole render (see the call
+        // sites in renderMarkdown, and the tilde-fence hazard documented there).
+        function __ksFailAll(root, sel, cls, engine) {
+            root.querySelectorAll(sel).forEach((el) => {
+                if (el.firstChild) return;
+                el.innerHTML = '<div class="' + cls + '">'
+                    + t('err.prefix', { engine })
+                    + escapeHtml(t('err.engineUnavailable', { engine })) + '</div>';
+            });
+        }
+
+        // Render every [data-kataskeve] element under `root`, reusing the memoized
+        // SVG when (theme + source) is unchanged. kataskeve.render() NEVER throws:
+        // a bad source comes back as a `<div class="kataskeve-error">…</div>`
+        // STRING, so that class is the only failure signal. (The try/catch below
+        // is for a missing or half-loaded engine, not for diagram syntax.)
+        //
+        // The theme salt is required, not defensive: almost the whole SVG paints
+        // in currentColor, but the optional grid and axis colours are baked and
+        // selected from body.dark-mode — so without it the M key would leave a
+        // stale grid colour behind.
+        //
+        // Errors are deliberately NOT cached, mirroring renderMermaidCached: a
+        // half-typed diagram recovers on the next keystroke, and the localized
+        // prefix can never go stale across a setUiLang() re-render (whose cache
+        // keys are language-blind).
+        function renderKataskeveCached(root) {
+            root.querySelectorAll('[data-kataskeve]').forEach((el) => {
+                const src = __diagSource(el, 'data-kataskeve-source');
+                const key = __diagKey(src);
+                if (__diagCacheHit(__kataskeveCache, key, el)) return;
+                let html;
+                try {
+                    html = window.kataskeve.render(src);
+                } catch (error) {
+                    el.innerHTML = '<div class="kataskeve-error">'
+                        + t('err.prefix', { engine: 'Kataskeve' })
+                        + escapeHtml(String((error && error.message) || error)) + '</div>';
+                    return;
+                }
+                if (/class="kataskeve-error"/.test(html)) {
+                    el.innerHTML = __ksLocalizeError(html, 'Kataskeve', 'kataskeve-error');
+                    return; // not cached
+                }
+                __diagCacheSet(__kataskeveCache, key, html);
+                el.innerHTML = html;
+            });
+        }
+
+        // Render every [data-kataskeve3d] element under `root`.
+        //
+        // Named …Blocks, not …Cached, because this app holds NO cache for it —
+        // and __diagCacheHit MUST NOT be used here. kataskeve3d draws into a
+        // <canvas>, and a canvas's BITMAP is not part of its serialization:
+        // el.innerHTML round-trips to `<canvas width=680 height=460></canvas>`
+        // and re-inserting that yields a BLANK canvas. Worse, __diagCacheHit
+        // returns true on a hit and the caller returns, so from the second render
+        // on every 3D block would be an empty box, permanently.
+        //
+        // The library already solves this at the right layer: a module-level LRU
+        // of 64 offscreen bitmaps keyed by (hash(source), ink colour) which, on a
+        // hit, blits the stored bitmap onto the fresh canvas. That cache lives
+        // OUTSIDE #preview, so it survives the innerHTML rebuild that discards
+        // ours — exactly what the 150ms live-edit path needs — and keying on ink
+        // colour makes it theme-salted for free, so the M key invalidates
+        // correctly with no work here.
+        //
+        // renderElement() WIPES the host (innerHTML='' then appendChild) and
+        // returns a bool; errors arrive as replaced content, not a throw.
+        //
+        // The host must be IN THE DOCUMENT before the call: on a detached node
+        // getComputedStyle(host).color is empty in Chromium and the engine
+        // silently falls back to a dark ink (#1a1a1a) — an invisible diagram in
+        // dark mode. Both pipelines call this after the nodes are attached; do not
+        // "optimize" it into a detached-fragment pass. display:none is fine (a
+        // computed colour still resolves), which is why a Marp deck's slide 2
+        // renders correctly.
+        function renderKataskeve3dBlocks(root) {
+            root.querySelectorAll('[data-kataskeve3d]').forEach((el) => {
+                const src = __diagSource(el, 'data-kataskeve3d-source');
+                try {
+                    window.kataskeve3d.renderElement(src, el);
+                } catch (error) {
+                    el.innerHTML = '<div class="kataskeve3d-error">'
+                        + t('err.prefix', { engine: 'Kataskeve3D' })
+                        + escapeHtml(String((error && error.message) || error)) + '</div>';
+                    return;
+                }
+                if (el.querySelector('.kataskeve3d-error')) {
+                    el.innerHTML = __ksLocalizeError(el.innerHTML, 'Kataskeve3D', 'kataskeve3d-error');
                 }
             });
         }
@@ -9491,6 +9799,26 @@ ${previewClone.outerHTML}
                     div.setAttribute('data-tikz-source', encodeURIComponent(code.textContent));
                     div.innerHTML = '<span class="tikz-loading">' + t('tikz.compiling') + '</span>';
                     pre.replaceWith(div);
+                } else if (lang === 'kataskeve3d') {
+                    // Exact string equality here, so — unlike the regex pipeline in
+                    // renderMarkdown — the 2D/3D pair cannot collide and the order is
+                    // irrelevant. (The capture regex above is language-([A-Za-z0-9_+-]+),
+                    // which includes digits, so the token is the whole `kataskeve3d`
+                    // and never a truncated `kataskeve`.) 3D is listed first only to
+                    // mirror the normal pipeline.
+                    const div = document.createElement('div');
+                    div.className = 'kataskeve3d';
+                    div.id = 'marp-kataskeve3d-' + (kataskeve3dCounter++);
+                    div.setAttribute('data-kataskeve3d', '1');
+                    div.setAttribute('data-kataskeve3d-source', encodeURIComponent(code.textContent));
+                    pre.replaceWith(div);
+                } else if (lang === 'kataskeve') {
+                    const div = document.createElement('div');
+                    div.className = 'kataskeve';
+                    div.id = 'marp-kataskeve-' + (kataskeveCounter++);
+                    div.setAttribute('data-kataskeve', '1');
+                    div.setAttribute('data-kataskeve-source', encodeURIComponent(code.textContent));
+                    pre.replaceWith(div);
                 }
             });
 
@@ -9525,7 +9853,7 @@ ${previewClone.outerHTML}
             };
             const isFigureChild = (el) => {
                 if (el.nodeType !== 1) return false;
-                if (el.matches('.mermaid, .csv-table, table, .abc-notation, .plotly-block, .markwhen-timeline, .tikzcd-diagram, .tikz-diagram, video, iframe.video-embed, .video-embed')) return true;
+                if (el.matches('.mermaid, .csv-table, table, .abc-notation, .plotly-block, .markwhen-timeline, .tikzcd-diagram, .tikz-diagram, .kataskeve, .kataskeve3d, video, iframe.video-embed, .video-embed')) return true;
                 if (isImageParagraph(el)) return true;
                 return false;
             };
@@ -9616,6 +9944,24 @@ ${previewClone.outerHTML}
                 await ensureAbcjs();
                 await new Promise(r => requestAnimationFrame(() => r()));
                 renderAbcCached(preview);
+            }
+
+            // Kataskeve geometry figures in slides. Awaited (not fire-and-forget
+            // like tikz) so they land before __marpUpdateDeck() and the
+            // fitMarpSlides() that follows, letting autofit measure the real
+            // figure heights.
+            if (preview.querySelector('[data-kataskeve]')) {
+                await ensureKataskeve();
+                renderKataskeveCached(preview);
+            }
+            // Correct even though every slide is still display:none at this point
+            // (deck mode applies .active later, in __marpUpdateDeck): the engine
+            // never measures the container, and getComputedStyle().color — the ink
+            // colour — still resolves under display:none. A DETACHED host is the
+            // case that would break, which is why this runs on the live #preview.
+            if (preview.querySelector('[data-kataskeve3d]')) {
+                await ensureKataskeve3d();
+                renderKataskeve3dBlocks(preview);
             }
 
             const marpPlotlyEls = preview.querySelectorAll('.plotly-block');
@@ -9849,6 +10195,8 @@ ${previewClone.outerHTML}
         async function renderMarkdown(markdown) {
             mermaidCounter = 0;
             tikzCounter = 0;
+            kataskeveCounter = 0;
+            kataskeve3dCounter = 0;
 
             // A render replaces #preview wholesale, so an in-flight table edit cannot
             // survive it. Abandon the session and tell the user rather than letting the
@@ -9927,12 +10275,22 @@ ${previewClone.outerHTML}
             const needsAbc = /```abc\b/.test(processedMarkdown);
             const needsMarkwhen = /```markwhen\b/.test(processedMarkdown);
             const needsTikz = /```tikz(cd)?\b/.test(processedMarkdown);
+            // The (?!3d) is belt-and-braces, not a fix: \b alone already cannot
+            // match "```kataskeve3d", because a word boundary needs a word/non-word
+            // transition and both `e` and `3` are word characters. It is spelled out
+            // because this is the exact OPPOSITE of needsTikz above, where
+            // /```tikz(cd)?\b/ matches both fences on purpose (one shared engine) —
+            // and a reader who mis-remembers \b would "fix" this into a real bug.
+            const needsKataskeve = /```kataskeve(?!3d)\b/.test(processedMarkdown);
+            const needsKataskeve3d = /```kataskeve3d\b/.test(processedMarkdown);
             const mermaidReady = needsMermaid ? ensureMermaid() : null;
             const katexReady = needsKatex ? ensureKatex() : null;
             const plotlyReady = needsPlotly ? Promise.all([ensureJsYaml(), ensurePlotly()]) : null;
             const abcReady = needsAbc ? ensureAbcjs() : null;
             const markwhenReady = needsMarkwhen ? ensureMarkwhen() : null;
             const tikzReady = (needsTikz && !__tikzUnavailable()) ? ensureTikz() : null;
+            const kataskeveReady = needsKataskeve ? ensureKataskeve() : null;
+            const kataskeve3dReady = needsKataskeve3d ? ensureKataskeve3d() : null;
 
             // Flush the prior render's tracked CSV files so the Rust watcher only
             // monitors files referenced by the document we're about to render.
@@ -10007,6 +10365,22 @@ ${previewClone.outerHTML}
                 const ta = document.createElement('textarea');
                 ta.innerHTML = code;
                 return `<div class="tikz-diagram" id="${id}" data-tikz-kind="raw" data-tikz-source="${encodeURIComponent(ta.value)}">${tikzPlaceholder}</div>`;
+            });
+
+            // Replace kataskeve / kataskeve3d code blocks with render hosts. The 3D
+            // pattern goes FIRST on purpose: the two are disjoint today only because
+            // the closing quote is inside them (`language-kataskeve"` cannot match
+            // `language-kataskeve3d"` — the same guarantee the tikz/tikzcd pair above
+            // relies on), so if anyone ever loosens the 2D pattern to tolerate extra
+            // classes, it must not be the one that swallows 3D blocks and hands them
+            // to the 2D engine.
+            html = html.replace(/<pre><code class="language-kataskeve3d">([\s\S]*?)<\/code><\/pre>/g, (match, code) => {
+                const id = `kataskeve3d-${kataskeve3dCounter++}`;
+                return `<div class="kataskeve3d" id="${id}" data-kataskeve3d="1" data-kataskeve3d-source="${encodeURIComponent(decodeEntities(code))}"></div>`;
+            });
+            html = html.replace(/<pre><code class="language-kataskeve">([\s\S]*?)<\/code><\/pre>/g, (match, code) => {
+                const id = `kataskeve-${kataskeveCounter++}`;
+                return `<div class="kataskeve" id="${id}" data-kataskeve="1" data-kataskeve-source="${encodeURIComponent(decodeEntities(code))}"></div>`;
             });
 
             // Render math expressions (await katex if needed)
@@ -10093,6 +10467,39 @@ ${previewClone.outerHTML}
             if (preview.querySelector('[data-abc]')) {
                 if (abcReady) await abcReady;
                 renderAbcCached(preview);
+            }
+
+            // Render kataskeve 2D geometry figures (memoized by source + theme) and
+            // kataskeve3d canvases. Both are AWAITED, unlike tikz: they are
+            // synchronous CPU renders (no TeX compile, no Web Worker), and
+            // --export-png only captures what has landed before __emitRenderDone
+            // below. No requestAnimationFrame beat is needed either — 2D is
+            // string->string and 3D draws at a fixed settings.width x height,
+            // so neither measures layout the way abc and plotly do.
+            //
+            // `kataskeveReady || ensureKataskeve()` rather than the bare
+            // `if (xReady) await xReady` used above: a TILDE fence (~~~kataskeve) is
+            // turned into class="language-kataskeve" by marked and therefore into a
+            // host div here, but is NOT matched by the ```-anchored needsX regex — so
+            // xReady is null, window.kataskeve is undefined, and the TypeError would
+            // escape renderMarkdown and skip pagination / the TOC / __emitRenderDone
+            // for the WHOLE document (hanging --export-png and leaving the splash up).
+            // The catch is the same insurance for a genuinely missing libs/ file.
+            if (preview.querySelector('[data-kataskeve]')) {
+                try {
+                    await (kataskeveReady || ensureKataskeve());
+                    renderKataskeveCached(preview);
+                } catch (e) {
+                    __ksFailAll(preview, '[data-kataskeve]', 'kataskeve-error', 'Kataskeve');
+                }
+            }
+            if (preview.querySelector('[data-kataskeve3d]')) {
+                try {
+                    await (kataskeve3dReady || ensureKataskeve3d());
+                    renderKataskeve3dBlocks(preview);
+                } catch (e) {
+                    __ksFailAll(preview, '[data-kataskeve3d]', 'kataskeve3d-error', 'Kataskeve3D');
+                }
             }
 
             // Render all Plotly charts (await libraries; each fetches its CSV)

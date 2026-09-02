@@ -16,6 +16,8 @@ __pycache__/
 /assets/libs/katex/
 /assets/libs/plotly/
 /assets/libs/abcjs/
+/assets/libs/kataskeve/
+/assets/libs/kataskeve3d/
 /assets/libs/tikzjax/
 #   - esbuild bundles built by tools/build-marp, tools/build-editor & tools/build-markwhen:
 /assets/libs/marp/

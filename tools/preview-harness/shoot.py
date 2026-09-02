@@ -90,7 +90,14 @@ _FIGURES_READY_JS = """() => {
     if (w) return !w.classList.contains('tikzjax-loading');
     return !!m.querySelector('svg:not(.tikzjax-loader)');
   });
-  return mer && mw && abc && pl && tkz;
+  // kataskeve (2D) emits inline SVG; kataskeve3d rasterizes to a <canvas> and
+  // never emits SVG at all, so its arm must not look for one. Neither parks a
+  // loading placeholder, so the tikzjax spinner trap above does not apply, and
+  // neither needs its own wait budget: both renders are synchronous and awaited
+  // by renderMarkdown / renderMarp before __emitRenderDone.
+  const ks2 = done('.kataskeve',   m => m.querySelector('svg') || m.querySelector('.kataskeve-error'));
+  const ks3 = done('.kataskeve3d', m => m.querySelector('canvas') || m.querySelector('.kataskeve3d-error'));
+  return mer && mw && abc && pl && tkz && ks2 && ks3;
 }"""
 
 _TIKZ_SELECTOR_JS = "() => !!document.querySelector('.tikzcd-diagram, .tikz-diagram')"

@@ -387,6 +387,49 @@ C \arrow[r, "k"']                & D
 
 ---
 
+<!-- _class: split -->
+
+## Kataskeve — 2 カラムに収まる幾何図
+
+左カラムは平面幾何（インライン SVG）。`viewBox` を持つので狭いカラムでも
+**クリップされずに縮小**されます。
+
++++
+
+```kataskeve
+grid: on
+axes: on
+unit: 46
+A = point(0, 0)
+B = point(4, 0)
+C = point(0, 3)
+polygon(A, B, C)
+I = incenter(A, B, C)
+circle(I, distance(I, foot(I, line(A, B)))) color=#2980b9
+mark right_angle(B, A, C)
+I color=#2980b9
+label I "I" pos=NE
+```
+
+---
+
+## Kataskeve3D — 立体幾何（ペン画風）
+
+**kataskeve3d** ブロックは陰線処理と点描陰影つきのラスタ図を描き、図として左右中央に配置されます。
+
+```kataskeve3d
+view: tilt=24 yaw=30
+unit: 62
+shading: on
+shading_density: 0.7
+width: 620
+height: 330
+T = torus(point(0,0,0), vector(0,0,1), 2, 0.7)
+cut(T, bitangent_plane(T, family=0)) open
+```
+
+---
+
 ## 文中の大きな図（重ならない）
 
 見出しと本文のあとに大きな図を置いても、図はドキュメント順に普通に流れ、見出し・本文と重なりません（上下の自動中央寄せは廃止）。図がはみ出す場合は自動縮小（`A`、既定 ON）が本文を縮めて 1 枚に収めます。
