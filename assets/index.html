@@ -1008,6 +1008,41 @@
             color: #ffa198;
         }
 
+        /* Feynman diagrams (feynmark, MIT, assets/libs/feynmark/,
+           https://github.com/yvvakimoto/feynmark) — renders SVG with
+           stroke/fill: currentColor, so dark mode needs no re-render (cache is
+           un-salted, like abc/tikz). feynmark's own injected STYLESHEET
+           (#feynmark-style) supplies .feynmark/.fm-label currentColor rules and
+           .feynmark-equation KaTeX overflow — this block only adds our own
+           container spacing/responsiveness/error styling. Class names use
+           "feynman" (no "k") to avoid colliding with feynmark's own internal
+           .feynmark-diagram / .feynmark-equation / .feynmark-error wrapper classes. */
+        .feynman-block {
+            margin: 16px 0;
+            text-align: center;
+        }
+        .feynman-block svg.feynmark {
+            max-width: 100%;
+            height: auto;
+        }
+        .feynman-error {
+            margin: 16px 0;
+            padding: 12px 16px;
+            border: 1px solid #d73a49;
+            border-radius: 4px;
+            background: #ffeef0;
+            color: #b31d28;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', monospace;
+            font-size: 0.9em;
+            white-space: pre-wrap;
+            text-align: left;
+        }
+        body.dark-mode .feynman-error {
+            background: #2a0d10;
+            border-color: #f85149;
+            color: #ffa198;
+        }
+
         /* App container - flex layout for sidebar + content */
         #app-container {
             display: none;
@@ -2357,6 +2392,7 @@
         body.marp #preview section .tikzcd-diagram.marp-fig,
         body.marp #preview section .tikz-diagram.marp-fig,
         body.marp #preview section .kataskeve.marp-fig,
+        body.marp #preview section .feynman-block.marp-fig,
         body.marp #preview section p.marp-fig {
             text-align: center;
         }
@@ -2410,7 +2446,8 @@
             gap: 12px;
         }
         body.marp #preview .md-vcenter > .mermaid,
-        body.marp #preview .md-vcenter > .markwhen-timeline { margin: 0; text-align: center; }
+        body.marp #preview .md-vcenter > .markwhen-timeline,
+        body.marp #preview .md-vcenter > .feynman-block { margin: 0; text-align: center; }
         body.marp #preview .md-vcenter > table,
         body.marp #preview .md-vcenter > .csv-table { width: fit-content; max-width: 100%; margin: 0 auto; }
         body.marp #preview .md-vcenter > .plotly-block { margin: 0 auto; }
@@ -3922,13 +3959,16 @@
             });
         })();
 
-        // Lazy-load library helper. Returns a cached promise per URL.
+        // Lazy-load library helper. Returns a cached promise per URL. `attrs`
+        // (optional) sets extra attributes on the <script> tag before it's
+        // inserted — e.g. feynmark's `data-feynmark-no-autoinit`.
         const _libCache = {};
-        function loadLib(url) {
+        function loadLib(url, attrs) {
             if (_libCache[url]) return _libCache[url];
             _libCache[url] = new Promise((resolve, reject) => {
                 const s = document.createElement('script');
                 s.src = url;
+                if (attrs) Object.keys(attrs).forEach(k => s.setAttribute(k, attrs[k]));
                 s.onload = () => resolve();
                 s.onerror = () => reject(new Error('Failed to load ' + url));
                 document.head.appendChild(s);
@@ -3964,6 +4004,14 @@
         // @markwhen/parser bundled as a browser IIFE (window.Markwhen); lazy-load
         // it the first time a ```markwhen block is rendered.
         function ensureMarkwhen() { return loadLib('libs/markwhen/markwhen.iife.js'); }
+        // feynmark bundled as a browser IIFE (window.feynmark); lazy-load it the
+        // first time a ```feynman block is rendered. `data-feynmark-no-autoinit`
+        // suppresses the bundle's own mermaid-style DOMContentLoaded auto-scan
+        // (its README/gallery.html document this attribute) since we drive
+        // rendering ourselves via renderFeynmarkCached()/renderInto().
+        function ensureFeynmark() {
+            return loadLib('libs/feynmark/feynmark.min.js', { 'data-feynmark-no-autoinit': '' });
+        }
         // @rod2ik/tikzjax — WASM TeX engine for ```tikzcd (commutative diagrams)
         // and ```tikz blocks. Lazy-loaded the first time such a block appears, so
         // documents without TikZ pay no startup cost (the engine + TeX core dump
@@ -4246,6 +4294,7 @@
         let tikzCounter = 0;
         let kataskeveCounter = 0;
         let kataskeve3dCounter = 0;
+        let feynmanCounter = 0;
         let currentMarkdown = '';
         // Un-embedded source markdown (relative image paths intact). Mirrors
         // `currentMarkdown` but without base64-embedded images, so host-bound
@@ -8436,6 +8485,10 @@ ${previewClone.outerHTML}
         // storable in an innerHTML string could reproduce it. It carries its own
         // bitmap LRU instead — see renderKataskeve3dBlocks.
         const __kataskeveCache = new Map();
+        // feynmark renders stroke/fill: currentColor (verified in its render/theme
+        // source), so — like abc — dark mode is a pure CSS recolor and the cache
+        // needs no theme salt; keyed by the raw source directly.
+        const __feynmarkCache = new Map();
         const __DIAGRAM_CACHE_MAX = 200;
         function __diagKey(src) { return (darkMode ? 'd|' : 'l|') + src; }
 
@@ -8688,6 +8741,39 @@ ${previewClone.outerHTML}
                 }
                 if (el.querySelector('.kataskeve3d-error')) {
                     el.innerHTML = __ksLocalizeError(el.innerHTML, 'Kataskeve3D', 'kataskeve3d-error');
+                }
+            });
+        }
+
+        // ---- Feynman diagrams (feynmark, https://github.com/yvvakimoto/feynmark) ----
+        // feynmark is a Mermaid-style declarative Feynman-diagram renderer: a
+        // ```feynman fence holds one or more `diagram { ... }` / `equation { ... }`
+        // statements, and an `equation`'s `@name` references only resolve against
+        // diagrams defined earlier in the SAME renderInto() call — so the whole
+        // fence is always rendered as one source string into one container (never
+        // split per-diagram), mirroring the markwhen/abc/tikz "one fence, one div"
+        // convention. renderInto() throws synchronously on a parse/layout/unknown-
+        // @ref error (its own error-box handling lives only in its run(), which we
+        // don't call), so this wraps it in a try/catch and builds our own
+        // .feynman-error box; FeynmarkError.excerpt() returns plain text and must be
+        // escapeHtml'd before going into innerHTML.
+        function renderFeynmarkCached(root) {
+            root.querySelectorAll('.feynman-block').forEach((el) => {
+                const src = __diagSource(el, 'data-feynman-source');
+                if (__diagCacheHit(__feynmarkCache, src, el)) return;
+                try {
+                    el.innerHTML = '';
+                    const FM = window.feynmark;
+                    if (!FM || typeof FM.renderInto !== 'function') throw new Error('feynmark library not loaded');
+                    FM.renderInto(el, src);
+                    __diagCacheSet(__feynmarkCache, src, el.innerHTML);
+                } catch (error) {
+                    let msg = t('err.prefix', { engine: 'Feynmark' }) + escapeHtml(String((error && error.message) || error));
+                    if (error && typeof error.excerpt === 'function') {
+                        const ex = error.excerpt();
+                        if (ex) msg += '\n\n' + escapeHtml(ex);
+                    }
+                    el.innerHTML = '<div class="feynman-error">' + msg + '</div>';
                 }
             });
         }
@@ -9829,6 +9915,12 @@ ${previewClone.outerHTML}
                     div.setAttribute('data-kataskeve', '1');
                     div.setAttribute('data-kataskeve-source', encodeURIComponent(code.textContent));
                     pre.replaceWith(div);
+                } else if (lang === 'feynman') {
+                    const div = document.createElement('div');
+                    div.className = 'feynman-block';
+                    div.id = 'marp-feynman-' + (feynmanCounter++);
+                    div.setAttribute('data-feynman-source', encodeURIComponent(code.textContent));
+                    pre.replaceWith(div);
                 }
             });
 
@@ -9863,7 +9955,7 @@ ${previewClone.outerHTML}
             };
             const isFigureChild = (el) => {
                 if (el.nodeType !== 1) return false;
-                if (el.matches('.mermaid, .csv-table, table, .abc-notation, .plotly-block, .markwhen-timeline, .tikzcd-diagram, .tikz-diagram, .kataskeve, .kataskeve3d, video, iframe.video-embed, .video-embed')) return true;
+                if (el.matches('.mermaid, .csv-table, table, .abc-notation, .plotly-block, .markwhen-timeline, .tikzcd-diagram, .tikz-diagram, .kataskeve, .kataskeve3d, .feynman-block, video, iframe.video-embed, .video-embed')) return true;
                 if (isImageParagraph(el)) return true;
                 return false;
             };
@@ -9972,6 +10064,15 @@ ${previewClone.outerHTML}
             if (preview.querySelector('[data-kataskeve3d]')) {
                 await ensureKataskeve3d();
                 renderKataskeve3dBlocks(preview);
+            }
+
+            // Render Feynman diagrams in slides (memoized; feynmark also needs
+            // KaTeX loaded for math labels / equation embedding).
+            if (preview.querySelector('.feynman-block')) {
+                await ensureFeynmark();
+                await ensureKatex();
+                await new Promise(r => requestAnimationFrame(() => r()));
+                renderFeynmarkCached(preview);
             }
 
             const marpPlotlyEls = preview.querySelectorAll('.plotly-block');
@@ -10293,6 +10394,7 @@ ${previewClone.outerHTML}
             // and a reader who mis-remembers \b would "fix" this into a real bug.
             const needsKataskeve = /```kataskeve(?!3d)\b/.test(processedMarkdown);
             const needsKataskeve3d = /```kataskeve3d\b/.test(processedMarkdown);
+            const needsFeynman = /```feynman\b/.test(processedMarkdown);
             const mermaidReady = needsMermaid ? ensureMermaid() : null;
             const katexReady = needsKatex ? ensureKatex() : null;
             const plotlyReady = needsPlotly ? Promise.all([ensureJsYaml(), ensurePlotly()]) : null;
@@ -10301,6 +10403,10 @@ ${previewClone.outerHTML}
             const tikzReady = (needsTikz && !__tikzUnavailable()) ? ensureTikz() : null;
             const kataskeveReady = needsKataskeve ? ensureKataskeve() : null;
             const kataskeve3dReady = needsKataskeve3d ? ensureKataskeve3d() : null;
+            // feynmark needs window.katex at render time regardless of whether the
+            // document's own $...$ math is present — a feynman fence's own labels
+            // ($e^-$-style) use it too.
+            const feynmanReady = needsFeynman ? Promise.all([ensureFeynmark(), ensureKatex()]) : null;
 
             // Flush the prior render's tracked CSV files so the Rust watcher only
             // monitors files referenced by the document we're about to render.
@@ -10334,6 +10440,19 @@ ${previewClone.outerHTML}
                 textarea.innerHTML = code;
                 const decoded = textarea.value;
                 return `<div class="abc-notation" id="${id}" data-abc="1" data-abc-source="${encodeURIComponent(decoded)}"></div>`;
+            });
+
+            // Replace feynman code blocks with feynmark diagram placeholders; the
+            // renderer runs after preview.innerHTML is assigned (it needs
+            // window.feynmark). One fence -> one container div; feynmark itself may
+            // render multiple diagram{}/equation{} statements from that single
+            // source, including diagrams referenced (`@name`) only from within an
+            // equation.
+            html = html.replace(/<pre><code class="language-feynman">([\s\S]*?)<\/code><\/pre>/g, (match, code) => {
+                const id = `feynman-${feynmanCounter++}`;
+                const textarea = document.createElement('textarea');
+                textarea.innerHTML = code;
+                return `<div class="feynman-block" id="${id}" data-feynman-source="${encodeURIComponent(textarea.value)}"></div>`;
             });
 
             // Replace csv / tsv code blocks with HTML tables
@@ -10510,6 +10629,12 @@ ${previewClone.outerHTML}
                 } catch (e) {
                     __ksFailAll(preview, '[data-kataskeve3d]', 'kataskeve3d-error', 'Kataskeve3D');
                 }
+            }
+
+            // Render all Feynman diagrams (memoized; feynmark needs KaTeX for math labels)
+            if (preview.querySelector('.feynman-block')) {
+                if (feynmanReady) await feynmanReady;
+                renderFeynmarkCached(preview);
             }
 
             // Render all Plotly charts (await libraries; each fetches its CSV)

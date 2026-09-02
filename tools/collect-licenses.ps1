@@ -103,8 +103,8 @@ $direct = @(
     Upstream='https://github.com/paulrosen/abcjs';
     Path='assets/libs/abcjs/abcjs-basic-min.js';
     LicenseFile='tools/license-texts/abcjs.LICENSE' }
-  # kataskeve / kataskeve3d are distributed from their GitHub repos rather than
-  # npm, so Version is the git tag fetch-libs.ps1 pins.
+  # kataskeve / kataskeve3d / feynmark are distributed from their GitHub repos
+  # rather than npm, so Version is the git tag fetch-libs.ps1 pins.
   [pscustomobject]@{ Name='Kataskeve';    Version='0.1.1'; Spdx='MIT';
     Upstream='https://github.com/yvvakimoto/kataskeve';
     Path='assets/libs/kataskeve/kataskeve.min.js';
@@ -114,6 +114,10 @@ $direct = @(
     Path='assets/libs/kataskeve3d/';
     Note='Includes kataskeve3d.wasm, an optional CPU accelerator compiled from the Rust sources in the upstream repository (crates/kataskeve3d-wasm). It is not required: the library falls back to its JavaScript core, which is held to a pixel-parity guarantee.';
     LicenseFile='tools/license-texts/kataskeve3d.LICENSE' }
+  [pscustomobject]@{ Name='feynmark';     Version='0.2.0'; Spdx='MIT';
+    Upstream='https://github.com/yvvakimoto/feynmark';
+    Path='assets/libs/feynmark/feynmark.min.js';
+    LicenseFile='tools/license-texts/feynmark.LICENSE' }
   # TikZJax is a WebAssembly build of TeX/pgf/TikZ for the tikzcd / tikz fenced
   # blocks. It is the project's only copyleft dependency and the only one the
   # installer does NOT ship: distributing a compiled GPL binary would oblige us

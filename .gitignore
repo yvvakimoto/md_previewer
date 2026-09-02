@@ -19,6 +19,7 @@ __pycache__/
 /assets/libs/kataskeve/
 /assets/libs/kataskeve3d/
 /assets/libs/tikzjax/
+/assets/libs/feynmark/
 #   - esbuild bundles built by tools/build-marp, tools/build-editor & tools/build-markwhen:
 /assets/libs/marp/
 /assets/libs/editor/

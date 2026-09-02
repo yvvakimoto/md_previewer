@@ -4,10 +4,10 @@
 
 .DESCRIPTION
   Pulls marked, highlight.js (+ github theme CSS), KaTeX (JS + CSS + 22 woff2
-  fonts), mermaid, and the kataskeve / kataskeve3d geometry engines from cdnjs /
-  jsdelivr at the versions documented in assets/THIRD_PARTY_LICENSES.txt.
-  Idempotent by default (skips files that already exist); pass -Force to
-  re-download.
+  fonts), mermaid, the kataskeve / kataskeve3d geometry engines, and feynmark
+  (Feynman diagrams) from cdnjs / jsdelivr at the versions documented in
+  assets/THIRD_PARTY_LICENSES.txt. Idempotent by default (skips files that
+  already exist); pass -Force to re-download.
 
   These libraries are referenced at runtime by assets/index.html and must
   exist before `cargo run` will work. The repo's .gitignore excludes them so
@@ -40,11 +40,12 @@ $PlotlyVersion  = '2.35.2'
 $JsYamlVersion  = '4.1.0'
 $AbcjsVersion   = '6.6.3'
 $TikzjaxVersion = '1.5.0'   # @rod2ik/tikzjax — WASM TeX for tikz-cd commutative diagrams
-# kataskeve / kataskeve3d are distributed from their GitHub repos (committed
-# dist/, served by cdn.jsdelivr.net/gh/...), not from npm — so these pins are
-# git TAGS and the URLs below carry the `v` prefix the tags actually use.
+# kataskeve / kataskeve3d / feynmark are distributed from their GitHub repos
+# (committed dist/, served by cdn.jsdelivr.net/gh/...), not from npm — so these
+# pins are git TAGS and the URLs below carry the `v` prefix the tags actually use.
 $KataskeveVersion   = '0.1.1'   # kataskeve   — 2D Euclidean geometry (```kataskeve)
 $Kataskeve3dVersion = '0.1.0'   # kataskeve3d — 3D pen-and-ink geometry (```kataskeve3d)
+$FeynmarkVersion = '0.2.0'  # feynmark — Feynman diagrams (https://github.com/yvvakimoto/feynmark)
 
 # ---- KaTeX font list (mirrors what KaTeX 0.16.x ships in dist/fonts/) ---
 $KatexFonts = @(
@@ -147,6 +148,14 @@ $Downloads.Add(@{
 $Downloads.Add(@{
   Url  = "https://cdn.jsdelivr.net/gh/yvvakimoto/kataskeve3d@v$Kataskeve3dVersion/dist/kataskeve3d.wasm"
   Dest = 'kataskeve3d/kataskeve3d.wasm'
+})
+
+# feynmark isn't published to npm yet, so it's served from jsDelivr's GitHub
+# endpoint (a tagged commit of the repo itself) rather than the /npm/ endpoint
+# used above — see the feynmark repo's own README.md "Versions" section.
+$Downloads.Add(@{
+  Url  = "https://cdn.jsdelivr.net/gh/yvvakimoto/feynmark@v$FeynmarkVersion/cdn/feynmark.min.js"
+  Dest = 'feynmark/feynmark.min.js'
 })
 
 # ---- Run ----------------------------------------------------------------
