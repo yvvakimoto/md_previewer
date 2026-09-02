@@ -53,6 +53,8 @@ WebView2
 
 Inline code: `const x = 42;`
 
+Inline code containing a fence marker: `` ` ```lang ` ``
+
 Code block:
 ```javascript
 function greet(name) {
