@@ -128,17 +128,36 @@ layout:
 
 ---
 
+<!-- _class: split -->
+
 ## Plotly: 3D サーフェス
 
+### 二次元 sinc 関数
+
+原点から等方的に広がる波は、半径 $r$ だけの関数として
+
+$$
+z=\frac{\sin r}{r},\qquad r=\sqrt{x^{2}+y^{2}}
+$$
+
+と書ける。中心の主極大 $z=1$ を頂点に、同心円状の起伏が外へ向かって続く。
+
+- 節（$z=0$）は $r=\pi,\ 2\pi,\ 3\pi,\dots$ に等間隔で並ぶ
+- 振幅は $1/r$ で減衰し、遠方では平面に漸近する
+- 最初の極小は $r\simeq4.49$ で $z\simeq-0.22$
+
++++
+
 ```plotly
-file: data/surface.csv
+file: data/ripple.csv
 type: surface
-title: z = x² + y²
 layout:
-  height: 480
-  width: 700
-  margin: { t: 40, r: 0, b: 0, l: 0 }
-  scene: { camera: { eye: { x: 1.4, y: 1.4, z: 0.9 } } }
+  height: 470
+  margin: { t: 0, r: 0, b: 0, l: 0 }
+  paper_bgcolor: rgba(0,0,0,0)
+  scene: { camera: { eye: { x: 1.5, y: 1.5, z: 0.75 } } }
+config:
+  displayModeBar: false
 ```
 
 ---

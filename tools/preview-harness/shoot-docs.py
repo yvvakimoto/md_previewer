@@ -85,8 +85,10 @@ PREVIEW_SHOTS = [
     ("math",       "samples/math.md",                  None,        None),
     ("tikzcd",     "samples/tikzcd.md",                None,        None),
     ("bunko",      "samples/短編小説.md",              "bunko.css", None),
-    # Marp: 02 = gradient section divider, 08 = mermaid in a slide,
-    # 12 = Plotly 3D surface. Picked off a contact sheet of all 30.
+    # Marp: 12 = a two-column slide pairing KaTeX + bullets with a Plotly 3D
+    # surface -- the front card of the deck fan, so it is the one that has to
+    # show what the tool can do. 08 = mermaid in a slide, 02 = gradient section
+    # divider (colour, in the back of the fan). Picked off a contact sheet of all 30.
     ("marp",       "samples/marp.md",                  None,        [2, 8, 12]),
 ]
 
