@@ -787,6 +787,30 @@
             margin-top: auto;
             margin-bottom: auto;
         }
+        /* Shared "this engine could not be loaded" box, painted by awaitLib() for
+           every lazy library. Deliberately NOT per-engine: the failure is about the
+           loader, not the figure language, and Mermaid has no error class of its
+           own. Same visual as the per-engine boxes below (.plotly-error,
+           .abc-error, .markwhen-error, .tikz-error, .feynman-error), which stay as
+           they are — collapsing those five duplicates is a separate cleanup. */
+        .lib-error {
+            margin: 16px 0;
+            padding: 12px 16px;
+            border: 1px solid #d73a49;
+            border-radius: 4px;
+            background: #ffeef0;
+            color: #b31d28;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', monospace;
+            font-size: 0.9em;
+            white-space: pre-wrap;
+            text-align: left;
+        }
+        body.dark-mode .lib-error {
+            background: #2a0d10;
+            border-color: #f85149;
+            color: #ffa198;
+        }
+
         .plotly-error {
             margin: 16px 0;
             padding: 12px 16px;
@@ -2807,8 +2831,8 @@
             // literal; the exception text itself is library-authored and is
             // never translated.
             'err.prefix':          { ja: '{engine} エラー: ', en: '{engine} error: ' },
-            'err.engineUnavailable': { ja: '{engine} エンジンを読み込めませんでした',
-                                     en: 'Could not load the {engine} engine' },
+            'err.libLoadFail':     { ja: '{engine} のライブラリを読み込めませんでした。インストールが不完全な可能性があります。',
+                                     en: 'Could not load the {engine} library. The installation may be incomplete.' },
             'err.tikzMissing':     { ja: 'TikZ コンポーネントが未インストールです。インストーラーを再実行し、「TikZ・可換図式コンポーネントをダウンロード」にチェックを入れてください。',
                                      en: 'The TikZ component is not installed. Re-run the installer and tick “Download the TikZ / commutative-diagram component”.' },
             'err.tikzLoadFail':    { ja: 'TikZ エンジンを読み込めませんでした（libs/tikzjax）',
@@ -2868,6 +2892,7 @@
                                      en: 'The theme is pinned by a Marp directive' },
             'toast.pdfExport':     { ja: 'PDF出力: {name}',  en: 'Exported PDF: {name}' },
             'toast.pdfExportFail': { ja: 'PDF出力に失敗しました', en: 'PDF export failed' },
+            'toast.renderFail':    { ja: 'プレビューの描画に失敗しました', en: 'Preview rendering failed' },
             'toast.openingWindow': { ja: '新しいウィンドウで開いています…', en: 'Opening in a new window…' },
             'toast.noFile':        { ja: '更新するファイルがありません', en: 'There is no file to update' },
             'toast.notMarp':       { ja: 'Marp文書ではありません', en: 'This is not a Marp document' },
@@ -3975,6 +4000,68 @@
             });
             return _libCache[url];
         }
+        // Await a lazy library, CONTAINED. Resolves true when it is ready, false
+        // when its load failed — and in that case paints an error box into every
+        // block that was waiting on it, so the reader sees WHY a figure is missing
+        // instead of a blank gap. Returning a boolean (rather than swallowing and
+        // falling through) is what lets the caller skip the renderer entirely: a
+        // renderer run without its engine reports "mermaid is not defined", which
+        // is both uglier and less true than naming the file that failed to load.
+        //
+        // WHY THIS EXISTS. loadLib() rejects on a 404, and the figure branches used
+        // to `await` those promises bare — so one missing library rejected
+        // renderMarkdown() itself, and loadFileFromRust() (which awaits it with no
+        // catch) never reached the lines that reveal #app-container and hide the
+        // splash. The observable result was the "読み込み中…" spinner turning
+        // forever with the document invisible and NOTHING on screen saying why.
+        // That is exactly what a missing assets/libs/feynmark/ produced. A missing
+        // optional engine must cost you that engine's blocks, never the document.
+        // The tikz branches were written this way from the start (see their long
+        // note in renderMarkdown); this generalizes them to every engine.
+        //
+        // `ready` may be null — the document has no such block — which is a no-op
+        // success. `els` may be null when a failure has no DOM to report into
+        // (KaTeX runs against an HTML string, and renderMathExpressions() already
+        // annotates each formula it cannot typeset).
+        async function awaitLib(ready, engine, els) {
+            if (!ready) return true;
+            try {
+                await ready;
+                return true;
+            } catch (err) {
+                const detail = String((err && err.message) || err);
+                console.error('[lib] ' + engine + ' failed to load:', err);
+                __dbgLog('lib ' + engine + ' load FAILED: ' + detail);  // release builds have no console
+                // '\n' renders as a break: .lib-error is white-space: pre-wrap.
+                // loadLib's message is 'Failed to load <url>', so the second line
+                // names the exact missing path — the one fact worth having here.
+                const html = '<div class="lib-error">' + t('err.libLoadFail', { engine })
+                    + '\n' + escapeHtml(detail) + '</div>';
+                Array.from(els || []).forEach((el) => { el.innerHTML = html; });
+                return false;
+            }
+        }
+
+        // Yield one frame so freshly inserted figure containers are laid out before
+        // a renderer measures them.
+        //
+        // MUST NOT be a bare requestAnimationFrame. rAF only fires while the window
+        // is actually painting, so in the hidden window --export-png renders into
+        // (and in a backgrounded tab) it never runs at all, and an `await` on it
+        // hangs the render forever — the same eternal-splash failure as above by a
+        // different route. __emitRenderDone() already carries this warning for the
+        // capture path; it applies to anything a render awaits. The timeout is a
+        // floor, not the expectation: when the window does paint, rAF wins the race
+        // and the timing is unchanged.
+        function __nextPaint() {
+            return new Promise((resolve) => {
+                let done = false;
+                const fire = () => { if (!done) { done = true; resolve(); } };
+                requestAnimationFrame(fire);
+                setTimeout(fire, 50);
+            });
+        }
+
         // Shared mermaid.initialize config. `fontFamily` is set explicitly so
         // mermaid MEASURES label text with the same font the page RENDERS it
         // with. Without it, foreignObject labels inherit the page's system-sans
@@ -5660,8 +5747,17 @@ ${previewClone.outerHTML}
                 currentMarkdown = md;
                 currentMarkdownRaw = md;
                 currentFilePath = f.absPath;
-                await renderMarkdown(md);
-                const { html, mediaFiles } = await buildExportArtifact({ pageRelPath: f.relPath });
+                let html, mediaFiles;
+                try {
+                    // Contain per file, like the fetch above. A throw here used to
+                    // abort the whole loop: pages[] silently partial, the
+                    // exportdir: postMessage never sent, and — worst — the restore
+                    // block below skipped, leaving the app displaying a different
+                    // document than the reader had open with currentFilePath
+                    // pointing at the wrong file.
+                    await renderMarkdown(md);
+                    ({ html, mediaFiles } = await buildExportArtifact({ pageRelPath: f.relPath }));
+                } catch (e) { console.warn('export: render failed', f.absPath, e); continue; }
                 const outRel = f.relPath.replace(/\.(md|markdown)$/i, '.html');
                 pages.push({ relPath: outRel, html });
                 for (const mf of (mediaFiles || [])) {
@@ -5676,7 +5772,10 @@ ${previewClone.outerHTML}
                 currentMarkdown = savedMarkdown;
                 currentMarkdownRaw = savedMarkdownRaw;
                 currentFilePath = savedFilePath;
-                await renderMarkdown(savedMarkdown);
+                // A failure to re-render the page the reader was on must not stop
+                // the finished export from being written out.
+                try { await renderMarkdown(savedMarkdown); }
+                catch (e) { console.warn('export: restore render failed', e); }
             }
 
             // index.html: redirect to the first page (keeps the artifact simple).
@@ -8658,7 +8757,7 @@ ${previewClone.outerHTML}
                 if (el.firstChild) return;
                 el.innerHTML = '<div class="' + cls + '">'
                     + t('err.prefix', { engine })
-                    + escapeHtml(t('err.engineUnavailable', { engine })) + '</div>';
+                    + escapeHtml(t('err.libLoadFail', { engine })) + '</div>';
             });
         }
 
@@ -10036,15 +10135,15 @@ ${previewClone.outerHTML}
             setupFootnoteTooltips();
 
             // Render mermaid diagrams (memoized by source + theme).
-            if (preview.querySelector('.mermaid')) {
-                await ensureMermaid();
+            const marpMermaidEls = preview.querySelectorAll('.mermaid');
+            if (marpMermaidEls.length > 0 && await awaitLib(ensureMermaid(), 'Mermaid', marpMermaidEls)) {
                 await renderMermaidCached(preview);
             }
 
             // Render ABC music-notation staves in slides (memoized).
-            if (preview.querySelector('[data-abc]')) {
-                await ensureAbcjs();
-                await new Promise(r => requestAnimationFrame(() => r()));
+            const marpAbcEls = preview.querySelectorAll('[data-abc]');
+            if (marpAbcEls.length > 0 && await awaitLib(ensureAbcjs(), 'ABC', marpAbcEls)) {
+                await __nextPaint();
                 renderAbcCached(preview);
             }
 
@@ -10068,18 +10167,17 @@ ${previewClone.outerHTML}
 
             // Render Feynman diagrams in slides (memoized; feynmark also needs
             // KaTeX loaded for math labels / equation embedding).
-            if (preview.querySelector('.feynman-block')) {
-                await ensureFeynmark();
-                await ensureKatex();
-                await new Promise(r => requestAnimationFrame(() => r()));
+            const marpFeynEls = preview.querySelectorAll('.feynman-block');
+            if (marpFeynEls.length > 0 && await awaitLib(
+                    Promise.all([ensureFeynmark(), ensureKatex()]), 'Feynmark', marpFeynEls)) {
+                await __nextPaint();
                 renderFeynmarkCached(preview);
             }
 
             const marpPlotlyEls = preview.querySelectorAll('.plotly-block');
-            if (marpPlotlyEls.length > 0) {
-                await ensureJsYaml();
-                await ensurePlotly();
-                await new Promise(r => requestAnimationFrame(() => r()));
+            if (marpPlotlyEls.length > 0 && await awaitLib(
+                    Promise.all([ensureJsYaml(), ensurePlotly()]), 'Plotly', marpPlotlyEls)) {
+                await __nextPaint();
                 await Promise.all(Array.from(marpPlotlyEls).map(el =>
                     renderPlotlyBlock(el, el.getAttribute('data-plotly-source'))
                 ));
@@ -10087,8 +10185,7 @@ ${previewClone.outerHTML}
 
             // Render markwhen timelines in slides (memoized by source + theme).
             const marpMwEls = preview.querySelectorAll('.markwhen-timeline');
-            if (marpMwEls.length > 0) {
-                await ensureMarkwhen();
+            if (marpMwEls.length > 0 && await awaitLib(ensureMarkwhen(), 'Markwhen', marpMwEls)) {
                 await Promise.all(Array.from(marpMwEls).map(el => renderMarkwhenCached(el)));
             }
 
@@ -10512,8 +10609,10 @@ ${previewClone.outerHTML}
                 return `<div class="kataskeve" id="${id}" data-kataskeve="1" data-kataskeve-source="${encodeURIComponent(decodeEntities(code))}"></div>`;
             });
 
-            // Render math expressions (await katex if needed)
-            if (katexReady) await katexReady;
+            // Render math expressions (await katex if needed). No element list:
+            // html is still a string here, and renderMathExpressions() already
+            // annotates each formula it cannot typeset.
+            await awaitLib(katexReady, 'KaTeX', null);
             html = renderMathExpressions(html, mathBlocks);
 
             // Transform image paths in HTML to use custom protocol for relative paths
@@ -10587,14 +10686,14 @@ ${previewClone.outerHTML}
             setupFootnoteTooltips();
 
             // Render all mermaid diagrams (memoized by source + theme) once the library is loaded
-            if (preview.querySelector('.mermaid')) {
-                if (mermaidReady) await mermaidReady;
+            const mermaidEls = preview.querySelectorAll('.mermaid');
+            if (mermaidEls.length > 0 && await awaitLib(mermaidReady, 'Mermaid', mermaidEls)) {
                 await renderMermaidCached(preview);
             }
 
             // Render all ABC music-notation staves (memoized)
-            if (preview.querySelector('[data-abc]')) {
-                if (abcReady) await abcReady;
+            const abcEls = preview.querySelectorAll('[data-abc]');
+            if (abcEls.length > 0 && await awaitLib(abcReady, 'ABC', abcEls)) {
                 renderAbcCached(preview);
             }
 
@@ -10632,15 +10731,14 @@ ${previewClone.outerHTML}
             }
 
             // Render all Feynman diagrams (memoized; feynmark needs KaTeX for math labels)
-            if (preview.querySelector('.feynman-block')) {
-                if (feynmanReady) await feynmanReady;
+            const feynEls = preview.querySelectorAll('.feynman-block');
+            if (feynEls.length > 0 && await awaitLib(feynmanReady, 'Feynmark', feynEls)) {
                 renderFeynmarkCached(preview);
             }
 
             // Render all Plotly charts (await libraries; each fetches its CSV)
             const plotlyEls = preview.querySelectorAll('.plotly-block');
-            if (plotlyEls.length > 0) {
-                if (plotlyReady) await plotlyReady;
+            if (plotlyEls.length > 0 && await awaitLib(plotlyReady, 'Plotly', plotlyEls)) {
                 await Promise.all(Array.from(plotlyEls).map(el =>
                     renderPlotlyBlock(el, el.getAttribute('data-plotly-source'))
                 ));
@@ -10648,8 +10746,7 @@ ${previewClone.outerHTML}
 
             // Render markwhen timelines (memoized by source + theme)
             const mwEls = preview.querySelectorAll('.markwhen-timeline');
-            if (mwEls.length > 0) {
-                if (markwhenReady) await markwhenReady;
+            if (mwEls.length > 0 && await awaitLib(markwhenReady, 'Markwhen', mwEls)) {
                 await Promise.all(Array.from(mwEls).map(el => renderMarkwhenCached(el)));
             }
 
@@ -12021,7 +12118,31 @@ ${previewClone.outerHTML}
             currentMarkdownRaw = (fileData.raw != null) ? fileData.raw : fileData.content;
             currentFilePath = fileData.filepath;
             setWindowTitle(fileData.filename);
-            await renderMarkdown(currentMarkdown);
+            try {
+                await renderMarkdown(currentMarkdown);
+            } catch (err) {
+                // LAST RESORT. Every figure branch is individually contained (see
+                // awaitLib), so reaching here means something outside that phase
+                // threw — marp-core failing to load is the known one, since
+                // getMarp() has no per-block fallback: there are no slides to paint
+                // into. Whatever it was, it must not strand the splash. The reveal
+                // below (drop zone off, #app-container on, hideSplash) is what a
+                // rejection here used to skip, leaving the app on the "読み込み中"
+                // spinner forever with no error on screen — and none in the console
+                // either, since release builds have no devtools. Hence __dbgLog.
+                //
+                // We deliberately CONTINUE into the reveal rather than bail: a
+                // half-rendered preview is readable, scrollable and re-savable, and
+                // every step below is already null-guarded.
+                console.error('renderMarkdown failed', err);
+                __dbgLog('renderMarkdown FAILED: ' + ((err && err.message) || err));
+                showToast(t('toast.renderFail'));
+                // --export-png: the host waits on `renderdone:` with no watchdog,
+                // so without this the hidden capture window would never exit.
+                // body.marp is set as renderMarp()'s first statement, so it is
+                // accurate even for a deck that died inside getMarp().
+                __emitRenderDone(document.body.classList.contains('marp'));
+            }
             if (typeof window.__setActiveFile === 'function') window.__setActiveFile(currentFilePath);
             // Back/forward restore: jump to the remembered slide / scroll position.
             // popstate never sets pendingHeadingSlug/pendingScrollToTop, so no conflict.

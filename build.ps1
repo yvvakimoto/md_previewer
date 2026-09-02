@@ -54,14 +54,24 @@ if ($Clean) {
 }
 
 # 2. Dependencies (assets\libs\)
+# One sentinel PER fetched/built library, not a representative sample. A library
+# missing from this list is a library install-deps.ps1 will never be re-run for on
+# a checkout whose assets\libs\ predates it - the script just prints "already
+# populated", and the copy below then ships a tree without it. That is exactly how
+# a build came to 404 on libs/feynmark/feynmark.min.js. Add the new path here
+# whenever tools/fetch-libs.ps1 or a tools/build-* project gains an output.
 $libsSentinels = @(
     'libs\editor\editor.iife.js',
     'libs\marp\marp.iife.js',
     'libs\markwhen\markwhen.iife.js',
     'libs\katex\katex.min.js',
     'libs\marked.min.js',
+    'libs\mermaid.min.js',
+    'libs\highlight.js\highlight.min.js',
     'libs\plotly\plotly.min.js',
     'libs\js-yaml.min.js',
+    'libs\abcjs\abcjs-basic-min.js',
+    'libs\feynmark\feynmark.min.js',
     'libs\tikzjax\dist\tikzjax.js',
     'libs\kataskeve\kataskeve.min.js',
     'libs\kataskeve3d\kataskeve3d.min.js'
