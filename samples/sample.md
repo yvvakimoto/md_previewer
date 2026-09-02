@@ -139,6 +139,8 @@ pie title Technologies
 
 - [Math](./math.md)
 - [Syntax highlighting](./syntax.md)
+- [Kataskeve（平面幾何）diagrams](./kataskeve.md)
+- [Kataskeve3D（立体幾何）diagrams](./kataskeve3d.md)
 - [日本語ファイル名テスト](./日本語ファイル.md)
 
 ### Footnote

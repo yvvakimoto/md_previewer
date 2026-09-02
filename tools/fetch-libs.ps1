@@ -4,9 +4,10 @@
 
 .DESCRIPTION
   Pulls marked, highlight.js (+ github theme CSS), KaTeX (JS + CSS + 22 woff2
-  fonts), and mermaid from cdnjs / jsdelivr at the versions documented in
-  assets/THIRD_PARTY_LICENSES.txt. Idempotent by default (skips files that
-  already exist); pass -Force to re-download.
+  fonts), mermaid, and the kataskeve / kataskeve3d geometry engines from cdnjs /
+  jsdelivr at the versions documented in assets/THIRD_PARTY_LICENSES.txt.
+  Idempotent by default (skips files that already exist); pass -Force to
+  re-download.
 
   These libraries are referenced at runtime by assets/index.html and must
   exist before `cargo run` will work. The repo's .gitignore excludes them so
@@ -39,6 +40,11 @@ $PlotlyVersion  = '2.35.2'
 $JsYamlVersion  = '4.1.0'
 $AbcjsVersion   = '6.6.3'
 $TikzjaxVersion = '1.5.0'   # @rod2ik/tikzjax — WASM TeX for tikz-cd commutative diagrams
+# kataskeve / kataskeve3d are distributed from their GitHub repos (committed
+# dist/, served by cdn.jsdelivr.net/gh/...), not from npm — so these pins are
+# git TAGS and the URLs below carry the `v` prefix the tags actually use.
+$KataskeveVersion   = '0.1.1'   # kataskeve   — 2D Euclidean geometry (```kataskeve)
+$Kataskeve3dVersion = '0.1.0'   # kataskeve3d — 3D pen-and-ink geometry (```kataskeve3d)
 
 # ---- KaTeX font list (mirrors what KaTeX 0.16.x ships in dist/fonts/) ---
 $KatexFonts = @(
@@ -115,6 +121,32 @@ $Downloads.Add(@{
 $Downloads.Add(@{
   Url  = "https://cdn.jsdelivr.net/npm/abcjs@$AbcjsVersion/dist/abcjs-basic-min.js"
   Dest = 'abcjs/abcjs-basic-min.js'
+})
+
+# kataskeve (2D) — one 28KB IIFE, zero dependencies, no runtime-fetched assets.
+# dist/kataskeve.css is deliberately NOT fetched: it is container/error chrome
+# only (nothing inside the SVG), and assets/index.html carries an equivalent
+# ruleset in its first <style> because buildExportArtifact() inlines only that
+# one — CSS arriving via <link> would be dropped from every HTML export.
+$Downloads.Add(@{
+  Url  = "https://cdn.jsdelivr.net/gh/yvvakimoto/kataskeve@v$KataskeveVersion/dist/kataskeve.min.js"
+  Dest = 'kataskeve/kataskeve.min.js'
+})
+
+# kataskeve3d (3D) — same deal for the .css.
+$Downloads.Add(@{
+  Url  = "https://cdn.jsdelivr.net/gh/yvvakimoto/kataskeve3d@v$Kataskeve3dVersion/dist/kataskeve3d.min.js"
+  Dest = 'kataskeve3d/kataskeve3d.min.js'
+})
+
+# Optional CPU accelerator for kataskeve3d. Its absence is NOT an error: the
+# library's ensureWasm() resolves null on any failure and falls back to its JS
+# core, which is held to a documented pixel-parity guarantee — so a missing
+# .wasm costs speed and nothing else. (The engine resolves it relative to its
+# own script URL; assets/index.html also pins wasmUrl explicitly.)
+$Downloads.Add(@{
+  Url  = "https://cdn.jsdelivr.net/gh/yvvakimoto/kataskeve3d@v$Kataskeve3dVersion/dist/kataskeve3d.wasm"
+  Dest = 'kataskeve3d/kataskeve3d.wasm'
 })
 
 # ---- Run ----------------------------------------------------------------
