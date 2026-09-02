@@ -7345,7 +7345,17 @@ ${previewClone.outerHTML}
                 // sync and making any source splice keyed on data-line unsafe.
                 return placeholder;
             });
-            text = text.replace(/(`+)(?!`)[\s\S]+?\1(?!`)/g, (match) => {
+            // The closer needs `(?<!`)` before `\1`, not just `(?!`)` after it: without it,
+            // a closer check only confirms "not followed by another backtick" and will
+            // happily match on the TAIL of a longer run than the opener — e.g. a valid
+            // single-backtick span whose content contains a literal ` ``` ` closes early on
+            // that run's last backtick instead of the real closing backtick further on. The
+            // real closer is then read as a fresh opener, desyncing every following
+            // inline-code pair for the rest of the document and, if one of the resulting
+            // over-wide spans happens to swallow a whole `MDFENCE<n>Z` fence placeholder, that
+            // placeholder is never re-scanned by the (non-recursive) restore pass below and
+            // leaks into the rendered output as literal text.
+            text = text.replace(/(`+)(?!`)[\s\S]+?(?<!`)\1(?!`)/g, (match) => {
                 const placeholder = `MDCODE${codeCounter}Z`;
                 codeCounter++;
                 codeMap.set(placeholder, match);
