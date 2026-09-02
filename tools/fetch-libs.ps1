@@ -44,7 +44,7 @@ $TikzjaxVersion = '1.5.0'   # @rod2ik/tikzjax — WASM TeX for tikz-cd commutati
 # (committed dist/, served by cdn.jsdelivr.net/gh/...), not from npm — so these
 # pins are git TAGS and the URLs below carry the `v` prefix the tags actually use.
 $KataskeveVersion   = '0.1.1'   # kataskeve   — 2D Euclidean geometry (```kataskeve)
-$Kataskeve3dVersion = '0.1.0'   # kataskeve3d — 3D pen-and-ink geometry (```kataskeve3d)
+$Kataskeve3dVersion = '0.1.1'   # kataskeve3d — 3D pen-and-ink geometry (```kataskeve3d)
 $FeynmarkVersion = '0.2.0'  # feynmark — Feynman diagrams (https://github.com/yvvakimoto/feynmark)
 
 # ---- KaTeX font list (mirrors what KaTeX 0.16.x ships in dist/fonts/) ---
