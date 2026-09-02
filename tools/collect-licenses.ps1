@@ -103,6 +103,10 @@ $direct = @(
     Upstream='https://github.com/paulrosen/abcjs';
     Path='assets/libs/abcjs/abcjs-basic-min.js';
     LicenseFile='tools/license-texts/abcjs.LICENSE' }
+  [pscustomobject]@{ Name='feynmark';     Version='0.2.0'; Spdx='MIT';
+    Upstream='https://github.com/yvvakimoto/feynmark';
+    Path='assets/libs/feynmark/feynmark.min.js';
+    LicenseFile='tools/license-texts/feynmark.LICENSE' }
   # TikZJax is a WebAssembly build of TeX/pgf/TikZ for the tikzcd / tikz fenced
   # blocks. It is the project's only copyleft dependency and the only one the
   # installer does NOT ship: distributing a compiled GPL binary would oblige us

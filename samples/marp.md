@@ -368,6 +368,22 @@ C \arrow[r, "k"']                & D
 
 ---
 
+## フェインマン図（feynmark）
+
+**feynman** ブロックは [feynmark](https://github.com/yvvakimoto/feynmark) が線種・運動量ラベル込みで自動レイアウトし、図として左右中央に配置されます。ラベルは KaTeX で組版されます。
+
+```feynman
+diagram tree {
+  in  e1: $e^-$,  e2: $e^+$
+  out m1: $\mu^-$, m2: $\mu^+$
+  e1 -- [fermion] a -- [fermion] e2
+  a  -- [photon, momentum=$q$] b
+  m2 -- [fermion] b -- [fermion] m1
+}
+```
+
+---
+
 ## 文中の大きな図（重ならない）
 
 見出しと本文のあとに大きな図を置いても、図はドキュメント順に普通に流れ、見出し・本文と重なりません（上下の自動中央寄せは廃止）。図がはみ出す場合は自動縮小（`A`、既定 ON）が本文を縮めて 1 枚に収めます。

@@ -39,6 +39,7 @@ $PlotlyVersion  = '2.35.2'
 $JsYamlVersion  = '4.1.0'
 $AbcjsVersion   = '6.6.3'
 $TikzjaxVersion = '1.5.0'   # @rod2ik/tikzjax — WASM TeX for tikz-cd commutative diagrams
+$FeynmarkVersion = '0.2.0'  # feynmark — Feynman diagrams (https://github.com/yvvakimoto/feynmark)
 
 # ---- KaTeX font list (mirrors what KaTeX 0.16.x ships in dist/fonts/) ---
 $KatexFonts = @(
@@ -115,6 +116,14 @@ $Downloads.Add(@{
 $Downloads.Add(@{
   Url  = "https://cdn.jsdelivr.net/npm/abcjs@$AbcjsVersion/dist/abcjs-basic-min.js"
   Dest = 'abcjs/abcjs-basic-min.js'
+})
+
+# feynmark isn't published to npm yet, so it's served from jsDelivr's GitHub
+# endpoint (a tagged commit of the repo itself) rather than the /npm/ endpoint
+# used above — see the feynmark repo's own README.md "Versions" section.
+$Downloads.Add(@{
+  Url  = "https://cdn.jsdelivr.net/gh/yvvakimoto/feynmark@v$FeynmarkVersion/cdn/feynmark.min.js"
+  Dest = 'feynmark/feynmark.min.js'
 })
 
 # ---- Run ----------------------------------------------------------------
