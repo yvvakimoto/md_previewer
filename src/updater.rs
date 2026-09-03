@@ -5,12 +5,21 @@
 //! no network access whatsoever — the offline-first guarantee is preserved.
 //!
 //! The NWC add-on package overlays `assets/update.json` (see nwc-addon) to
-//! enable the feature, pointing `source` at an internal file share. On startup
-//! `main()` spawns a background thread that reads the manifest, compares the
-//! advertised version against `CARGO_PKG_VERSION`, and — when newer — prefetches
-//! the installer into a temp dir and notifies the webview (a banner offers
-//! "Install now"). On acceptance the app launches the installer silently and
-//! relaunches itself; the stable Inno AppId makes it an in-place upgrade.
+//! enable the feature, pointing `source` at an internal file share.
+//!
+//! **Content first.** None of this runs at startup. `main()` only kicks off the
+//! worker once the preview reports its initial render (`renderdone:`), with a
+//! watchdog timer as a floor — so share I/O can never compete with webview
+//! creation or the `app://` asset reads for the document the user wants to see.
+//!
+//! The check is then **two-phase**, so the banner is not gated behind a
+//! multi-MB download: [`check_manifest`] does one timed manifest read plus a
+//! semver compare and hands back an [`UpdateFound`] that is *immediately*
+//! installable (its path points at the share), and only afterwards does
+//! [`prefetch_installer`] copy the installer into a temp dir so a later
+//! "Install now" is instant. On acceptance the app launches the installer
+//! silently and relaunches itself; the stable Inno AppId makes it an in-place
+//! upgrade.
 //!
 //! Transport is a plain filesystem path (UNC `\\server\share\...` or local), so
 //! there is no HTTP-client dependency and no TLS to manage.
@@ -56,12 +65,16 @@ struct Manifest {
     notes: String,
 }
 
-/// A confirmed-newer update whose installer has been prefetched (or, on
-/// prefetch failure, whose `setup_temp` still points at the share).
+/// The installer for a confirmed-newer update, ready to run *now*.
+///
+/// Deliberately just the path: the version and notes the banner displays live
+/// on [`UpdateFound`], and the two consumers here — the `update:install` IPC
+/// and the exit-time path — only ever launch the file. `setup_temp` points at
+/// the local prefetch once [`prefetch_installer`] has upgraded it, and at the
+/// share before that (or if the prefetch failed), which is why it is always
+/// launchable regardless of how far the download has got.
 #[derive(Debug, Clone)]
 pub struct UpdateReady {
-    pub version: String,
-    pub notes: String,
     pub setup_temp: PathBuf,
 }
 
@@ -146,12 +159,54 @@ fn read_with_timeout(path: &Path, timeout_ms: u64) -> Option<Vec<u8>> {
     }
 }
 
-/// Read the manifest from the share, compare versions and — when a newer
-/// version is advertised — prefetch the installer into a temp dir. Returns
-/// `None` (silently, logging only) on any failure so the UI is never disturbed.
+/// A newer version confirmed on the share, *before* its installer has been
+/// fetched. This is the phase-1 result: cheap enough (one timed manifest read
+/// plus a semver compare) that the banner can go up straight away.
+#[derive(Debug, Clone)]
+pub struct UpdateFound {
+    pub version: String,
+    pub notes: String,
+    /// The installer as published on the share: `<source>/<manifest.setup>`.
+    pub setup_src: PathBuf,
+}
+
+impl UpdateFound {
+    /// The handle to publish *before* the prefetch runs.
+    ///
+    /// `setup_temp` deliberately points at the **share**: both `update:install`
+    /// and the exit-time path already accept that (it has always been the
+    /// prefetch-failure fallback), so a click that lands mid-download is merely
+    /// slower, never broken.
+    pub fn as_ready(&self) -> UpdateReady {
+        UpdateReady {
+            setup_temp: self.setup_src.clone(),
+        }
+    }
+}
+
+/// Where a share-side installer is cached locally: `%TEMP%\mdp-update\<name>`.
+///
+/// Split out so the name derivation is unit-testable without touching a share.
+/// A `setup` carrying directory components keeps only its final component.
+fn installer_temp_path(setup_src: &Path) -> PathBuf {
+    let name = setup_src
+        .file_name()
+        .map(|n| n.to_owned())
+        .unwrap_or_else(|| std::ffi::OsString::from("MdPreviewer-Setup.exe"));
+    std::env::temp_dir().join("mdp-update").join(name)
+}
+
+/// **Phase 1.** Read `<source>/<manifest>` under `cfg.timeout_ms`, parse it, and
+/// semver-compare against `current_version`. Returns `Some` only when the share
+/// advertises something strictly newer.
+///
+/// **Performs no copy** — the multi-MB download is [`prefetch_installer`]'s job,
+/// deliberately kept out of this call so the UI can be notified first. Returns
+/// `None` (silently, logging only) on an unreachable share, a timeout, bad JSON,
+/// or when we are already up to date.
 ///
 /// Runs on a background thread; performs blocking filesystem I/O on `source`.
-pub fn check_and_prepare(cfg: &UpdateConfig, current_version: &str) -> Option<UpdateReady> {
+pub fn check_manifest(cfg: &UpdateConfig, current_version: &str) -> Option<UpdateFound> {
     let source = Path::new(&cfg.source);
     let manifest_path = source.join(&cfg.manifest);
 
@@ -179,39 +234,58 @@ pub fn check_and_prepare(cfg: &UpdateConfig, current_version: &str) -> Option<Up
         current_version, manifest.version
     ));
 
-    // Prefetch the installer to a temp dir so "Install now" is instant. On
-    // failure, fall back to running the installer straight from the share.
-    let setup_src = source.join(&manifest.setup);
-    let setup_name = Path::new(&manifest.setup)
-        .file_name()
-        .map(|n| n.to_owned())
-        .unwrap_or_else(|| std::ffi::OsString::from("MdPreviewer-Setup.exe"));
-    let temp_dir = std::env::temp_dir().join("mdp-update");
-    let _ = std::fs::create_dir_all(&temp_dir);
-    let setup_temp = temp_dir.join(&setup_name);
+    Some(UpdateFound {
+        version: manifest.version,
+        notes: manifest.notes,
+        setup_src: source.join(&manifest.setup),
+    })
+}
 
-    match std::fs::copy(&setup_src, &setup_temp) {
-        Ok(n) => {
-            crate::dbg_log_write(&format!(
-                "updater: prefetched {} bytes to {:?}",
-                n, setup_temp
-            ));
-            Some(UpdateReady {
-                version: manifest.version,
-                notes: manifest.notes,
-                setup_temp,
-            })
-        }
+/// **Phase 2.** Copy the installer from the share into `%TEMP%\mdp-update\` so
+/// "Install now" is instant. Returns the local path on success; `None` on any
+/// failure, in which case the caller simply keeps the share path it already
+/// published and the install still works, straight from the share.
+///
+/// The copy goes to a `.part` file and is then `rename`d into place. Several
+/// instances of the app can be running against the same temp directory, and
+/// because the caller now publishes an installable handle *before* this runs,
+/// instance B could otherwise observe the path of a file instance A is still
+/// writing. `fs::rename` replaces atomically on Windows, so the published name
+/// only ever refers to a complete file.
+///
+/// Runs on a background thread; performs blocking filesystem I/O on `source`.
+pub fn prefetch_installer(found: &UpdateFound) -> Option<PathBuf> {
+    let setup_temp = installer_temp_path(&found.setup_src);
+    if let Some(parent) = setup_temp.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let part = setup_temp.with_extension("part");
+
+    match std::fs::copy(&found.setup_src, &part) {
+        Ok(n) => match std::fs::rename(&part, &setup_temp) {
+            Ok(()) => {
+                crate::dbg_log_write(&format!(
+                    "updater: prefetched {} bytes to {:?}",
+                    n, setup_temp
+                ));
+                Some(setup_temp)
+            }
+            Err(e) => {
+                crate::dbg_log_write(&format!(
+                    "updater: prefetch rename failed ({}); will run from share {:?}",
+                    e, found.setup_src
+                ));
+                let _ = std::fs::remove_file(&part);
+                None
+            }
+        },
         Err(e) => {
             crate::dbg_log_write(&format!(
                 "updater: prefetch failed ({}); will run from share {:?}",
-                e, setup_src
+                e, found.setup_src
             ));
-            Some(UpdateReady {
-                version: manifest.version,
-                notes: manifest.notes,
-                setup_temp: setup_src,
-            })
+            let _ = std::fs::remove_file(&part);
+            None
         }
     }
 }
@@ -344,8 +418,8 @@ mod tests {
         assert!(load_config(dir.path(), dir.path()).is_none());
     }
 
-    #[test]
-    fn detect_and_prefetch() {
+    /// Build a fake "share" (a temp dir) holding a manifest + a dummy installer.
+    fn fake_share() -> (tempfile::TempDir, UpdateConfig, &'static str) {
         let share = tempfile::tempdir().unwrap();
         let setup_name = "dummy-mdp-test-setup.exe";
         std::fs::write(share.path().join(setup_name), b"MZ dummy installer").unwrap();
@@ -354,7 +428,62 @@ mod tests {
             format!(r#"{{"version":"9.9.9","setup":"{}","notes":"t"}}"#, setup_name),
         )
         .unwrap();
+        let cfg = UpdateConfig {
+            enabled: true,
+            source: share.path().to_string_lossy().to_string(),
+            manifest: "latest.json".to_string(),
+            timeout_ms: 2000,
+        };
+        (share, cfg, setup_name)
+    }
 
+    #[test]
+    fn phase1_detects_without_downloading() {
+        let (share, cfg, setup_name) = fake_share();
+
+        let found = check_manifest(&cfg, "0.15.0").expect("update should be detected");
+        assert_eq!(found.version, "9.9.9");
+        assert_eq!(found.notes, "t");
+
+        // The whole point of the split: phase 1 points at the SHARE and has
+        // copied nothing, so the banner is never gated behind a download.
+        assert_eq!(found.setup_src, share.path().join(setup_name));
+        let temp = installer_temp_path(&found.setup_src);
+        let _ = std::fs::remove_file(&temp); // a previous run may have left one
+        assert!(!temp.exists(), "phase 1 must not prefetch");
+
+        // …and the handle published before the prefetch is directly installable.
+        assert_eq!(found.as_ready().setup_temp, found.setup_src);
+
+        // Same or older current version ⇒ None.
+        assert!(check_manifest(&cfg, "9.9.9").is_none());
+        assert!(check_manifest(&cfg, "10.0.0").is_none());
+    }
+
+    #[test]
+    fn phase2_prefetch_upgrades_to_temp() {
+        let (_share, cfg, _) = fake_share();
+        let found = check_manifest(&cfg, "0.15.0").unwrap();
+
+        let temp = prefetch_installer(&found).expect("prefetch should succeed");
+        assert!(temp.exists());
+        assert_eq!(std::fs::read(&temp).unwrap(), b"MZ dummy installer");
+        // The `.part` staging file must not survive a successful rename.
+        assert!(!temp.with_extension("part").exists());
+        let _ = std::fs::remove_file(&temp);
+    }
+
+    #[test]
+    fn phase2_failure_is_soft() {
+        // The manifest advertises an installer that is not on the share: phase 1
+        // still succeeds (so the banner shows and "install from share" is
+        // offered), and only phase 2 reports failure.
+        let share = tempfile::tempdir().unwrap();
+        std::fs::write(
+            share.path().join("latest.json"),
+            r#"{"version":"9.9.9","setup":"absent-mdp-test-setup.exe","notes":""}"#,
+        )
+        .unwrap();
         let cfg = UpdateConfig {
             enabled: true,
             source: share.path().to_string_lossy().to_string(),
@@ -362,16 +491,19 @@ mod tests {
             timeout_ms: 2000,
         };
 
-        // Newer version advertised ⇒ Some, installer prefetched to temp.
-        let r = check_and_prepare(&cfg, "0.15.0").expect("update should be detected");
-        assert_eq!(r.version, "9.9.9");
-        assert_eq!(r.notes, "t");
-        assert!(r.setup_temp.exists(), "installer should be prefetched");
-        let _ = std::fs::remove_file(&r.setup_temp);
+        let found = check_manifest(&cfg, "0.15.0").expect("phase 1 should still succeed");
+        assert!(prefetch_installer(&found).is_none());
+        assert!(!installer_temp_path(&found.setup_src)
+            .with_extension("part")
+            .exists());
+    }
 
-        // Same or older current version ⇒ None.
-        assert!(check_and_prepare(&cfg, "9.9.9").is_none());
-        assert!(check_and_prepare(&cfg, "10.0.0").is_none());
+    #[test]
+    fn installer_temp_path_uses_file_name_only() {
+        let p = installer_temp_path(Path::new(r"\\srv\share\rel\dir\Setup-1.2.3.exe"));
+        assert_eq!(p.file_name().unwrap(), "Setup-1.2.3.exe");
+        assert_eq!(p.parent().unwrap().file_name().unwrap(), "mdp-update");
+        assert!(p.starts_with(std::env::temp_dir()));
     }
 
     #[test]
@@ -383,7 +515,7 @@ mod tests {
             timeout_ms: 500,
         };
         // Unreachable share ⇒ None (never panics, never blocks past the timeout).
-        assert!(check_and_prepare(&cfg, "0.15.0").is_none());
+        assert!(check_manifest(&cfg, "0.15.0").is_none());
     }
 
     // ---- installer_cmd_line ------------------------------------------------

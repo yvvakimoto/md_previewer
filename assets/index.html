@@ -10305,14 +10305,24 @@ ${previewClone.outerHTML}
             return '\n'.repeat(newlines) + md.slice(block.length);
         }
 
-        // ---- Headless PNG capture (`--export-png`) ---------------------------
-        // When the host launches in capture mode it injects window.__captureConfig.
-        // We then (1) signal the host once the initial render settles, and (2)
-        // expose __prepareCapture(index) which isolates one slide (or the whole
-        // page for a non-Marp doc) and reports its clip rect + layout metrics.
-        // The host drives the loop and runs the CDP screenshot per slide.
+        // ---- Initial-render signal + headless PNG capture (`--export-png`) ---
+        // __emitRenderDone fires ONCE per process, from both pipelines and from
+        // the failure path in loadFileFromRust, and it is deliberately NOT gated
+        // on capture mode: the host branches on it instead.
+        //   capture mode -> drive the per-slide capture loop, via
+        //                   __prepareCapture(index) below, which isolates one
+        //                   slide (or the whole page for a non-Marp doc) and
+        //                   reports its clip rect + layout metrics.
+        //   normal mode  -> "content is on screen", which is what releases the
+        //                   opt-in update check (see StartUpdateCheck in
+        //                   src/main.rs) so its share I/O can never compete with
+        //                   getting the user's document rendered.
+        // The 80ms setTimeout below is a MACROtask while the `await
+        // renderMarkdown(...)` in loadFileFromRust resumes on a microtask, so
+        // the reveal there (#app-container + hideSplash) is guaranteed to have
+        // already run by the time this posts. Keep it that way.
         function __emitRenderDone(isMarp) {
-            if (!window.__captureConfig || window.__renderDoneSent) return;
+            if (window.__renderDoneSent) return;
             window.__renderDoneSent = true;
             const slides = isMarp ? __marpSlides().length : 0;
             // setTimeout (not rAF): the capture window is hidden, so rAF is frozen
@@ -12137,8 +12147,11 @@ ${previewClone.outerHTML}
                 console.error('renderMarkdown failed', err);
                 __dbgLog('renderMarkdown FAILED: ' + ((err && err.message) || err));
                 showToast(t('toast.renderFail'));
-                // --export-png: the host waits on `renderdone:` with no watchdog,
-                // so without this the hidden capture window would never exit.
+                // --export-png: the host waits on `renderdone:` with no watchdog
+                // (the one in main.rs covers only the update check, and capture
+                // mode is excluded from it), so without this the hidden capture
+                // window would never exit. It also releases the update check
+                // immediately rather than making it wait that watchdog out.
                 // body.marp is set as renderMarp()'s first statement, so it is
                 // accurate even for a deck that died inside getMarp().
                 __emitRenderDone(document.body.classList.contains('marp'));
