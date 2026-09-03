@@ -503,8 +503,8 @@ kbd {
 .feat-grid {
   list-style: none; margin: 0; padding: 0;
   display: grid; gap: 12px;
-  /* 236px lands on 4 columns at full width, so the 16 tiles fill 4 rows
-     exactly instead of leaving one orphan on a fifth. */
+  /* 236px lands on 4 columns at full width, so keep the tile count a multiple
+     of 4 -- the 24 tiles fill 6 rows exactly, with no orphan on a seventh. */
   grid-template-columns: repeat(auto-fill, minmax(236px, 1fr));
 }
 .feat {
@@ -631,7 +631,14 @@ kbd {
   border-radius: 5px; background: #fff;
   border: 1.5px solid color-mix(in srgb, var(--ink) 16%, transparent);
 }
-.g-out img { max-width: 100%; height: auto; }
+/* `--g-cap` is the width to *display* a figure at, set per <img> in the markup:
+   the shots are device_scale_factor=2, so the intrinsic size is twice what the
+   app drew and showing a figure at it magnifies the figure's own text past this
+   page's 16px body copy. The cap has to live here rather than in the width
+   attribute, because the `width: auto` below overrides that attribute and hands
+   the intrinsic size straight back. min() keeps the panel clamp for a cap wider
+   than the card, and the `100%` fallback makes the variable optional. */
+.g-out img { max-width: min(100%, var(--g-cap, 100%)); height: auto; }
 /* Small figures would blow up to the card width and go soft; cap them near
    their natural size and centre the leftover space instead. */
 .g-card:not(.g-12) .g-out img { max-height: 260px; width: auto; }

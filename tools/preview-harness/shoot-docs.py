@@ -85,8 +85,12 @@ PREVIEW_SHOTS = [
     ("math",       "samples/math.md",                  None,        None),
     ("tikzcd",     "samples/tikzcd.md",                None,        None),
     ("bunko",      "samples/短編小説.md",              "bunko.css", None),
-    # Marp: 02 = gradient section divider, 08 = mermaid in a slide,
-    # 12 = Plotly 3D surface. Picked off a contact sheet of all 30.
+    # Marp: 12 = a two-column slide pairing KaTeX + bullets with a Plotly 3D
+    # surface -- the front card of the deck fan, so it is the one that has to
+    # show what the tool can do. 08 = mermaid in a slide, 02 = gradient section
+    # divider (colour, in the back of the fan). Picked off a contact sheet of all 32.
+    # These indices are positional: inserting a slide into samples/marp.md ahead of
+    # one of them renumbers it, so re-check after editing that file.
     ("marp",       "samples/marp.md",                  None,        [2, 8, 12]),
 ]
 
@@ -204,29 +208,29 @@ def shoot_editor(pw, port, name, md_rel, vim, cells, keys):
 # may reference a sibling resource the way a real document would (the plotly
 # block reads data/sales.csv); it is removed in a finally.
 GALLERY = [
-    ("math", ".katex-display .katex", r"""$$
-x = \frac{-b \pm \sqrt{b^2 - 4ac}}{2a}
-$$"""),
-
-    ("tikzcd", ".tikzcd-diagram", r"""```tikzcd
-A \arrow[r, "f"] \arrow[d, "g"'] & B \arrow[d, "h"] \\
-C \arrow[r, "k"']                & D
-```"""),
-
     ("ruby", "#preview p", r"""｜吾輩《わがはい》は{猫|ねこ}である。"""),
-
-    ("mermaid", ".mermaid", r"""```mermaid
-flowchart LR
-  A[編集] --> B{保存}
-  B -->|marp: true| C[スライド]
-  B -->|通常| D[プレビュー]
-```"""),
 
     ("csv", ".csv-table", r"""```csv
 項目,Q1,Q2,Q3
 売上,120,150,170
 利益,30,42,55
 ```"""),
+
+    # Deliberately NOT just the `::: columns` region: the point of the fenced
+    # div is that a document drops into columns and comes back out, so the shot
+    # is of #preview -- one column of prose, two columns, one column again.
+    # (`trim_to_ink` crops the surrounding paper away.)
+    ("columns", "#preview", r"""ウェルギリウス『アエネーイス』の一節を、原文と訳で並べます。
+
+::: columns
+### Aeneis I, 462
+sunt lacrimae rerum et mentem mortalia tangunt.
++++
+### アエネーイス 第 1 歌 462
+ものにも涙があり、人の世のはかなさが心を打つ。
+:::
+
+`:::` で 1 カラムに戻るので、この段落はまた幅いっぱいに流れます。"""),
 
     ("abc", ".abc-notation", r"""```abc
 X:1
@@ -269,19 +273,60 @@ country: JP
 2024-04-22: 締め切り
 ```"""),
 
-    ("columns", ".inline-cols", r"""::: columns
-### 左カラム
-段の途中から多段組みにできます。
-+++
-### 右カラム
-`:::` で 1 カラムに戻ります。
-:::"""),
+    ("mermaid", ".mermaid", r"""```mermaid
+flowchart LR
+  A[編集] --> B{保存}
+  B -->|marp: true| C[スライド]
+  B -->|通常| D[プレビュー]
+```"""),
 
     ("plotly", ".plotly-block", r"""```plotly
 file: data/sales.csv
 type: line
 x: month
 y: revenue
+```"""),
+
+    ("math", ".katex-display .katex", r"""$$
+x = \frac{-b \pm \sqrt{b^2 - 4ac}}{2a}
+$$"""),
+
+    ("tikzcd", ".tikzcd-diagram", r"""```tikzcd
+A \arrow[r, "f"] \arrow[d, "g"'] & B \arrow[d, "h"] \\
+C \arrow[r, "k"']                & D
+```"""),
+
+    ("kataskeve", ".kataskeve", r"""```kataskeve
+viewport: -1 -1 5 4
+A = point(0, 0); B = point(4, 0); C = point(4, 3)
+triangle(A, B, C)
+A; B; C
+label A "A" pos=SW
+label C "C" pos=NE
+mark right_angle(A, B, C)
+mark angle(B, A, C) arcs=1 radius=0.8
+```"""),
+
+    # The 3D engine rasterizes to a <canvas>, so this one is a bitmap rather
+    # than SVG. `penrose_triangle` walks its ancestors for the first opaque
+    # background to use as "paper" and defaults to white -- the preview column
+    # is white, which is also what the gallery panel expects.
+    ("kataskeve3d", ".kataskeve3d", r"""```kataskeve3d
+view: tilt=18 yaw=0
+unit: 150
+shading: on
+light: az=150 el=35
+penrose_triangle(point(0,0,0), 3)
+```"""),
+
+    ("feynman", ".feynman-block", r"""```feynman
+diagram tree {
+  in  e1: $e^-$,  e2: $e^+$
+  out m1: $\mu^-$, m2: $\mu^+$
+  e1 -- [fermion] a -- [fermion] e2
+  a  -- [photon, momentum=$q$] b
+  m2 -- [fermion] b -- [fermion] m1
+}
 ```"""),
 ]
 

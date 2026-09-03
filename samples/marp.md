@@ -128,17 +128,36 @@ layout:
 
 ---
 
+<!-- _class: split -->
+
 ## Plotly: 3D サーフェス
 
+### 二次元 sinc 関数
+
+原点から等方的に広がる波は、半径 $r$ だけの関数として
+
+$$
+z=\frac{\sin r}{r},\qquad r=\sqrt{x^{2}+y^{2}}
+$$
+
+と書ける。中心の主極大 $z=1$ を頂点に、同心円状の起伏が外へ向かって続く。
+
+- 節（$z=0$）は $r=\pi,\ 2\pi,\ 3\pi,\dots$ に等間隔で並ぶ
+- 振幅は $1/r$ で減衰し、遠方では平面に漸近する
+- 最初の極小は $r\simeq4.49$ で $z\simeq-0.22$
+
++++
+
 ```plotly
-file: data/surface.csv
+file: data/ripple.csv
 type: surface
-title: z = x² + y²
 layout:
-  height: 480
-  width: 700
-  margin: { t: 40, r: 0, b: 0, l: 0 }
-  scene: { camera: { eye: { x: 1.4, y: 1.4, z: 0.9 } } }
+  height: 470
+  margin: { t: 0, r: 0, b: 0, l: 0 }
+  paper_bgcolor: rgba(0,0,0,0)
+  scene: { camera: { eye: { x: 1.5, y: 1.5, z: 0.75 } } }
+config:
+  displayModeBar: false
 ```
 
 ---
@@ -364,6 +383,65 @@ title: ロードマップ
 ```tikzcd
 A \arrow[r, "f"] \arrow[d, "g"'] & B \arrow[d, "h"] \\
 C \arrow[r, "k"']                & D
+```
+
+---
+
+<!-- _class: split -->
+
+## Kataskeve — 2 カラムに収まる幾何図
+
+左カラムは平面幾何（インライン SVG）。`viewBox` を持つので狭いカラムでも
+**クリップされずに縮小**されます。
+
++++
+
+```kataskeve
+grid: on
+axes: on
+unit: 46
+A = point(0, 0)
+B = point(4, 0)
+C = point(0, 3)
+polygon(A, B, C)
+I = incenter(A, B, C)
+circle(I, distance(I, foot(I, line(A, B)))) color=#2980b9
+mark right_angle(B, A, C)
+I color=#2980b9
+label I "I" pos=NE
+```
+
+---
+
+## Kataskeve3D — 立体幾何（ペン画風）
+
+**kataskeve3d** ブロックは陰線処理と点描陰影つきのラスタ図を描き、図として左右中央に配置されます。
+
+```kataskeve3d
+view: tilt=24 yaw=30
+unit: 62
+shading: on
+shading_density: 0.7
+width: 620
+height: 330
+T = torus(point(0,0,0), vector(0,0,1), 2, 0.7)
+cut(T, bitangent_plane(T, family=0)) open
+```
+
+---
+
+## フェインマン図（feynmark）
+
+**feynman** ブロックは [feynmark](https://github.com/yvvakimoto/feynmark) が線種・運動量ラベル込みで自動レイアウトし、図として左右中央に配置されます。ラベルは KaTeX で組版されます。
+
+```feynman
+diagram tree {
+  in  e1: $e^-$,  e2: $e^+$
+  out m1: $\mu^-$, m2: $\mu^+$
+  e1 -- [fermion] a -- [fermion] e2
+  a  -- [photon, momentum=$q$] b
+  m2 -- [fermion] b -- [fermion] m1
+}
 ```
 
 ---

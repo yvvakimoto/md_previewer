@@ -421,9 +421,15 @@ def main():
             # The DOM digest only proves the FIRST render. These caches are keyed by
             # (theme-salt + source), so a dark→light round trip must miss on the dark
             # key and then HIT the original light key, landing back on identical DOM.
+            # NOTE .kataskeve3d is deliberately absent from this loop: it rasterizes
+            # to a <canvas>, whose innerHTML is byte-identical in both themes no
+            # matter what the pixels do, so every assertion here would pass
+            # vacuously. Its memoization lives in the library and is checked below
+            # by comparing actual pixels.
             for doc, sel in [("samples/sample.md", ".mermaid"),
                              ("samples/abcjs.md", ".abc-notation"),
-                             ("samples/markwhen.md", ".markwhen-timeline")]:
+                             ("samples/markwhen.md", ".markwhen-timeline"),
+                             ("samples/kataskeve.md", ".kataskeve")]:
                 load(doc)
                 snap = ("(s) => [...document.querySelectorAll(s)]"
                         ".map(e => e.innerHTML).join('\\u0000')")
@@ -446,6 +452,32 @@ def main():
                 elif sel == ".mermaid":
                     # mermaid re-renders per theme, so dark must actually differ.
                     check("mermaid cache is theme-salted", dark != before, True)
+                elif sel == ".kataskeve":
+                    # Only the grid and axis colours are baked, so this assertion
+                    # holds ONLY because samples/kataskeve.md's FIRST block declares
+                    # grid: on / axes: on. A grid-less diagram is byte-identical in
+                    # both themes and this would fail for a reason that is not a bug.
+                    check("kataskeve cache is theme-salted", dark != before, True)
+
+            # kataskeve3d: the app holds no cache for it (see renderKataskeve3dBlocks),
+            # so the only observable is pixels. This is what would catch someone
+            # "simplifying" the 3D path onto __diagCacheHit, which would blank every
+            # block from the second render on.
+            load("samples/kataskeve3d.md")
+            snap3 = ("() => [...document.querySelectorAll('.kataskeve3d canvas')]"
+                     ".map(c => c.toDataURL('image/png')).join('\\u0000')")
+            before = page.evaluate(snap3)
+            check("kataskeve3d renders pixels", len(before) > 1000, True)
+            press(page, "m")
+            page.wait_for_timeout(500)
+            shoot.wait_for_render(page)
+            dark = page.evaluate(snap3)
+            check("kataskeve3d ink follows the theme", dark != before, True)
+            press(page, "m")
+            page.wait_for_timeout(500)
+            shoot.wait_for_render(page)
+            check("kataskeve3d is pixel-identical after a dark/light round trip",
+                  page.evaluate(snap3), before)
 
             errors = page.evaluate("() => (window.__kcErrors || [])")
             check("no uncaught page errors recorded", errors, [])

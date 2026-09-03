@@ -219,6 +219,8 @@
 #preview pre,
 #preview img,
 #preview .mermaid,
+#preview .kataskeve,
+#preview .kataskeve3d,
 #preview .plotly-block,
 #preview figure {
     writing-mode: horizontal-tb;
