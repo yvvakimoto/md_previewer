@@ -137,12 +137,18 @@ enum CustomEvent {
     CaptureStart { marp: bool, slides: usize },
     CaptureReady { index: usize, clip: CaptureClip, layout: Option<SlideLayout> },
     CaptureDone { index: usize, ok: bool },
-    // Opt-in auto-update (see `updater`, Windows-only). The background startup
-    // check found a newer version on the internal share → show the preview's
-    // update banner. QuitForUpdate exits the app after the silent installer has
+    // Opt-in auto-update (see `updater`). The background check — kicked off
+    // only after the first render, see StartUpdateCheck — found a newer version
+    // on the internal share → show the preview's update banner. QuitForUpdate exits the app after the silent installer has
     // been launched so the running exe unlocks for in-place replacement.
     UpdateAvailable { version: String, notes: String },
     QuitForUpdate,
+    // Content-first update trigger. Posted either by the preview's `renderdone:`
+    // IPC (the normal path — the document is on screen, so share I/O can no
+    // longer delay it) or by the startup watchdog for a page that never reports
+    // render-done. Whichever arrives first wins; the loop ignores the other.
+    // `watchdog` distinguishes them in the log only.
+    StartUpdateCheck { watchdog: bool },
 }
 
 /// CLI `--export-png` configuration, parsed from argv in `main()`.
@@ -244,14 +250,28 @@ fn slide_png_name(marp: bool, index: usize) -> String {
 
 const APP_NAME: &str = "Markdown Previewer";
 
+/// How long after the webview is built to force the update check if the preview
+/// never posts `renderdone:` — a JS error before the signal, a hung render, or
+/// simply no file to open (the drop zone renders nothing). Deliberately
+/// generous: a big Marp deck with mermaid can legitimately take a few seconds,
+/// and losing this race only means the check overlaps the tail of that render.
+/// Do not drop below ~3s.
+const UPDATE_WATCHDOG_MS: u64 = 5_000;
+
 // Forensic log written next to the exe. Truncated on each launch. Used to
 // diagnose "works in target/release, broken when copied" reports — release
 // builds run under windows_subsystem="windows", so eprintln! is swallowed.
 static DBG_LOG: OnceLock<Mutex<Option<fs::File>>> = OnceLock::new();
+/// Set once in `dbg_log_init` so every line can carry `[+Nms]`. Without it a
+/// "startup stalled" report is unmeasurable — the ordering of the lines is
+/// visible but not the gaps between them, which is exactly what such a report
+/// is about. Nothing parses this file, so the format is ours to choose.
+static DBG_START: OnceLock<std::time::Instant> = OnceLock::new();
 
 fn dbg_log_init(exe_dir: &Path) {
     let path = exe_dir.join("md-previewer.log");
     let file = fs::File::create(&path).ok();
+    let _ = DBG_START.set(std::time::Instant::now());
     let _ = DBG_LOG.set(Mutex::new(file));
 }
 
@@ -259,7 +279,11 @@ pub(crate) fn dbg_log_write(msg: &str) {
     if let Some(lock) = DBG_LOG.get() {
         if let Ok(mut guard) = lock.lock() {
             if let Some(f) = guard.as_mut() {
-                let _ = writeln!(f, "{}", msg);
+                let elapsed = DBG_START
+                    .get()
+                    .map(|t| t.elapsed().as_millis())
+                    .unwrap_or(0);
+                let _ = writeln!(f, "[+{:>6}ms] {}", elapsed, msg);
                 let _ = f.flush();
             }
         }
@@ -1563,21 +1587,21 @@ fn main() -> wry::Result<()> {
     // `Arc<Mutex<bool>>` rather than an atomic purely so it reads like
     // `update_ready` next to it; both locks are taken together at exit.
     let install_on_exit: Arc<Mutex<bool>> = Arc::new(Mutex::new(false));
-    if capture_config.is_none() {
-        if let Some(cfg) = updater::load_config(exe_dir, &assets_dir) {
-            let proxy = event_proxy.clone();
-            let ver = env!("CARGO_PKG_VERSION").to_string();
-            let ready_state = update_ready.clone();
-            std::thread::spawn(move || {
-                if let Some(r) = updater::check_and_prepare(&cfg, &ver) {
-                    let version = r.version.clone();
-                    let notes = r.notes.clone();
-                    *ready_state.lock().unwrap() = Some(r);
-                    let _ = proxy.send_event(CustomEvent::UpdateAvailable { version, notes });
-                }
-            });
-        }
-    }
+    // Whether this process is in `--export-png` capture mode. `capture_config`
+    // itself moves into the event loop further down, and the IPC handler is
+    // built before that, so both need this plain flag instead. `bool: Copy`, so
+    // the `move` IPC closure copies it and it stays usable for the watchdog.
+    let is_capture = capture_config.is_some();
+    // Owned inputs for the update worker, which no longer runs here: the check
+    // is kicked off only once the preview reports its initial render (see the
+    // `StartUpdateCheck` arm). `load_config` used to run on this thread before
+    // the webview even existed — two untimed `fs::read` ahead of first paint —
+    // and the worker used to start before `build()` below, so its share I/O
+    // competed with webview creation and with the `app://` asset reads for the
+    // document the user is waiting on. Both now happen after content is up.
+    // `assets_dir` moves into `editor_assets_dir` later, so clone it here.
+    let upd_exe_dir = exe_dir.to_path_buf();
+    let upd_assets_dir = assets_dir.clone();
 
     // Clone current_dir for use in the protocol handler closure
     let current_dir_clone = current_dir.clone();
@@ -2117,18 +2141,29 @@ fn main() -> wry::Result<()> {
                 let _ = ipc_event_proxy.send_event(CustomEvent::CsvWatch(p));
             }
         } else if let Some(payload) = message.strip_prefix("renderdone:") {
-            // Capture mode: initial render (incl. async Marp/mermaid/KaTeX) has
-            // settled. Kick off the per-slide capture loop.
-            #[derive(Deserialize)]
-            struct RenderDoneMsg { marp: bool, slides: usize }
-            match serde_json::from_str::<RenderDoneMsg>(payload) {
-                Ok(m) => {
-                    let _ = ipc_event_proxy.send_event(CustomEvent::CaptureStart {
-                        marp: m.marp,
-                        slides: m.slides,
-                    });
+            // The initial render (incl. async Marp/mermaid/KaTeX) has settled,
+            // and the reveal in loadFileFromRust has already run — the document
+            // is on screen. Two consumers now:
+            //   capture mode -> drive the per-slide capture loop (as before);
+            //   normal mode  -> this is the "content is visible" moment, and the
+            //                   only point at which the update check may touch
+            //                   the share. The marp/slides payload is
+            //                   capture-only, so there is nothing to parse here.
+            if is_capture {
+                #[derive(Deserialize)]
+                struct RenderDoneMsg { marp: bool, slides: usize }
+                match serde_json::from_str::<RenderDoneMsg>(payload) {
+                    Ok(m) => {
+                        let _ = ipc_event_proxy.send_event(CustomEvent::CaptureStart {
+                            marp: m.marp,
+                            slides: m.slides,
+                        });
+                    }
+                    Err(e) => dbg_log!("renderdone: bad payload: {}", e),
                 }
-                Err(e) => dbg_log!("renderdone: bad payload: {}", e),
+            } else {
+                let _ = ipc_event_proxy
+                    .send_event(CustomEvent::StartUpdateCheck { watchdog: false });
             }
         } else if let Some(payload) = message.strip_prefix("captureready:") {
             // Capture mode: the preview has isolated slide `index` at 1280x720
@@ -2192,6 +2227,21 @@ fn main() -> wry::Result<()> {
 
     let webview = webview_builder.build()?;
     let webview = Arc::new(Mutex::new(webview));
+
+    // Update-check watchdog. The check is normally kicked off by the preview's
+    // `renderdone:` (see the IPC branch) so that content always wins the race,
+    // but a page that dies before that signal, a render that hangs, or a launch
+    // with no file at all would then never check. This one-shot timer is the
+    // floor; the event loop takes whichever trigger arrives first. Timed from
+    // here, not from process start, so it measures "time since the UI existed".
+    // Never in capture mode: `--export-png` must stay completely update-free.
+    if !is_capture {
+        let proxy = event_proxy.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(UPDATE_WATCHDOG_MS));
+            let _ = proxy.send_event(CustomEvent::StartUpdateCheck { watchdog: true });
+        });
+    }
 
     // Setup swappable file watcher
     let (watcher_tx, watcher_rx) = std::sync::mpsc::channel();
@@ -2349,6 +2399,11 @@ fn main() -> wry::Result<()> {
     let evloop_suppressed = suppressed_saves.clone();
     // Capture config consumed by the CaptureStart arm (moved in — unused after).
     let evloop_capture_config = capture_config;
+    // The update check runs at most once per process. Both triggers funnel
+    // through the single-threaded StartUpdateCheck arm below, so this plain
+    // `bool` owned by the event loop *is* the whole idempotency story — no
+    // AtomicBool, no Once, nothing to reason about across threads.
+    let mut update_check_started = false;
 
     // Run event loop
     event_loop.run(move |event, target, control_flow| {
@@ -2509,12 +2564,12 @@ fn main() -> wry::Result<()> {
                     "notes": notes,
                 }))
                 .unwrap_or_else(|_| "{}".to_string());
-                // The check runs on a thread spawned *before* the webview is
-                // created, and finishes in well under a second, so this lands
-                // mid-page-load: `__updateAvailable` may not be defined yet.
-                // Stash it in that case and let the page drain it on
-                // DOMContentLoaded — same pattern as `__pendingWorkspace`.
-                // A bare guarded call would be silently dropped instead.
+                // The check now starts only after the preview reports its
+                // initial render, so `__updateAvailable` is normally long since
+                // defined. The stash is still required for the watchdog path,
+                // which can fire while a slow document is still parsing.
+                // Same pattern as `__pendingWorkspace`; a bare guarded call
+                // would be silently dropped instead.
                 let script = format!(
                     "if (typeof window.__updateAvailable === 'function') {{ window.__updateAvailable({info}); }} else {{ window.__pendingUpdate = {info}; }}",
                     info = info
@@ -2528,6 +2583,61 @@ fn main() -> wry::Result<()> {
                 // exe unlocks for in-place replacement (the installer relaunches
                 // the new exe afterwards).
                 *control_flow = ControlFlow::Exit;
+            }
+            Event::UserEvent(CustomEvent::StartUpdateCheck { watchdog }) => {
+                // Content is on screen (or the watchdog gave up waiting for it),
+                // so the update check may now touch the share. Runs at most once
+                // per process; this arm does no I/O and takes no webview lock,
+                // so it cannot stall the loop.
+                if update_check_started {
+                    return; // the other trigger already won
+                }
+                update_check_started = true;
+                dbg_log!(
+                    "updater: check triggered by {}",
+                    if watchdog { "watchdog" } else { "renderdone" }
+                );
+                let exe_dir = upd_exe_dir.clone();
+                let assets_dir = upd_assets_dir.clone();
+                let ready = update_ready.clone();
+                let proxy = event_proxy.clone();
+                std::thread::spawn(move || {
+                    // (1) Config load — this is the pair of `fs::read` that used
+                    // to run on the main thread before the webview existed. No
+                    // `update.json` (the default) ⇒ we stop here, having touched
+                    // no share at all: offline-first intact.
+                    let cfg = match updater::load_config(&exe_dir, &assets_dir) {
+                        Some(c) => c,
+                        None => return,
+                    };
+                    // (2) Phase 1 — one timed manifest read plus a semver
+                    // compare. No download.
+                    let found = match updater::check_manifest(&cfg, env!("CARGO_PKG_VERSION")) {
+                        Some(f) => f,
+                        None => return,
+                    };
+                    // Publish and notify BEFORE the download: `as_ready()` points
+                    // at the share, which `update:install` and the exit-time path
+                    // already accept, so the banner appears immediately and a
+                    // click during the copy is merely slower, never broken.
+                    if let Ok(mut g) = ready.lock() {
+                        *g = Some(found.as_ready());
+                    }
+                    let _ = proxy.send_event(CustomEvent::UpdateAvailable {
+                        version: found.version.clone(),
+                        notes: found.notes.clone(),
+                    });
+                    // (3) Phase 2 — prefetch, then upgrade the stored path so a
+                    // later click installs from %TEMP% instead of re-reading the
+                    // installer over SMB. Failure is soft: the share path stands.
+                    if let Some(temp) = updater::prefetch_installer(&found) {
+                        if let Ok(mut g) = ready.lock() {
+                            if let Some(r) = g.as_mut() {
+                                r.setup_temp = temp;
+                            }
+                        }
+                    }
+                });
             }
             Event::UserEvent(CustomEvent::CaptureStart { marp, slides }) => {
                 // `--export-png`: the initial render settled. Build the capture
