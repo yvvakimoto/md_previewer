@@ -183,12 +183,14 @@
     <div class="use-copy">
       <p class="use-chip"><span class="use-n">03</span><span data-i18n="use3.chip">研究する人へ</span></p>
       <h3 class="use-title" data-i18n="use3.title">数式を、書く速さで。</h3>
-      <p class="use-body" data-i18n="use3.body">KaTeX がインラインもディスプレイも組みます。数式を右クリックすれば <b>MathML</b> と <b>LaTeX</b> をコピーでき、Word にそのまま貼れます。内蔵エディタには YaTeX 風の入力支援 — <code>$</code>+Tab、<code>\begin{}</code>+Tab、<code>a.</code>→<code>\alpha</code>。可換図式は tikz-cd をそのまま書けば、WASM 版 TeX がオフラインで組みます。</p>
+      <p class="use-body" data-i18n="use3.body">KaTeX がインラインもディスプレイも組みます。数式を右クリックすれば <b>MathML</b> と <b>LaTeX</b> をコピーでき、Word にそのまま貼れます。内蔵エディタには YaTeX 風の入力支援 — <code>$</code>+Tab、<code>\begin{}</code>+Tab、<code>a.</code>→<code>\alpha</code>。可換図式は tikz-cd をそのまま書けば、WASM 版 TeX がオフラインで組みます。ファインマン図も平面・立体の幾何作図も、同じように書いた分だけ図になります。</p>
       <ul class="use-pills">
         <li data-i18n="use3.p1">KaTeX</li>
         <li data-i18n="use3.p2">MathML / LaTeX コピー</li>
         <li data-i18n="use3.p3">数式入力支援</li>
         <li data-i18n="use3.p4">tikz-cd 可換図式</li>
+        <li data-i18n="use3.p5">ファインマン図</li>
+        <li data-i18n="use3.p6">幾何作図 2D / 3D</li>
       </ul>
     </div>
     <figure class="use-shot pair">
@@ -308,6 +310,18 @@
       <span data-i18n="lib.tikz">tikz-cd の可換図式（任意導入）</span><em class="lic">GPL-3.0</em>
     </li>
     <li class="feat feat-ext">
+      <a href="https://github.com/yvvakimoto/kataskeve" target="_blank" rel="noopener noreferrer">kataskeve</a>
+      <span data-i18n="lib.kataskeve">平面幾何の作図</span><em class="lic">MIT</em>
+    </li>
+    <li class="feat feat-ext">
+      <a href="https://github.com/yvvakimoto/kataskeve3d" target="_blank" rel="noopener noreferrer">kataskeve3d</a>
+      <span data-i18n="lib.kataskeve3d">立体の陰線処理とペン画</span><em class="lic">MIT</em>
+    </li>
+    <li class="feat feat-ext">
+      <a href="https://github.com/yvvakimoto/feynmark" target="_blank" rel="noopener noreferrer">feynmark</a>
+      <span data-i18n="lib.feynmark">ファインマン図</span><em class="lic">MIT</em>
+    </li>
+    <li class="feat feat-ext">
       <a href="https://codemirror.net/" target="_blank" rel="noopener noreferrer">CodeMirror 6</a>
       <span data-i18n="lib.cm">内蔵エディタの土台</span><em class="lic">MIT</em>
     </li>
@@ -352,15 +366,34 @@
       <b data-i18n="own.themeT">テーマ</b>
       <span data-i18n="own.theme">CSS を 1 枚置くだけ</span><em class="lic" data-i18n="lic.own">本体実装</em>
     </li>
+    <li class="feat feat-own">
+      <b data-i18n="own.wsT">ワークスペース</b>
+      <span data-i18n="own.ws">フォルダを開いてファイルツリー</span><em class="lic" data-i18n="lic.own">本体実装</em>
+    </li>
   </ul>
 
-  <p class="feat-note reveal" data-i18n="feat.credit">描画の中身は、上に挙げた各オープンソースプロジェクトの成果です。タイルをクリックすると本家のサイトへ移動します。ライセンス全文はアプリに収録してあり、ヘルプ（<kbd>H</kbd>）→ サードパーティ表記から読めます。作者のみなさんに感謝します。ほかに CSV / TSV 表、脚注、定義リスト、タスクリスト、機密透かし、ワークスペースなども使えます。</p>
+  <p class="feat-note reveal" data-i18n="feat.credit">描画の中身は、上に挙げた各オープンソースプロジェクトの成果です。タイルをクリックすると本家のサイトへ移動します。ライセンス全文はアプリに収録してあり、ヘルプ（<kbd>H</kbd>）→ サードパーティ表記から読めます。作者のみなさんに感謝します。ほかに CSV / TSV 表、脚注、定義リスト、タスクリスト、機密透かしなども使えます。</p>
 </section>
 
 <!-- ══════════════════════════ GALLERY ══════════════════════════ -->
 <!-- Every <pre> below must match GALLERY in tools/preview-harness/shoot-docs.py
      verbatim (HTML-escaped) — that script renders the snippet and shoots the
-     picture next to it, and warns when the two have drifted apart. -->
+     picture next to it, and warns when the two have drifted apart.
+
+     The shots are taken at device_scale_factor=2, so `width`/`height` are the
+     file's pixel size — twice what the app drew — and showing a figure at that
+     size magnifies its text past this page's 16px body copy. So the DISPLAY
+     width is `--g-cap` (see style.css), set to
+       (file px / 2) * min(1, 16 / <the figure's own text size in the app>)
+     i.e. 1:1 with the app, shrunk further where the figure sets its own type
+     larger than body copy: display math 17.6px, tikz-cd 21.3px (TeX 10pt times
+     the previewer's 1.6x default), feynmark's KaTeX labels 16.5px. A heading
+     *inside* a figure (abc's tune title, markwhen's title, the columns
+     example's ###) is meant to be larger and forces no reduction, and a cap
+     wider than its panel is clamped by `max-width: 100%` anyway — so this only
+     bites the small figures. Measure with the harness rather than guessing:
+     an SVG <text> reports font-size in user units, so it needs multiplying by
+     getScreenCTM().a (tikz says 10, kataskeve 0.34). -->
 <section id="gallery" class="gallery">
   <header class="sec-head reveal">
     <p class="sec-kicker" data-i18n="gal.kicker">SEE IT</p>
@@ -371,44 +404,12 @@
   <div class="gallery-grid reveal">
 
     <article class="g-card g-6">
-      <h3 class="g-title"><span data-i18n="gal.mathT">数式</span><em class="g-tag">KaTeX</em></h3>
+      <h3 class="g-title"><span data-i18n="gal.rubyT">ルビ</span><em class="g-tag" data-i18n="gal.rubyTag">でんでん記法</em></h3>
       <div class="g-body">
-<pre class="g-src"><code>$$
-x = \frac{-b \pm \sqrt{b^2 - 4ac}}{2a}
-$$</code></pre>
+<pre class="g-src"><code>｜吾輩《わがはい》は{猫|ねこ}である。</code></pre>
         <figure class="g-out">
-          <img loading="lazy" src="assets/img/gallery/math.webp" width="357" height="82"
-               data-i18n-attr="alt:gal.mathAlt" alt="二次方程式の解の公式が組版されたもの">
-        </figure>
-      </div>
-    </article>
-
-    <article class="g-card g-6">
-      <h3 class="g-title"><span data-i18n="gal.tikzT">可換図式</span><em class="g-tag">tikz-cd</em></h3>
-      <div class="g-body">
-<pre class="g-src"><code>```tikzcd
-A \arrow[r, "f"] \arrow[d, "g"'] &amp; B \arrow[d, "h"] \\
-C \arrow[r, "k"']                &amp; D
-```</code></pre>
-        <figure class="g-out">
-          <img loading="lazy" src="assets/img/gallery/tikzcd.webp" width="278" height="254"
-               data-i18n-attr="alt:gal.tikzAlt" alt="A・B・C・D を矢印で結んだ可換正方形">
-        </figure>
-      </div>
-    </article>
-
-    <article class="g-card g-6">
-      <h3 class="g-title"><span data-i18n="gal.mermaidT">図</span><em class="g-tag">Mermaid</em></h3>
-      <div class="g-body">
-<pre class="g-src"><code>```mermaid
-flowchart LR
-  A[編集] --&gt; B{保存}
-  B --&gt;|marp: true| C[スライド]
-  B --&gt;|通常| D[プレビュー]
-```</code></pre>
-        <figure class="g-out">
-          <img loading="lazy" src="assets/img/gallery/mermaid.webp" width="853" height="296"
-               data-i18n-attr="alt:gal.mermaidAlt" alt="編集から保存を経てスライドとプレビューへ分岐するフローチャート">
+          <img loading="lazy" src="assets/img/gallery/ruby.webp" style="--g-cap: 136px" width="272" height="66"
+               data-i18n-attr="alt:gal.rubyAlt" alt="吾輩と猫に振り仮名が添えられた一文">
         </figure>
       </div>
     </article>
@@ -422,19 +423,29 @@ flowchart LR
 利益,30,42,55
 ```</code></pre>
         <figure class="g-out">
-          <img loading="lazy" src="assets/img/gallery/csv.webp" width="1360" height="224"
+          <img loading="lazy" src="assets/img/gallery/csv.webp" style="--g-cap: 680px" width="1360" height="224"
                data-i18n-attr="alt:gal.csvAlt" alt="CSV から組まれた見出し付きの表">
         </figure>
       </div>
     </article>
 
     <article class="g-card g-12">
-      <h3 class="g-title"><span data-i18n="gal.rubyT">ルビ</span><em class="g-tag" data-i18n="gal.rubyTag">でんでん記法</em></h3>
+      <h3 class="g-title"><span data-i18n="gal.colT">多段組み</span><em class="g-tag" data-i18n="gal.colTag">フェンス記法</em></h3>
       <div class="g-body">
-<pre class="g-src"><code>｜吾輩《わがはい》は{猫|ねこ}である。</code></pre>
+<pre class="g-src"><code>ウェルギリウス『アエネーイス』の一節を、原文と訳で並べます。
+
+::: columns
+### Aeneis I, 462
+sunt lacrimae rerum et mentem mortalia tangunt.
++++
+### アエネーイス 第 1 歌 462
+ものにも涙があり、人の世のはかなさが心を打つ。
+:::
+
+`:::` で 1 カラムに戻るので、この段落はまた幅いっぱいに流れます。</code></pre>
         <figure class="g-out">
-          <img loading="lazy" src="assets/img/gallery/ruby.webp" width="272" height="66"
-               data-i18n-attr="alt:gal.rubyAlt" alt="吾輩と猫に振り仮名が添えられた一文">
+          <img loading="lazy" src="assets/img/gallery/columns.webp" style="--g-cap: 698px" width="1396" height="389"
+               data-i18n-attr="alt:gal.colAlt" alt="1 カラムの文章のあとアエネーイスの原文と訳が 2 カラムで並び、また 1 カラムに戻る例">
         </figure>
       </div>
     </article>
@@ -451,7 +462,7 @@ K:C
 C C G G | A A G2 | F F E E | D D C2 |
 ```</code></pre>
         <figure class="g-out">
-          <img loading="lazy" src="assets/img/gallery/abc.webp" width="1360" height="218"
+          <img loading="lazy" src="assets/img/gallery/abc.webp" style="--g-cap: 680px" width="1360" height="218"
                data-i18n-attr="alt:gal.abcAlt" alt="きらきら星の旋律が五線譜に描かれたもの">
         </figure>
       </div>
@@ -475,7 +486,7 @@ title: プロジェクト計画
 2023-03-01 / 2023-06-30: API 実装 #dev
 ```</code></pre>
         <figure class="g-out">
-          <img loading="lazy" src="assets/img/gallery/markwhen.webp" width="1359" height="316"
+          <img loading="lazy" src="assets/img/gallery/markwhen.webp" style="--g-cap: 680px" width="1359" height="316"
                data-i18n-attr="alt:gal.mwAlt" alt="企画と開発の期間が横棒で並んだタイムライン">
         </figure>
       </div>
@@ -498,25 +509,24 @@ country: JP
 2024-04-22: 締め切り
 ```</code></pre>
         <figure class="g-out">
-          <img loading="lazy" src="assets/img/gallery/markwhen-cal.webp" width="1360" height="823"
+          <img loading="lazy" src="assets/img/gallery/markwhen-cal.webp" style="--g-cap: 680px" width="1360" height="823"
                data-i18n-attr="alt:gal.calAlt" alt="4 月の月間カレンダー。予定が色付きの帯で並び、祝日が強調表示されている">
         </figure>
       </div>
     </article>
 
     <article class="g-card g-6">
-      <h3 class="g-title"><span data-i18n="gal.colT">多段組み</span><em class="g-tag" data-i18n="gal.colTag">フェンス記法</em></h3>
+      <h3 class="g-title"><span data-i18n="gal.mermaidT">図</span><em class="g-tag">Mermaid</em></h3>
       <div class="g-body">
-<pre class="g-src"><code>::: columns
-### 左カラム
-段の途中から多段組みにできます。
-+++
-### 右カラム
-`:::` で 1 カラムに戻ります。
-:::</code></pre>
+<pre class="g-src"><code>```mermaid
+flowchart LR
+  A[編集] --&gt; B{保存}
+  B --&gt;|marp: true| C[スライド]
+  B --&gt;|通常| D[プレビュー]
+```</code></pre>
         <figure class="g-out">
-          <img loading="lazy" src="assets/img/gallery/columns.webp" width="1144" height="140"
-               data-i18n-attr="alt:gal.colAlt" alt="左右 2 カラムに分かれた見出しと本文">
+          <img loading="lazy" src="assets/img/gallery/mermaid.webp" style="--g-cap: 426px" width="853" height="296"
+               data-i18n-attr="alt:gal.mermaidAlt" alt="編集から保存を経てスライドとプレビューへ分岐するフローチャート">
         </figure>
       </div>
     </article>
@@ -531,8 +541,91 @@ x: month
 y: revenue
 ```</code></pre>
         <figure class="g-out">
-          <img loading="lazy" src="assets/img/gallery/plotly.webp" width="1318" height="803"
+          <img loading="lazy" src="assets/img/gallery/plotly.webp" style="--g-cap: 659px" width="1318" height="803"
                data-i18n-attr="alt:gal.plotlyAlt" alt="外部 CSV から描かれた月次売上の折れ線グラフ">
+        </figure>
+      </div>
+    </article>
+
+    <article class="g-card g-6">
+      <h3 class="g-title"><span data-i18n="gal.mathT">数式</span><em class="g-tag">KaTeX</em></h3>
+      <div class="g-body">
+<pre class="g-src"><code>$$
+x = \frac{-b \pm \sqrt{b^2 - 4ac}}{2a}
+$$</code></pre>
+        <figure class="g-out">
+          <img loading="lazy" src="assets/img/gallery/math.webp" style="--g-cap: 162px" width="357" height="82"
+               data-i18n-attr="alt:gal.mathAlt" alt="二次方程式の解の公式が組版されたもの">
+        </figure>
+      </div>
+    </article>
+
+    <article class="g-card g-6">
+      <h3 class="g-title"><span data-i18n="gal.tikzT">可換図式</span><em class="g-tag">tikz-cd</em></h3>
+      <div class="g-body">
+<pre class="g-src"><code>```tikzcd
+A \arrow[r, "f"] \arrow[d, "g"'] &amp; B \arrow[d, "h"] \\
+C \arrow[r, "k"']                &amp; D
+```</code></pre>
+        <figure class="g-out">
+          <img loading="lazy" src="assets/img/gallery/tikzcd.webp" style="--g-cap: 104px" width="278" height="254"
+               data-i18n-attr="alt:gal.tikzAlt" alt="A・B・C・D を矢印で結んだ可換正方形">
+        </figure>
+      </div>
+    </article>
+
+    <article class="g-card g-6">
+      <h3 class="g-title"><span data-i18n="gal.ksT">作図</span><em class="g-tag">kataskeve</em></h3>
+      <div class="g-body">
+<pre class="g-src"><code>```kataskeve
+viewport: -1 -1 5 4
+A = point(0, 0); B = point(4, 0); C = point(4, 3)
+triangle(A, B, C)
+A; B; C
+label A "A" pos=SW
+label C "C" pos=NE
+mark right_angle(A, B, C)
+mark angle(B, A, C) arcs=1 radius=0.8
+```</code></pre>
+        <figure class="g-out">
+          <img loading="lazy" src="assets/img/gallery/kataskeve.webp" style="--g-cap: 216px" width="432" height="356"
+               data-i18n-attr="alt:gal.ksAlt" alt="直角記号と角の弧が添えられた直角三角形の作図">
+        </figure>
+      </div>
+    </article>
+
+    <article class="g-card g-6">
+      <h3 class="g-title"><span data-i18n="gal.ks3T">立体</span><em class="g-tag">kataskeve3d</em></h3>
+      <div class="g-body">
+<pre class="g-src"><code>```kataskeve3d
+view: tilt=18 yaw=0
+unit: 150
+shading: on
+light: az=150 el=35
+penrose_triangle(point(0,0,0), 3)
+```</code></pre>
+        <figure class="g-out">
+          <img loading="lazy" src="assets/img/gallery/kataskeve3d.webp" style="--g-cap: 478px" width="956" height="866"
+               data-i18n-attr="alt:gal.ks3Alt" alt="点描で陰影をつけたペンローズの三角形">
+        </figure>
+      </div>
+    </article>
+
+    <article class="g-card g-12">
+      <h3 class="g-title"><span data-i18n="gal.feyT">ファインマン図</span><em class="g-tag">feynmark</em></h3>
+      <div class="g-body">
+<pre class="g-src"><code>```feynman
+diagram tree {
+  in  e1: $e^-$,  e2: $e^+$
+  out m1: $\mu^-$, m2: $\mu^+$
+  e1 -- [fermion] a -- [fermion] e2
+  a  -- [photon, momentum=$q$] b
+  m2 -- [fermion] b -- [fermion] m1
+}
+```</code></pre>
+        <figure class="g-out">
+          <img loading="lazy" src="assets/img/gallery/feynman.webp" style="--g-cap: 261px" width="538" height="322"
+               data-i18n-attr="alt:gal.feyAlt" alt="電子と陽電子が光子を介してミューオン対になるツリーレベルの図">
         </figure>
       </div>
     </article>

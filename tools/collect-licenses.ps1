@@ -109,7 +109,7 @@ $direct = @(
     Upstream='https://github.com/yvvakimoto/kataskeve';
     Path='assets/libs/kataskeve/kataskeve.min.js';
     LicenseFile='tools/license-texts/kataskeve.LICENSE' }
-  [pscustomobject]@{ Name='Kataskeve3D';  Version='0.1.0'; Spdx='MIT';
+  [pscustomobject]@{ Name='Kataskeve3D';  Version='0.1.1'; Spdx='MIT';
     Upstream='https://github.com/yvvakimoto/kataskeve3d';
     Path='assets/libs/kataskeve3d/';
     Note='Includes kataskeve3d.wasm, an optional CPU accelerator compiled from the Rust sources in the upstream repository (crates/kataskeve3d-wasm). It is not required: the library falls back to its JavaScript core, which is held to a pixel-parity guarantee.';
