@@ -64,6 +64,7 @@ import {
 } from './mdBlocks.js';
 import { writeClipboard } from './marpSlides.js';
 import { mapCommandKey } from './keyLayout.js';
+import { firstNonWhitespaceCol, makePos } from './vimPos.js';
 import { t } from './i18n.js';
 
 // ───────────────────────────── cell model ─────────────────────────────
@@ -144,6 +145,28 @@ export function cellRunLine(state, cell) {
   const base = state.doc.lineAt(cell.from).number;
   const line = cell.leadSep ? base + 1 : base;
   return Math.max(1, Math.min(state.doc.lines, line));
+}
+
+// The cell's first and last CONTENT line (1-based doc lines), i.e. with the
+// slot's blank-line padding skipped. An all-blank cell reports its first body
+// line for both.
+//
+// Measuring from `bodyFrom` is what excludes the leading `---`: for a cell with a
+// separator, bodyFrom is the line right AFTER it (and by INV1 that line is blank,
+// which is precisely why "content line" and not "first line of the slot" is the
+// useful answer). The front-matter pseudo-cell has bodyFrom === 0, so it includes
+// its own opening `---` — consistent with plain Vim's `gg` landing on line 1.
+export function cellContentLines(state, cell) {
+  const first = state.doc.lineAt(cell.bodyFrom).number;
+  const last = state.doc.lineAt(Math.max(cell.bodyFrom, cell.to - 1)).number;
+  let a = first;
+  while (a <= last && !state.doc.line(a).text.trim()) a++;
+  // Entirely blank: collapse both edges onto the first body line — that is where
+  // the author would start typing, and it keeps `gg` and `G` in agreement.
+  if (a > last) return { first, last: first };
+  let b = last;
+  while (b > a && !state.doc.line(b).text.trim()) b--;
+  return { first: a, last: b };
 }
 
 // ─────────────────────────── separator hygiene ───────────────────────────
@@ -539,6 +562,67 @@ export const cellsField = StateField.define({
   create: (state) => cellList(state),
   update(value, tr) { return tr.docChanged ? cellList(tr.state) : value; },
 });
+
+// ─────────────────────── Vim motion scoping ───────────────────────
+//
+// While cell mode is on, a cell is a mini-document, so `gg` / `G` must stop at
+// the cell's edges instead of the document's — and with them `dG`, `dgg`, `yG`,
+// `cG` and the VISUAL `vG` / `VG`, which is the whole point: `dG` used to eat
+// every following slide.
+//
+// ONE override buys all of that. Upstream maps both `gg` and `G` to the SAME
+// motion, `moveToLineOrEdgeOfDocument` (dist/index.js:143-144), and resolves
+// motions dynamically at call time (`motions[motion](cm, origHead, motionArgs,
+// vim, inputState)`, :2039). So this is the jpWordMotion.js trick again, and it
+// adds no new key binding.
+//
+// Three facts it rests on, each verified against the installed dist:
+//
+//  * `cellsField` IS the on/off gate. It only exists while entry.js's cellComp
+//    holds cellMode(), so `state.field(cellsField, false) === undefined` means
+//    cell mode is off and we must behave exactly as upstream. `Vim` is a module
+//    singleton independent of that compartment, so there is nowhere else to keep
+//    this flag — and no need to.
+//  * An explicit count stays ABSOLUTE. The line-number gutter shows absolute
+//    numbers, so `5G` must keep meaning "go to line 5". `motionArgs` is
+//    copyArgs()'d per invocation (:1658), so `repeatIsExplicit` starts undefined
+//    for a bare `gg` and a preceding `5gg` cannot leak into it. The `:move` ex
+//    command's repeatOverride path (:5928-5935) lands in this branch too, so it
+//    is untouched.
+//  * `cm.cm6` is the EditorView (:7226) — the same handle entry.js's
+//    Vim.defineAction handlers use.
+//
+// ⚠ The absolute branch is a MIRROR of upstream dist/index.js:2569-2575. `Vim`
+// exposes no getter for `motions`, so the original cannot be captured and
+// delegated to; it is five lines, so it is copied. Keep in sync.
+export function installCellMotions(Vim) {
+  if (!Vim || typeof Vim.defineMotion !== 'function') return;
+  Vim.defineMotion('moveToLineOrEdgeOfDocument', function (cm, head, motionArgs) {
+    const args = motionArgs || {};
+    const state = cm && cm.cm6 && cm.cm6.state;
+    const cells = state && !args.repeatIsExplicit
+      ? state.field(cellsField, false)
+      : null;
+    if (cells && cells.length) {
+      const ln = Math.max(1, Math.min(state.doc.lines, (head ? head.line : 0) + 1));
+      // Line START, not the caret offset: every cell boundary is a line start
+      // (a separator's `from`, or fmEnd), so this is exact — and a caret sitting
+      // ON a separator line resolves to the cell that separator introduces,
+      // matching the CELL_GAP decoration.
+      const cell = cells[cellIndexAt(state, state.doc.line(ln).from, cells)];
+      if (cell) {
+        const edges = cellContentLines(state, cell);
+        const target = args.forward ? edges.last : edges.first;
+        return makePos(head, target - 1, firstNonWhitespaceCol(state.doc.line(target).text));
+      }
+    }
+    let lineNum = args.forward ? cm.lastLine() : cm.firstLine();
+    if (args.repeatIsExplicit) {
+      lineNum = args.repeat - cm.getOption('firstLineNumber');
+    }
+    return makePos(head, lineNum, firstNonWhitespaceCol(cm.getLine(lineNum)));
+  });
+}
 
 // ─────────────────────────── the key gate ───────────────────────────
 

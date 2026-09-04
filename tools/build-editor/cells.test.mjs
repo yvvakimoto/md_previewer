@@ -16,6 +16,7 @@ import {
   cellList,
   cellIndexAt,
   cellRunLine,
+  cellContentLines,
   cellModeField,
   setCellMode,
   setCellPend,
@@ -146,6 +147,52 @@ console.log('\n── cellRunLine (Marp deck must not land one slide early) ─�
   const c2 = cellList(st2);
   eq('no front-matter: first cell -> line 1', cellRunLine(st2, c2[0]), 1);
   eq('no front-matter: cell 2 -> separator + 1', cellRunLine(st2, c2[1]), 4);
+}
+
+console.log('\n── cellContentLines (what cell-scoped gg / G land on) ──');
+{
+  // The padding a separator forces (INV1: a blank line before every `---`) is
+  // exactly what must NOT be the landing spot: `gg` on a blank line is useless,
+  // and a `dG` that ate the trailing blank would turn the next `---` into a
+  // setext <h2> underline.
+  const st = mk(DECK);
+  const cells = cellList(st);
+  eq('front-matter cell spans its own delimiters', cellContentLines(st, cells[0]), { first: 1, last: 3 });
+  eq('first body cell skips the blank after the front-matter',
+    cellContentLines(st, cells[1]), { first: 5, last: 5 });
+  eq('cell 2 skips the blank after its separator',
+    cellContentLines(st, cells[2]), { first: 9, last: 9 });
+  eq('last cell stops at its last content line, not the trailing newline',
+    cellContentLines(st, cells[3]), { first: 13, last: 13 });
+
+  const st2 = mk(PLAIN);
+  const c2 = cellList(st2);
+  eq('no front-matter: first cell starts at line 1',
+    cellContentLines(st2, c2[0]), { first: 1, last: 1 });
+  eq('no front-matter: cell 2 skips its leading blank',
+    cellContentLines(st2, c2[1]), { first: 5, last: 5 });
+
+  //  1 head   2 ''   3 ---   4 ''   5 ''   6 ''
+  //  7 ---    8 ''   9 alpha  10 beta  11 ''
+  // 12 ---   13 ''  14 only  15 ''
+  const st3 = mk('head\n\n---\n\n\n\n---\n\nalpha\nbeta\n\n---\n\nonly\n');
+  const c3 = cellList(st3);
+  eq('multi-line cell trims padding at both ends',
+    cellContentLines(st3, c3[2]), { first: 9, last: 10 });
+  eq('an all-blank cell collapses onto its first body line',
+    cellContentLines(st3, c3[1]), { first: 4, last: 4 });
+  eq('single-line cell reports the same line twice',
+    cellContentLines(st3, c3[3]), { first: 14, last: 14 });
+
+  // Why "content line" beats "edge of the cell slot": deleting linewise from the
+  // first to the last CONTENT line leaves the separator's blank line intact, so
+  // INV1 survives and the emptied cell still exists (cell N stays slide N).
+  const emptied = st3.update({
+    changes: { from: st3.doc.line(9).from, to: st3.doc.line(11).from, insert: '' },
+  }).state.doc.toString();
+  invOk('dG over the content lines keeps the separators well-formed', emptied);
+  eq('dG over the content lines leaves the cell count unchanged',
+    cellList(mk(emptied)).length, c3.length);
 }
 
 console.log('\n── planInsert ──');
