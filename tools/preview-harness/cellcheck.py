@@ -138,6 +138,15 @@ def main():
             def doc_text():
                 return page.evaluate("() => window.__editorView.state.doc.toString()")
 
+            def bad_separators(text):
+                lines = text.replace("\r\n", "\n").split("\n")
+                bad = []
+                for i, ln in enumerate(lines):
+                    if ln.strip() in ("---", "***", "___") and i >= 3 \
+                            and lines[i - 1].strip() != "":
+                        bad.append(i + 1)
+                return bad
+
             def sep_count():
                 # Cell count - 1 for a front-mattered deck; a stable structural probe.
                 return len([ln for ln in doc_text().split("\n") if ln.strip() == "---"]) - 2
@@ -160,6 +169,11 @@ def main():
                 return page.evaluate(
                     "() => window.__editorView.state.doc"
                     ".lineAt(window.__editorView.state.selection.main.head).number")
+
+            def goto_line(n):
+                page.evaluate("(n) => { const v = window.__editorView;"
+                              " v.dispatch({ selection: { anchor: v.state.doc.line(n).from } }); }", n)
+                page.wait_for_timeout(90)
 
             def body_has(cls):
                 return page.evaluate("(c) => document.body.classList.contains(c)", cls)
@@ -268,6 +282,81 @@ def main():
             press("Escape")
             check("Vim ON: a second Esc (now in NORMAL) enters Command mode",
                   body_has("cellmode-command"), True)
+
+            # ---------- cell-scoped `gg` / `G` (and with them `dG`) ----------
+            # installCellMotions() replaces ONE upstream motion,
+            # moveToLineOrEdgeOfDocument, which upstream maps to BOTH `gg` and `G`
+            # and resolves dynamically per keystroke — so the operator-pending forms
+            # come along for free. That is exactly why it needs real-Vim coverage:
+            # cells.test.mjs can only assert cellContentLines(), not that Vim ever
+            # calls it.
+            #
+            # DECK line map:  1 --- / 2 marp: true / 3 --- / 4 '' / 5 # One / 6 '' /
+            # 7 alpha / 8 '' / 9 --- / 10 '' / 11 # Two / 12 '' / 13 beta / 14 '' /
+            # 15 --- / 16 '' / 17 # Three / 18 '' / 19 gamma / 20 ''
+            load(cells="on", vim="on")
+            goto_line(13)                      # `beta`, inside body cell 2
+            press("g")
+            press("g")
+            check("Vim ON + cells: gg stays in the cell, on its first CONTENT line",
+                  cursor_line(), 11)
+            press("G")
+            check("Vim ON + cells: G stops at the cell's last content line",
+                  cursor_line(), 13)
+
+            # The count is deliberately NOT scoped: the line-number gutter shows
+            # absolute numbers, so `5G` must keep meaning "go to line 5".
+            press("5")
+            press("G")
+            check("Vim ON + cells: an explicit count is still an absolute line",
+                  cursor_line(), 5)
+
+            # The payoff. `dG` used to delete through the end of the DOCUMENT, i.e.
+            # every following slide. Now it clears this cell's content and — because
+            # `G` stops at the last content line rather than the slot edge — leaves
+            # the blank line the next `---` needs (INV1).
+            load(cells="on", vim="on")
+            base = sep_count()
+            goto_line(11)                      # `# Two`, first content line of cell 2
+            press("d")
+            press("G")
+            after = doc_text()
+            check("Vim ON + cells: dG leaves every separator in place",
+                  sep_count(), base)
+            check("Vim ON + cells: dG did not eat the following cells",
+                  ("# Three" in after) and ("gamma" in after), True)
+            check("Vim ON + cells: dG cleared this cell's content",
+                  ("# Two" in after) or ("beta" in after), False)
+            check("Vim ON + cells: dG kept the separators well-formed (INV1)",
+                  bad_separators(after), [])
+            page.keyboard.press("u")           # Vim undo
+            page.wait_for_timeout(160)
+            check("Vim ON + cells: dG is one undo step", doc_text(), DECK)
+
+            # Non-regression: with cell mode OFF the override must be inert, since
+            # its only gate is the presence of cellsField.
+            load(cells="off", vim="on")
+            goto_line(13)
+            press("g")
+            press("g")
+            check("cells OFF: gg is document-wide again", cursor_line(), 1)
+            press("G")
+            check("cells OFF: G reaches the last line of the document",
+                  cursor_line(), 20)
+
+            # The escape hatch out of a cell needs no new binding: Vim only swallows
+            # single-character keys, so Ctrl+Home / Ctrl+End reach the keymap facet
+            # and defaultKeymap's cursorDocStart / cursorDocEnd still work.
+            load(cells="on", vim="on")
+            goto_line(13)
+            page.keyboard.press("Control+End")
+            page.wait_for_timeout(120)
+            check("Vim ON + cells: Ctrl+End still reaches the document end",
+                  cursor_line(), 20)
+            page.keyboard.press("Control+Home")
+            page.wait_for_timeout(120)
+            check("Vim ON + cells: Ctrl+Home still reaches the document start",
+                  cursor_line(), 1)
 
             # ---------- structural operations + single-step undo ----------
             load(cells="on", vim="off")
@@ -380,15 +469,6 @@ def main():
             # Ctrl+Alt+N inserts one slide, Ctrl+Alt+X removes one, and neither leaves
             # a `---` that is not preceded by a blank line (which would silently
             # become a setext <h2> and merge two slides).
-            def bad_separators(text):
-                lines = text.replace("\r\n", "\n").split("\n")
-                bad = []
-                for i, ln in enumerate(lines):
-                    if ln.strip() in ("---", "***", "___") and i >= 3 \
-                            and lines[i - 1].strip() != "":
-                        bad.append(i + 1)
-                return bad
-
             load(cells="off", vim="off")       # the Marp helpers are independent of cell mode
             base = sep_count()
             page.evaluate("() => { const v=window.__editorView;"

@@ -57,7 +57,7 @@ import {
 } from './editorPrefs.js';
 import {
   cellMode, cellModeOf, setCellMode, cellList, cellAt, cellIndexAt, cellRunLine,
-  insertCellBelow, selectNextCell, CELL_HELP,
+  insertCellBelow, selectNextCell, installCellMotions, CELL_HELP,
 } from './cells.js';
 
 // ---------- ATX heading fold service ----------
@@ -1283,6 +1283,11 @@ export function create(root, opts = {}) {
   // Japanese-aware w/b/e/W/B/E (and dw/cw/yw/daw/...) — segment by
   // hiragana / katakana / han / ASCII-word / punctuation class boundaries.
   try { installJpWordMotion(Vim); } catch (_) {}
+  // Cell-scoped `gg` / `G` (and with them dG / dgg / yG / vG). Registered
+  // unconditionally for the same reason as applyKeyLayout below: `Vim` is a
+  // module singleton independent of vimComp. The override is inert unless
+  // cellsField is present, i.e. unless cell mode is on.
+  try { installCellMotions(Vim); } catch (_) {}
   // Vim is a module-level singleton independent of the vimComp Compartment, so
   // the layout is applied unconditionally at boot — including while Vim mode is
   // OFF, so turning it on later already has the right langmap.

@@ -8,6 +8,8 @@
 // 4305-4420 in @replit/codemirror-vim 6.2.x); only the per-character class
 // test is replaced.
 
+import { makePos } from './vimPos.js';
+
 const CLS_NONE  = 0; // whitespace — never a word
 const CLS_WORD  = 1; // ASCII / fullwidth alphanumeric + underscore
 const CLS_PUNCT = 2; // other non-whitespace ASCII / fullwidth punctuation / misc
@@ -64,17 +66,6 @@ function isLine(cm, lineNum) {
 }
 function lineLength(cm, lineNum) {
   return cm.getLine(lineNum).length;
-}
-
-function makePos(template, line, ch) {
-  const proto = template && Object.getPrototypeOf(template);
-  if (proto && proto !== Object.prototype) {
-    const p = Object.create(proto);
-    p.line = line;
-    p.ch = ch;
-    return p;
-  }
-  return { line, ch };
 }
 
 function findWord(cm, cur, forward, bigWord, emptyLineIsWord) {
