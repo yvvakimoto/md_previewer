@@ -1,0 +1,66 @@
+/* @theme silver */
+/* =================================================================
+   Silver — 銀 × スチールブルー
+   A colour variation of magenta.css (cool grey accent, steel-blue rule; chroma is capped so the picker only tints).
+   Everything but the token values comes from the base — see the header
+   of magenta.css for the colour model (one --theme-color input, tokens
+   derived with fixed lightness) and for why `section.invert` must also
+   set color-scheme and must not touch --divider-*.
+
+   Usage:  theme: silver   (front-matter; or pick it with the S key)
+   ================================================================= */
+
+@import "magenta";
+
+:root {
+  --theme-color: #6b7b8c;
+  --accent:      oklch(from var(--theme-color) 0.5759 calc(min(c, 0.0324) * 1.0000) h); /* #6b7b8c */
+  --accent-soft: oklch(from var(--theme-color) 0.9567 calc(min(c, 0.0324) * 0.1592) calc(h - 2.1)); /* #eef1f4 */
+  --accent-deep: oklch(from var(--theme-color) 0.3430 calc(min(c, 0.0324) * 0.7507) calc(h - 1.4)); /* #2f3a45 */
+  --rule:        oklch(from var(--theme-color) 0.5068 calc(min(c, 0.0324) * 2.1647) calc(h - 7.8)); /* #3f6a8a */
+  --rule-soft:   oklch(from var(--theme-color) 0.9197 calc(min(c, 0.0324) * 0.4727) calc(h - 8.2)); /* #dce6ee */
+  --divider-a:   oklch(from var(--theme-color) 0.3430 calc(min(c, 0.0324) * 0.7507) calc(h - 1.4));   /* = accent-deep */
+  --divider-b:   oklch(from var(--theme-color) 0.5759 calc(min(c, 0.0324) * 1.0000) h);   /* = accent */
+  --divider-c:   oklch(from var(--theme-color) 0.5068 calc(min(c, 0.0324) * 2.1647) calc(h - 7.8));   /* = rule */
+  --divider-bg:  linear-gradient(135deg in srgb, var(--divider-a) 0%, var(--divider-b) 60%, var(--divider-c) 100%);
+  --bg:          #fbfbfc;
+  --surface:     #ffffff;
+  --surface-alt: #f6f8fa;
+  --ink:         #1a1a1a;
+  --ink-2:       #4a4a4a;
+  --ink-3:       #7a7a7a;
+  --code-bg:     #1f1f23;
+  --code-ink:    #f4f4f1;
+  --laser-color: oklch(from var(--theme-color) 0.73 0.13 calc(h + 150));
+  --marker-color: oklch(from var(--theme-color) 0.85 0.06 h);
+  --confidential-color: color-mix(in srgb, var(--accent) 13%, transparent);
+  color-scheme: light;
+}
+
+/* <!-- _class: invert --> : dark set for this hue (--divider-* untouched) */
+section.invert {
+  --accent:      oklch(from var(--theme-color) 0.7539 calc(min(c, 0.0324) * 0.7879) calc(h - 1.8)); /* #a3b1bf */
+  --accent-soft: oklch(from var(--theme-color) 0.2866 calc(min(c, 0.0324) * 0.4047) calc(h + 3.0)); /* #262b31 */
+  --accent-deep: oklch(from var(--theme-color) 0.9282 calc(min(c, 0.0324) * 0.3208) calc(h - 2.0)); /* #e2e8ee */
+  --rule:        oklch(from var(--theme-color) 0.7116 calc(min(c, 0.0324) * 2.0448) calc(h - 5.4)); /* #7fa7c9 */
+  --rule-soft:   oklch(from var(--theme-color) 0.2744 calc(min(c, 0.0324) * 0.7699) calc(h - 6.0)); /* #1d2933 */
+  --bg:          #15151b;
+  --surface:     #1f1f27;
+  --surface-alt: #24242d;
+  --ink:         #ececf1;
+  --ink-2:       #c3c3cb;
+  --ink-3:       #8e8e98;
+  --code-bg:     #0c0c10;
+  --code-ink:    #f4f4f1;
+  --marker-color: oklch(from var(--theme-color) 0.5 0.06 h);
+  --confidential-color: color-mix(in srgb, var(--accent) 16%, transparent);
+  color-scheme: dark;
+}
+
+/* ⚙ in the S-key picker. Parsed as JSON in its entirety — no prose inside. */
+/* @user-vars
+[
+  { "var": "--theme-color", "type": "color", "default": "#6b7b8c",
+    "label": "テーマ色", "labelJa": "テーマ色（色相と鮮やかさが全体に反映）", "labelEn": "Theme color (hue & chroma drive the palette)" }
+]
+*/

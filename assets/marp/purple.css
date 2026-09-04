@@ -1,0 +1,66 @@
+/* @theme purple */
+/* =================================================================
+   Purple — 紫 × ティール
+   A colour variation of magenta.css (royal purple accent, teal rule).
+   Everything but the token values comes from the base — see the header
+   of magenta.css for the colour model (one --theme-color input, tokens
+   derived with fixed lightness) and for why `section.invert` must also
+   set color-scheme and must not touch --divider-*.
+
+   Usage:  theme: purple   (front-matter; or pick it with the S key)
+   ================================================================= */
+
+@import "magenta";
+
+:root {
+  --theme-color: #7b1fa2;
+  --accent:      oklch(from var(--theme-color) 0.4533 c h);             /* #7b1fa2 */
+  --accent-soft: oklch(from var(--theme-color) 0.9376 calc(c * 0.1308) calc(h + 9.0)); /* #f3e5f5 */
+  --accent-deep: oklch(from var(--theme-color) 0.3601 calc(c * 0.8874) calc(h - 16.7)); /* #4a148c */
+  --rule:        oklch(from var(--theme-color) 0.5166 calc(c * 0.4681) calc(h - 131.9)); /* #00796b */
+  --rule-soft:   oklch(from var(--theme-color) 0.8708 calc(c * 0.2366) calc(h - 123.3)); /* #b2dfdb */
+  --divider-a:   oklch(from var(--theme-color) 0.3601 calc(c * 0.8874) calc(h - 16.7));   /* = accent-deep */
+  --divider-b:   oklch(from var(--theme-color) 0.4533 c h);   /* = accent */
+  --divider-c:   oklch(from var(--theme-color) 0.5166 calc(c * 0.4681) calc(h - 131.9));   /* = rule */
+  --divider-bg:  linear-gradient(135deg in srgb, var(--divider-a) 0%, var(--divider-b) 60%, var(--divider-c) 100%);
+  --bg:          #fcfbfd;
+  --surface:     #ffffff;
+  --surface-alt: #f6f8fa;
+  --ink:         #1a1a1a;
+  --ink-2:       #4a4a4a;
+  --ink-3:       #7a7a7a;
+  --code-bg:     #1f1f23;
+  --code-ink:    #f4f4f1;
+  --laser-color: oklch(from var(--theme-color) 0.73 0.13 calc(h - 132));
+  --marker-color: oklch(from var(--theme-color) 0.7437 calc(c * 0.5839) calc(h + 8.6));   /* #ce93d8 */
+  --confidential-color: color-mix(in srgb, var(--accent) 13%, transparent);
+  color-scheme: light;
+}
+
+/* <!-- _class: invert --> : dark set for this hue (--divider-* untouched) */
+section.invert {
+  --accent:      oklch(from var(--theme-color) 0.6455 calc(c * 0.8157) calc(h + 8.7)); /* #ba68c8 */
+  --accent-soft: oklch(from var(--theme-color) 0.2764 calc(c * 0.2020) calc(h + 0.4)); /* #2f2236 */
+  --accent-deep: oklch(from var(--theme-color) 0.8444 calc(c * 0.3402) calc(h + 8.4)); /* #e1bee7 */
+  --rule:        oklch(from var(--theme-color) 0.7124 calc(c * 0.4916) calc(h - 126.3)); /* #4db6ac */
+  --rule-soft:   oklch(from var(--theme-color) 0.2975 calc(c * 0.1786) calc(h - 126.3)); /* #163330 */
+  --bg:          #15151b;
+  --surface:     #1f1f27;
+  --surface-alt: #24242d;
+  --ink:         #ececf1;
+  --ink-2:       #c3c3cb;
+  --ink-3:       #8e8e98;
+  --code-bg:     #0c0c10;
+  --code-ink:    #f4f4f1;
+  --marker-color: oklch(from var(--theme-color) 0.55 calc(c * 0.9) h);   /* band behind light text */
+  --confidential-color: color-mix(in srgb, var(--accent) 16%, transparent);
+  color-scheme: dark;
+}
+
+/* ⚙ in the S-key picker. Parsed as JSON in its entirety — no prose inside. */
+/* @user-vars
+[
+  { "var": "--theme-color", "type": "color", "default": "#7b1fa2",
+    "label": "テーマ色", "labelJa": "テーマ色（色相と鮮やかさが全体に反映）", "labelEn": "Theme color (hue & chroma drive the palette)" }
+]
+*/

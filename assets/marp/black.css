@@ -1,0 +1,66 @@
+/* @theme black */
+/* =================================================================
+   Black — 墨
+   A colour variation of magenta.css (monochrome ink; only the rule family, laser and marker take the picked hue as a 差し色).
+   Everything but the token values comes from the base — see the header
+   of magenta.css for the colour model (one --theme-color input, tokens
+   derived with fixed lightness) and for why `section.invert` must also
+   set color-scheme and must not touch --divider-*.
+
+   Usage:  theme: black   (front-matter; or pick it with the S key)
+   ================================================================= */
+
+@import "magenta";
+
+:root {
+  --theme-color: #212121;
+  --accent:      oklch(0.2478 0 0);                                     /* #212121 */
+  --accent-soft: oklch(0.9491 0 0);                                /* #eeeeee */
+  --accent-deep: oklch(0.0000 0 0);                                /* #000000 */
+  --rule:        oklch(from var(--theme-color) 0.4926 min(c, 0.0800) h);  /* #616161 */
+  --rule-soft:   oklch(from var(--theme-color) 0.9067 min(c, 0.0300) h); /* #e0e0e0 */
+  --divider-a:   oklch(0.0000 0 0);   /* = accent-deep */
+  --divider-b:   oklch(0.2478 0 0);   /* = accent */
+  --divider-c:   oklch(from var(--theme-color) 0.4926 min(c, 0.0800) h);   /* = rule */
+  --divider-bg:  linear-gradient(135deg in srgb, var(--divider-a) 0%, var(--divider-b) 60%, var(--divider-c) 100%);
+  --bg:          #ffffff;
+  --surface:     #ffffff;
+  --surface-alt: #f6f8fa;
+  --ink:         #111111;
+  --ink-2:       #444444;
+  --ink-3:       #777777;
+  --code-bg:     #1f1f23;
+  --code-ink:    #f4f4f1;
+  --laser-color: oklch(from var(--theme-color) 0.73 0.13 calc(h + 25));
+  --marker-color: oklch(0.9285 0.1803 102.5);   /* #ffeb3b */
+  --confidential-color: color-mix(in srgb, var(--accent) 13%, transparent);
+  color-scheme: light;
+}
+
+/* <!-- _class: invert --> : dark set for this hue (--divider-* untouched) */
+section.invert {
+  --accent:      oklch(0.9067 0 0);                                     /* #e0e0e0 */
+  --accent-soft: oklch(0.2850 0 0);                                /* #2a2a2a */
+  --accent-deep: oklch(1.0000 0 0);                                /* #ffffff */
+  --rule:        oklch(from var(--theme-color) 0.6993 min(c, 0.0800) h);  /* #9e9e9e */
+  --rule-soft:   oklch(from var(--theme-color) 0.2686 min(c, 0.0300) h); /* #262626 */
+  --bg:          #15151b;
+  --surface:     #1f1f27;
+  --surface-alt: #24242d;
+  --ink:         #ececf1;
+  --ink-2:       #c3c3cb;
+  --ink-3:       #8e8e98;
+  --code-bg:     #0c0c10;
+  --code-ink:    #f4f4f1;
+  --marker-color: oklch(0.5532 0.1130 89.1);
+  --confidential-color: color-mix(in srgb, var(--accent) 16%, transparent);
+  color-scheme: dark;
+}
+
+/* ⚙ in the S-key picker. Parsed as JSON in its entirety — no prose inside. */
+/* @user-vars
+[
+  { "var": "--theme-color", "type": "color", "default": "#212121",
+    "label": "テーマ色", "labelJa": "テーマ色（色相と鮮やかさが全体に反映）", "labelEn": "Theme color (hue & chroma drive the palette)" }
+]
+*/

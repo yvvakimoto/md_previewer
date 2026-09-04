@@ -1,32 +1,123 @@
 /* @theme magenta */
 /* =================================================================
-   Magenta theme — a non-brand, visually distinct Marp theme.
-   Magenta accent + teal rule on a near-white canvas, chosen to be
-   obviously different from any brand themes at a glance.
+   Magenta theme — a non-brand, visually distinct Marp theme, and the
+   BASE of a colour family (indigo / purple / green / gold / silver /
+   black / dark each `@import "magenta"` and override the tokens below).
+   Magenta accent + teal rule on a near-white canvas.
+
    Usage:
      ---
      marp: true
      theme: magenta
      paginate: true
      ---
+
+   ---- Colour model: ONE input, everything else derived ---------------
+   The whole palette hangs off `--theme-color`. Every chromatic token is
+   written as a CSS relative colour of it:
+
+       oklch(from var(--theme-color) L calc(c * K) calc(h + ΔH))
+
+   i.e. HUE and CHROMA follow the picked colour while LIGHTNESS is fixed
+   by the design — so whatever the reader picks in the ⚙ pane (the S-key
+   picker's "テーマ色" control, see the @user-vars block at the end), h1 /
+   h2 / links / inline code keep their contrast, a pastel pick gives a
+   pastel deck and a grey pick a silver one. With `--theme-color` left at
+   its default the derivations reproduce the designed hex values quoted in
+   the trailing comments exactly (L / K / ΔH were solved from them).
+
+   Neutral tokens (--bg / --ink* / --surface* / --code-*) are fixed, not
+   derived. `--divider-*` duplicate the accent-deep / accent / rule
+   formulas on purpose: `section.invert` re-derives the accent tokens for
+   a dark slide but must NOT lighten the section-divider gradient, and a
+   `var(--accent-deep)` reference would follow the override.
+
+   ---- Dark set -------------------------------------------------------
+   `section.invert` (Marp's `<!-- _class: invert -->`) swaps in a dark
+   token set derived from the same `--theme-color`. marp-core's default
+   theme implements .invert as nothing but `color-scheme: dark`, and the
+   table-row backgrounds / highlight.js colours it leaks into this theme
+   are `light-dark()` values — so every token set MUST also declare
+   `color-scheme`, or a dark slide keeps white table rows. `dark.css`
+   is this dark set promoted to `:root`; keep the two in sync.
    ================================================================= */
 
 @import "default";
 
 :root {
-  --accent:       #c2185b;
-  --accent-soft:  #fce4ec;
-  --accent-deep:  #880e4f;
-  --rule:         #00838f;
-  --rule-soft:    #b2ebf2;
+  /* The single input. Overridden per document by the ⚙ pane
+     (#style-vars-style stamps it on `section` with !important). */
+  --theme-color: #c2185b;
+
+  /* ---- derived: accent family ---- */
+  --accent:       oklch(from var(--theme-color) 0.5313 c h);                              /* #c2185b */
+  --accent-soft:  oklch(from var(--theme-color) 0.9405 calc(c * 0.1399) calc(h - 10.2));  /* #fce4ec */
+  --accent-deep:  oklch(from var(--theme-color) 0.4152 calc(c * 0.7964) calc(h - 9.9));   /* #880e4f */
+  /* ---- derived: rule family (the second hue, ΔH ≈ −160° = teal) ---- */
+  --rule:         oklch(from var(--theme-color) 0.5571 calc(c * 0.4730) calc(h - 159.5)); /* #00838f */
+  --rule-soft:    oklch(from var(--theme-color) 0.9035 calc(c * 0.2903) calc(h - 160.1)); /* #b2ebf2 */
+  /* ---- derived: section-divider gradient (NOT touched by .invert) ---- */
+  --divider-a:    oklch(from var(--theme-color) 0.4152 calc(c * 0.7964) calc(h - 9.9));   /* = accent-deep */
+  --divider-b:    oklch(from var(--theme-color) 0.5313 c h);                              /* = accent */
+  --divider-c:    oklch(from var(--theme-color) 0.5571 calc(c * 0.4730) calc(h - 159.5)); /* = rule */
+  --divider-bg:   linear-gradient(135deg in srgb, var(--divider-a) 0%, var(--divider-b) 60%, var(--divider-c) 100%);
+  --on-accent:    #ffffff;
+
+  /* ---- neutrals (fixed) ---- */
   --bg:           #fdfcfb;
-  --surface:      #ffffff;
+  --surface:      #ffffff;   /* table rows (odd)  — default theme's --bgColor-default made explicit */
+  --surface-alt:  #f6f8fa;   /* table rows (even) — default theme's --bgColor-muted   made explicit */
   --ink:          #1a1a1a;
   --ink-2:        #4a4a4a;
   --ink-3:        #7a7a7a;
+  --code-bg:      #1f1f23;
+  --code-ink:     #f4f4f1;
+  color-scheme:   light;
+
   --font-sans: "Yu Gothic UI", "Meiryo UI", "Segoe UI", "Hiragino Sans",
                system-ui, -apple-system, sans-serif;
   --font-mono: "Cascadia Mono", "Consolas", "MS Gothic", ui-monospace, monospace;
+
+  /* ---- app feature hooks (read by index.html) ---- */
+  /* `::: message` emphasized block — otherwise the app's default blue. */
+  --md-message-accent: var(--accent);
+  --md-message-bg:     var(--accent-soft);
+  --md-message-color:  var(--ink);
+  /* Deck-mode laser pointer (Z): a vivid colour on the rule hue, absolute
+     chroma so it stays visible even when a muted theme colour is picked. */
+  --laser-color:  oklch(from var(--theme-color) 0.73 0.13 calc(h - 155));                 /* ≈ #00bcd4 */
+  /* Selection highlighter band (Marp only): a light tint of the accent. */
+  --marker-color: oklch(from var(--theme-color) 0.7657 calc(c * 0.6332) calc(h - 6.7));   /* #f48fb1 */
+  /* Confidential / watermark overlay (front-matter `confidential: true` /
+     `watermark:`). section::before is otherwise unused by this theme
+     (pagination uses section::after). --confidential-opacity: 0 disables. */
+  --confidential-label: "CONFIDENTIAL";
+  --confidential-color: color-mix(in srgb, var(--accent) 13%, transparent);               /* = rgba(194,24,91,.13) */
+  --confidential-font:  var(--font-sans);
+}
+
+/* ---- dark token set: <!-- _class: invert --> ------------------------
+   Same --theme-color, lightness raised / chroma lowered so the accent reads
+   on a dark canvas (accent ≈ Material 300, deep ≈ 100, soft / rule-soft ≈
+   the accent laid over the canvas at ~18%). --divider-* deliberately left
+   alone. Mirror of dark.css's :root — keep in sync. */
+section.invert {
+  --accent:       oklch(from var(--theme-color) 0.6878 calc(c * 0.8917) calc(h - 3.7));   /* #f06292 */
+  --accent-soft:  oklch(from var(--theme-color) 0.2778 calc(c * 0.2368) calc(h - 14.3));  /* #3a1e2b */
+  --accent-deep:  oklch(from var(--theme-color) 0.8533 calc(c * 0.3717) calc(h - 9.3));   /* #f8bbd0 */
+  --rule:         oklch(from var(--theme-color) 0.7931 calc(c * 0.5680) calc(h - 158.3)); /* #4dd0e1 */
+  --rule-soft:    oklch(from var(--theme-color) 0.3010 calc(c * 0.1780) calc(h - 155.6)); /* #163338 */
+  --marker-color: oklch(from var(--theme-color) 0.55 calc(c * 0.9) h);                    /* a band behind light text */
+  --confidential-color: color-mix(in srgb, var(--accent) 16%, transparent);
+  --bg:           #15151b;
+  --surface:      #1f1f27;
+  --surface-alt:  #24242d;
+  --ink:          #ececf1;
+  --ink-2:        #c3c3cb;
+  --ink-3:        #8e8e98;
+  --code-bg:      #0c0c10;
+  --code-ink:     #f4f4f1;
+  color-scheme:   dark;
 }
 
 section {
@@ -107,8 +198,8 @@ section code {
 }
 
 section pre {
-  background: #1f1f23;
-  color: #f4f4f1;
+  background: var(--code-bg);
+  color: var(--code-ink);
   padding: 16px 18px;
   border-radius: 8px;
   border-left: 4px solid var(--accent);
@@ -127,6 +218,12 @@ section table {
   font-size: 0.9em;
 }
 
+/* Row backgrounds — the default theme paints these from its light-dark()
+   variables; declaring them on our own tokens keeps the light look
+   identical and lets the dark set / dark.css recolour them. */
+section table tr { background: var(--surface); }
+section table tr:nth-child(2n) { background: var(--surface-alt); }
+
 section th, section td {
   border: 1px solid var(--rule-soft);
   padding: 8px 12px;
@@ -142,7 +239,7 @@ section th {
 section ul, section ol { margin: 0 0 14px 1.4em; }
 section li { margin: 4px 0; }
 
-/* 定義リスト — 用語をアクセント色、説明の罫線をティールのルールカラーに寄せる。
+/* 定義リスト — 用語をアクセント色、説明の罫線をルールカラーに寄せる。
    幾何は index.html のベースラインに任せ、ここでは --md-dl-* だけを指定する。 */
 section dl {
   --md-dl-accent: var(--rule-soft);
@@ -161,7 +258,7 @@ section hr {
 /* Use:  <!-- _class: title --> */
 section.title {
   background:
-    radial-gradient(circle at 88% 12%, var(--accent-soft) 0%, transparent 55%),
+    radial-gradient(circle at 88% 12% in srgb, var(--accent-soft) 0%, transparent 55%),
     var(--bg);
   padding: 96px 88px;
   display: flex;
@@ -203,20 +300,20 @@ section.title p {
 /* ---- section divider ------------------------------------------ */
 /* Use:  <!-- _class: section --> */
 section.section {
-  background: linear-gradient(135deg, var(--accent-deep) 0%, var(--accent) 60%, var(--rule) 100%);
-  color: #fff;
+  background: var(--divider-bg);
+  color: var(--on-accent);
   display: flex;
   flex-direction: column;
   justify-content: center;
   padding: 96px 88px;
 }
 section.section::after {
-  color: rgba(255, 255, 255, .8);
-  background: rgba(255, 255, 255, .12);
-  border-color: rgba(255, 255, 255, .35);
+  color: color-mix(in srgb, var(--on-accent) 80%, transparent);
+  background: color-mix(in srgb, var(--on-accent) 12%, transparent);
+  border-color: color-mix(in srgb, var(--on-accent) 35%, transparent);
 }
 section.section h1 {
-  color: #fff;
+  color: var(--on-accent);
   font-size: 56px;
   font-weight: 800;
   border-bottom: none;
@@ -224,7 +321,7 @@ section.section h1 {
   margin: 0;
 }
 section.section h2 {
-  color: rgba(255, 255, 255, .85);
+  color: color-mix(in srgb, var(--on-accent) 85%, transparent);
   font-size: 18px;
   font-weight: 500;
   letter-spacing: .18em;
@@ -232,13 +329,13 @@ section.section h2 {
   margin: 0 0 18px;
 }
 
-/* Confidential mark (front-matter `confidential: true` → body.confidential).
-   The per-slide watermark reads --confidential-* from `section`; here we tint
-   it with the magenta accent. section::before is otherwise unused by this
-   theme (pagination uses section::after). Set --confidential-opacity: 0 to
-   suppress it. */
-section {
-  --confidential-label: "CONFIDENTIAL";
-  --confidential-color: rgba(194, 24, 91, 0.13);
-  --confidential-font: var(--font-sans);
-}
+/* ⚙ settings exposed in the S-key theme picker. One control: the theme
+   colour every other token is derived from (see the header comment).
+   The comment below is parsed as JSON in its entirety — keep prose out
+   of it. */
+/* @user-vars
+[
+  { "var": "--theme-color", "type": "color", "default": "#c2185b",
+    "label": "テーマ色", "labelJa": "テーマ色（色相と鮮やかさが全体に反映）", "labelEn": "Theme color (hue & chroma drive the palette)" }
+]
+*/

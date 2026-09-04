@@ -304,6 +304,83 @@ def main():
             check("Home jumps to the first slide",
                   page.evaluate(ACTIVE_IDX), 0)
 
+            # ---------- Marp colour themes: one ⚙ picker drives the palette ----------
+            # Every bundled assets/marp/*.css declares a single @user-vars control,
+            # --theme-color, and derives all other tokens from it with oklch relative
+            # colours (lightness fixed, hue/chroma follow). The DOM digest cannot see
+            # any of this: computed colours are not recorded, and the picker changes
+            # no markup at all.
+            CANVAS_HEX = """(css) => { const cv=document.createElement('canvas'); cv.width=cv.height=1;
+              const ctx=cv.getContext('2d'); ctx.fillStyle='#000'; ctx.fillStyle=css; ctx.fillRect(0,0,1,1);
+              const d=ctx.getImageData(0,0,1,1).data;
+              return '#'+[d[0],d[1],d[2]].map(x=>x.toString(16).padStart(2,'0')).join(''); }"""
+
+            def token_hex(name):
+                # getComputedStyle hands relative colours back in oklch() form, so
+                # normalize through a 1x1 canvas instead of parsing.
+                css = page.evaluate(
+                    "(n) => getComputedStyle(document.querySelector('#preview [data-marpit-svg] section'))"
+                    ".getPropertyValue(n)", name)
+                return page.evaluate(CANVAS_HEX, css)
+
+            check("magenta's derived --accent reproduces the designed hex",
+                  token_hex("--accent"), "#c2185b")
+            check("...and so does the rule colour (second hue, dH about -160 deg)",
+                  token_hex("--rule"), "#00838f")
+            press(page, "s")
+            page.wait_for_function(
+                "() => document.querySelectorAll('#style-modal tr.style-row[data-marp-file] .style-gear').length > 0")
+            marp_gears = page.evaluate(
+                "() => [...document.querySelectorAll('#style-modal tr.style-row[data-marp-file]')]"
+                ".filter(tr => tr.querySelector('.style-gear')).map(tr => tr.dataset.marpTheme)")
+            check("every bundled Marp colour theme gets a gear, listed by name",
+                  marp_gears, ["black", "dark", "gold", "green", "indigo", "magenta", "purple", "silver"])
+            page.evaluate(
+                "() => document.querySelector"
+                "('tr.style-row[data-marp-theme=\"magenta\"] .style-gear').click()")
+            page.wait_for_function("() => !document.getElementById('style-vars-pane').hidden")
+            check("the gear opens the pane for the active Marp theme (titled by theme name)",
+                  page.evaluate("() => document.getElementById('style-modal-title').textContent"),
+                  page.evaluate("() => window.__I18N['style.settingsFor'].ja"
+                                ".replace('{name}', 'magenta')"))
+            check("...with exactly one control, the theme colour",
+                  page.evaluate("() => document.querySelectorAll('#style-vars-pane .sv-row').length"), 1)
+            lines_before = page.evaluate(
+                "() => [...document.querySelectorAll('#preview [data-line]')].map(e => e.dataset.line).join(',')")
+            page.evaluate(
+                "() => { const el = document.querySelector('#style-vars-pane input[type=color]');"
+                " el.value = '#1e88e5';"
+                " el.dispatchEvent(new Event('input', {bubbles:true}));"
+                " el.dispatchEvent(new Event('change', {bubbles:true})); }")
+            page.wait_for_timeout(200)
+            check("picking a blue re-derives the accent at the designed lightness",
+                  token_hex("--accent"), "#006dc8")
+            check("...the rule hue follows at its designed offset",
+                  token_hex("--rule"), "#85723a")
+            check("...and the ::: message border follows the same token",
+                  page.evaluate(CANVAS_HEX, page.evaluate(
+                      "() => getComputedStyle(document.querySelector('#preview .md-message')).borderTopColor")),
+                  "#006dc8")
+            check("...persisted under the marp/ key",
+                  page.evaluate("() => JSON.parse(localStorage.getItem('styleVars:marp/magenta.css'))"
+                                "['--theme-color']"), "#1e88e5")
+            check("...with no re-render (only custom properties moved)",
+                  page.evaluate(
+                      "() => [...document.querySelectorAll('#preview [data-line]')].map(e => e.dataset.line).join(',')"),
+                  lines_before)
+            check("...and the artifact carries the override",
+                  page.evaluate("async () => (await buildExportArtifact()).html.includes"
+                                "('--theme-color:#1e88e5 !important')"), True)
+            page.evaluate("() => document.querySelector('#style-vars-pane .sv-reset').click()")
+            page.wait_for_timeout(200)
+            check("reset restores the designed palette",
+                  token_hex("--accent"), "#c2185b")
+            check("...and clears the stored value",
+                  page.evaluate("() => localStorage.getItem('styleVars:marp/magenta.css')"), None)
+            press(page, "Escape")
+            check("Escape closes the Marp theme modal",
+                  page.evaluate("() => !!document.querySelector('#style-modal.visible')"), False)
+
             # ---------- autofit leaves no residual scrollbar (A) ----------
             # fitMarpSlides() sizes the .marp-fit-body scroll region from its own
             # measurement of the body's content height, so if the two disagree the

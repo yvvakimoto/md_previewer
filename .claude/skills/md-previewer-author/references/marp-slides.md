@@ -17,7 +17,7 @@ paginate: true
 ```
 
 - `theme:` — built-ins `default` / `gaia` / `uncover`, or any user theme in `assets/marp/*.css`
-  (a starter `magenta` is bundled). At runtime the user can switch themes with `S`.
+  (a colour family is bundled: `magenta` / `indigo` / `purple` / `green` / `gold` / `silver` / `black` / `dark`, all sharing one layout; `<!-- _class: invert -->` darkens a single slide). At runtime the user can switch themes with `S` and tune the theme colour with ⚙.
 - `paginate: true` shows page numbers.
 
 ## Slide separators
