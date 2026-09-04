@@ -49,9 +49,9 @@ def tinted(hx, base, cap=None):
     return 'oklch(from var(--theme-color) %.4f min(c, %.4f) h)' % (L, cap)
 
 LIGHT_NEUTRAL = dict(bg='#fdfcfb', surface='#ffffff', surface_alt='#f6f8fa',
-                     ink='#1a1a1a', ink2='#4a4a4a', ink3='#7a7a7a', code_bg='#1f1f23', code_ink='#f4f4f1')
+                     ink='#1a1a1a', ink2='#4a4a4a', ink3='#7a7a7a', code_bg='#f6f8fa', code_ink='#24292e')
 DARK_NEUTRAL = dict(bg='#15151b', surface='#1f1f27', surface_alt='#24242d',
-                    ink='#ececf1', ink2='#c3c3cb', ink3='#8e8e98', code_bg='#0c0c10', code_ink='#f4f4f1')
+                    ink='#ececf1', ink2='#c3c3cb', ink3='#8e8e98', code_bg='#161b22', code_ink='#c9d1d9')
 
 # name: (jp title, description, light set, dark set, light-neutral overrides, laser dH (deg) or abs, marker spec)
 T = {

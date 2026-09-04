@@ -70,8 +70,8 @@
   --ink:          #1a1a1a;
   --ink-2:        #4a4a4a;
   --ink-3:        #7a7a7a;
-  --code-bg:      #1f1f23;
-  --code-ink:     #f4f4f1;
+  --code-bg:      #f6f8fa;
+  --code-ink:     #24292e;
   color-scheme:   light;
 
   --font-sans: "Yu Gothic UI", "Meiryo UI", "Segoe UI", "Hiragino Sans",
@@ -115,8 +115,8 @@ section.invert {
   --ink:          #ececf1;
   --ink-2:        #c3c3cb;
   --ink-3:        #8e8e98;
-  --code-bg:      #0c0c10;
-  --code-ink:     #f4f4f1;
+  --code-bg:      #161b22;
+  --code-ink:     #c9d1d9;
   color-scheme:   dark;
 }
 
@@ -210,6 +210,82 @@ section pre code {
   background: transparent;
   color: inherit;
   padding: 0;
+}
+
+/* ---- highlight.js のトークン配色 -------------------------------------
+   index.html は GitHub *ライト* の hljs テーマを <head> で無条件に
+   <link> しており、renderMarp() は marp-core のコードブロックに
+   hljs.highlightElement() を再適用する。よってスライドの <code> は必ず
+   `hljs` クラスを持ち、github.min.css の `.hljs` (0,1,0) と
+   `pre code.hljs` (0,1,2) が上の `section pre code` (0,0,3) に勝つ。
+   これが無いと --code-bg / --code-ink は一度も適用されない
+   (marp-core 自身のパレットは `pre :where(.hljs-*)` = (0,0,1) なので
+   もっと先に負けている)。外部 <link> はスコープできないので、勝てる
+   詳細度でテーマ側から上書きするしかない。
+
+   値はアプリ自身の 2 つのパレットをそのまま流用している — ライトは
+   assets/libs/highlight.js/github.min.css、ダークは assets/index.html
+   の `body.dark-mode .hljs-*` ブロック。切り替えを light-dark() で
+   行うのは、各トークンセットが宣言する color-scheme を読ませるため。
+   section.invert で分岐すると dark.css (2 つのセットが逆転している)
+   で破綻する。 */
+section pre code.hljs {
+  background: transparent;
+  color: var(--code-ink);
+  padding: 0;                          /* github.min.css の pre code.hljs{padding:1em} を打ち消す */
+}
+
+section pre .hljs-doctag,
+section pre .hljs-keyword,
+section pre .hljs-meta .hljs-keyword,
+section pre .hljs-template-tag,
+section pre .hljs-variable.language_      { color: light-dark(#d73a49, #ff7b72); }
+section pre .hljs-template-variable       { color: light-dark(#d73a49, #79c0ff); }
+section pre .hljs-type                    { color: light-dark(#d73a49, #ffa657); }
+section pre .hljs-title,
+section pre .hljs-title.class_,
+section pre .hljs-title.class_.inherited__,
+section pre .hljs-title.function_         { color: light-dark(#6f42c1, #d2a8ff); }
+section pre .hljs-attr                    { color: light-dark(#005cc5, #a5d6ff); }
+section pre .hljs-attribute,
+section pre .hljs-number,
+section pre .hljs-variable,
+section pre .hljs-operator,
+section pre .hljs-selector-attr           { color: light-dark(#005cc5, #79c0ff); }
+section pre .hljs-literal                 { color: light-dark(#005cc5, #ff7b72); }
+section pre .hljs-meta                    { color: light-dark(#005cc5, #8b949e); }
+section pre .hljs-section,
+section pre .hljs-selector-class,
+section pre .hljs-selector-id             { color: light-dark(#005cc5, #d2a8ff); }
+section pre .hljs-string,
+section pre .hljs-meta .hljs-string,
+section pre .hljs-regexp                  { color: light-dark(#032f62, #a5d6ff); }
+section pre .hljs-built_in,
+section pre .hljs-builtin-name            { color: light-dark(#e36209, #ffa657); }
+section pre .hljs-symbol                  { color: light-dark(#e36209, #79c0ff); }
+section pre .hljs-code,
+section pre .hljs-comment,
+section pre .hljs-formula                 { color: light-dark(#6a737d, #8b949e); }
+section pre .hljs-quote                   { color: light-dark(#22863a, #8b949e); }
+section pre .hljs-name                    { color: light-dark(#22863a, #d2a8ff); }
+section pre .hljs-selector-tag            { color: light-dark(#22863a, #ff7b72); }
+section pre .hljs-selector-pseudo         { color: light-dark(#22863a, #79c0ff); }
+section pre .hljs-tag .hljs-name          { color: light-dark(#22863a, #ff7b72); }
+section pre .hljs-params,
+section pre .hljs-property                { color: light-dark(#24292e, #7ee787); }
+section pre .hljs-subst,
+section pre .hljs-emphasis,
+section pre .hljs-strong                  { color: light-dark(#24292e, #c9d1d9); }
+section pre .hljs-bullet                  { color: light-dark(#735c0f, #d2a8ff); }
+/* diff の行背景。ライトは github.min.css の淡色、ダークは既存の
+   ダークブロックが背景を持たないので透明。 */
+section pre .hljs-addition {
+  color: light-dark(#22863a, #a5d6ff);
+  background-color: light-dark(#f0fff4, transparent);
+}
+section pre .hljs-deletion {
+  color: light-dark(#b31d28, #ff7b72);
+  background-color: light-dark(#ffeef0, transparent);
 }
 
 section table {

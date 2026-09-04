@@ -79,6 +79,11 @@ fn main() {
 
 `code` と **強調** と [リンク](https://marp.app/)、そして
 
+```rust
+let theme = "invert";   // 地は --code-bg、字は --code-ink
+```
+
+
 > 引用。章スライドのグラデーションは反転しても淡くなりません。
 
 ---

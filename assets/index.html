@@ -1543,54 +1543,59 @@
             color: #484f58;
         }
 
-        /* Highlight.js dark token overrides (GitHub Dark palette) */
-        body.dark-mode .hljs {
+        /* Highlight.js dark token overrides (GitHub Dark palette). Scoped off
+           Marp: a slide's code colours come from its own theme, which pairs
+           --code-bg with a light-dark() palette keyed on the slide's token
+           set — these (0,2,x) rules would out-rank it and paint GitHub Dark
+           tokens onto a light slide. Same convention as the #preview pre /
+           code rules above. */
+        body.dark-mode:not(.marp) .hljs {
             color: #c9d1d9;
             background: transparent;
         }
-        body.dark-mode .hljs-keyword,
-        body.dark-mode .hljs-selector-tag,
-        body.dark-mode .hljs-literal,
-        body.dark-mode .hljs-tag .hljs-name,
-        body.dark-mode .hljs-deletion {
+        body.dark-mode:not(.marp) .hljs-keyword,
+        body.dark-mode:not(.marp) .hljs-selector-tag,
+        body.dark-mode:not(.marp) .hljs-literal,
+        body.dark-mode:not(.marp) .hljs-tag .hljs-name,
+        body.dark-mode:not(.marp) .hljs-deletion {
             color: #ff7b72;
         }
-        body.dark-mode .hljs-string,
-        body.dark-mode .hljs-attr,
-        body.dark-mode .hljs-meta-string,
-        body.dark-mode .hljs-regexp,
-        body.dark-mode .hljs-addition {
+        body.dark-mode:not(.marp) .hljs-string,
+        body.dark-mode:not(.marp) .hljs-attr,
+        body.dark-mode:not(.marp) .hljs-meta-string,
+        body.dark-mode:not(.marp) .hljs-regexp,
+        body.dark-mode:not(.marp) .hljs-addition {
             color: #a5d6ff;
         }
-        body.dark-mode .hljs-comment,
-        body.dark-mode .hljs-quote,
-        body.dark-mode .hljs-meta {
+        body.dark-mode:not(.marp) .hljs-comment,
+        body.dark-mode:not(.marp) .hljs-quote,
+        body.dark-mode:not(.marp) .hljs-meta {
             color: #8b949e;
         }
-        body.dark-mode .hljs-number,
-        body.dark-mode .hljs-symbol,
-        body.dark-mode .hljs-variable,
-        body.dark-mode .hljs-template-variable,
-        body.dark-mode .hljs-attribute {
+        body.dark-mode:not(.marp) .hljs-number,
+        body.dark-mode:not(.marp) .hljs-symbol,
+        body.dark-mode:not(.marp) .hljs-variable,
+        body.dark-mode:not(.marp) .hljs-template-variable,
+        body.dark-mode:not(.marp) .hljs-attribute {
             color: #79c0ff;
         }
-        body.dark-mode .hljs-title,
-        body.dark-mode .hljs-section,
-        body.dark-mode .hljs-name,
-        body.dark-mode .hljs-selector-id,
-        body.dark-mode .hljs-selector-class,
-        body.dark-mode .hljs-function .hljs-title,
-        body.dark-mode .hljs-title.function_ {
+        body.dark-mode:not(.marp) .hljs-title,
+        body.dark-mode:not(.marp) .hljs-section,
+        body.dark-mode:not(.marp) .hljs-name,
+        body.dark-mode:not(.marp) .hljs-selector-id,
+        body.dark-mode:not(.marp) .hljs-selector-class,
+        body.dark-mode:not(.marp) .hljs-function .hljs-title,
+        body.dark-mode:not(.marp) .hljs-title.function_ {
             color: #d2a8ff;
         }
-        body.dark-mode .hljs-built_in,
-        body.dark-mode .hljs-builtin-name,
-        body.dark-mode .hljs-type,
-        body.dark-mode .hljs-class .hljs-title {
+        body.dark-mode:not(.marp) .hljs-built_in,
+        body.dark-mode:not(.marp) .hljs-builtin-name,
+        body.dark-mode:not(.marp) .hljs-type,
+        body.dark-mode:not(.marp) .hljs-class .hljs-title {
             color: #ffa657;
         }
-        body.dark-mode .hljs-params,
-        body.dark-mode .hljs-property {
+        body.dark-mode:not(.marp) .hljs-params,
+        body.dark-mode:not(.marp) .hljs-property {
             color: #7ee787;
         }
 

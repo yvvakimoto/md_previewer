@@ -29,8 +29,8 @@
   --ink:         #111111;
   --ink-2:       #444444;
   --ink-3:       #777777;
-  --code-bg:     #1f1f23;
-  --code-ink:    #f4f4f1;
+  --code-bg:     #f6f8fa;
+  --code-ink:    #24292e;
   --laser-color: oklch(from var(--theme-color) 0.73 0.13 calc(h + 25));
   --marker-color: oklch(0.9285 0.1803 102.5);   /* #ffeb3b */
   --confidential-color: color-mix(in srgb, var(--accent) 13%, transparent);
@@ -50,8 +50,8 @@ section.invert {
   --ink:         #ececf1;
   --ink-2:       #c3c3cb;
   --ink-3:       #8e8e98;
-  --code-bg:     #0c0c10;
-  --code-ink:    #f4f4f1;
+  --code-bg:     #161b22;
+  --code-ink:    #c9d1d9;
   --marker-color: oklch(0.5532 0.1130 89.1);
   --confidential-color: color-mix(in srgb, var(--accent) 16%, transparent);
   color-scheme: dark;
