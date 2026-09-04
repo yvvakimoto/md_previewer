@@ -108,6 +108,31 @@ refuse-first cases (nested table, shape mismatch), that cancel writes nothing, a
 render abandons the session. Because there is no Rust host, a commit never comes back as a re-render,
 so each committing scenario reloads the page first.
 
+## Landing-page shortcut drift — `docskeycheck.py`
+
+`docs/index.html`'s `#keys` section republishes the app's own keyboard-shortcut list, and the stale copy
+of two hand-written lists is the **public** one. This pairs them and fails when the keys disagree:
+
+```powershell
+python tools/preview-harness/docskeycheck.py            # no browser needed
+python tools/preview-harness/docskeycheck.py --strict   # description warnings fail too
+```
+
+**The only `docs/`-facing check that needs neither Playwright nor a browser** — it is stdlib-only and
+runs in well under a second, because both sides are literal HTML plus literal JS string tables sitting
+on disk. That is the point: it is cheap enough for a pre-commit hook, and someone with no browser
+installed can still run it. (Not to be confused with `keycheck.py`, which drives real keydown events at
+the *app*; this one executes nothing.)
+
+The source of truth is the `<table>` inside `#help-modal` in `assets/index.html`. The two lists are
+paired **by i18n-key suffix, not by row order** — the page regroups the modal's 21 rows into three
+editorial groups, so its document order legitimately differs. A **key-cap** mismatch, or a shortcut
+present on one side only, **fails**; a **description** mismatch only **warns** (the app's wording can be
+edited by a commit that has no business touching `docs/`). The two rows the page deliberately rewords
+are named in the module's `ADAPTED` set. The editor group has no counterpart in the modal and is
+excluded by its `data-sc-scope="editor"`; a group carrying **no** `data-sc-scope` is an error, so the
+exclusion is fail-closed. `shoot-docs.py` also calls it warn-only beside `check_gallery_sources()`.
+
 ## Fidelity & intentional no-ops
 
 The Browser pane is Chromium and WebView2 is Edge/Chromium on the same machine (same system fonts), so

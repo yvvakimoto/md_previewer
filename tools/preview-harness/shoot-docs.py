@@ -512,6 +512,12 @@ def main():
                                os.path.getsize(w) / 1024))
     check_gallery_sources()
 
+    # The page's other drift check, so whoever regenerates the images hears
+    # about both. warn_only because THIS script's exit code means "did the
+    # images get written" -- the hard gate is the standalone entry point.
+    import docskeycheck
+    docskeycheck.report(warn_only=True)
+
 
 if __name__ == "__main__":
     main()

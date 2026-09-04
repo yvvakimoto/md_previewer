@@ -2117,7 +2117,7 @@
         }
         /* Required for td.keys's width to be honoured: under the default auto
            layout a declared width is only a suggestion, and the key column's
-           max-content (the 6-key slide-nav row, ~300px) wins instead. Scoped to
+           max-content (the 5-key slide-nav row, ~275px) wins instead. Scoped to
            #help-modal — #style-modal's columns are content-sized on purpose. */
         #help-modal table { table-layout: fixed; }
         #help-modal td,
@@ -2764,7 +2764,10 @@
                                      en: 'Cycle the Marp view: scroll → deck → list (clicking a thumbnail in list view opens it in deck view)' },
             'help.key.f':          { ja: '全画面表示の切り替え（Marp文書）', en: 'Toggle fullscreen (Marp documents)' },
             'help.key.a':          { ja: 'スライドの自動縮小の切り替え（Marp）', en: 'Toggle shrink-to-fit for slides (Marp)' },
-            'help.key.slideNav':   { ja: 'Marpデッキモードでのスライド移動', en: 'Move between slides in Marp deck mode' },
+            'help.key.slideNav':   { ja: '前 / 次のスライド（Marpデッキモード）',
+                                     en: 'Previous / next slide (Marp deck mode)' },
+            'help.key.slideEnds':  { ja: '最初 / 最後のスライドへ（Marpデッキモード）',
+                                     en: 'Jump to the first / last slide (Marp deck mode)' },
             'help.key.zoomPan':    { ja: 'カーソル位置でズーム / スライドをパン（Marpデッキモード）',
                                      en: 'Zoom at the cursor / pan the slide (Marp deck mode)' },
             'help.key.z':          { ja: '軌跡付きレーザーポインタの切り替え（Marpデッキモード）',
@@ -12335,7 +12338,8 @@ ${previewClone.outerHTML}
                     <tr><td class="keys"><kbd>P</kbd></td><td data-i18n="help.key.p">Marp表示の切り替え: スクロール → デッキ → 一覧（一覧でサムネイルをクリックするとデッキで開く）</td></tr>
                     <tr><td class="keys"><kbd>F</kbd></td><td data-i18n="help.key.f">全画面表示の切り替え（Marp文書）</td></tr>
                     <tr><td class="keys"><kbd>A</kbd></td><td data-i18n="help.key.a">スライドの自動縮小の切り替え（Marp）</td></tr>
-                    <tr><td class="keys"><span class="kc"><kbd>←</kbd> /</span> <span class="kc"><kbd>→</kbd> /</span> <span class="kc"><kbd>PgUp</kbd> /</span> <span class="kc"><kbd>PgDn</kbd> /</span> <span class="kc"><kbd>Home</kbd> /</span> <span class="kc"><kbd>End</kbd></span></td><td data-i18n="help.key.slideNav">Marpデッキモードでのスライド移動</td></tr>
+                    <tr><td class="keys"><span class="kc"><kbd>←</kbd> /</span> <span class="kc"><kbd>→</kbd> /</span> <span class="kc"><kbd>PgUp</kbd> /</span> <span class="kc"><kbd>PgDn</kbd> /</span> <span class="kc"><kbd>Space</kbd></span></td><td data-i18n="help.key.slideNav">前 / 次のスライド（Marpデッキモード）</td></tr>
+                    <tr><td class="keys"><span class="kc"><kbd>Home</kbd> /</span> <span class="kc"><kbd>End</kbd></span></td><td data-i18n="help.key.slideEnds">最初 / 最後のスライドへ（Marpデッキモード）</td></tr>
                     <tr><td class="keys" data-i18n-html="help.cell.zoomPan"><span class="kc"><kbd>Ctrl</kbd>+<kbd>Wheel</kbd> /</span> <span class="kc">ドラッグ</span></td><td data-i18n="help.key.zoomPan">カーソル位置でズーム / スライドをパン（Marpデッキモード）</td></tr>
                     <tr><td class="keys"><kbd>Z</kbd></td><td data-i18n="help.key.z">軌跡付きレーザーポインタの切り替え（Marpデッキモード）</td></tr>
                     <tr><td class="keys"><kbd>Esc</kbd></td><td data-i18n="help.key.esc">このダイアログを閉じる</td></tr>
