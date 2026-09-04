@@ -1,0 +1,62 @@
+/* @theme dark */
+/* =================================================================
+   Dark — 暗色背景 × マゼンタ
+   magenta.css with its dark token set promoted to the whole deck: the
+   values below are the SAME as magenta.css `section.invert` (keep the two
+   in sync), and `section.invert` here swaps back to the light set so one
+   slide can be bright. The section-divider gradient keeps the light
+   magenta colours (white text needs the darker stops). See magenta.css
+   for the colour model.
+
+   Usage:  theme: dark   (front-matter; or pick it with the S key)
+   ================================================================= */
+
+@import "magenta";
+
+:root {
+  --theme-color: #c2185b;
+  --accent:      oklch(from var(--theme-color) 0.6878 calc(c * 0.8917) calc(h - 3.7)); /* #f06292 */
+  --accent-soft: oklch(from var(--theme-color) 0.2778 calc(c * 0.2368) calc(h - 14.3)); /* #3a1e2b */
+  --accent-deep: oklch(from var(--theme-color) 0.8533 calc(c * 0.3717) calc(h - 9.3)); /* #f8bbd0 */
+  --rule:        oklch(from var(--theme-color) 0.7931 calc(c * 0.5680) calc(h - 158.3)); /* #4dd0e1 */
+  --rule-soft:   oklch(from var(--theme-color) 0.3010 calc(c * 0.1780) calc(h - 155.6)); /* #163338 */
+  --bg:          #15151b;
+  --surface:     #1f1f27;
+  --surface-alt: #24242d;
+  --ink:         #ececf1;
+  --ink-2:       #c3c3cb;
+  --ink-3:       #8e8e98;
+  --code-bg:     #161b22;
+  --code-ink:    #c9d1d9;
+  --marker-color: oklch(from var(--theme-color) 0.55 calc(c * 0.9) h);   /* band behind light text */
+  --confidential-color: color-mix(in srgb, var(--accent) 16%, transparent);
+  color-scheme: dark;
+}
+
+/* <!-- _class: invert --> : back to the light magenta set */
+section.invert {
+  --accent:      oklch(from var(--theme-color) 0.5313 c h);             /* #c2185b */
+  --accent-soft: oklch(from var(--theme-color) 0.9405 calc(c * 0.1399) calc(h - 10.2)); /* #fce4ec */
+  --accent-deep: oklch(from var(--theme-color) 0.4152 calc(c * 0.7964) calc(h - 9.9)); /* #880e4f */
+  --rule:        oklch(from var(--theme-color) 0.5571 calc(c * 0.4730) calc(h - 159.5)); /* #00838f */
+  --rule-soft:   oklch(from var(--theme-color) 0.9035 calc(c * 0.2903) calc(h - 160.1)); /* #b2ebf2 */
+  --bg:          #fdfcfb;
+  --surface:     #ffffff;
+  --surface-alt: #f6f8fa;
+  --ink:         #1a1a1a;
+  --ink-2:       #4a4a4a;
+  --ink-3:       #7a7a7a;
+  --code-bg:     #f6f8fa;
+  --code-ink:    #24292e;
+  --marker-color: oklch(from var(--theme-color) 0.7657 calc(c * 0.6332) calc(h - 6.7));   /* #f48fb1 */
+  --confidential-color: color-mix(in srgb, var(--accent) 13%, transparent);
+  color-scheme: light;
+}
+
+/* ⚙ in the S-key picker. Parsed as JSON in its entirety — no prose inside. */
+/* @user-vars
+[
+  { "var": "--theme-color", "type": "color", "default": "#c2185b",
+    "label": "テーマ色", "labelJa": "テーマ色（色相と鮮やかさが全体に反映）", "labelEn": "Theme color (hue & chroma drive the palette)" }
+]
+*/

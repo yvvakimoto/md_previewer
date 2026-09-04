@@ -270,7 +270,11 @@
             line-height: 1.6;
         }
 
-        #preview code {
+        /* Code chrome for the normal pipeline only. These ID selectors would
+           otherwise out-rank every Marp theme's own `section pre` / `section
+           code` rules (0,0,2) and repaint slide code blocks light while the
+           theme's text colour still applied — so they are scoped off Marp. */
+        body:not(.marp) #preview code {
             background: #f6f8fa;
             padding: 0.2em 0.4em;
             border-radius: 3px;
@@ -278,7 +282,7 @@
             font-size: 85%;
         }
 
-        #preview pre {
+        body:not(.marp) #preview pre {
             background: #f6f8fa;
             padding: 16px;
             border-radius: 6px;
@@ -287,7 +291,7 @@
             position: relative;
         }
 
-        #preview pre code {
+        body:not(.marp) #preview pre code {
             background: none;
             padding: 0;
         }
@@ -444,7 +448,10 @@
             color: #ffffff;
         }
 
-        #preview blockquote {
+        /* Coloured element chrome (blockquote / table / link / hr) is scoped off
+           Marp like the code rules above: at ID specificity these would replace a
+           slide theme's own link colour, table-header fill and quote rule. */
+        body:not(.marp) #preview blockquote {
             border-left: 4px solid #dfe2e5;
             padding-left: 16px;
             color: #6a737d;
@@ -671,12 +678,12 @@
             margin-bottom: 16px;
         }
 
-        #preview th, #preview td {
+        body:not(.marp) #preview th, body:not(.marp) #preview td {
             border: 1px solid #dfe2e5;
             padding: 6px 13px;
         }
 
-        #preview th {
+        body:not(.marp) #preview th {
             background: #f6f8fa;
             font-weight: 600;
         }
@@ -707,12 +714,12 @@
             height: auto;
         }
 
-        #preview a {
+        body:not(.marp) #preview a {
             color: #0366d6;
             text-decoration: none;
         }
 
-        #preview a:hover {
+        body:not(.marp) #preview a:hover {
             text-decoration: underline;
         }
 
@@ -726,7 +733,7 @@
            inherits a much larger font-size and an em value would explode there.
            Color/space go through --md-hr-* so a theme or user style can rebrand
            them (the --md-dl-* / --md-message-* convention). */
-        #preview hr {
+        body:not(.marp) #preview hr {
             border: none;
             border-top: 1px solid var(--md-hr-color, #dfe2e5);
             margin: var(--md-hr-space, 40px) 0;
@@ -1397,38 +1404,38 @@
             background: #0d2a4a;
         }
 
-        body.dark-mode #preview h6 {
+        body.dark-mode:not(.marp) #preview h6 {
             color: #8b949e;
         }
 
-        body.dark-mode #preview code {
+        body.dark-mode:not(.marp) #preview code {
             background: #161b22;
             color: #c9d1d9;
         }
 
-        body.dark-mode #preview pre {
+        body.dark-mode:not(.marp) #preview pre {
             background: #161b22;
         }
 
-        body.dark-mode #preview pre code {
+        body.dark-mode:not(.marp) #preview pre code {
             background: none;
         }
 
-        body.dark-mode #preview blockquote {
+        body.dark-mode:not(.marp) #preview blockquote {
             border-left-color: #30363d;
             color: #8b949e;
         }
 
-        body.dark-mode #preview th,
-        body.dark-mode #preview td {
+        body.dark-mode:not(.marp) #preview th,
+        body.dark-mode:not(.marp) #preview td {
             border-color: #30363d;
         }
 
-        body.dark-mode #preview th {
+        body.dark-mode:not(.marp) #preview th {
             background: #161b22;
         }
 
-        body.dark-mode #preview a {
+        body.dark-mode:not(.marp) #preview a {
             color: #58a6ff;
         }
 
@@ -1536,54 +1543,59 @@
             color: #484f58;
         }
 
-        /* Highlight.js dark token overrides (GitHub Dark palette) */
-        body.dark-mode .hljs {
+        /* Highlight.js dark token overrides (GitHub Dark palette). Scoped off
+           Marp: a slide's code colours come from its own theme, which pairs
+           --code-bg with a light-dark() palette keyed on the slide's token
+           set — these (0,2,x) rules would out-rank it and paint GitHub Dark
+           tokens onto a light slide. Same convention as the #preview pre /
+           code rules above. */
+        body.dark-mode:not(.marp) .hljs {
             color: #c9d1d9;
             background: transparent;
         }
-        body.dark-mode .hljs-keyword,
-        body.dark-mode .hljs-selector-tag,
-        body.dark-mode .hljs-literal,
-        body.dark-mode .hljs-tag .hljs-name,
-        body.dark-mode .hljs-deletion {
+        body.dark-mode:not(.marp) .hljs-keyword,
+        body.dark-mode:not(.marp) .hljs-selector-tag,
+        body.dark-mode:not(.marp) .hljs-literal,
+        body.dark-mode:not(.marp) .hljs-tag .hljs-name,
+        body.dark-mode:not(.marp) .hljs-deletion {
             color: #ff7b72;
         }
-        body.dark-mode .hljs-string,
-        body.dark-mode .hljs-attr,
-        body.dark-mode .hljs-meta-string,
-        body.dark-mode .hljs-regexp,
-        body.dark-mode .hljs-addition {
+        body.dark-mode:not(.marp) .hljs-string,
+        body.dark-mode:not(.marp) .hljs-attr,
+        body.dark-mode:not(.marp) .hljs-meta-string,
+        body.dark-mode:not(.marp) .hljs-regexp,
+        body.dark-mode:not(.marp) .hljs-addition {
             color: #a5d6ff;
         }
-        body.dark-mode .hljs-comment,
-        body.dark-mode .hljs-quote,
-        body.dark-mode .hljs-meta {
+        body.dark-mode:not(.marp) .hljs-comment,
+        body.dark-mode:not(.marp) .hljs-quote,
+        body.dark-mode:not(.marp) .hljs-meta {
             color: #8b949e;
         }
-        body.dark-mode .hljs-number,
-        body.dark-mode .hljs-symbol,
-        body.dark-mode .hljs-variable,
-        body.dark-mode .hljs-template-variable,
-        body.dark-mode .hljs-attribute {
+        body.dark-mode:not(.marp) .hljs-number,
+        body.dark-mode:not(.marp) .hljs-symbol,
+        body.dark-mode:not(.marp) .hljs-variable,
+        body.dark-mode:not(.marp) .hljs-template-variable,
+        body.dark-mode:not(.marp) .hljs-attribute {
             color: #79c0ff;
         }
-        body.dark-mode .hljs-title,
-        body.dark-mode .hljs-section,
-        body.dark-mode .hljs-name,
-        body.dark-mode .hljs-selector-id,
-        body.dark-mode .hljs-selector-class,
-        body.dark-mode .hljs-function .hljs-title,
-        body.dark-mode .hljs-title.function_ {
+        body.dark-mode:not(.marp) .hljs-title,
+        body.dark-mode:not(.marp) .hljs-section,
+        body.dark-mode:not(.marp) .hljs-name,
+        body.dark-mode:not(.marp) .hljs-selector-id,
+        body.dark-mode:not(.marp) .hljs-selector-class,
+        body.dark-mode:not(.marp) .hljs-function .hljs-title,
+        body.dark-mode:not(.marp) .hljs-title.function_ {
             color: #d2a8ff;
         }
-        body.dark-mode .hljs-built_in,
-        body.dark-mode .hljs-builtin-name,
-        body.dark-mode .hljs-type,
-        body.dark-mode .hljs-class .hljs-title {
+        body.dark-mode:not(.marp) .hljs-built_in,
+        body.dark-mode:not(.marp) .hljs-builtin-name,
+        body.dark-mode:not(.marp) .hljs-type,
+        body.dark-mode:not(.marp) .hljs-class .hljs-title {
             color: #ffa657;
         }
-        body.dark-mode .hljs-params,
-        body.dark-mode .hljs-property {
+        body.dark-mode:not(.marp) .hljs-params,
+        body.dark-mode:not(.marp) .hljs-property {
             color: #7ee787;
         }
 
@@ -1791,20 +1803,20 @@
             }
 
             /* Preserve code block backgrounds when printing */
-            #preview pre {
+            body:not(.marp) #preview pre {
                 background: #f6f8fa !important;
                 -webkit-print-color-adjust: exact;
                 print-color-adjust: exact;
             }
 
-            #preview code {
+            body:not(.marp) #preview code {
                 background: #f6f8fa !important;
                 -webkit-print-color-adjust: exact;
                 print-color-adjust: exact;
             }
 
             /* Preserve syntax highlighting colors */
-            #preview pre code {
+            body:not(.marp) #preview pre code {
                 background: none !important;
             }
 
@@ -3334,7 +3346,7 @@
         function applyStyleVars(name, spec, values) {
             let st = document.getElementById('style-vars-style');
             const decls = [];
-            if (name && spec && values && !document.body.classList.contains('marp')) {
+            if (name && spec && values) {
                 for (const s of spec) {
                     if (!Object.prototype.hasOwnProperty.call(values, s.var)) continue;
                     decls.push(s.var + ':' + __styleVarCssValue(s, values[s.var]) + ' !important;');
@@ -3349,14 +3361,28 @@
             st.textContent = '#preview, #preview [data-marpit-svg] section {' + decls.join('') + '}';
         }
         function __refreshStyleVars(name) {
-            if (!name || document.body.classList.contains('marp')) {
-                applyStyleVars(null);
-                return Promise.resolve();
-            }
+            // In Marp mode the Marp theme owns #style-vars-style (see
+            // __refreshMarpStyleVars, called from renderMarp) — leave it alone.
+            if (document.body.classList.contains('marp')) return Promise.resolve();
+            if (!name) { applyStyleVars(null); return Promise.resolve(); }
             return __loadStyleVarSpec(name).then((spec) => {
-                // A later style swap may have won the race — don't stamp stale vars.
+                // A later style swap (or a Marp document) may have won the race —
+                // don't stamp stale vars.
                 if ((currentStyle || null) !== name) return;
+                if (document.body.classList.contains('marp')) return;
                 applyStyleVars(name, spec, __readStyleVars(name));
+            });
+        }
+        // Marp counterpart: stamp the active Marp theme's @user-vars (e.g. the
+        // colour family's --theme-color) on the slide sections. Built-ins and
+        // themes without a declaration clear the element.
+        function __refreshMarpStyleVars(themeName) {
+            const key = __marpThemeVarsKey(themeName);
+            if (!key) { applyStyleVars(null); return Promise.resolve(); }
+            return __loadStyleVarSpec(key).then((spec) => {
+                if (!document.body.classList.contains('marp')) return;
+                if ((getMarpTheme(currentMarkdown) || 'default') !== themeName) return;
+                applyStyleVars(key, spec, __readStyleVars(key));
             });
         }
 
@@ -4255,16 +4281,28 @@
         function __marpThemeNames() {
             const builtins = ['default', 'gaia', 'uncover'];
             const seen = new Set(builtins);
-            const out = builtins.map(n => ({ name: n, label: n + ' (built-in)' }));
-            for (const [, css] of __marpThemeCache) {
+            const out = builtins.map(n => ({ name: n, label: n + ' (built-in)', file: null }));
+            const users = [];
+            for (const [file, css] of __marpThemeCache) {
                 const m = css.match(/\/\*\s*@theme\s+([A-Za-z0-9_-]+)\s*\*\//);
                 if (!m) continue;
                 const name = m[1];
                 if (seen.has(name)) continue;
                 seen.add(name);
-                out.push({ name, label: name });
+                users.push({ name, label: name, file });
             }
-            return out;
+            // __marpThemeCache fills in fetch-completion order, which differs from
+            // launch to launch — sort so the picker (and the ⚙ rows) stay put.
+            users.sort((a, b) => a.name.localeCompare(b.name));
+            return out.concat(users);
+        }
+        // The @user-vars key of a Marp theme: the same relative href the theme
+        // was fetched by (`marp/<file>`), so __loadStyleVarSpec / localStorage
+        // (`styleVars:marp/<file>`) work unchanged and can never collide with a
+        // user style's bare `<file>` key. Built-ins have no file → null.
+        function __marpThemeVarsKey(themeName) {
+            const e = __marpThemeNames().find(x => x.name === themeName);
+            return (e && e.file) ? 'marp/' + e.file : null;
         }
 
         // Read the current `theme:` value from a Marp document's YAML
@@ -4632,6 +4670,7 @@
                 tr.className = 'style-row';
                 if (isMarp) {
                     tr.dataset.marpTheme = entry.name;
+                    if (entry.file) tr.dataset.marpFile = entry.file;
                 } else if (entry.name) {
                     tr.dataset.style = entry.name;
                 }
@@ -4647,15 +4686,14 @@
                 tr.appendChild(label);
                 // Always append the (initially empty) gear cell so the column
                 // stays aligned; __decorateStyleRowsWithGear() fills in only the
-                // rows whose CSS actually declares @user-vars.
-                if (!isMarp) {
-                    const gear = document.createElement('td');
-                    gear.className = 'gear';
-                    tr.appendChild(gear);
-                }
+                // rows whose CSS actually declares @user-vars (user styles and
+                // Marp themes alike).
+                const gear = document.createElement('td');
+                gear.className = 'gear';
+                tr.appendChild(gear);
                 tbody.appendChild(tr);
             }
-            if (!isMarp) __decorateStyleRowsWithGear();
+            __decorateStyleRowsWithGear();
         }
         // Add a ⚙ button to each row whose stylesheet declares @user-vars. Async
         // (the spec comes from fetching the CSS), so the list renders immediately
@@ -4664,9 +4702,10 @@
         function __decorateStyleRowsWithGear() {
             const tbody = document.getElementById('style-modal-rows');
             if (!tbody) return;
-            for (const tr of tbody.querySelectorAll('tr.style-row[data-style]')) {
-                const name = tr.dataset.style;
-                __loadStyleVarSpec(name).then((spec) => {
+            for (const tr of tbody.querySelectorAll('tr.style-row[data-style], tr.style-row[data-marp-file]')) {
+                const name = tr.dataset.style || tr.dataset.marpTheme;
+                const key = tr.dataset.style || ('marp/' + tr.dataset.marpFile);
+                __loadStyleVarSpec(key).then((spec) => {
                     if (!spec.length || !tr.isConnected || tr.querySelector('.style-gear')) return;
                     const cell = tr.querySelector('td.gear');
                     if (!cell) return;
@@ -4698,14 +4737,19 @@
             if (title) title.textContent = t('style.title');
             __styleVarsState = null;
         }
-        async function setStyleVarsPaneOpen(name) {
+        // `name` is the spec / storage key (a user style's file, or `marp/<file>`
+        // for a Marp theme — see __marpThemeVarsKey). `opts.display` is the label
+        // shown in the pane title when it differs from the key; `opts.marp` skips
+        // the user-style activation (the Marp caller has already ensured the theme
+        // is the active one).
+        async function setStyleVarsPaneOpen(name, opts = {}) {
             const pane = __styleVarsPaneEl();
             if (!pane) return;
             const spec = await __loadStyleVarSpec(name);
             if (!spec.length) return;
             // Configuring a style you cannot see is meaningless, so ⚙ also
             // activates it. This is the same swap the row click performs.
-            if ((currentStyle || null) !== name) {
+            if (!opts.marp && (currentStyle || null) !== name) {
                 const anchor = capturePreviewAnchor();
                 const cssReady = applyUserStyle(name);
                 showToast(name);
@@ -4720,7 +4764,7 @@
             const tbl = document.querySelector('#style-modal table');
             if (tbl) tbl.hidden = true;
             const title = document.getElementById('style-modal-title');
-            if (title) title.textContent = t('style.settingsFor', { name: name });
+            if (title) title.textContent = t('style.settingsFor', { name: opts.display || name });
             pane.hidden = false;
             __renderStyleVarsForm();
         }
@@ -4892,12 +4936,29 @@
             const gear = target.closest('#style-modal .style-gear');
             if (gear) {
                 const gearRow = gear.closest('.style-row');
-                if (gearRow && gearRow.dataset.style) setStyleVarsPaneOpen(gearRow.dataset.style);
+                if (!gearRow) return;
+                if (gearRow.dataset.marpFile) {
+                    const themeName = gearRow.dataset.marpTheme;
+                    const active = getMarpTheme(currentMarkdown) || 'default';
+                    if (themeName !== active) {
+                        // Configuring a theme you cannot see is meaningless, so ⚙
+                        // activates it like the row click does. For Marp that is a
+                        // front-matter rewrite through the host with an async
+                        // re-render, so the pane is not opened here — press S and ⚙
+                        // again once the new theme is on screen.
+                        setStyleModalOpen(false);
+                        applyMarpTheme(themeName);
+                        return;
+                    }
+                    setStyleVarsPaneOpen('marp/' + gearRow.dataset.marpFile, { display: themeName, marp: true });
+                } else if (gearRow.dataset.style) {
+                    setStyleVarsPaneOpen(gearRow.dataset.style);
+                }
                 return;
             }
             if (target.closest('#style-vars-pane .sv-back')) {
                 closeStyleVarsPane();
-                __renderStyleRows(false);
+                __renderStyleRows(document.body.classList.contains('marp'));
                 return;
             }
             if (target.closest('#style-vars-pane .sv-reset')) {
@@ -5448,6 +5509,11 @@
             // <style>, so it isn't captured by baseCss above — append it explicitly.
             const wmStyleEl = document.getElementById('confidential-label-style');
             const wmCss = wmStyleEl && wmStyleEl.textContent ? wmStyleEl.textContent : '';
+            // Likewise the ⚙ (@user-vars) overrides — a user style's sliders or a
+            // Marp colour theme's --theme-color — so the artifact renders as the
+            // reader tuned it. Same reason: #style-vars-style is not the first <style>.
+            const svStyleEl = document.getElementById('style-vars-style');
+            const svCss = svStyleEl && svStyleEl.textContent ? svStyleEl.textContent : '';
             // Title: prefer the source filename basename (without .md/.markdown) so browser tabs and
             // bookmarks identify the document. Falls back to document.title for files opened via
             // drag-drop where we somehow don't have a path.
@@ -5661,6 +5727,7 @@ ${cdnLinks.join('\n')}
 ${baseCss}
 ${userCssText ? '\n/* user style */\n' + userCssText : ''}
 ${wmCss ? '\n/* watermark label override */\n' + wmCss : ''}
+${svCss ? '\n/* @user-vars overrides (⚙) */\n' + svCss : ''}
 ${tikzFontCss ? '\n/* tikz Computer-Modern fonts (inlined) */\n' + tikzFontCss : ''}
 /* export overrides: artifact is always visible (no splash / drop-zone gating) */
 #app-container { display: flex !important; }
@@ -9699,6 +9766,8 @@ ${previewClone.outerHTML}
             const { html, css } = marp.render(markdown);
 
             preview.innerHTML = '<style id="marp-style">' + css + '</style>' + html;
+            // The theme's ⚙ overrides (--theme-color) ride along with every render.
+            __refreshMarpStyleVars(getMarpTheme(currentMarkdown) || 'default');
 
             // Stamp data-line on each slide SVG so editor-sync (both directions)
             // works in Marp mode.
