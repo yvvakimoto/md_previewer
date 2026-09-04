@@ -38,6 +38,7 @@
     <a href="#uses" data-i18n="nav.uses">使い方</a>
     <a href="#features" data-i18n="nav.features">できること</a>
     <a href="#gallery" data-i18n="nav.gallery">実例</a>
+    <a href="#keys" data-i18n="nav.keys">キー操作</a>
   </nav>
 
   <div class="head-tools">
@@ -633,6 +634,227 @@ diagram tree {
   </div>
 
   <p class="feat-note reveal" data-i18n="gal.note">画像はどれも、添えたソースをこのプレビューアで実際に描画したものです。カレンダーの祝日はオンラインのときだけ取得します（取れなければ祝日なしで描きます）。縦書き・文庫組みの例は上の「文庫のかたちで、書く。」を、スライドの例は「Markdown のまま、発表する。」をご覧ください。</p>
+</section>
+
+<!-- ══════════════════════════ SHORTCUTS ══════════════════════════ -->
+<!-- Groups 1-3 must stay row-for-row identical to the app's own help modal (the
+     <table> inside #help-modal in assets/index.html). That modal is the single
+     source of truth, and tools/preview-harness/docskeycheck.py pairs the two
+     tables BY i18n-KEY SUFFIX -- not by position, because the page regroups the
+     modal's 21 rows editorially and so legitimately reorders them. A key-cap
+     mismatch FAILS that checker; a description mismatch only warns.
+
+     The editor group has no counterpart in the modal and is excluded by
+     data-sc-scope="editor". A .sc-group with NO data-sc-scope is an error, so a
+     fifth group can neither drag editor rows into the comparison nor dodge it.
+
+     Key caps are hand-written here for the same reason the modal hand-writes
+     them: key names are not translated -- they are what is printed on the key.
+     The only two cells that go through i18n are the ones mixing a key with a
+     WORD (クリック / ドラッグ), exactly the two the modal routes that way. The
+     " /" separator lives INSIDE .sc-combo, again mirroring the modal, so a
+     slash can never start a line -- and so the checker can compare the two
+     sides as plain strings instead of normalising each shape separately. -->
+<section id="keys" class="shortcuts">
+  <header class="sec-head reveal">
+    <p class="sec-kicker" data-i18n="keys.kicker">ONE KEY EACH</p>
+    <h2 class="sec-title" data-i18n="keys.title">メニューは、ありません。</h2>
+    <p class="sec-lead" data-i18n="keys.lead">表示の切り替えも書き出しも、キー 1 つです。</p>
+  </header>
+
+  <div class="sc-groups reveal">
+
+    <section class="sc-group" data-sc-scope="preview">
+      <h3 class="sc-gtitle" data-i18n="keys.g1">ウィンドウの表示</h3>
+      <dl class="sc-list">
+        <div class="sc-row">
+          <dt class="sc-keys"><kbd>H</kbd></dt>
+          <dd class="sc-desc" data-i18n="keys.h">アプリ内のショートカット一覧の表示 / 非表示</dd>
+        </div>
+        <div class="sc-row">
+          <dt class="sc-keys"><kbd>M</kbd></dt>
+          <dd class="sc-desc" data-i18n="keys.m">ダーク / ライト表示の切り替え</dd>
+        </div>
+        <div class="sc-row">
+          <dt class="sc-keys"><kbd>S</kbd></dt>
+          <dd class="sc-desc" data-i18n="keys.s">スタイルの選択（行末の ⚙ でそのスタイル固有の設定。Marpモードでは Marpテーマ。フロントマターを書き換え）</dd>
+        </div>
+        <div class="sc-row">
+          <dt class="sc-keys"><kbd>N</kbd></dt>
+          <dd class="sc-desc" data-i18n="keys.n">セクション自動番号の切り替え</dd>
+        </div>
+        <div class="sc-row">
+          <dt class="sc-keys"><kbd>L</kbd></dt>
+          <dd class="sc-desc" data-i18n="keys.l">行番号の表示切り替え</dd>
+        </div>
+        <div class="sc-row">
+          <dt class="sc-keys"><kbd>W</kbd></dt>
+          <dd class="sc-desc" data-i18n="keys.w">全幅レイアウトの切り替え</dd>
+        </div>
+        <div class="sc-row">
+          <dt class="sc-keys">
+            <span class="sc-combo"><kbd>Ctrl</kbd>+<kbd>+</kbd> /</span>
+            <span class="sc-combo"><kbd>Ctrl</kbd>+<kbd>-</kbd> /</span>
+            <span class="sc-combo"><kbd>Ctrl</kbd>+<kbd>0</kbd></span>
+          </dt>
+          <dd class="sc-desc" data-i18n="keys.zoom">ズームイン / アウト / リセット</dd>
+        </div>
+        <div class="sc-row">
+          <dt class="sc-keys"><kbd>Esc</kbd></dt>
+          <dd class="sc-desc" data-i18n="keys.esc">開いているモーダルを閉じる（新しいものから順に）</dd>
+        </div>
+      </dl>
+    </section>
+
+    <section class="sc-group" data-sc-scope="preview">
+      <h3 class="sc-gtitle" data-i18n="keys.g2">開く・書き出す</h3>
+      <dl class="sc-list">
+        <div class="sc-row">
+          <dt class="sc-keys"><kbd>E</kbd></dt>
+          <dd class="sc-desc" data-i18n="keys.e">エディタウィンドウを開く（Vimモード・数式入力補助・文字数カウント）</dd>
+        </div>
+        <div class="sc-row">
+          <dt class="sc-keys"><span class="sc-combo"><kbd>Ctrl</kbd>+<kbd>N</kbd></span></dt>
+          <dd class="sc-desc" data-i18n="keys.ctrlN">新規の空Markdownファイルを作成</dd>
+        </div>
+        <div class="sc-row">
+          <dt class="sc-keys"><span class="sc-combo"><kbd>Ctrl</kbd>+<kbd>D</kbd></span></dt>
+          <dd class="sc-desc" data-i18n="keys.ctrlD">インストール先フォルダを Explorer で開く</dd>
+        </div>
+        <div class="sc-row">
+          <dt class="sc-keys">
+            <span class="sc-combo"><kbd>Alt</kbd>+<kbd>←</kbd> /</span>
+            <span class="sc-combo"><kbd>Alt</kbd>+<kbd>→</kbd></span>
+          </dt>
+          <dd class="sc-desc" data-i18n="keys.history">開いたファイルの履歴を戻る / 進む</dd>
+        </div>
+        <div class="sc-row">
+          <dt class="sc-keys" data-i18n="keys.cell.ctrlClick"><span class="sc-combo"><kbd>Ctrl</kbd>+クリック</span></dt>
+          <dd class="sc-desc" data-i18n="keys.ctrlClick">.md リンクを新しいプレビュアのウィンドウで開く（通常のクリックは同じウィンドウで遷移）</dd>
+        </div>
+        <div class="sc-row">
+          <dt class="sc-keys"><kbd>X</kbd></dt>
+          <dd class="sc-desc" data-i18n="keys.x">現在の文書をエクスポート（保存ダイアログで HTML / PDF を選択。PDFはクリック可能なリンクと見出しのしおりを保持）</dd>
+        </div>
+      </dl>
+    </section>
+
+    <section class="sc-group" data-sc-scope="preview">
+      <h3 class="sc-gtitle" data-i18n="keys.g3">Marp スライド</h3>
+      <p class="sc-gnote" data-i18n="keys.g3note">Marp 文書のときだけ効きます。下の 4 つはデッキ表示中のみ。</p>
+      <dl class="sc-list">
+        <div class="sc-row">
+          <dt class="sc-keys"><kbd>P</kbd></dt>
+          <dd class="sc-desc" data-i18n="keys.p">Marp表示の切り替え: スクロール → デッキ → 一覧（一覧でサムネイルをクリックするとデッキで開く）</dd>
+        </div>
+        <div class="sc-row">
+          <dt class="sc-keys"><kbd>F</kbd></dt>
+          <dd class="sc-desc" data-i18n="keys.f">全画面表示の切り替え（Marp文書）</dd>
+        </div>
+        <div class="sc-row">
+          <dt class="sc-keys"><kbd>A</kbd></dt>
+          <dd class="sc-desc" data-i18n="keys.a">スライドの自動縮小の切り替え（Marp）</dd>
+        </div>
+        <div class="sc-row">
+          <dt class="sc-keys">
+            <span class="sc-combo"><kbd>←</kbd> /</span>
+            <span class="sc-combo"><kbd>→</kbd> /</span>
+            <span class="sc-combo"><kbd>PgUp</kbd> /</span>
+            <span class="sc-combo"><kbd>PgDn</kbd> /</span>
+            <span class="sc-combo"><kbd>Space</kbd></span>
+          </dt>
+          <dd class="sc-desc" data-i18n="keys.slideNav">前 / 次のスライド（Marpデッキモード）</dd>
+        </div>
+        <div class="sc-row">
+          <dt class="sc-keys">
+            <span class="sc-combo"><kbd>Home</kbd> /</span>
+            <span class="sc-combo"><kbd>End</kbd></span>
+          </dt>
+          <dd class="sc-desc" data-i18n="keys.slideEnds">最初 / 最後のスライドへ（Marpデッキモード）</dd>
+        </div>
+        <div class="sc-row">
+          <dt class="sc-keys" data-i18n="keys.cell.zoomPan"><span class="sc-combo"><kbd>Ctrl</kbd>+<kbd>Wheel</kbd> /</span> <span class="sc-combo">ドラッグ</span></dt>
+          <dd class="sc-desc" data-i18n="keys.zoomPan">カーソル位置でズーム / スライドをパン（Marpデッキモード）</dd>
+        </div>
+        <div class="sc-row">
+          <dt class="sc-keys"><kbd>Z</kbd></dt>
+          <dd class="sc-desc" data-i18n="keys.z">軌跡付きレーザーポインタの切り替え（Marpデッキモード）</dd>
+        </div>
+      </dl>
+    </section>
+
+    <section class="sc-group" data-sc-scope="editor">
+      <h3 class="sc-gtitle" data-i18n="keys.g4">エディタウィンドウ</h3>
+      <p class="sc-gnote" data-i18n="keys.g4note">プレビューで <kbd>E</kbd> を押すと開きます。Vim キーバインドは <kbd>⚙ 設定</kbd> でオンにします。</p>
+      <dl class="sc-list">
+        <div class="sc-row">
+          <dt class="sc-keys"><span class="sc-combo"><kbd>Ctrl</kbd>+<kbd>S</kbd></span></dt>
+          <dd class="sc-desc" data-i18n="keys.ed.save">保存してプレビューへ反映（Vim では <code>:w</code> / <code>:wq</code>）</dd>
+        </div>
+        <div class="sc-row">
+          <dt class="sc-keys">
+            <span class="sc-combo"><kbd>Tab</kbd> /</span>
+            <span class="sc-combo"><kbd>Shift</kbd>+<kbd>Tab</kbd></span>
+          </dt>
+          <dd class="sc-desc" data-i18n="keys.ed.indent">インデント / 逆インデント。数式の中では入力補助が、番号付きリストの中ではマーカー幅への揃えが先に働きます</dd>
+        </div>
+        <div class="sc-row">
+          <dt class="sc-keys">
+            <span class="sc-combo"><kbd>Ctrl</kbd>+<kbd>+</kbd> /</span>
+            <span class="sc-combo"><kbd>Ctrl</kbd>+<kbd>-</kbd> /</span>
+            <span class="sc-combo"><kbd>Ctrl</kbd>+<kbd>0</kbd></span>
+          </dt>
+          <dd class="sc-desc" data-i18n="keys.ed.fontsize">編集中の文字だけを拡大 / 縮小 / 既定へ（<kbd>Ctrl</kbd>+ホイール、<code>:fontsize</code> でも）</dd>
+        </div>
+        <div class="sc-row">
+          <dt class="sc-keys"><span class="sc-combo"><kbd>Ctrl</kbd>+<kbd>V</kbd></span></dt>
+          <dd class="sc-desc" data-i18n="keys.ed.paste">Excel / Word の表を Markdown の表に変換して貼り付け（<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>V</kbd> で一回だけ素のまま、<kbd>Ctrl</kbd>+<kbd>Z</kbd> 一回で戻ります）</dd>
+        </div>
+        <div class="sc-row">
+          <dt class="sc-keys">
+            <span class="sc-combo"><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>N</kbd> /</span>
+            <span class="sc-combo"><kbd>C</kbd> /</span>
+            <span class="sc-combo"><kbd>X</kbd></span>
+          </dt>
+          <dd class="sc-desc" data-i18n="keys.ed.slide">Marp スライドを挿入 / コピー / カット（Vim では <code>gsi</code> / <code>gsy</code> / <code>gsd</code>）</dd>
+        </div>
+        <div class="sc-row">
+          <dt class="sc-keys">
+            <span class="sc-combo"><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>T</kbd> /</span>
+            <span class="sc-combo"><kbd>H</kbd></span>
+          </dt>
+          <dd class="sc-desc" data-i18n="keys.ed.table">表を挿入 / カーソル列のハイライトを切り替え（Vim では <code>gti</code> / <code>gtc</code>）</dd>
+        </div>
+        <div class="sc-row">
+          <dt class="sc-keys">
+            <span class="sc-combo"><kbd>]]</kbd> /</span>
+            <span class="sc-combo"><kbd>[[</kbd> /</span>
+            <span class="sc-combo"><kbd>za</kbd> /</span>
+            <span class="sc-combo"><kbd>zA</kbd></span>
+          </dt>
+          <dd class="sc-desc" data-i18n="keys.ed.headings">次 / 前の見出しへ移動、節を畳む / すべて畳む（Vim ノーマルモード）</dd>
+        </div>
+        <div class="sc-row">
+          <dt class="sc-keys">
+            <span class="sc-combo"><kbd>gmc</kbd> /</span>
+            <span class="sc-combo"><kbd>Shift</kbd>+<kbd>Enter</kbd></span>
+          </dt>
+          <dd class="sc-desc" data-i18n="keys.ed.cells"><code>---</code> 区切りの Jupyter 風セルモードを切り替え、セルを実行して次へ（<code>:cellmode</code> でも）</dd>
+        </div>
+        <div class="sc-row">
+          <dt class="sc-keys">
+            <span class="sc-combo"><kbd>w</kbd> /</span>
+            <span class="sc-combo"><kbd>b</kbd> /</span>
+            <span class="sc-combo"><kbd>e</kbd></span>
+          </dt>
+          <dd class="sc-desc" data-i18n="keys.ed.jaword">漢字・ひらがな・カタカナの切れ目で止まる単語移動（Vim ノーマルモード。<code>:set dvorak</code> で Dvorak 配列にも対応）</dd>
+        </div>
+      </dl>
+    </section>
+
+  </div>
+
+  <p class="sc-note reveal" data-i18n="keys.note">上の 3 つは、アプリの中で <kbd>H</kbd> を押すと出る一覧と同じものです。エディタの欄は主なものだけで、セルモードや Vim の全キー、ex コマンドの一覧はエディタの <kbd>⚙ 設定</kbd> と README でご覧いただけます。</p>
 </section>
 
 <!-- ══════════════════════════ DOWNLOAD ══════════════════════════ -->

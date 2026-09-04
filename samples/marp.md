@@ -28,7 +28,7 @@ paginate: true
 - フロントマターに `marp: true` を書くだけで自動切替
 - `P` キーで デッキモード（1 枚ずつ表示）に切替
 - `←` / `→` でスライド移動、`F` でフルスクリーン
-- `theme: newton` のように `assets/marp/*.css` の独自テーマも指定可能
+- `theme: indigo` のように `assets/marp/*.css` の独自テーマも指定可能
 
 ---
 

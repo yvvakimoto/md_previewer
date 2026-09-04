@@ -22,6 +22,7 @@
     'nav.uses':      { ja: '使い方', en: 'Use cases' },
     'nav.features':  { ja: 'できること', en: 'Features' },
     'nav.gallery':   { ja: '実例', en: 'Examples' },
+    'nav.keys':      { ja: 'キー操作', en: 'Shortcuts' },
     'nav.download':  { ja: 'ダウンロード', en: 'Download' },
     'nav.theme':     { ja: '配色を切り替え', en: 'Toggle colour scheme' },
     'nav.langLabel': { ja: '表示言語', en: 'Display language' },
@@ -221,6 +222,106 @@
     'gal.feyT':      { ja: 'ファインマン図', en: 'Feynman diagram' },
     'gal.feyAlt':    { ja: '電子と陽電子が光子を介してミューオン対になるツリーレベルの図',
                        en: 'A tree-level diagram: an electron and a positron annihilating into a muon pair through a photon' },
+
+    /* Shortcuts section. The 21 preview rows mirror the app's OWN help-modal
+       strings (__I18N 'help.key.*' in assets/index.html) and 19 of them are
+       byte-for-byte copies -- the translations were already written there and
+       are already good. Two exceptions are reworded because the app's wording
+       names the modal it lives in, which is meaningless on a web page; both are
+       declared in docskeycheck.py's ADAPTED set:
+         keys.h    'このヘルプの表示 / 非表示'  -> 'アプリ内のショートカット一覧の…'
+         keys.esc  'このダイアログを閉じる'      -> '開いているモーダルを閉じる…'
+       DO NOT re-space the copied strings. The app writes 「Marpモード」/「Marp表示」
+       with no space while this page's own copy writes 「Marp スライド」; the checker
+       compares descriptions literally after collapsing whitespace, and a space
+       between CJK and Latin does not collapse -- so a cosmetic re-space is 19
+       permanent warnings. Section furniture uses the page's voice; the reused
+       rows keep the app's.
+       The row suffixes deliberately match the app's ('keys.h' <-> 'help.key.h')
+       so the two tables can be paired mechanically rather than by text.
+       Any value carrying markup must carry it in BOTH languages: promoteHtmlKeys()
+       promotes on either one, after which applyI18n writes innerHTML for both. */
+    'keys.kicker': { ja: 'ONE KEY EACH', en: 'ONE KEY EACH' },
+    'keys.title':  { ja: 'メニューは、ありません。', en: 'No menus — just keys.' },
+    'keys.lead':   { ja: '表示の切り替えも書き出しも、キー 1 つです。',
+                     en: 'Switching the view and exporting are each a single key.' },
+
+    'keys.g1': { ja: 'ウィンドウの表示', en: 'The window' },
+    'keys.g2': { ja: '開く・書き出す', en: 'Open and export' },
+    'keys.g3': { ja: 'Marp スライド', en: 'Marp slides' },
+    'keys.g4': { ja: 'エディタウィンドウ', en: 'The editor window' },
+
+    'keys.g3note': { ja: 'Marp 文書のときだけ効きます。下の 4 つはデッキ表示中のみ。',
+                     en: 'Only in a Marp document — and the last four only in deck view.' },
+    'keys.g4note': { ja: 'プレビューで <kbd>E</kbd> を押すと開きます。Vim キーバインドは <kbd>⚙ 設定</kbd> でオンにします。',
+                     en: 'Press <kbd>E</kbd> in the preview to open it. Vim keybindings are switched on in <kbd>⚙ Settings</kbd>.' },
+
+    /* --- these 18 are byte-for-byte copies of the app's help.key.* --- */
+    'keys.m':         { ja: 'ダーク / ライト表示の切り替え', en: 'Toggle dark / light appearance' },
+    'keys.s':         { ja: 'スタイルの選択（行末の ⚙ でそのスタイル固有の設定。Marpモードでは Marpテーマ。フロントマターを書き換え）',
+                        en: 'Choose a style (⚙ opens that style’s own settings; in Marp mode it picks the Marp theme and rewrites the front matter)' },
+    'keys.n':         { ja: 'セクション自動番号の切り替え', en: 'Toggle automatic section numbering' },
+    'keys.l':         { ja: '行番号の表示切り替え', en: 'Toggle line numbers' },
+    'keys.w':         { ja: '全幅レイアウトの切り替え', en: 'Toggle full-width layout' },
+    'keys.zoom':      { ja: 'ズームイン / アウト / リセット', en: 'Zoom in / out / reset' },
+    'keys.e':         { ja: 'エディタウィンドウを開く（Vimモード・数式入力補助・文字数カウント）',
+                        en: 'Open the editor window (Vim mode, math input assist, character count)' },
+    'keys.ctrlN':     { ja: '新規の空Markdownファイルを作成', en: 'Create a new empty Markdown file' },
+    'keys.ctrlD':     { ja: 'インストール先フォルダを Explorer で開く', en: 'Open the install folder in Explorer' },
+    'keys.history':   { ja: '開いたファイルの履歴を戻る / 進む', en: 'Go back / forward through opened files' },
+    'keys.ctrlClick': { ja: '.md リンクを新しいプレビュアのウィンドウで開く（通常のクリックは同じウィンドウで遷移）',
+                        en: 'Open a .md link in a new previewer window (a plain click navigates in this window)' },
+    'keys.x':         { ja: '現在の文書をエクスポート（保存ダイアログで HTML / PDF を選択。PDFはクリック可能なリンクと見出しのしおりを保持）',
+                        en: 'Export the current document (pick HTML or PDF in the save dialog; PDF keeps clickable links and heading bookmarks)' },
+    'keys.p':         { ja: 'Marp表示の切り替え: スクロール → デッキ → 一覧（一覧でサムネイルをクリックするとデッキで開く）',
+                        en: 'Cycle the Marp view: scroll → deck → list (clicking a thumbnail in list view opens it in deck view)' },
+    'keys.f':         { ja: '全画面表示の切り替え（Marp文書）', en: 'Toggle fullscreen (Marp documents)' },
+    'keys.a':         { ja: 'スライドの自動縮小の切り替え（Marp）', en: 'Toggle shrink-to-fit for slides (Marp)' },
+    'keys.slideNav':  { ja: '前 / 次のスライド（Marpデッキモード）',
+                        en: 'Previous / next slide (Marp deck mode)' },
+    'keys.slideEnds': { ja: '最初 / 最後のスライドへ（Marpデッキモード）',
+                        en: 'Jump to the first / last slide (Marp deck mode)' },
+    'keys.zoomPan':   { ja: 'カーソル位置でズーム / スライドをパン（Marpデッキモード）',
+                        en: 'Zoom at the cursor / pan the slide (Marp deck mode)' },
+    'keys.z':         { ja: '軌跡付きレーザーポインタの切り替え（Marpデッキモード）',
+                        en: 'Toggle the laser pointer with trail (Marp deck mode)' },
+
+    /* --- the two reworded rows (ADAPTED in docskeycheck.py) --- */
+    'keys.h':   { ja: 'アプリ内のショートカット一覧の表示 / 非表示', en: 'Show / hide the in-app shortcut list' },
+    'keys.esc': { ja: '開いているモーダルを閉じる（新しいものから順に）', en: 'Close the open modal (newest first)' },
+
+    /* --- the only two KEY cells that go through i18n: they mix a key with a
+           WORD, exactly the two the app routes through data-i18n-html. Copied
+           from help.cell.*, with the class renamed kc -> sc-combo. --- */
+    'keys.cell.ctrlClick': { ja: '<span class="sc-combo"><kbd>Ctrl</kbd>+クリック</span>',
+                             en: '<span class="sc-combo"><kbd>Ctrl</kbd>+Click</span>' },
+    'keys.cell.zoomPan':   { ja: '<span class="sc-combo"><kbd>Ctrl</kbd>+<kbd>Wheel</kbd> /</span> <span class="sc-combo">ドラッグ</span>',
+                             en: '<span class="sc-combo"><kbd>Ctrl</kbd>+<kbd>Wheel</kbd> /</span> <span class="sc-combo">Drag</span>' },
+
+    /* --- editor rows: no counterpart in the app's help modal, so not checked.
+           Wording drawn from the editor's own ed.* hints in
+           tools/build-editor/i18n.js. --- */
+    'keys.ed.save':     { ja: '保存してプレビューへ反映（Vim では <code>:w</code> / <code>:wq</code>）',
+                          en: 'Save, and the preview follows at once (<code>:w</code> / <code>:wq</code> under Vim)' },
+    'keys.ed.indent':   { ja: 'インデント / 逆インデント。数式の中では入力補助が、番号付きリストの中ではマーカー幅への揃えが先に働きます',
+                          en: 'Indent / outdent — inside math the input assist wins first, and inside a numbered list the indent snaps to the marker’s width' },
+    'keys.ed.fontsize': { ja: '編集中の文字だけを拡大 / 縮小 / 既定へ（<kbd>Ctrl</kbd>+ホイール、<code>:fontsize</code> でも）',
+                          en: 'Scale the editing text only, up / down / back to the default (<kbd>Ctrl</kbd>+wheel and <code>:fontsize</code> do it too)' },
+    'keys.ed.paste':    { ja: 'Excel / Word の表を Markdown の表に変換して貼り付け（<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>V</kbd> で一回だけ素のまま、<kbd>Ctrl</kbd>+<kbd>Z</kbd> 一回で戻ります）',
+                          en: 'Paste an Excel / Word table as a Markdown table (<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>V</kbd> pastes raw just once; one <kbd>Ctrl</kbd>+<kbd>Z</kbd> undoes it)' },
+    'keys.ed.slide':    { ja: 'Marp スライドを挿入 / コピー / カット（Vim では <code>gsi</code> / <code>gsy</code> / <code>gsd</code>）',
+                          en: 'Insert / copy / cut a Marp slide (<code>gsi</code> / <code>gsy</code> / <code>gsd</code> under Vim)' },
+    'keys.ed.table':    { ja: '表を挿入 / カーソル列のハイライトを切り替え（Vim では <code>gti</code> / <code>gtc</code>）',
+                          en: 'Insert a table / toggle the cursor-column highlight (<code>gti</code> / <code>gtc</code> under Vim)' },
+    'keys.ed.headings': { ja: '次 / 前の見出しへ移動、節を畳む / すべて畳む（Vim ノーマルモード）',
+                          en: 'Next / previous heading, fold this section / fold them all (Vim NORMAL)' },
+    'keys.ed.cells':    { ja: '<code>---</code> 区切りの Jupyter 風セルモードを切り替え、セルを実行して次へ（<code>:cellmode</code> でも）',
+                          en: 'Toggle Jupyter-style cell mode with <code>---</code> as the separator, then run a cell and move on (<code>:cellmode</code> too)' },
+    'keys.ed.jaword':   { ja: '漢字・ひらがな・カタカナの切れ目で止まる単語移動（Vim ノーマルモード。<code>:set dvorak</code> で Dvorak 配列にも対応）',
+                          en: 'Word motions that stop at kanji / hiragana / katakana boundaries (Vim NORMAL; <code>:set dvorak</code> reads Command-mode keys at their QWERTY positions)' },
+
+    'keys.note': { ja: '上の 3 つは、アプリの中で <kbd>H</kbd> を押すと出る一覧と同じものです。エディタの欄は主なものだけで、セルモードや Vim の全キー、ex コマンドの一覧はエディタの <kbd>⚙ 設定</kbd> と README でご覧いただけます。',
+                   en: 'The first three groups are the same list the app itself shows under <kbd>H</kbd>. The editor group carries only the major bindings — the full cell-mode, Vim and ex-command reference lives in the editor’s <kbd>⚙ Settings</kbd> and in the README.' },
 
     'dl.kicker': { ja: 'GET IT', en: 'GET IT' },
     'dl.title':  { ja: '1 分で、使いはじめられます。', en: 'A minute from here to reading.' },

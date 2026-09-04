@@ -8,6 +8,12 @@
       "port": 8770
     },
     {
+      "name": "docs-static",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "http.server", "8765", "--directory", "docs"],
+      "port": 8765
+    },
+    {
       "name": "assets-static",
       "runtimeExecutable": "python",
       "runtimeArgs": ["-m", "http.server", "8753", "--directory", "assets"],

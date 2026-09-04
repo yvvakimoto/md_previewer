@@ -643,6 +643,104 @@ kbd {
    their natural size and centre the leftover space instead. */
 .g-card:not(.g-12) .g-out img { max-height: 260px; width: auto; }
 
+/* ---------- shortcuts: the app's own help list, plus the editor's majors ---- */
+.shortcuts {
+  max-width: var(--wrap); margin: 0 auto;
+  padding: clamp(56px, 9vw, 100px) var(--pad);
+  border-top: 2px solid var(--rule-soft);
+  /* A cool ink between the gallery's orange and the download's pink -- the
+     border-top alone does not separate three consecutive sections. Not --aqua:
+     #00b3d1 is ~2.6:1 on paper against green's ~3.5:1, and the kicker is
+     12px/800. Not --yellow: that is the brand-mark fill and unreadable here. */
+  --accent: var(--green);
+}
+
+/* One column of group cards, deliberately not two. The descriptions are full
+   Japanese sentences (keys.s is 60+ characters) and want the whole ~1050px
+   column; two columns means four content tracks and every long row wraps three
+   times. 30 rows deep is fine -- this is a reference section, not a pitch. */
+.sc-groups { display: grid; gap: clamp(18px, 2.4vw, 26px); }
+
+.sc-group {
+  padding: clamp(18px, 2.4vw, 26px) clamp(16px, 2.2vw, 24px) clamp(14px, 2vw, 20px);
+  border: 2.5px solid var(--rule); border-radius: 6px;
+  background: var(--paper-2); box-shadow: var(--shadow);
+}
+/* NOT .sc-head -- one character from the existing .sec-head would poison every
+   future grep across this file. */
+.sc-gtitle {
+  display: flex; align-items: center; gap: 12px;
+  margin: 0 0 10px;
+  font-family: var(--display); font-size: 17px; font-weight: 700;
+  letter-spacing: -.01em;
+}
+.sc-gtitle::after {          /* the .sec-kicker trailing rule, one level down */
+  content: ""; flex: 1 0 40px; height: 2px;
+  background: var(--accent); opacity: .35;
+}
+.sc-gnote { margin: 0 0 14px; font-size: 12.5px; line-height: 1.75; color: var(--ink-2); }
+.sc-gnote kbd, .sc-gnote code { font-size: .9em; }
+
+.sc-list { margin: 0; }
+.sc-row {
+  display: grid; gap: 4px 18px;
+  grid-template-columns: minmax(0, 1fr);   /* phone: caps above the description */
+  padding: 10px 0;
+  border-top: 1.5px dashed var(--rule-soft);
+}
+.sc-row:first-of-type { border-top: 0; padding-top: 2px; }
+
+@media (min-width: 700px) {
+  .sc-row {
+    /* 200px, the same width the app's own help modal gives its key column, so
+       the two lists read alike. It deliberately does NOT fit the widest cap run
+       (the 7-cap slide-nav row wants 365px) -- that one wraps at the
+       separators, exactly as it does in the modal, and only three of the 30 rows
+       wrap at all. minmax(0, 200px) rather than a bare 200px: a track's default
+       min-width is its content width, so a long cap run would widen the row
+       past the viewport -- body{overflow-x:hidden} hides that and only a narrow
+       full-page capture surfaces it. Same reason as the .g-src note above. */
+    grid-template-columns: minmax(0, 200px) minmax(0, 1fr);
+    align-items: baseline;
+  }
+  /* Right-aligned, again matching the modal's td.keys. Twenty of the 30 rows
+     are a single cap, so left-aligning them opens a ~190px river between the
+     key and the sentence that explains it; ending every run at the track's
+     right edge puts each cap next to its own description while still starting
+     every description on one axis. Below 700px the caps sit ABOVE their
+     description, where flex-start is the correct reading order. */
+  .sc-keys { justify-content: flex-end; text-align: right; }
+}
+
+.sc-keys {
+  display: flex; flex-wrap: wrap; gap: 6px 8px;
+  margin: 0; min-width: 0;
+  font-size: 13px; line-height: 1.9;
+}
+.sc-combo { white-space: nowrap; }   /* Ctrl+N never breaks at the + */
+/* kbd's own fill is --paper-2, which is ALSO this card's background, so the
+   caps would show nothing but their border. This is the first place on the page
+   a <kbd> sits on a card rather than on the section paper (.use-body,
+   .feat-note and .foot-note are all on --paper), which is why the collision
+   never surfaced before. Token-only, so it needs no dark-mode twin -- but in
+   dark mode --paper #14120f and --paper-2 #1d1a16 are only nine levels apart,
+   so this is the one thing here a light-mode review cannot check. */
+.sc-keys kbd { background: var(--paper); font-size: 12.5px; }
+
+.sc-desc {
+  margin: 0; min-width: 0;
+  font-size: 14px; line-height: 1.8; color: var(--ink-2);
+}
+.sc-desc b { color: var(--ink); }
+.sc-desc kbd, .sc-desc code { font-size: .9em; }
+
+.sc-note {
+  margin: clamp(18px, 2.4vw, 26px) 0 0;
+  max-width: 62em;
+  font-size: 12.5px; line-height: 1.85; color: var(--ink-3);
+}
+.sc-note kbd { font-size: .9em; }
+
 /* ---------- download ---------- */
 .download {
   max-width: var(--wrap); margin: 0 auto;
