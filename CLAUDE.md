@@ -373,7 +373,7 @@ restate these here — link to them.
 | キーボードショートカット（共通 / Marp スライドモード） | the full shortcut tables |
 | ワークスペース（フォルダ）モード, `_toc.md` の書式 | workspace usage and `_toc.md` syntax |
 | `.mdx` バンドル形式 / 自動更新 / 表示言語 | bundle format, update UX, language toggle |
-| テーマのカスタマイズ（通常 / Marp / 機密表示・透かし） | theme usage and the watermark front-matter |
+| テーマのカスタマイズ / 通常プレビュー / Marp スライドのテーマ / 機密表示（Confidential） | theme usage and the watermark front-matter |
 | エディタウィンドウ（`E` キー） | editor features from a user's view |
 | HTML / PDF エクスポート（`X`）, PNG 出力（`--export-png`） | export usage and CLI flags |
 | `samples/` フォルダの見方 / トラブルシューティング / 既知の制限 | sample guide, troubleshooting, limits |
