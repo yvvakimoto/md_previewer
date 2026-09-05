@@ -1,6 +1,7 @@
 {
-  "_readme": "EXAMPLE ONLY — not read by the app. To enable opt-in auto-update, copy this to `update.json` (next to the exe, or in assets/) and set a real `source`. Absent update.json => feature OFF, app stays fully offline. Windows-only. See CLAUDE.md 'Auto-update'.",
+  "_readme": "EXAMPLE ONLY — not read by the app (the live file is `update.json`). This is the intranet variant: `provider: \"share\"` reads the manifest and installer from a file share and never touches the internet. Put your copy at `update.json` NEXT TO THE EXE, not in assets/: that location wins over assets/update.json and, unlike it, is not overwritten by the next installer run. Windows-only. See .claude/docs/auto-update.md.",
   "enabled": true,
+  "provider": "share",
   "source": "\\\\FILESERVER\\share\\MdPreviewer",
   "manifest": "latest.json",
   "timeoutMs": 4000

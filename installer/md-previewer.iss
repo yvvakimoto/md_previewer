@@ -167,7 +167,7 @@ end;
 // Resolve where to fetch the tarball from. Priority, highest first:
 //   1. /TIKZSRC=<url-or-path>   (plus optional /TIKZSHA256=<digest>)
 //   2. assets\tikz-source.ini in the install dir - the same assets\* overlay
-//      mechanism that nwc-addon already uses to drop in update.json. INI rather
+//      mechanism used to drop in update.json. INI rather
 //      than JSON because Inno has GetIniString built in and Unicode-safe, and
 //      has no JSON parser at all; update.json stays JSON because its consumer
 //      is Rust/serde.

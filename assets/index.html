@@ -136,7 +136,7 @@
            ⚠️ The `:where()` wrap is load-bearing: it contributes ZERO
            specificity, so this rule weighs less than a theme's own
            `#preview h2 { margin-top: … }` and every theme keeps the heading
-           rhythm it authored (classical.css and the nwc_* themes all tune it;
+           rhythm it authored (classical.css / hakuro-modern.css / bunko.css tune it;
            tategaki.css relies on it to pin the inline axis under vertical
            writing). Only the Default look changes. Same doctrine as the
            `body.dark-mode { --md-dl-accent }` note further down: a baseline
@@ -2738,6 +2738,7 @@
             'banner.install':      { ja: '今すぐ更新',     en: 'Update now' },
             'banner.onexit':       { ja: '終了後に更新',   en: 'Update on exit' },
             'banner.optout':       { ja: '今後表示しない', en: 'Never show again' },
+            'banner.preparing':    { ja: 'ダウンロード中…', en: 'Downloading…' },
 
             'help.title':          { ja: 'キーボードショートカット', en: 'Keyboard Shortcuts' },
             'help.licenses':       { ja: 'サードパーティライセンス', en: 'Third-party licenses' },
@@ -2914,6 +2915,7 @@
             'toast.marpTheme':     { ja: 'Marpテーマ: {name}', en: 'Marp theme: {name}' },
             'toast.themeSaveFail': { ja: 'テーマの保存に失敗しました', en: 'Could not save the theme' },
             'toast.updateOnExit':  { ja: '終了時に更新します', en: 'Will update on exit' },
+            'toast.updateFailed':  { ja: '更新の取得に失敗しました', en: 'Could not fetch the update' },
 
             'banner.available':    { ja: '新しいバージョン <span class="ver">v{version}</span> があります',
                                      en: 'Version <span class="ver">v{version}</span> is available' },
@@ -3956,6 +3958,28 @@
                 b.classList.add('visible');
                 __dbgLog('update banner shown v' + ver);
             }
+            // The host posts these two only while someone is waiting on an
+            // install. They exist because the GitHub provider cannot hand over a
+            // runnable file until its download lands, so "今すぐ更新" can be
+            // pressed while there is still nothing to launch (a share path is
+            // launchable from the moment the banner appears; an https asset is
+            // not). Each re-resolves the button instead of closing over it, so
+            // arriving before DOMContentLoaded is a no-op rather than a throw.
+            function installBtn() { return document.getElementById('update-install-btn'); }
+            window.__updateInstallPending = function () {
+                const b = installBtn();
+                if (b) b.textContent = t('banner.preparing');
+                __dbgLog('update install waiting for download');
+            };
+            window.__updateInstallFailed = function () {
+                const b = installBtn();
+                if (b) {
+                    b.disabled = false;
+                    b.textContent = t('banner.install');
+                }
+                showToast(t('toast.updateFailed'));
+                __dbgLog('update install failed');
+            };
             window.__updateAvailable = function (info) {
                 try {
                     if (localStorage.getItem(OPTOUT_KEY) === 'true') {

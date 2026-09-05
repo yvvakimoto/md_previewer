@@ -106,7 +106,7 @@ _FIGURES_READY_JS = """() => {
 _TIKZ_SELECTOR_JS = "() => !!document.querySelector('.tikzcd-diagram, .tikz-diagram')"
 
 # A tikz block compiles TeX in a WASM Web Worker and is deliberately
-# fire-and-forget (see CLAUDE.md), so it takes seconds — and a block that never
+# fire-and-forget (see .claude/docs/preview-blocks.md), so it takes seconds — and a block that never
 # settles only resolves once index.html's own 30s __TIKZ_RENDER_TIMEOUT_MS swaps
 # in a .tikz-error. The page default (20s) cannot see that resolution, so a page
 # carrying tikz blocks gets its own budget.

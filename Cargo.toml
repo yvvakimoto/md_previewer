@@ -23,7 +23,10 @@ clipboard-win = "5"
 # Pinned to the versions wry 0.24 uses so the ICoreWebView2 type returned by
 # `WebViewExtWindows::controller()` matches (used by src/pdf_win.rs for PDF export).
 webview2-com = "0.19"
-windows = "0.39"
+# `Win32_Networking_WinHttp` powers src/http_win.rs (the GitHub Releases update
+# source). Features are additive, so listing them here cannot take anything away
+# from webview2-com; the 0.39 pin above must NOT be raised.
+windows = { version = "0.39", features = ["Win32_Foundation", "Win32_Networking_WinHttp"] }
 
 [build-dependencies]
 embed-resource = "2"

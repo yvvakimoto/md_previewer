@@ -98,7 +98,7 @@ Highest priority first:
 1. `MdPreviewer-Setup-x.y.z.exe /TIKZSRC="\SERVER\share\rod2ik-tikzjax-1.5.0.tgz"`
    (optionally `/TIKZSHA256=<digest>`; an `http(s)` URL works too)
 2. `{app}\assets\tikz-source.ini` — the same `assets\*` overlay mechanism
-   `nwc-addon` already uses for `update.json`. See
+   used for `update.json`. See
    `assets/tikz-source.example.ini`. INI rather than JSON because Inno Setup
    has `GetIniString` built in and Unicode-safe, and no JSON parser at all;
    `update.json` stays JSON because *its* consumer is Rust/serde.

@@ -1,0 +1,8 @@
+{
+  "_readme": "更新元の設定。既定は GitHub Releases。社内ネットワーク完結で配りたい場合は provider を \"share\" にして source にファイル共有のパスを書く（例は update.example.json）。自動更新を止めるにはこのファイルを削除するか enabled を false にする。詳細は .claude/docs/auto-update.md。",
+  "enabled": true,
+  "provider": "github",
+  "repo": "yvvakimoto/md_previewer",
+  "timeoutMs": 8000,
+  "minCheckIntervalMinutes": 360
+}
