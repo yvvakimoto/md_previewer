@@ -42,7 +42,7 @@ substitute.
 | ANY user-visible string; the help modal; settings labels | `.claude/docs/i18n.md` | Which table owns this key? Why did the labels go stale until restart? |
 | `buildExportArtifact()`, `__beforePdfPrint()`, `src/pdf_win.rs`, `src/png_win.rs` | `.claude/docs/export.md` | Why is my figure missing from the export? Why does a vertical theme print landscape? |
 | `src/main.rs`, `src/mdx.rs`, `src/editor_registry.rs`, `src/*_win.rs` | `.claude/docs/rust-host.md` | What does the `/userfile/` route do with `..`? How does `.mdx` repack? |
-| `src/updater.rs`, `#update-banner` | `.claude/docs/auto-update.md` | Why is the check released by `renderdone:`? Why is the banner stashed? |
+| `src/updater.rs`, `src/http_win.rs`, `assets/update.json`, `#update-banner` | `.claude/docs/auto-update.md` | Why is the check released by `renderdone:`? Why is the banner stashed? Why is `as_ready()` an `Option`? |
 | `tools/preview-harness/**`, `*.test.mjs`, `*.test.cjs` | `.claude/docs/harness-testing.md` | How do I see what I changed without a `cargo build`? |
 | `docs/**` (the PUBLISHED site), `tools/preview-harness/shoot-docs.py` | `.claude/docs/docs-site.md` | Why is the gallery snippet machine-checked? Why WebP at `--g-cap`? |
 | `tools/fetch-libs.ps1`, `tools/build-*/`, `installer/`, `build.rs`, `assets/libs/` | `.claude/docs/build-and-deps.md` | What are the five places a new library must be registered? |
@@ -56,9 +56,12 @@ so `grep -l "Owns:.*<path>" .claude/docs/` is a working reverse lookup.
 
 ## Project Overview
 
-A standalone desktop Markdown previewer in Rust, **Windows only**, **fully offline** (every
-dependency bundled; no CDN at runtime). One line per feature, for routing only — user-facing
-descriptions live in README.md 「対応している記法・機能」.
+A standalone desktop Markdown previewer in Rust, **Windows only**, **offline for viewing**
+(every rendering dependency bundled; no CDN at runtime). ⚠ **The offline guarantee covers
+*viewing*, not updating** — the update check contacts GitHub Releases by default
+(`auto-update.md`), so never write "never touches the internet" in user-facing text.
+One line per feature, for routing only — user-facing descriptions live in
+README.md 「対応している記法・機能」.
 
 | Feature | Detail |
 |---|---|
@@ -73,7 +76,7 @@ descriptions live in README.md 「対応している記法・機能」.
 | UI language toggle (ja / en), one shared `uiLang` key across both windows | `i18n.md` |
 | Export to standalone HTML or PDF (`X`); headless `--export-png` for agents | `export.md` |
 | Workspace (directory) mode with file tree and `_toc.md`; `.mdx` ZIP bundles | `rust-host.md` |
-| Opt-in auto-update over a file share (OFF by default, no config shipped) | `auto-update.md` |
+| Auto-update: GitHub Releases by default (ON, via the shipped `assets/update.json`), or an intranet file share with `provider: "share"` | `auto-update.md` |
 | Help modal (`H`), zoom (`Ctrl` `+`/`-`/`0`) | `preview-core.md` |
 
 ---
@@ -88,7 +91,8 @@ A file with no owning doc is an anomaly.
 | `src/main.rs` | window + event loop (`tao`), WebView2 host (`wry`), `pulldown-cmark` initial render, `notify` watcher, `app://` protocol and the `/userfile/` route, workspace state | `rust-host.md` |
 | `src/editor_registry.rs` | the one paired editor `WebView`; preview↔editor IPC routing | `editor-core.md` |
 | `src/mdx.rs` | `.mdx` ZIP extract-to-temp and repack | `rust-host.md` |
-| `src/updater.rs` | opt-in auto-update (dormant without `update.json`) | `auto-update.md` |
+| `src/updater.rs` | auto-update: provider dispatch (`github` / `share`), detect + fetch + silent install | `auto-update.md` |
+| `src/http_win.rs` | blocking HTTPS GET over WinHTTP — the GitHub provider's only transport | `auto-update.md` |
 | `src/cdp_win.rs` | shared WebView2 DevTools-Protocol plumbing | `export.md` |
 | `src/pdf_win.rs` / `src/png_win.rs` | PDF via `Page.printToPDF` / PNG via `Page.captureScreenshot` | `export.md` |
 | `src/clipboard_win.rs` | Win32 clipboard behind the editor's `unnamedplus` yank/paste | `editor-keymaps.md` |
@@ -311,6 +315,9 @@ unless noted.
 | live-edit debounce | 150 ms | every keystroke rebuilds `#preview` |
 | `SAVE_SUPPRESS_MS` (`src/main.rs`) | 1500 | watcher-suppression window after a self-write |
 | `UPDATE_WATCHDOG_MS` (`src/main.rs`) | 5000 | floor for the update check when `renderdone:` never arrives |
+| `minCheckIntervalMinutes` default (`src/updater.rs`) | 360 | ⚠ GitHub allows 60 unauthenticated req/h **per IP**; a NATted office would burn it and go silently un-notified |
+| `timeoutMs` default (`src/updater.rs`) | 4000 share / 8000 github | HTTPS pays DNS + TLS before the first byte |
+| `NOTES_MAX_CHARS` / `MANIFEST_MAX_BYTES` / `INSTALLER_MAX_BYTES` (`src/updater.rs`) | 160 / 2 MB / 200 MB | banner card width; caps on anything read off the network |
 | `__DIAGRAM_CACHE_MAX` | 200 | FIFO cap bounding diagram memory across long sessions |
 | `__TIKZ_SCALE` / `__TIKZ_RENDER_TIMEOUT_MS` | 1.6 / 30000 | tikz renders small; a bad diagram must not wait forever |
 | `_TIKZ_WAIT_MS` (`shoot.py`) | 45000 | must exceed the 30 s in-page timeout so a failure resolves |

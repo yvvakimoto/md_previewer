@@ -23,6 +23,8 @@ use std::collections::{HashMap, HashSet};
 mod cdp_win;
 mod clipboard_win;
 mod editor_registry;
+#[cfg(windows)]
+mod http_win;
 mod ime_win;
 mod mdx;
 #[cfg(windows)]
@@ -137,12 +139,21 @@ enum CustomEvent {
     CaptureStart { marp: bool, slides: usize },
     CaptureReady { index: usize, clip: CaptureClip, layout: Option<SlideLayout> },
     CaptureDone { index: usize, ok: bool },
-    // Opt-in auto-update (see `updater`). The background check — kicked off
-    // only after the first render, see StartUpdateCheck — found a newer version
-    // on the internal share → show the preview's update banner. QuitForUpdate exits the app after the silent installer has
+    // Auto-update (see `updater`). The background check — kicked off only after
+    // the first render, see StartUpdateCheck — found a newer version upstream
+    // (GitHub Releases by default, or an internal share) → show the preview's
+    // update banner. QuitForUpdate exits the app after the silent installer has
     // been launched so the running exe unlocks for in-place replacement.
     UpdateAvailable { version: String, notes: String },
     QuitForUpdate,
+    // The user pressed "今すぐ更新" while the installer was still downloading.
+    // The install is reserved; this only tells the banner to say so.
+    UpdateInstallPending,
+    // The install the user asked for cannot happen: the installer download
+    // failed, or launching it did. Only ever posted when someone is actually
+    // waiting on it, so the banner can put its button back rather than sit on
+    // "更新中…" forever.
+    UpdateInstallFailed,
     // Content-first update trigger. Posted either by the preview's `renderdone:`
     // IPC (the normal path — the document is on screen, so share I/O can no
     // longer delay it) or by the startup watchdog for a page that never reports
@@ -554,12 +565,18 @@ fn run_deferred_update(
         return;
     }
     let ready = update_ready.lock().unwrap().clone();
-    if let Some(r) = ready {
-        if let Err(e) = updater::launch_installer(&r.setup_temp, None) {
-            let msg = format!("updater: failed to launch installer on exit: {}", e);
-            dbg_log_write(&msg);
-            eprintln!("{}", msg);
+    match ready {
+        Some(r) => {
+            if let Err(e) = updater::launch_installer(&r.setup_temp, None) {
+                let msg = format!("updater: failed to launch installer on exit: {}", e);
+                dbg_log_write(&msg);
+                eprintln!("{}", msg);
+            }
         }
+        // Reserved, but nothing to run: the GitHub download had not landed by
+        // the time the user quit (a share path would always have been here).
+        // The banner simply comes back next launch.
+        None => dbg_log_write("updater: install was reserved but no installer is ready; skipping"),
     }
 }
 
@@ -1587,6 +1604,17 @@ fn main() -> wry::Result<()> {
     // `Arc<Mutex<bool>>` rather than an atomic purely so it reads like
     // `update_ready` next to it; both locks are taken together at exit.
     let install_on_exit: Arc<Mutex<bool>> = Arc::new(Mutex::new(false));
+    // ⚠ Only the share provider can publish `update_ready` before its transfer
+    // finishes — an `https://` asset is not a file until it is downloaded, so
+    // for the GitHub default `update_ready` stays `None` for the first few
+    // seconds the banner is up. These two cover that window: `update_fetching`
+    // says the download is still in flight (so a click can wait rather than be
+    // told "no"), and `install_when_ready` records a click that arrived during
+    // it, which the prefetch worker honours as soon as it has a path.
+    // ⚠ Both are read under the `update_ready` lock, always taken FIRST, so a
+    // click landing exactly as the worker publishes cannot see a torn state.
+    let update_fetching: Arc<Mutex<bool>> = Arc::new(Mutex::new(false));
+    let install_when_ready: Arc<Mutex<bool>> = Arc::new(Mutex::new(false));
     // Whether this process is in `--export-png` capture mode. `capture_config`
     // itself moves into the event loop further down, and the IPC handler is
     // built before that, so both need this plain flag instead. `bool: Copy`, so
@@ -1833,6 +1861,10 @@ fn main() -> wry::Result<()> {
     // `update:onexit` only flips this flag; the install itself happens at exit.
     #[cfg(windows)]
     let ipc_install_on_exit = install_on_exit.clone();
+    #[cfg(windows)]
+    let ipc_update_fetching = update_fetching.clone();
+    #[cfg(windows)]
+    let ipc_install_when_ready = install_when_ready.clone();
     webview_builder = webview_builder.with_ipc_handler(move |window, message| {
         if let Some(name) = message.strip_prefix("settitle:") {
             window.set_title(&format_title(Some(name)));
@@ -1996,25 +2028,52 @@ fn main() -> wry::Result<()> {
             // in-place replacement. Windows-only (updater is cfg(windows)).
             #[cfg(windows)]
             {
-                let ready = ipc_update_ready.lock().unwrap().clone();
-                if let Some(r) = ready {
-                    let exe = ipc_exe_path.clone();
-                    let open_file = ipc_current_file.lock().unwrap().clone();
-                    let proxy = ipc_event_proxy.clone();
-                    std::thread::spawn(move || {
-                        match updater::launch_installer_and_relaunch(
-                            &r.setup_temp,
-                            &exe,
-                            open_file.as_deref(),
-                        ) {
-                            Ok(()) => {
-                                let _ = proxy.send_event(CustomEvent::QuitForUpdate);
+                // ⚠ One lock for both reads. `update_ready` first, matching the
+                // prefetch worker, so "not published yet" and "still fetching"
+                // are observed as one consistent answer.
+                let ready_guard = ipc_update_ready.lock().unwrap();
+                let ready = ready_guard.clone();
+                let fetching = *ipc_update_fetching.lock().unwrap();
+                drop(ready_guard);
+
+                match ready {
+                    Some(r) => {
+                        let exe = ipc_exe_path.clone();
+                        let open_file = ipc_current_file.lock().unwrap().clone();
+                        let proxy = ipc_event_proxy.clone();
+                        std::thread::spawn(move || {
+                            match updater::launch_installer_and_relaunch(
+                                &r.setup_temp,
+                                &exe,
+                                open_file.as_deref(),
+                            ) {
+                                Ok(()) => {
+                                    let _ = proxy.send_event(CustomEvent::QuitForUpdate);
+                                }
+                                Err(e) => {
+                                    eprintln!("update:install: failed to launch installer: {}", e);
+                                    dbg_log_write(&format!(
+                                        "updater: failed to launch installer: {}",
+                                        e
+                                    ));
+                                    let _ = proxy.send_event(CustomEvent::UpdateInstallFailed);
+                                }
                             }
-                            Err(e) => {
-                                eprintln!("update:install: failed to launch installer: {}", e);
-                            }
-                        }
-                    });
+                        });
+                    }
+                    // Nothing launchable yet. If the download is still running,
+                    // reserve the install and let the worker finish the job;
+                    // otherwise it already failed, so say so instead of leaving
+                    // the button spinning.
+                    None if fetching => {
+                        *ipc_install_when_ready.lock().unwrap() = true;
+                        dbg_log_write("updater: install requested during download; reserved");
+                        let _ = ipc_event_proxy.send_event(CustomEvent::UpdateInstallPending);
+                    }
+                    None => {
+                        dbg_log_write("updater: install requested but no installer is available");
+                        let _ = ipc_event_proxy.send_event(CustomEvent::UpdateInstallFailed);
+                    }
                 }
             }
         } else if message == "update:onexit" {
@@ -2578,6 +2637,24 @@ fn main() -> wry::Result<()> {
                     let _ = wv.evaluate_script(&script);
                 }
             }
+            Event::UserEvent(CustomEvent::UpdateInstallPending) => {
+                // "今すぐ更新" arrived mid-download: the banner's button already
+                // reads "更新中…", so all this does is say *why* it is waiting.
+                if let Ok(wv) = webview.lock() {
+                    let _ = wv.evaluate_script(
+                        "window.__updateInstallPending && window.__updateInstallPending();",
+                    );
+                }
+            }
+            Event::UserEvent(CustomEvent::UpdateInstallFailed) => {
+                // Put the button back so the user can retry, and say so — the
+                // alternative is a card stuck on "更新中…" with nothing coming.
+                if let Ok(wv) = webview.lock() {
+                    let _ = wv.evaluate_script(
+                        "window.__updateInstallFailed && window.__updateInstallFailed();",
+                    );
+                }
+            }
             Event::UserEvent(CustomEvent::QuitForUpdate) => {
                 // The silent installer has been launched; exit so the running
                 // exe unlocks for in-place replacement (the installer relaunches
@@ -2601,39 +2678,108 @@ fn main() -> wry::Result<()> {
                 let assets_dir = upd_assets_dir.clone();
                 let ready = update_ready.clone();
                 let proxy = event_proxy.clone();
+                #[cfg(windows)]
+                let fetching = update_fetching.clone();
+                #[cfg(windows)]
+                let when_ready = install_when_ready.clone();
+                #[cfg(windows)]
+                let upd_exe = exe_path.clone();
+                #[cfg(windows)]
+                let upd_file = current_file.clone();
                 std::thread::spawn(move || {
                     // (1) Config load — this is the pair of `fs::read` that used
                     // to run on the main thread before the webview existed. No
-                    // `update.json` (the default) ⇒ we stop here, having touched
-                    // no share at all: offline-first intact.
+                    // `update.json`, or `enabled:false`, ⇒ we stop here having
+                    // touched neither the network nor a share.
                     let cfg = match updater::load_config(&exe_dir, &assets_dir) {
                         Some(c) => c,
                         None => return,
                     };
-                    // (2) Phase 1 — one timed manifest read plus a semver
-                    // compare. No download.
+                    // (2) Phase 1 — one timed read plus a semver compare. No
+                    // download.
                     let found = match updater::check_manifest(&cfg, env!("CARGO_PKG_VERSION")) {
                         Some(f) => f,
                         None => return,
                     };
-                    // Publish and notify BEFORE the download: `as_ready()` points
-                    // at the share, which `update:install` and the exit-time path
-                    // already accept, so the banner appears immediately and a
-                    // click during the copy is merely slower, never broken.
+                    // Publish and notify BEFORE the download. For a share,
+                    // `as_ready()` points at the share itself, which
+                    // `update:install` and the exit-time path already accept, so
+                    // a click during the copy is merely slower, never broken.
+                    // ⚠ For GitHub it is `None` — an https asset is not a file —
+                    // so `update_fetching` marks that gap instead, and the banner
+                    // still goes up now rather than after the download.
+                    let published = found.as_ready();
                     if let Ok(mut g) = ready.lock() {
-                        *g = Some(found.as_ready());
+                        *g = published;
+                        #[cfg(windows)]
+                        {
+                            *fetching.lock().unwrap() = g.is_none();
+                        }
                     }
                     let _ = proxy.send_event(CustomEvent::UpdateAvailable {
                         version: found.version.clone(),
                         notes: found.notes.clone(),
                     });
-                    // (3) Phase 2 — prefetch, then upgrade the stored path so a
-                    // later click installs from %TEMP% instead of re-reading the
-                    // installer over SMB. Failure is soft: the share path stands.
-                    if let Some(temp) = updater::prefetch_installer(&found) {
-                        if let Ok(mut g) = ready.lock() {
-                            if let Some(r) = g.as_mut() {
-                                r.setup_temp = temp;
+                    // (3) Phase 2 — fetch, then store the local path so a later
+                    // click installs from %TEMP% instead of re-reading the
+                    // installer over SMB or HTTPS.
+                    let fetched = updater::prefetch_installer(&found);
+                    // ⚠ `update_ready` lock first, `update_fetching` inside it —
+                    // the same order the IPC uses, so a click cannot observe
+                    // "not ready" and "not fetching" from either side of this.
+                    #[allow(unused_mut, unused_assignments)]
+                    let mut reserved = false;
+                    if let Ok(mut g) = ready.lock() {
+                        if let Some(temp) = fetched {
+                            match g.as_mut() {
+                                Some(r) => r.setup_temp = temp,
+                                // The GitHub case: this is the first launchable
+                                // path there has ever been.
+                                None => *g = Some(updater::UpdateReady { setup_temp: temp }),
+                            }
+                        }
+                        #[cfg(windows)]
+                        {
+                            *fetching.lock().unwrap() = false;
+                            reserved = *when_ready.lock().unwrap();
+                        }
+                    }
+
+                    #[cfg(windows)]
+                    {
+                        // Failure is soft for a share — the published share path
+                        // still installs — but terminal for GitHub, where there
+                        // is no fallback. Either way it only becomes the reader's
+                        // problem if they are waiting on it.
+                        let ready_path = ready.lock().ok().and_then(|g| g.clone());
+                        match (reserved, ready_path) {
+                            (false, _) => {}
+                            (true, Some(r)) => {
+                                let open_file = upd_file.lock().unwrap().clone();
+                                dbg_log_write(
+                                    "updater: honouring the install reserved during download",
+                                );
+                                match updater::launch_installer_and_relaunch(
+                                    &r.setup_temp,
+                                    &upd_exe,
+                                    open_file.as_deref(),
+                                ) {
+                                    Ok(()) => {
+                                        let _ = proxy.send_event(CustomEvent::QuitForUpdate);
+                                    }
+                                    Err(e) => {
+                                        dbg_log_write(&format!(
+                                            "updater: reserved install failed to launch: {}",
+                                            e
+                                        ));
+                                        let _ =
+                                            proxy.send_event(CustomEvent::UpdateInstallFailed);
+                                    }
+                                }
+                            }
+                            (true, None) => {
+                                dbg_log_write("updater: reserved install has nothing to run");
+                                let _ = proxy.send_event(CustomEvent::UpdateInstallFailed);
                             }
                         }
                     }
