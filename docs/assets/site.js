@@ -2,8 +2,8 @@
    MD Previewer for Windows — landing page behaviour
    Language toggle, theme toggle, scroll reveal, latest-version badge.
 
-   The i18n layer deliberately mirrors the app's own convention (see the
-   "UI Language" section of CLAUDE.md): data-i18n / data-i18n-html /
+   The i18n layer deliberately mirrors the app's own convention (see
+   .claude/docs/i18n.md): data-i18n / data-i18n-html /
    data-i18n-attr in the markup, one applyI18n() pass, and a KEY-MAJOR string
    table so a message and its translation sit on adjacent lines and neither can
    be added without seeing the other.

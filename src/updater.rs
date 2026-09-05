@@ -4,8 +4,8 @@
 //! the exe (preferred) or under `assets/`, none of this runs and the app makes
 //! no network access whatsoever — the offline-first guarantee is preserved.
 //!
-//! The NWC add-on package overlays `assets/update.json` (see nwc-addon) to
-//! enable the feature, pointing `source` at an internal file share.
+//! A distributor's package overlays `assets/update.json` to enable the
+//! feature, pointing `source` at an internal file share.
 //!
 //! **Content first.** None of this runs at startup. `main()` only kicks off the
 //! worker once the preview reports its initial render (`renderdone:`), with a
@@ -58,7 +58,7 @@ struct Manifest {
     /// Latest available semver, e.g. `"0.16.0"`.
     version: String,
     /// Installer filename relative to `source`, e.g.
-    /// `"MdPreviewer-NWC-Full-Setup-0.16.0.exe"`.
+    /// `"MdPreviewer-Setup-0.16.0.exe"`.
     setup: String,
     /// Optional short note shown in the update banner.
     #[serde(default)]
