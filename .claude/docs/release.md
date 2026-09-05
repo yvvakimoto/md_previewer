@@ -80,7 +80,7 @@ git add HISTORY.md && git commit --amend --no-edit && git tag -f v0.18.0
 
 (`git tag -f` is required — the tag still points at the pre-amend commit otherwise.)
 
-**6. Create the GitHub Release.** The installer is distributed as a release asset (`dist/` is git-ignored), and the landing page's download button points at `releases/latest`, so a tag with no release means the page keeps offering the previous version.
+**6. Create the GitHub Release.** The installer is distributed as a release asset (`dist/` is git-ignored), and the landing page's download button points at `releases/latest`, so a tag with no release means the page keeps offering the previous version. ⚠ **The shipped app now reads that same feed**: `assets/update.json` selects the `github` update provider by default, so `releases/latest` plus its `MdPreviewer-Setup-<ver>.exe` asset is what every installed copy checks against (`auto-update.md`). A tag left unpublished, or a release published without the asset, means nobody is offered the update.
 
 ```bash
 pwsh -NoProfile -File tools/release-on-main.ps1 -Publish
