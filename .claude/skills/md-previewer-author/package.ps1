@@ -6,13 +6,18 @@
   Produces a .skill archive (a ZIP) byte-compatible with skill-creator's
   scripts/package_skill.py: every entry path is relative to the skill's PARENT
   directory, so the archive contains a single top-level "<skill-name>/" folder.
-  Build artifacts are excluded (__pycache__, node_modules, *.pyc, .DS_Store) and a
-  root-level evals/ directory is dropped, matching the Python packager.
+  Build artifacts are excluded (__pycache__, node_modules, *.pyc, *.skill, .DS_Store)
+  and a root-level evals/ directory is dropped, matching the Python packager.
 
   Before zipping, the bundled samples/ snapshot is refreshed from the md_previewer
   repo's samples/ (../../../samples) when that path exists, so the package always ships
   the current samples. Disable with -NoRefreshSamples. The skill keeps a committed
   samples/ snapshot too, so it stays self-contained when used outside the repo.
+
+  Note the installer does NOT use that snapshot: installer/md-previewer.iss sources
+  the skill's samples/ straight from the repo's samples/, so the installed copy cannot
+  go stale. The committed snapshot exists for repo-external use and for this packager;
+  tools/preview-harness/skillcheck.py fails if it drifts from the repo's samples/.
 
   Lightweight validation (SKILL.md present; frontmatter has name + description; name is
   kebab-case; description <= 1024 chars with no angle brackets) runs first, mirroring
@@ -80,7 +85,7 @@ if (-not $NoRefreshSamples) {
 # ---- exclusions (mirror package_skill.py) ----
 $excludeDirs     = @('__pycache__', 'node_modules')
 $excludeFiles    = @('.DS_Store')
-$excludeGlobs    = @('*.pyc')
+$excludeGlobs    = @('*.pyc', '*.skill')   # *.skill: never pack a previously built archive into the new one
 $rootExcludeDirs = @('evals')   # excluded only directly under the skill root
 
 function Test-Excluded([string]$relPath) {

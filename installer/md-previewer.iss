@@ -63,6 +63,15 @@ Source: "..\samples\*"; DestDir: "{app}\samples"; Flags: ignoreversion recursesu
 Source: "..\README.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\HISTORY.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
+; NOTE: the Claude Code authoring skill is optional and OFF by default (task
+;   "claudeskill"), and it lands OUTSIDE {app}, in the user's personal skills dir,
+;   because that is where Claude Code looks for it.
+;   samples\ is sourced from the repo's samples\ - NOT from the skill's committed
+;   snapshot - so the shipped copy can never be stale.
+;   package.ps1 and *.skill are dev artifacts: deliberately not enumerated here.
+Source: "..\.claude\skills\md-previewer-author\SKILL.md"; DestDir: "{%USERPROFILE}\.claude\skills\md-previewer-author"; Tasks: claudeskill; Flags: ignoreversion
+Source: "..\.claude\skills\md-previewer-author\references\*"; DestDir: "{%USERPROFILE}\.claude\skills\md-previewer-author\references"; Tasks: claudeskill; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\samples\*"; DestDir: "{%USERPROFILE}\.claude\skills\md-previewer-author\samples"; Tasks: claudeskill; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExeName}"; IconFilename: "{app}\{#AppExeName}"
@@ -79,6 +88,7 @@ Name: "assoc_md";    Description: ".md / .markdown / .mdx を {#AppName} に関�
 Name: "ctx_folder";  Description: "フォルダ右クリックメニューに追加 / Add to folder context menu"
 Name: "ctx_file";    Description: ".md / .mdx ファイル右クリックメニューに追加 / Add to .md & .mdx file context menu"
 Name: "tikz";        Description: "TikZ・可換図式コンポーネントをダウンロード (約6MB, 要インターネット接続) / Download TikZ component (~6MB, needs internet)"
+Name: "claudeskill"; Description: "Claude Code 用の文書作成スキルを導入 (%USERPROFILE%\.claude\skills\) / Install the Claude Code authoring skill"; Flags: unchecked
 
 [Registry]
 ; ---- ProgID + DefaultIcon + open command ----
@@ -131,6 +141,13 @@ Filename: "{app}\assets\THIRD_PARTY_LICENSES.txt"; Description: "サードパー
 ; The TikZ component is downloaded after install, so it is not recorded in the
 ; uninstall log and would otherwise be left behind.
 Type: filesandordirs; Name: "{app}\assets\libs\tikzjax"
+; The optional Claude skill lands outside {app}. Its files ARE in the uninstall log,
+; but samples\ has nested subdirectories, so remove that subtree wholesale and then
+; drop the now-empty skill folder. Never touch {%USERPROFILE}\.claude\skills itself -
+; other skills live there.
+Type: filesandordirs; Name: "{%USERPROFILE}\.claude\skills\md-previewer-author\samples"
+Type: dirifempty;     Name: "{%USERPROFILE}\.claude\skills\md-previewer-author\references"
+Type: dirifempty;     Name: "{%USERPROFILE}\.claude\skills\md-previewer-author"
 
 [Code]
 // TikZ component acquisition.

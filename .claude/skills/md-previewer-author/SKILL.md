@@ -1,6 +1,6 @@
 ---
 name: md-previewer-author
-description: Author a Markdown document or a slide deck for this repo's md_previewer (a feature-rich Windows Markdown previewer). Use when the user wants to write/draft/generate a `.md` document, notes, a report, a technical doc, or slides/a deck/a presentation (プレゼン/スライド/資料) — especially in this md_previewer project. The skill first decides whether to lean on the previewer's rich extensions (Marp slides, fenced-div columns/alignment, inline styled spans, footnotes, mermaid, csv/tsv, plotly, abc music, KaTeX math, image sizing, video/YouTube embeds, vertical-writing) or stay within portable standard Markdown, then writes the file. Do NOT use for editing the previewer's source code or for non-Markdown deliverables (.docx/.pptx/.pdf/.xlsx).
+description: Author a Markdown document or a slide deck for this repo's md_previewer (a feature-rich Windows Markdown previewer). Use when the user wants to write/draft/generate a `.md` document, notes, a report, a technical doc, or slides/a deck/a presentation (プレゼン/スライド/資料) — especially in this md_previewer project. The skill first decides whether to lean on the previewer's rich extensions (Marp slides, fenced-div columns/alignment, inline styled spans, footnotes, definition lists, mermaid, markwhen timelines, csv/tsv, plotly, abc music, TikZ/commutative diagrams, geometry and Feynman figures, KaTeX math, image sizing, video/YouTube embeds, vertical-writing) or stay within portable standard Markdown, then writes the file. Do NOT use for editing the previewer's source code or for non-Markdown deliverables (.docx/.pptx/.pdf/.xlsx).
 ---
 
 # md_previewer authoring
@@ -42,13 +42,16 @@ Example opening line to the user:
 
 - Read the relevant reference for exact syntax:
   - `references/features.md` — all normal-pipeline extensions (fenced divs, inline spans,
-    footnotes, ruby/振り仮名, mermaid, csv/tsv, plotly, abc, KaTeX, image sizing, video/YouTube,
-    blockquote attribution, soft-break rules, cross-file links, workspace `_toc.md`).
+    footnotes, definition lists, ruby/振り仮名, mermaid, markwhen, csv/tsv, plotly, abc,
+    tikz/tikzcd, kataskeve/kataskeve3d, feynman, KaTeX, image sizing, video/YouTube,
+    blockquote attribution, soft-break rules, cross-file links, workspace `_toc.md`,
+    `confidential:`/`watermark:` front-matter, `.mdx` bundles).
   - `references/marp-slides.md` — Marp deck authoring (front-matter, separators, `_class`
     layouts, columns, per-slide footnotes, themes, view modes).
 - Canonical worked examples are **bundled with this skill** under `samples/` (e.g.
   `samples/marp.md`, `samples/alignment.md`, `samples/inline-style.md`, `samples/ruby.md`,
-  `samples/plotly.md`,
+  `samples/plotly.md`, `samples/deflist.md`, `samples/markwhen.md`, `samples/tikzcd.md`,
+  `samples/kataskeve.md`, `samples/feynman.md`, `samples/confidential.md`,
   `samples/footnotes.md`, `samples/math.md`, plus `samples/workspace/` and the
   `samples/data/` CSVs the plotly example reads). Paths are relative to this skill
   directory, so they resolve even when the skill is used outside the md_previewer repo.
