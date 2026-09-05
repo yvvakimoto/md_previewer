@@ -47,6 +47,7 @@ substitute.
 | `docs/**` (the PUBLISHED site), `tools/preview-harness/shoot-docs.py` | `.claude/docs/docs-site.md` | Why is the gallery snippet machine-checked? Why WebP at `--g-cap`? |
 | `tools/fetch-libs.ps1`, `tools/build-*/`, `installer/`, `build.rs`, `assets/libs/` | `.claude/docs/build-and-deps.md` | What are the five places a new library must be registered? |
 | `tools/release-on-main.ps1`, `tools/hooks/`, `HISTORY.md` | `.claude/docs/release.md` | Why does `-Finalize` refuse? Why is the notes hash LF-normalized? |
+| `.claude/skills/md-previewer-author/**` — the shipped authoring skill | `.claude/docs/authoring-skill.md` | Why are there two `samples/` copies? Why must the installer task stay unchecked? |
 
 `assets/index.html` is one 670KB file behind six of these rows — pick by **what you are
 changing**, not by the filename. Each doc opens with `Owns:` / `Read before:` / `Related:`,
@@ -78,6 +79,7 @@ README.md 「対応している記法・機能」.
 | Workspace (directory) mode with file tree and `_toc.md`; `.mdx` ZIP bundles | `rust-host.md` |
 | Auto-update: GitHub Releases by default (ON, via the shipped `assets/update.json`), or an intranet file share with `provider: "share"` | `auto-update.md` |
 | Help modal (`H`), zoom (`Ctrl` `+`/`-`/`0`) | `preview-core.md` |
+| Claude Code authoring skill, shipped by the installer as an opt-in task (OFF by default) | `authoring-skill.md` |
 
 ---
 
@@ -113,6 +115,7 @@ A file with no owning doc is an anomaly.
 | `build.ps1`, `build-installer.ps1` | one-shot build wrappers | `build-and-deps.md`, `release.md` |
 | `docs/` | **the published GitHub Pages site** | `docs-site.md` |
 | `samples/` | one focused file per feature area — part of the feature | all |
+| `.claude/skills/md-previewer-author/` | the Claude authoring skill — **shipped** by the installer as an opt-in task | `authoring-skill.md` |
 | `README.md`, `HISTORY.md` | user guide, release notes (both shipped by the installer) | `release.md` |
 
 ---
@@ -255,8 +258,8 @@ than in a detail doc, so that a missed pointer is not fatal.
 
 ## Mirror implementations — change both sides
 
-Seventeen pairs. **The nine with no machine check are the real invariant surface**; the eight
-that are checked can rely on the harness remembering.
+Eighteen pairs. **The ten with no machine check are the real invariant surface**; the eight
+that are checked (or partly checked) can rely on the harness remembering.
 
 | A | B | Checked by |
 |---|---|---|
@@ -277,6 +280,7 @@ that are checked can rely on the harness remembering.
 | `_FIGURES_READY_JS` — `tools/preview-harness/shoot.py` | the set of async figure kinds — `assets/index.html` | ❌ silent |
 | `CELL_HELP` — `tools/build-editor/cells.js` | the newest-first Esc chain — `entry.js` | ❌ |
 | `$libsSentinels` — `build.ps1` | the library set fetched by `tools/fetch-libs.ps1` | ❌ |
+| `samples/` | the skill's committed snapshot — `.claude/skills/md-previewer-author/samples/` (the installer sources the repo's copy directly, so only the snapshot can drift) | ✅ `skillcheck.py` |
 
 ---
 
@@ -296,6 +300,7 @@ that are checked can rely on the harness remembering.
 | editor font zoom, settings modal | `python tools/preview-harness/prefscheck.py` |
 | `docs/` landing page, or the help modal | `python tools/preview-harness/docskeycheck.py` (stdlib only, sub-second) |
 | the ruby grammar | `node tools/preview-harness/ruby-model.test.cjs` |
+| `samples/`, the authoring skill, or the installer's skill task | `python tools/preview-harness/skillcheck.py` (stdlib only, sub-second) |
 | Rust pure helpers | `cargo test` |
 | markdown table model | `cd tools/build-editor && node mdTable.test.mjs` |
 | editor prefs model | `cd tools/build-editor && node editorPrefs.test.mjs` |

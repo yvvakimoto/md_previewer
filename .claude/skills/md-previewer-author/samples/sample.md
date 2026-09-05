@@ -36,9 +36,24 @@ You can make text **bold**, *italic*, or ***both***. You can also use ~~striketh
 10. tenth
     - 2 桁マーカー配下は 4 スペース字下げ
 
+### Task List
+- [x] 完了したタスク
+- [ ] 未完了のタスク
+- [ ] もう一つのタスク
+
+### Definition List
+Markdown
+: A lightweight markup language for formatting plain text.
+
+WebView2
+: Microsoft's Chromium-based embeddable browser control.
+: Used here to render the preview on Windows.
+
 ## Code
 
 Inline code: `const x = 42;`
+
+Inline code containing a fence marker: `` ` ```lang ` ``
 
 Code block:
 ```javascript
@@ -126,6 +141,8 @@ pie title Technologies
 
 - [Math](./math.md)
 - [Syntax highlighting](./syntax.md)
+- [Kataskeve（平面幾何）diagrams](./kataskeve.md)
+- [Kataskeve3D（立体幾何）diagrams](./kataskeve3d.md)
 - [日本語ファイル名テスト](./日本語ファイル.md)
 
 ### Footnote

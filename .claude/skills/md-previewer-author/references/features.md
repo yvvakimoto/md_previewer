@@ -11,6 +11,9 @@ fenced code blocks (```` ```lang ````, syntax-highlighted, copy button auto-adde
 tables, `- ` / `1. ` lists, `- [ ]` / `- [x]` task lists, `> ` blockquotes, `---` rules,
 `[text](url)` links, `![alt](path)` images.
 
+Code fences are highlighted by highlight.js; on top of its usual languages the previewer
+ships an in-house `modelica` grammar, so ```` ```modelica ```` is a real choice here.
+
 **Nested lists:** indent a child to the column just after the parent marker — `- ` items by
 2 spaces, `1. ` items by 3 spaces (`10. ` by 4). Misaligned indentation breaks nesting.
 
@@ -117,6 +120,22 @@ Some claim.[^1]  Another point.[^note]
 References render as superscripts with hover tooltips; a Footnotes section is appended.
 Math works inside footnote bodies. Non-ASCII ids (`[^日本語]`) are fine.
 
+## Definition lists — `samples/deflist.md`
+
+Pandoc / PHP Markdown Extra style: a term line, then one or more lines starting with `: `
+(colon + space). Consecutive term/definition groups separated by blank lines merge into one
+list. Works in the normal pipeline and in Marp slides. Good for glossaries and 用語集 —
+prefer it over a two-column table when the definitions are prose.
+
+```markdown
+Markdown
+: プレーンテキストに書式を与える軽量マークアップ言語。
+
+プレビュー
+: 編集中の Markdown を整形表示する画面。
+: ファイルの外部変更を検知して自動で再読み込みされる。
+```
+
 ## Mermaid diagrams — `samples/sample.md`
 
 ````markdown
@@ -181,6 +200,114 @@ C C G G | A A G2 | F F E E | D D C2 |
 ```
 ````
 
+## Markwhen timelines — `samples/markwhen.md`
+
+A `markwhen` fence renders a horizontal cascade timeline. Sections are `#`–`######` headings,
+a ranged event is `start / end: label`, a single event is `date: label`, tags are `#tag` and
+get their colour from an optional front-matter block inside the fence.
+
+````markdown
+```markwhen
+---
+title: プロジェクト計画
+#design: blue
+#dev: green
+---
+
+# 企画
+2023-01-01 / 2023-02-15: 要件定義 #design
+2023-02-01: キックオフ
+
+# 開発
+2023-03-01 / 2023-06-30: API 実装 #dev
+```
+````
+
+Add `display: calendar` (or `calendar: true`) in the header for a month-grid calendar instead.
+Two caveats worth knowing while authoring: a span wider than ~36 months **falls back to the
+timeline**, and holidays are fetched online only — offline it renders without them, never an
+error.
+
+## TikZ & commutative diagrams — `samples/tikzcd.md`
+
+A `tikzcd` fence is wrapped in a `tikzcd` environment automatically; a `tikz` fence takes a
+raw `\begin{tikzpicture}`. Both compile through a bundled WASM TeX engine to inline SVG, so
+they survive HTML/PDF export and follow the theme colour. An optional first line
+`scale: <factor>` overrides the default 1.6× enlargement.
+
+````markdown
+```tikzcd
+A \arrow[r, "f"] \arrow[d, "g"'] & B \arrow[d, "h"] \\
+C \arrow[r, "k"']                & D
+```
+````
+
+⚠ **The TikZ engine is an optional download in the installer** (the "tikz" checkbox, ~6 MB).
+On an install where it was skipped these fences do not render. Prefer mermaid/KaTeX for a
+document you hand to someone else; reach for `tikzcd` when the user actually wants
+commutative diagrams, and say so when you use it. First compile takes a few seconds
+(memoized afterwards).
+
+## Kataskeve — plane geometry — `samples/kataskeve.md`
+
+A `kataskeve` fence draws classical plane geometry (points, segments, circles, polygons,
+derived points, transforms, angle/tick marks) from an expression-oriented DSL, as inline SVG.
+`viewport:` sets the frame, `unit:` the px per world unit, `grid: on` / `axes: on` add the
+graph paper.
+
+````markdown
+```kataskeve
+viewport: -1 -1 6 5
+grid: on
+A = point(0, 0)
+B = point(5, 0)
+C = point(2, 4)
+triangle(A, B, C)
+A; B; C
+label A "A" pos=SW
+mark tick(segment(A, B)) count=1
+```
+````
+
+## Kataskeve3D — solid geometry — `samples/kataskeve3d.md`
+
+A `kataskeve3d` fence renders solids (sphere, cylinder, cone, torus, polyhedra, parametric
+surfaces) as a pen-drawing-style raster with analytic hidden-line removal. `view: tilt= yaw=`
+is the camera, `hidden_lines:` ∈ `off` / `faint` / `dashed`, `shading: on` adds stippled
+Lambert shading.
+
+````markdown
+```kataskeve3d
+view: tilt=26 yaw=32
+unit: 90
+hidden_lines: dashed
+cube(point(0,0,0), 2)
+```
+````
+
+Two things that bite: the output is a `<canvas>` (HTML export converts it to an embedded PNG
+automatically — still self-contained), and **`label` only attaches to a 3D point**, not to a
+surface or curve.
+
+## Feynman diagrams — `samples/feynman.md`
+
+A `feynman` fence takes the feynmark DSL: one or more `diagram { … }` / `equation { … }`
+declarations. Declare external legs with `in` / `out`, connect vertices with
+`a -- [style] b`, where style ∈ `fermion` / `photon` / `gluon` / `scalar` etc. Layout is
+automatic; labels are typeset with KaTeX, and the SVG follows the theme via `currentColor`.
+
+````markdown
+```feynman
+diagram tree {
+  in  e1: $e^-$,  e2: $e^+$
+  out m1: $\mu^-$, m2: $\mu^+$
+  e1 -- [fermion] a -- [fermion] e2
+  a  -- [photon, momentum=$q$] b
+  m2 -- [fermion] b -- [fermion] m1
+}
+```
+````
+
 ## KaTeX math — `samples/math.md`
 
 Inline `$ ... $`, display `$$ ... $$`. Right-clicking rendered math offers Copy MathML / LaTeX.
@@ -240,6 +367,35 @@ Separate paragraphs with a blank line.
 - A directory opened as a workspace can carry a `_toc.md` — a nested bullet list of
   `[Title](relative/path.md)` links; sub-lists become folder groups. Files absent from
   `_toc.md` are appended under an "Other" group.
+
+## Confidential / watermark front-matter — `samples/confidential.md`, `samples/draft.md`
+
+The only two front-matter keys that change how the whole document is stamped:
+
+```markdown
+---
+title: 機密文書サンプル
+confidential: true    # diagonal CONFIDENTIAL overlay
+---
+```
+
+```markdown
+---
+watermark: DRAFT      # any text you like: DRAFT / 社外秘 / SAMPLE …
+---
+```
+
+`watermark:` wins if both are present. Colour, font, angle and size come from the active
+theme CSS (`--confidential-*`), so don't try to style it from the document. The overlay works
+in Marp too and is carried into HTML and PDF export. **Do not translate the `watermark:`
+value** — it is document content, so use the wording the user asked for.
+
+## `.mdx` bundles — `samples/bundle.mdx`
+
+A `.mdx` file is a ZIP holding the Markdown (`index.md` or `README.md`) plus the images /
+CSV / video it references, so a document with assets travels as one file. Author the `.md`
+plus its assets in a folder as usual; hand the user a `.mdx` only when they ask for a single
+self-contained file. Edits made in the previewer are repacked into the `.mdx` automatically.
 
 ## Theming hooks the author should know
 

@@ -33,6 +33,24 @@ confidential: true
 
 `M` キーでライト / ダークを切り替えても表示が保たれます。
 
+## 任意の透かし文字 (watermark)
+
+「CONFIDENTIAL」以外の文字を出したいときは、`confidential: true` の代わりに
+front-matter で **`watermark: <文字列>`** を指定します。
+
+```yaml
+---
+watermark: DRAFT
+---
+```
+
+- `watermark: DRAFT` → 斜めに「DRAFT」、`watermark: 社外秘` → 「社外秘」。
+- オーバーレイの色・書体・角度・サイズは `confidential: true` と全く同じ仕組みで、
+  各テーマ CSS が決めます（変わるのは文言だけ）。
+- `confidential: true` と `watermark:` の両方を書いた場合は、`watermark:` の文言が
+  優先されます。
+- サンプル: `samples/draft.md`。
+
 ## カスタムプロパティ
 
 各テーマ CSS で以下を上書きできます（`#preview` / `:root` / `section` のいずれに
