@@ -144,4 +144,4 @@ under the harness (each just logs an `[ipc]` line): the companion editor (`E`), 
 
 For the highest-fidelity check of the actual shipping binary — especially Marp deck layout — use the
 real WebView2 headless capture instead: `md-previewer.exe <file> --export-png <dir>` (see *Headless PNG
-capture for agents* in `CLAUDE.md`).
+capture for agents* in `.claude/docs/export.md`).

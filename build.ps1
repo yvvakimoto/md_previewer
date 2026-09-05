@@ -17,8 +17,8 @@ $MakeIconScript = Join-Path $ToolsDir 'make-icon\make_icon.py'
 
 # --manifest-path, not a bare `cargo build`: cargo resolves Cargo.toml from the
 # CURRENT directory, so without it this script only works when the caller's cwd
-# happens to be the repo root. ..\nwc-addon\build-full-installer.ps1 invokes it
-# by absolute path from its own directory, where a bare `cargo build` fails.
+# happens to be the repo root. An external packaging script may invoke it by
+# absolute path from its own directory, where a bare `cargo build` fails.
 $ManifestArg = @('--manifest-path', (Join-Path $RepoRoot 'Cargo.toml'))
 if ($DebugBuild) {
     $BuildProfile = 'debug'

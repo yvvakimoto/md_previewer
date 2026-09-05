@@ -42,7 +42,7 @@ struct FileData {
     filepath: String,
     /// The markdown the webview renders. Local images used to be inlined here as
     /// base64; they are now served lazily through the `/userfile/` protocol route
-    /// instead (see *Preview Pipeline* in CLAUDE.md), so this equals `raw`.
+    /// instead (see `.claude/docs/preview-files-media.md`), so this equals `raw`.
     content: String,
     /// The canonical source markdown. Kept as a separate channel — the webview
     /// holds it as `currentMarkdownRaw` and it is what any host-bound save
