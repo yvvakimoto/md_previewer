@@ -28,6 +28,8 @@
   - **`C8.mp3` is the marker** — fetched last, and the exact file `assets/index.html` probes at runtime, so "installed" means the same thing on both sides.
   - `CurStepChanged` now only dispatches: `InstallTikz()` then `InstallAbcSoundfont()`, each reporting its own soft failure, so a machine that fails one is still offered the other.
 
+  ⚠ **A NEW optional task does not reach existing installs through the auto-updater.** The updater runs the installer `/VERYSILENT` with no `/MERGETASKS` (`src/updater.rs`), and Inno then reuses the task selection recorded by the previous install — a task absent from that record counts as **not selected**, regardless of its default. Measured on the `abcsound` task: a fresh `/VERYSILENT` install downloaded all 88 notes, while the same command over an existing install logged `abcsound: task not selected, skipping`. So every default-on optional component added after a user installed reaches them only when they re-run the installer, and the release notes have to say so. (`tikz` never hit this: it shipped in the first release that had the wizard.)
+
 ### Assets (loaded at runtime)
 
 - `assets/index.html` — preview UI template.
