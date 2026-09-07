@@ -187,9 +187,9 @@ Full control via a `traces:` list. Optional `layout:` / `config:` deep-merge int
 
 ## ABC music notation — `samples/abcjs.md`
 
-Sheet music, with a playback bar under each staff (piano only; the sound bank is
-an optional install, and the bar says so when it is absent). Exports carry the
-staff as inline SVG — never the playback controls.
+Sheet music, with a hover-revealed playback bar under each staff (piano only; the
+sound bank is an optional install, and the bar says so when it is absent). Exports
+carry the staff as inline SVG — never the playback controls.
 
 ````markdown
 ```abc

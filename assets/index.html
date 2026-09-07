@@ -872,9 +872,12 @@
 
         /* ABC playback (abcjs synth; sound bank in assets/libs/abcjs/soundfont/).
            The bar is a normal flow child of .abc-notation, which is text-align:center,
-           so inline-flex centres it under the staff without any positioning. It is
-           ALWAYS visible, unlike .copy-button — hence its own entries in the @media
-           print block, the body.capturing list and buildExportArtifact()'s strip. */
+           so inline-flex centres it under the staff without any positioning.
+           Hover-revealed like .copy-button, but via `opacity` while KEEPING its space:
+           the bar is in the flow, so collapsing it would make every staff jump as the
+           pointer crosses it. That reserved row is also why it needs its own entries in
+           the @media print block and the body.capturing list even though it is already
+           invisible there — `opacity: 0` hides the chrome but not the gap. */
         .abc-audio-bar {
             display: inline-flex;
             align-items: center;
@@ -888,6 +891,17 @@
             line-height: 1.4;
             color: #57606a;
             vertical-align: middle;
+            opacity: 0;
+            transition: opacity 0.2s ease;
+        }
+        /* :focus-within so tabbing to the play button reveals it too, and
+           .abc-bar-active so a sounding tune keeps its transport and progress on
+           screen after the pointer moves away (set by __abcPlay / cleared by
+           __abcStop). */
+        .abc-notation:hover .abc-audio-bar,
+        .abc-notation:focus-within .abc-audio-bar,
+        .abc-audio-bar.abc-bar-active {
+            opacity: 1;
         }
         .abc-audio-btn {
             border: 1px solid #d0d7de;
@@ -9084,6 +9098,11 @@ ${previewClone.outerHTML}
         function __abcStop() {
             __abcPlayGen++; // abandon any load still in flight
             __abcLoadingEl = null;
+            // The bar is hover-revealed; only a live tune pins it open. Clearing every
+            // bar rather than the active one covers the stop-while-loading path too,
+            // and is safe because at most one tune is ever active.
+            preview.querySelectorAll('.abc-audio-bar.abc-bar-active')
+                .forEach((b) => b.classList.remove('abc-bar-active'));
             const a = __abcActive;
             if (!a) return;
             __abcActive = null;
@@ -9140,6 +9159,7 @@ ${previewClone.outerHTML}
             const btn = bar && bar.querySelector('.abc-play');
             if (btn) { btn.disabled = true; btn.textContent = '… ' + t('abc.loading'); }
             __abcLoadingEl = el;
+            if (bar) bar.classList.add('abc-bar-active'); // pin it open from the first click
 
             try {
                 // A staff restored from __abcCache is markup only: its nodes are not
@@ -9182,6 +9202,7 @@ ${previewClone.outerHTML}
                 if (gen !== __abcPlayGen) {
                     try { synth.stop(); } catch (e) { /* nothing to stop */ }
                     if (btn) btn.disabled = false;
+                    if (bar) bar.classList.remove('abc-bar-active');
                     __abcSetPlayLabel(bar, 'abc.play');
                     return;
                 }
@@ -9208,6 +9229,9 @@ ${previewClone.outerHTML}
                 if (btn) btn.disabled = false;
                 __abcSetPlayLabel(bar, 'abc.play');
                 __abcBarMessage(bar, t('err.prefix', { engine: 'ABC' }) + (error && error.message));
+                // Keep the bar up after __abcStop hid it, so the message can be read
+                // once the pointer moves off.
+                if (bar) bar.classList.add('abc-bar-active');
             }
         }
 
