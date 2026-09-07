@@ -103,6 +103,15 @@ $direct = @(
     Upstream='https://github.com/paulrosen/abcjs';
     Path='assets/libs/abcjs/abcjs-basic-min.js';
     LicenseFile='tools/license-texts/abcjs.LICENSE' }
+  # The MP3 note samples abcjs' synth plays. Data, not code — and under a
+  # different licence from abcjs itself, so it gets its own entry. Like TikZJax
+  # it is an opt-in install-time download rather than installer payload, but for
+  # a size reason, not a licensing one.
+  [pscustomobject]@{ Name='FluidR3_GM sound bank (ABC playback)'; Version='midi-js-soundfonts'; Spdx='CC-BY-3.0';
+    Upstream='https://github.com/paulrosen/midi-js-soundfonts';
+    Path='assets/libs/abcjs/soundfont/';
+    Note='OPTIONAL COMPONENT - not included in the installer. Downloaded from the upstream project at install time, and only when you opt in. Generated from FluidR3_GM.sf2 by Frank Wen; only the General MIDI program 0 instrument (acoustic grand piano) is used.';
+    LicenseFile='tools/license-texts/fluidr3-gm.LICENSE' }
   # kataskeve / kataskeve3d / feynmark are distributed from their GitHub repos
   # rather than npm, so Version is the git tag fetch-libs.ps1 pins.
   [pscustomobject]@{ Name='Kataskeve';    Version='0.1.1'; Spdx='MIT';

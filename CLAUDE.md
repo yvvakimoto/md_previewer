@@ -61,13 +61,15 @@ A standalone desktop Markdown previewer in Rust, **Windows only**, **offline for
 (every rendering dependency bundled; no CDN at runtime). ⚠ **The offline guarantee covers
 *viewing*, not updating** — the update check contacts GitHub Releases by default
 (`auto-update.md`), so never write "never touches the internet" in user-facing text.
+Two optional components — the TikZ engine and the ABC playback sound bank — are fetched by the
+**installer**, not at runtime; once installed, viewing and playback are fully offline.
 One line per feature, for routing only — user-facing descriptions live in
 README.md 「対応している記法・機能」.
 
 | Feature | Detail |
 |---|---|
 | GFM preview, auto-reload on external change, sidebar TOC | `preview-core.md` |
-| Diagram / figure fences: `mermaid`, `plotly`, `abc`, `markwhen`, `tikz`/`tikzcd`, `kataskeve`/`kataskeve3d`, `feynman`, `csv`/`tsv`, KaTeX math, highlight.js (+ in-house Modelica grammar) | `preview-blocks.md` |
+| Diagram / figure fences: `mermaid`, `plotly`, `abc` (+ playback), `markwhen`, `tikz`/`tikzcd`, `kataskeve`/`kataskeve3d`, `feynman`, `csv`/`tsv`, KaTeX math, highlight.js (+ in-house Modelica grammar) | `preview-blocks.md` |
 | Footnotes, `::: center/right/left/message/vcenter/columns` fenced divs, `[text]{color=…}` inline spans, definition lists, ruby (`｜猫《ねこ》`), task lists, CJK soft-break join | `preview-markdown-ext.md` |
 | Copy table for PowerPoint (rich-HTML clipboard); Edit table (writes back to the `.md`) | `preview-tables.md` |
 | Images via the `/userfile/` route with `\|WxH` sizing and `../` paths; video + YouTube embeds; cross-file `.md` links with back/forward history; `Ctrl`+click opens a new window; drag & drop; `Ctrl+N` new file; `Ctrl+D` install dir | `preview-files-media.md` |
@@ -103,7 +105,7 @@ A file with no owning doc is an anomaly.
 | `assets/editor.html`, `assets/editor.css` | editor window shell and chrome | `editor-core.md` |
 | `assets/*.css` | user styles (`parchment`, `classical`, `hakuro-modern`, `tategaki`, `bunko`) | `styles-theming.md` |
 | `assets/marp/*.css` | the 8-theme Marp colour family (`magenta` is the base) | `marp.md` |
-| `assets/libs/**` | bundled third-party JS/CSS — **git-ignored, fetched/built** | `build-and-deps.md` |
+| `assets/libs/**` | bundled third-party JS/CSS (+ the ABC sound bank's MP3s) — **git-ignored, fetched/built** | `build-and-deps.md` |
 | `assets/libs/hljs-modelica.js` | in-house highlight.js grammar — **tracked, hand-written** | `preview-blocks.md` |
 | `assets/THIRD_PARTY_LICENSES.txt` | generated, git-ignored | `build-and-deps.md` |
 | `tools/build-editor/` | CodeMirror 6 + Vim bundle and its modules | `editor-*.md` |
@@ -274,6 +276,7 @@ that are checked (or partly checked) can rely on the harness remembering.
 | `section.invert` — `assets/marp/magenta.css` | `:root` — `assets/marp/dark.css` (byte-identical) | ❌ |
 | `$TikzjaxVersion` — `tools/fetch-libs.ps1` | `#define TikzjaxVersion` / `TikzjaxSha256` — `installer/md-previewer.iss` (the `.iss` cannot read the script) | ❌ |
 | tikzjax tarball extraction — `installer/md-previewer.iss` `[Code]` | `tools/fetch-libs.ps1` | ❌ |
+| `$AbcSoundfontNotes` + base URL — `tools/fetch-libs.ps1` | `AbcSfNotes()` + `AbcSfBaseUrl` — `installer/md-previewer.iss` (88 note names; flats only, `C8` last) | ❌ |
 | `#keys` list — `docs/index.html` | the `<table>` in `#help-modal` — `assets/index.html`, paired by i18n-key **suffix, not position** | ✅ `docskeycheck.py` |
 | `GALLERY` — `tools/preview-harness/shoot-docs.py` | gallery snippet literals — `docs/index.html` | ⚠ warn-only |
 | kataskeve / kataskeve3d container + error CSS | hand-carried into `assets/index.html`'s first `<style>` | ❌ |

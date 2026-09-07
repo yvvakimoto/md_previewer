@@ -352,6 +352,12 @@ def trim_to_ink(png_path, pad=24):
              min(im.width, r + pad), min(im.height, b + pad))).save(png_path)
 
 
+# Figures whose chrome is hover-revealed, so the shot has to hover them or the
+# gallery would advertise an empty gap. ABC's playback bar is opacity:0 until the
+# pointer is over the staff (the .copy-button idiom).
+_GALLERY_HOVER = {"abc"}
+
+
 def shoot_gallery(pw, port, wanted):
     """Render each GALLERY snippet on its own page and shoot the one figure."""
     out_dir = os.path.join(OUT_ROOT, "gallery")
@@ -384,6 +390,9 @@ def shoot_gallery(pw, port, wanted):
             except Exception:  # noqa: BLE001
                 sys.stderr.write("WARN: gallery %s: %r never appeared\n" % (key, sel))
                 continue
+            if key in _GALLERY_HOVER:
+                loc.hover()
+                page.wait_for_timeout(400)  # outlast the 0.2s opacity transition
             dest = os.path.join(out_dir, "%s.png" % key)
             loc.screenshot(path=dest)
             trim_to_ink(dest)

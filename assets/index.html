@@ -870,6 +870,107 @@
             color: #ffa198;
         }
 
+        /* ABC playback (abcjs synth; sound bank in assets/libs/abcjs/soundfont/).
+           The bar is a normal flow child of .abc-notation, which is text-align:center,
+           so inline-flex centres it under the staff without any positioning.
+           Hover-revealed like .copy-button, but via `opacity` while KEEPING its space:
+           the bar is in the flow, so collapsing it would make every staff jump as the
+           pointer crosses it. That reserved row is also why it needs its own entries in
+           the @media print block and the body.capturing list even though it is already
+           invisible there — `opacity: 0` hides the chrome but not the gap. */
+        .abc-audio-bar {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 2px;
+            padding: 4px 10px;
+            border: 1px solid #d0d7de;
+            border-radius: 999px;
+            background: #f6f8fa;
+            font-size: 0.8em;
+            line-height: 1.4;
+            color: #57606a;
+            vertical-align: middle;
+            opacity: 0;
+            transition: opacity 0.2s ease;
+        }
+        /* :focus-within so tabbing to the play button reveals it too, and
+           .abc-bar-active so a sounding tune keeps its transport and progress on
+           screen after the pointer moves away (set by __abcPlay / cleared by
+           __abcStop). */
+        .abc-notation:hover .abc-audio-bar,
+        .abc-notation:focus-within .abc-audio-bar,
+        .abc-audio-bar.abc-bar-active {
+            opacity: 1;
+        }
+        .abc-audio-btn {
+            border: 1px solid #d0d7de;
+            border-radius: 4px;
+            background: #fff;
+            color: #24292f;
+            font: inherit;
+            padding: 1px 8px;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+        .abc-audio-btn:hover:not(:disabled) { background: #eaeef2; }
+        .abc-audio-btn:disabled { opacity: 0.45; cursor: default; }
+        .abc-progress {
+            width: 140px;
+            height: 6px;
+            border-radius: 3px;
+            background: #d0d7de;
+            cursor: pointer;
+            overflow: hidden;
+        }
+        .abc-progress-fill {
+            width: 0;
+            height: 100%;
+            background: #0969da;
+        }
+        .abc-time,
+        .abc-tempo {
+            font-variant-numeric: tabular-nums;
+            white-space: nowrap;
+        }
+        .abc-audio-msg:not(:empty) {
+            color: #b31d28;
+            max-width: 30em;
+            text-align: left;
+        }
+        body.dark-mode .abc-audio-bar {
+            border-color: #444c56;
+            background: #22272e;
+            color: #adbac7;
+        }
+        body.dark-mode .abc-audio-btn {
+            border-color: #444c56;
+            background: #2d333b;
+            color: #adbac7;
+        }
+        body.dark-mode .abc-audio-btn:hover:not(:disabled) { background: #373e47; }
+        body.dark-mode .abc-progress { background: #444c56; }
+        body.dark-mode .abc-progress-fill { background: #539bf5; }
+        body.dark-mode .abc-audio-msg:not(:empty) { color: #ffa198; }
+        /* The sounding note. Must out-specify the dark-mode recolor above
+           (body.dark-mode .abc-notation svg path, 2 classes + 2 elements), so the
+           dark rule is spelled out rather than relying on source order. */
+        .abc-notation svg .abc-playing,
+        .abc-notation svg .abc-playing path,
+        .abc-notation svg .abc-playing text {
+            fill: #d1242f;
+            stroke: #d1242f;
+        }
+        body.dark-mode .abc-notation svg .abc-playing,
+        body.dark-mode .abc-notation svg .abc-playing path,
+        body.dark-mode .abc-notation svg .abc-playing text {
+            fill: #ff7b72;
+            stroke: #ff7b72;
+        }
+        /* Slides render at their own scale; keep the bar from dwarfing the staff. */
+        body.marp .abc-audio-bar { font-size: 0.55em; padding: 2px 8px; gap: 6px; }
+        body.marp .abc-progress { width: 90px; height: 4px; }
+
         /* Markwhen timelines — custom horizontal cascading timeline rendered as
            inline SVG by renderMarkwhenCached(). Colors are baked into the SVG by
            the renderer (theme-salted cache), so only layout chrome lives here. */
@@ -1788,6 +1889,12 @@
                 display: none !important;
             }
 
+            /* Same for the ABC playback bar — unlike .copy-button it is always
+               visible on screen, so it needs its own rule. */
+            .abc-audio-bar {
+                display: none !important;
+            }
+
             /* Hide footnote hover tooltip when printing */
             #footnote-tooltip {
                 display: none !important;
@@ -2662,7 +2769,8 @@
         body.capturing #toc-sidebar,
         body.capturing #slide-counter,
         body.capturing #laser-canvas,
-        body.capturing #toast { display: none !important; }
+        body.capturing #toast,
+        body.capturing .abc-audio-bar { display: none !important; }
     </style>
 </head>
 <body>
@@ -2806,6 +2914,19 @@
             'menu.collapseAll':    { ja: 'すべて閉じる', en: 'Collapse all' },
             'menu.expandAll':      { ja: 'すべて開く',   en: 'Expand all' },
             'fn.backToRef':        { ja: '参照元に戻る', en: 'Back to reference' },
+
+            // ABC playback bar. NOT translatable and deliberately absent: the ♩=
+            // tempo glyph and the ▶ / ❚❚ / ■ transport glyphs (notation, not labels).
+            'abc.play':            { ja: '再生',         en: 'Play' },
+            'abc.pause':           { ja: '一時停止',     en: 'Pause' },
+            'abc.stop':            { ja: '停止',         en: 'Stop' },
+            'abc.loading':         { ja: '音源を読み込み中', en: 'Loading audio' },
+            'abc.seek':            { ja: 'クリックで再生位置を移動', en: 'Click to seek' },
+            'abc.tempo':           { ja: 'テンポ（1分あたりの4分音符）', en: 'Tempo (quarter notes per minute)' },
+            'abc.noSoundfont':     { ja: '再生用音源が未導入です（インストーラの「ABC 楽譜の再生用音源」を選択してください）',
+                                     en: 'Playback sound bank not installed (select "ABC playback sound bank" in the installer)' },
+            'abc.audioBlocked':    { ja: '音声を開始できませんでした（もう一度再生ボタンを押してください）',
+                                     en: 'Audio could not start (press play again)' },
 
             'table.edit':          { ja: '表を編集',     en: 'Edit table' },
             'table.cancel':        { ja: 'キャンセル',   en: 'Cancel' },
@@ -5249,6 +5370,10 @@
             previewClone.querySelectorAll('.copy-button').forEach(el => el.remove());
             // The table button bar is left empty once its .copy-buttons are gone.
             previewClone.querySelectorAll('.table-btn-bar').forEach(el => el.remove());
+            // ABC playback needs the bundled sound bank, which an artifact cannot
+            // reach — drop the bar and ship the staff as the plain SVG it already is.
+            previewClone.querySelectorAll('.abc-audio-bar').forEach(el => el.remove());
+            previewClone.querySelectorAll('.abc-playing').forEach(el => el.classList.remove('abc-playing'));
             // Table edit mode must never leak into an artifact (a commit or cancel clears
             // it, but an export while editing would otherwise ship editable cells).
             previewClone.querySelectorAll('.table-editing').forEach(el => el.classList.remove('table-editing'));
@@ -8776,54 +8901,419 @@ ${previewClone.outerHTML}
             }));
         }
 
+        const __ABC_RENDER_OPTS = {
+            staffwidth: 740,
+            scale: 1,
+            paddingtop: 4,
+            paddingbottom: 4,
+            paddingleft: 0,
+            paddingright: 0
+        };
+
+        // Make a freshly rendered staff responsive: abcjs emits an <svg> with fixed
+        // `width`/`height` attributes but NO viewBox, so `.abc-notation svg
+        // { max-width:100% }` shrinks the SVG *box* while its content stays drawn at
+        // absolute 0..width coordinates — i.e. the staff is CLIPPED (both axes), not
+        // scaled, inside a narrow container such as a Marp split column. Giving it a
+        // viewBox matching its intrinsic size and collapsing width to 100% lets CSS
+        // scale (not clip) it. height is dropped so the viewBox aspect ratio drives
+        // height:auto. Preferred over abcjs's `responsive:'resize'`, which leaks a
+        // window listener lost on cached-innerHTML re-insert; needs no width
+        // measurement, so it is correct even while the slide is display:none.
+        function __abcMakeResponsive(staff) {
+            const svg = staff.querySelector('svg');
+            if (!svg || svg.getAttribute('viewBox')) return;
+            const w = parseFloat(svg.getAttribute('width'));
+            const h = parseFloat(svg.getAttribute('height'));
+            if (!(w > 0 && h > 0)) return;
+            svg.setAttribute('viewBox', '0 0 ' + w + ' ' + h);
+            svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+            svg.style.maxWidth = w + 'px'; // don't upscale beyond native
+            svg.setAttribute('width', '100%');
+            svg.removeAttribute('height');
+        }
+
+        // The `.abc-staff` child of an `.abc-notation` block, created on demand.
+        // The staff is a wrapper rather than the block itself so that the playback
+        // bar (added afterwards by addAbcAudioBars) survives both the memoized
+        // `el.innerHTML = cached` restore and the re-render __abcPlay performs.
+        function __abcStaffOf(el) {
+            let staff = el.querySelector(':scope > .abc-staff');
+            if (!staff) {
+                staff = document.createElement('div');
+                staff.className = 'abc-staff';
+                el.insertBefore(staff, el.firstChild);
+            }
+            return staff;
+        }
+
+        // Draw `src` into `staff` and keep abcjs's visualObj on the element. The
+        // visualObj holds live references to the SVG nodes it just created, which is
+        // what playback needs for its note highlighting — so a staff restored from
+        // the innerHTML cache has none, and __abcPlay re-renders through here first.
+        // abcjs stamps `overflow:hidden` plus the tune's INTRINSIC height onto its
+        // target element, and on the session's first render it comes back once more,
+        // asynchronously, to clear them again. Neither the styles nor that late visit
+        // are part of the memoized innerHTML, so a staff rendered directly would not
+        // be byte-identical to the same staff restored from __abcCache. Rendering into
+        // a throwaway child and lifting the result out keeps every one of abcjs's
+        // marks on a node that is gone by the time anyone looks — the SVG itself is
+        // MOVED, not cloned, so the visualObj's element references stay valid. The
+        // target is attached while abcjs works because it measures text from layout.
+        function __abcRenderStaff(staff, src) {
+            staff.innerHTML = '';
+            const pen = document.createElement('div');
+            staff.appendChild(pen);
+            const visual = window.ABCJS.renderAbc(pen, src, __ABC_RENDER_OPTS);
+            while (pen.firstChild) staff.appendChild(pen.firstChild);
+            pen.remove();
+            __abcMakeResponsive(staff);
+            staff.__abcVisual = (visual && visual[0]) || null;
+            return staff.__abcVisual;
+        }
+
         // Render every [data-abc] element under `root` as an inline ABC-notation
         // staff via abcjs. abcjs renders directly into the element (returning no
-        // HTML string), so we snapshot el.innerHTML after
-        // rendering to memoize it. Keyed by the raw source (theme-independent).
-        //
-        // abcjs emits an <svg> with fixed `width`/`height` attributes but NO viewBox,
-        // so `.abc-notation svg { max-width:100% }` shrinks the SVG *box* while its
-        // content stays drawn at absolute 0..width coordinates — i.e. the staff is
-        // CLIPPED (both axes), not scaled, inside a narrow container such as a Marp
-        // split column. We add the viewBox ourselves (preferred over abcjs's
-        // `responsive:'resize'`, which leaks a window listener lost on cached-
-        // innerHTML re-insert) so the SVG scales-to-fit any container width purely
-        // via CSS — no width measurement, and correct even when rendered while the
-        // slide is display:none (e.g. a non-active deck slide).
+        // HTML string), so we snapshot the staff's innerHTML after rendering to
+        // memoize it. Keyed by the raw source (theme-independent).
         function renderAbcCached(root) {
             root.querySelectorAll('[data-abc]').forEach((el) => {
                 const src = __diagSource(el, 'data-abc-source');
-                if (__diagCacheHit(__abcCache, src, el)) return;
+                const staff = __abcStaffOf(el);
+                if (__diagCacheHit(__abcCache, src, staff)) {
+                    staff.__abcVisual = null; // cached markup: nodes are not the visualObj's
+                    return;
+                }
                 try {
-                    el.innerHTML = '';
-                    window.ABCJS.renderAbc(el, src, {
-                        staffwidth: 740,
-                        scale: 1,
-                        paddingtop: 4,
-                        paddingbottom: 4,
-                        paddingleft: 0,
-                        paddingright: 0
-                    });
-                    // Make the staff responsive: give the SVG a viewBox matching its
-                    // intrinsic size and let width collapse to 100% so CSS max-width
-                    // scales (not clips) it down inside narrow containers. height is
-                    // dropped so the viewBox aspect ratio drives height:auto.
-                    const svg = el.querySelector('svg');
-                    if (svg && !svg.getAttribute('viewBox')) {
-                        const w = parseFloat(svg.getAttribute('width'));
-                        const h = parseFloat(svg.getAttribute('height'));
-                        if (w > 0 && h > 0) {
-                            svg.setAttribute('viewBox', '0 0 ' + w + ' ' + h);
-                            svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
-                            svg.style.maxWidth = w + 'px'; // don't upscale beyond native
-                            svg.setAttribute('width', '100%');
-                            svg.removeAttribute('height');
-                        }
-                    }
-                    __diagCacheSet(__abcCache, src, el.innerHTML);
+                    __abcRenderStaff(staff, src);
+                    __diagCacheSet(__abcCache, src, staff.innerHTML);
                 } catch (error) {
+                    // A tune that cannot be parsed has nothing to play either, so the
+                    // error replaces the whole block (bar included).
                     el.innerHTML = '<div class="abc-error">' + t('err.prefix', { engine: 'ABC' }) + (error && error.message) + '</div>';
                 }
+            });
+        }
+
+        // ---- ABC playback (abcjs synth) ----
+        // abcjs' synth fetches one MP3 per sounding note from
+        //   <soundFontUrl><instrument>-mp3/<note>.mp3
+        // and its built-in default is a CDN, so soundFontUrl is always passed
+        // explicitly and points at the bundled bank. That bank is an OPTIONAL
+        // installer task, so "absent" is a normal state to render for rather than an
+        // error: __abcSoundfontReady() probes once and the bar says why it is dead.
+        // Only GM program 0 (acoustic grand piano) ships, so a tune's %%MIDI program
+        // is effectively ignored — every voice sounds as piano.
+        const __ABC_SOUNDFONT_URL = 'libs/abcjs/soundfont/';
+        let __abcSoundfontProbe = null;
+        function __abcSoundfontReady() {
+            if (__abcSoundfontProbe) return __abcSoundfontProbe;
+            __abcSoundfontProbe = new Promise((resolve) => {
+                try {
+                    // C8 is the smallest note in the bank (~14KB) — cheapest probe,
+                    // and via XHR so the answer matches how abcjs itself will fetch.
+                    const xhr = new XMLHttpRequest();
+                    xhr.open('GET', __ABC_SOUNDFONT_URL + 'acoustic_grand_piano-mp3/C8.mp3', true);
+                    xhr.responseType = 'arraybuffer';
+                    xhr.onload = () => resolve(
+                        (xhr.status === 200 || xhr.status === 0) &&
+                        !!xhr.response && xhr.response.byteLength > 0
+                    );
+                    xhr.onerror = () => resolve(false);
+                    xhr.send();
+                } catch (e) { resolve(false); }
+            });
+            return __abcSoundfontProbe;
+        }
+
+        // Tempo shown on the bar. The visualObj that knows the BPM is gone whenever a
+        // staff came back from __abcCache, so the value is memoized alongside it,
+        // keyed by the same raw source and bounded by the same FIFO helper.
+        const __abcBpmCache = new Map();
+
+        // One AudioContext for the whole session (browsers cap how many may exist),
+        // and one sounding tune at a time — starting a second stops the first.
+        let __abcAudioCtx = null;
+        let __abcActive = null; // { el, bar, synth, timing, duration, paused }
+        // Loading a tune is asynchronous (soundfont fetch + decode + prime), so a
+        // second play — or a stop — while the first is still loading must be able to
+        // abandon it. Without this, both would eventually sound at once.
+        let __abcPlayGen = 0;
+        // Which block is mid-load, so its Stop button has something to act on: during
+        // a load there is no __abcActive yet, and a Stop that did nothing would let
+        // the tune start moments later.
+        let __abcLoadingEl = null;
+
+        // The context starts SUSPENDED under the autoplay policy and only a user
+        // gesture may resume it — which the play button is, so resuming here (inside
+        // the click) is the whole reason this is async. Priming a suspended context
+        // never produces sound and never settles into anything the bar could report.
+        async function __abcAudioContext() {
+            if (!__abcAudioCtx) {
+                const Ctor = window.AudioContext || window.webkitAudioContext;
+                __abcAudioCtx = new Ctor();
+                window.ABCJS.synth.registerAudioContext(__abcAudioCtx);
+            }
+            if (__abcAudioCtx.state === 'suspended') {
+                try { await __abcAudioCtx.resume(); } catch (e) { /* reported below */ }
+            }
+            return __abcAudioCtx;
+        }
+
+        function __abcFmtTime(sec) {
+            if (!isFinite(sec) || sec < 0) sec = 0;
+            const m = Math.floor(sec / 60);
+            const s = Math.floor(sec % 60);
+            return m + ':' + (s < 10 ? '0' : '') + s;
+        }
+
+        function __abcSetProgress(bar, pct, curSec, totalSec) {
+            if (!bar) return;
+            const fill = bar.querySelector('.abc-progress-fill');
+            if (fill) fill.style.width = (Math.max(0, Math.min(1, pct)) * 100) + '%';
+            const time = bar.querySelector('.abc-time');
+            if (time) time.textContent = __abcFmtTime(curSec) + ' / ' + __abcFmtTime(totalSec);
+        }
+
+        function __abcSetPlayLabel(bar, key) {
+            const btn = bar && bar.querySelector('.abc-play');
+            if (!btn) return;
+            const glyph = key === 'abc.pause' ? '❚❚' : '▶';
+            btn.textContent = glyph + ' ' + t(key);
+            btn.dataset.state = key === 'abc.pause' ? 'playing' : 'idle';
+        }
+
+        function __abcClearHighlight(el) {
+            el.querySelectorAll('.abc-playing').forEach((n) => n.classList.remove('abc-playing'));
+        }
+
+        function __abcBarMessage(bar, msg) {
+            const slot = bar && bar.querySelector('.abc-audio-msg');
+            if (slot) slot.textContent = msg || '';
+        }
+
+        // Stop whatever is sounding and put its bar back to the idle state. Safe to
+        // call when nothing is playing, and when the bar's DOM is already gone (every
+        // render replaces #preview wholesale).
+        function __abcStop() {
+            __abcPlayGen++; // abandon any load still in flight
+            __abcLoadingEl = null;
+            // The bar is hover-revealed; only a live tune pins it open. Clearing every
+            // bar rather than the active one covers the stop-while-loading path too,
+            // and is safe because at most one tune is ever active.
+            preview.querySelectorAll('.abc-audio-bar.abc-bar-active')
+                .forEach((b) => b.classList.remove('abc-bar-active'));
+            const a = __abcActive;
+            if (!a) return;
+            __abcActive = null;
+            try { if (a.timing) a.timing.stop(); } catch (e) { /* already torn down */ }
+            try { if (a.synth) a.synth.stop(); } catch (e) { /* already torn down */ }
+            if (a.el && a.el.isConnected) __abcClearHighlight(a.el);
+            if (a.bar && a.bar.isConnected) {
+                __abcSetPlayLabel(a.bar, 'abc.play');
+                __abcSetProgress(a.bar, 0, 0, a.duration || 0);
+            }
+        }
+        window.__abcStop = __abcStop;
+
+        // Percentage a pointer event lands at along the progress track.
+        function __abcSeekPct(track, ev) {
+            const r = track.getBoundingClientRect();
+            if (!(r.width > 0)) return 0;
+            return Math.max(0, Math.min(1, (ev.clientX - r.left) / r.width));
+        }
+
+        // Start (or pause/resume) playback of one `.abc-notation` block.
+        async function __abcPlay(el) {
+            const bar = el.querySelector(':scope > .abc-audio-bar');
+
+            // Same block already loaded → this is a pause/resume toggle.
+            if (__abcActive && __abcActive.el === el) {
+                const a = __abcActive;
+                try {
+                    if (a.paused) {
+                        a.paused = false;
+                        a.synth.resume();
+                        a.timing.start();
+                        __abcSetPlayLabel(bar, 'abc.pause');
+                    } else {
+                        a.paused = true;
+                        a.synth.pause();
+                        a.timing.pause();
+                        __abcSetPlayLabel(bar, 'abc.play');
+                    }
+                } catch (error) {
+                    __abcStop();
+                    __abcBarMessage(bar, t('err.prefix', { engine: 'ABC' }) + (error && error.message));
+                }
+                return;
+            }
+
+            __abcStop();
+            const gen = __abcPlayGen;
+            __abcBarMessage(bar, '');
+
+            const staff = el.querySelector(':scope > .abc-staff');
+            if (!staff) return;
+
+            const btn = bar && bar.querySelector('.abc-play');
+            if (btn) { btn.disabled = true; btn.textContent = '… ' + t('abc.loading'); }
+            __abcLoadingEl = el;
+            if (bar) bar.classList.add('abc-bar-active'); // pin it open from the first click
+
+            try {
+                // A staff restored from __abcCache is markup only: its nodes are not
+                // the ones the visualObj remembers, so note highlighting would target
+                // detached elements. Re-render to get a visualObj bound to what is on
+                // screen (the cache still saved every render before this one).
+                let visual = staff.__abcVisual;
+                if (!visual) visual = __abcRenderStaff(staff, __diagSource(el, 'data-abc-source'));
+                if (!visual) throw new Error('no tune');
+
+                const ctx = await __abcAudioContext();
+                if (ctx.state === 'suspended') throw new Error(t('abc.audioBlocked'));
+
+                const synth = new window.ABCJS.synth.CreateSynth();
+                await synth.init({
+                    visualObj: visual,
+                    audioContext: ctx,
+                    options: { soundFontUrl: __ABC_SOUNDFONT_URL }
+                });
+                await synth.prime();
+
+                const duration = synth.duration || 0;
+                const timing = new window.ABCJS.TimingCallbacks(visual, {
+                    eventCallback: (ev) => {
+                        __abcClearHighlight(el);
+                        if (!ev || !ev.elements) return;
+                        ev.elements.forEach((group) => {
+                            (group || []).forEach((node) => {
+                                if (node && node.classList) node.classList.add('abc-playing');
+                            });
+                        });
+                    },
+                    beatCallback: (beat, totalBeats, totalMs) => {
+                        const pct = totalBeats > 0 ? beat / totalBeats : 0;
+                        __abcSetProgress(bar, pct, (totalMs || 0) * pct / 1000, duration);
+                    }
+                });
+
+                // Someone pressed play elsewhere (or stop) while we were loading.
+                if (gen !== __abcPlayGen) {
+                    try { synth.stop(); } catch (e) { /* nothing to stop */ }
+                    if (btn) btn.disabled = false;
+                    if (bar) bar.classList.remove('abc-bar-active');
+                    __abcSetPlayLabel(bar, 'abc.play');
+                    return;
+                }
+
+                __abcLoadingEl = null;
+                __abcActive = { el, bar, synth, timing, duration, paused: false };
+                synth.start();
+                timing.start();
+                if (btn) btn.disabled = false;
+                __abcSetPlayLabel(bar, 'abc.pause');
+                __abcSetProgress(bar, 0, 0, duration);
+
+                // CreateSynth has no "finished" callback, so the end of the tune is
+                // detected from the timing side and folded into the normal stop path.
+                const endTimer = setInterval(() => {
+                    if (!__abcActive || __abcActive.timing !== timing) { clearInterval(endTimer); return; }
+                    if (timing.currentMillisecond() >= timing.lastMoment) {
+                        clearInterval(endTimer);
+                        __abcStop();
+                    }
+                }, 200);
+            } catch (error) {
+                __abcStop();
+                if (btn) btn.disabled = false;
+                __abcSetPlayLabel(bar, 'abc.play');
+                __abcBarMessage(bar, t('err.prefix', { engine: 'ABC' }) + (error && error.message));
+                // Keep the bar up after __abcStop hid it, so the message can be read
+                // once the pointer moves off.
+                if (bar) bar.classList.add('abc-bar-active');
+            }
+        }
+
+        // Add the playback bar under every rendered ABC staff. Idempotent and cheap,
+        // in the shape of addTableCopyButtons(): #preview is rebuilt by innerHTML on
+        // every render, so the bar is simply re-created rather than kept alive.
+        function addAbcAudioBars(root) {
+            if (!window.ABCJS || !window.ABCJS.synth || !window.ABCJS.synth.supportsAudio()) return;
+            root.querySelectorAll('.abc-notation').forEach((el) => {
+                if (el.querySelector(':scope > .abc-audio-bar')) return;
+                const staff = el.querySelector(':scope > .abc-staff');
+                if (!staff || !staff.querySelector('svg')) return; // error block: nothing to play
+
+                const src = __diagSource(el, 'data-abc-source');
+                if (staff.__abcVisual && !__abcBpmCache.has(src)) {
+                    try { __diagCacheSet(__abcBpmCache, src, staff.__abcVisual.getBpm()); }
+                    catch (e) { /* tempo is decoration; never fail the bar over it */ }
+                }
+
+                const bar = document.createElement('div');
+                bar.className = 'abc-audio-bar';
+
+                const play = document.createElement('button');
+                play.className = 'abc-audio-btn abc-play';
+                bar.appendChild(play);
+                __abcSetPlayLabel(bar, 'abc.play');
+                play.addEventListener('click', () => __abcPlay(el));
+
+                const stop = document.createElement('button');
+                stop.className = 'abc-audio-btn abc-btn-stop';
+                stop.textContent = '■';
+                stop.title = t('abc.stop');
+                stop.setAttribute('aria-label', t('abc.stop'));
+                stop.addEventListener('click', () => {
+                    const mine = __abcActive ? __abcActive.el === el : __abcLoadingEl === el;
+                    if (mine) __abcStop();
+                });
+                bar.appendChild(stop);
+
+                const track = document.createElement('div');
+                track.className = 'abc-progress';
+                track.title = t('abc.seek');
+                track.setAttribute('aria-label', t('abc.seek'));
+                track.innerHTML = '<div class="abc-progress-fill"></div>';
+                track.addEventListener('click', (ev) => {
+                    if (!__abcActive || __abcActive.el !== el) return;
+                    const pct = __abcSeekPct(track, ev);
+                    __abcActive.synth.seek(pct);
+                    __abcActive.timing.setProgress(pct);
+                    __abcSetProgress(bar, pct, __abcActive.duration * pct, __abcActive.duration);
+                });
+                bar.appendChild(track);
+
+                const time = document.createElement('span');
+                time.className = 'abc-time';
+                time.textContent = '0:00 / 0:00';
+                bar.appendChild(time);
+
+                const bpm = __abcBpmCache.get(src);
+                if (bpm) {
+                    const tempo = document.createElement('span');
+                    tempo.className = 'abc-tempo';
+                    tempo.textContent = '♩=' + Math.round(bpm); // ♩= — notation, not a translatable label
+                    tempo.title = t('abc.tempo');
+                    bar.appendChild(tempo);
+                }
+
+                const msg = document.createElement('span');
+                msg.className = 'abc-audio-msg';
+                bar.appendChild(msg);
+
+                el.appendChild(bar);
+
+                // The bank may be missing (its installer task is optional), so the bar
+                // is built enabled and demoted asynchronously — the probe must never
+                // delay a render.
+                __abcSoundfontReady().then((ok) => {
+                    if (ok || !bar.isConnected) return;
+                    play.disabled = true;
+                    stop.disabled = true;
+                    __abcBarMessage(bar, t('abc.noSoundfont'));
+                });
             });
         }
 
@@ -9792,6 +10282,7 @@ ${previewClone.outerHTML}
 
             const { html, css } = marp.render(markdown);
 
+            __abcStop(); // see the note at the normal pipeline's rebuild
             preview.innerHTML = '<style id="marp-style">' + css + '</style>' + html;
             // The theme's ⚙ overrides (--theme-color) ride along with every render.
             __refreshMarpStyleVars(getMarpTheme(currentMarkdown) || 'default');
@@ -10241,6 +10732,7 @@ ${previewClone.outerHTML}
             if (marpAbcEls.length > 0 && await awaitLib(ensureAbcjs(), 'ABC', marpAbcEls)) {
                 await __nextPaint();
                 renderAbcCached(preview);
+                addAbcAudioBars(preview);
             }
 
             // Kataskeve geometry figures in slides. Awaited (not fire-and-forget
@@ -10756,6 +11248,9 @@ ${previewClone.outerHTML}
                 return match.replace(href, absHref);
             });
 
+            // Playback holds live references into #preview; the rebuild below
+            // invalidates them, so stop before the DOM under it disappears.
+            __abcStop();
             preview.innerHTML = html;
 
             // Convert video / YouTube image-syntax embeds, then size remaining images.
@@ -10801,6 +11296,7 @@ ${previewClone.outerHTML}
             const abcEls = preview.querySelectorAll('[data-abc]');
             if (abcEls.length > 0 && await awaitLib(abcReady, 'ABC', abcEls)) {
                 renderAbcCached(preview);
+                addAbcAudioBars(preview);
             }
 
             // Render kataskeve 2D geometry figures (memoized by source + theme) and

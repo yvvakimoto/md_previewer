@@ -58,7 +58,10 @@ Source: "..\target\release\{#AppExeName}"; DestDir: "{app}"; Flags: ignoreversio
 ; NOTE: libs\tikzjax\* is excluded on purpose - it is GPL/LPPL and is fetched
 ; from upstream at install time by the "tikz" task instead (see [Code]).
 ; The exclusion also means an upgrade leaves an already-downloaded copy alone.
-Source: "..\assets\*"; DestDir: "{app}\assets"; Excludes: "libs\tikzjax\*"; Flags: ignoreversion recursesubdirs createallsubdirs
+; libs\abcjs\soundfont\* is excluded for a different reason: it is 88 MP3s that
+; compress to nothing, so shipping them would add their full ~2MB to this
+; installer. The "abcsound" task downloads them at install time instead.
+Source: "..\assets\*"; DestDir: "{app}\assets"; Excludes: "libs\tikzjax\*,libs\abcjs\soundfont\*"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\samples\*"; DestDir: "{app}\samples"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\README.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\HISTORY.md"; DestDir: "{app}"; Flags: ignoreversion
@@ -88,6 +91,7 @@ Name: "assoc_md";    Description: ".md / .markdown / .mdx を {#AppName} に関�
 Name: "ctx_folder";  Description: "フォルダ右クリックメニューに追加 / Add to folder context menu"
 Name: "ctx_file";    Description: ".md / .mdx ファイル右クリックメニューに追加 / Add to .md & .mdx file context menu"
 Name: "tikz";        Description: "TikZ・可換図式コンポーネントをダウンロード (約6MB, 要インターネット接続) / Download TikZ component (~6MB, needs internet)"
+Name: "abcsound";    Description: "ABC 楽譜の再生用音源をダウンロード (約2MB, 要インターネット接続) / Download ABC playback sound bank (~2MB, needs internet)"
 Name: "claudeskill"; Description: "Claude Code 用の文書作成スキルを導入 (%USERPROFILE%\.claude\skills\) / Install the Claude Code authoring skill"; Flags: unchecked
 
 [Registry]
@@ -141,6 +145,8 @@ Filename: "{app}\assets\THIRD_PARTY_LICENSES.txt"; Description: "サードパー
 ; The TikZ component is downloaded after install, so it is not recorded in the
 ; uninstall log and would otherwise be left behind.
 Type: filesandordirs; Name: "{app}\assets\libs\tikzjax"
+; Same for the ABC sound bank.
+Type: filesandordirs; Name: "{app}\assets\libs\abcjs\soundfont"
 ; The optional Claude skill lands outside {app}. Its files ARE in the uninstall log,
 ; but samples\ has nested subdirectories, so remove that subtree wholesale and then
 ; drop the now-empty skill folder. Never touch {%USERPROFILE}\.claude\skills itself -
@@ -300,14 +306,135 @@ begin
   Result := TikzAlreadyInstalled();
 end;
 
-procedure CurStepChanged(CurStep: TSetupStep);
+// ---- ABC playback sound bank --------------------------------------------
+//
+// abcjs' synth plays a tune by fetching one MP3 per sounding note from
+//   <soundFontUrl><instrument>-mp3/<note>.mp3
+// so "the sound bank" is a flat directory of 88 small files. Its default source
+// is a CDN, which the offline-viewing rule forbids, hence a local copy.
+//
+// This mirrors the abc sound-bank block of tools\fetch-libs.ps1 (same URL, same
+// note names, same order) - the .iss cannot read that script, so KEEP THEM IN
+// SYNC. Only GM program 0 ships; every tune therefore sounds as piano.
+//
+// Failure is SOFT, like tikz: assets\index.html probes for C8.mp3 and, when it
+// is missing, renders the playback bar disabled with an explanation.
+const
+  AbcSfDirRel  = 'assets\libs\abcjs\soundfont\acoustic_grand_piano-mp3';
+  AbcSfBaseUrl = 'https://paulrosen.github.io/midi-js-soundfonts/FluidR3_GM/acoustic_grand_piano-mp3/';
+
+// The 88 piano keys, A0..C8. midi-js-soundfonts names black keys with FLATS,
+// which is also what abcjs asks for - sharps would 404 silently. C8 is LAST on
+// purpose: it doubles as the "everything landed" marker and is the very file
+// assets\index.html probes at runtime.
+function AbcSfNotes(): TArrayOfString;
+var
+  Notes: TArrayOfString;
+  Src, Tok: String;
+  Oct, P, N: Integer;
+begin
+  SetArrayLength(Notes, 88);
+  Notes[0] := 'A0';
+  Notes[1] := 'Bb0';
+  Notes[2] := 'B0';
+  N := 3;
+  for Oct := 1 to 7 do begin
+    Src := 'C,Db,D,Eb,E,F,Gb,G,Ab,A,Bb,B,';
+    repeat
+      P := Pos(',', Src);
+      Tok := Copy(Src, 1, P - 1);
+      Src := Copy(Src, P + 1, Length(Src));
+      Notes[N] := Tok + IntToStr(Oct);
+      N := N + 1;
+    until Src = '';
+  end;
+  Notes[N] := 'C8';
+  Result := Notes;
+end;
+
+function AbcSfInstalled(): Boolean;
+begin
+  Result := FileExists(ExpandConstant('{app}\' + AbcSfDirRel + '\C8.mp3'));
+end;
+
+function OnAbcSfDownloadProgress(const Url, FileName: String; const Progress, ProgressMax: Int64): Boolean;
+begin
+  Result := True;
+end;
+
+function AcquireAbcSoundfont(): Boolean;
+var
+  Notes: TArrayOfString;
+  Dest, Tmp, Note: String;
+  I, Total, Got: Integer;
+begin
+  Result := False;
+  Dest := ExpandConstant('{app}\' + AbcSfDirRel);
+  if not ForceDirectories(Dest) then begin
+    Log('abcsound: could not create ' + Dest);
+    Exit;
+  end;
+
+  Notes := AbcSfNotes();
+  Total := GetArrayLength(Notes);
+  Got := 0;
+  for I := 0 to Total - 1 do begin
+    Note := Notes[I];
+    if FileExists(Dest + '\' + Note + '.mp3') then begin
+      Got := Got + 1;
+      Continue;
+    end;
+    if not WizardSilent() then
+      WizardForm.StatusLabel.Caption :=
+        Format('ABC 再生用音源を取得しています... %d/%d', [I + 1, Total]);
+    // Per note rather than per batch: one unreachable file costs that note's
+    // silence, not the whole bank.
+    try
+      DownloadTemporaryFile(AbcSfBaseUrl + Note + '.mp3', 'abcsf.mp3', '', @OnAbcSfDownloadProgress);
+      Tmp := ExpandConstant('{tmp}\abcsf.mp3');
+      if CopyFile(Tmp, Dest + '\' + Note + '.mp3', False) then
+        Got := Got + 1
+      else
+        Log('abcsound: could not place ' + Note);
+      DeleteFile(Tmp);
+    except
+      Log('abcsound: ' + Note + ' failed: ' + GetExceptionMessage);
+    end;
+  end;
+
+  Log(Format('abcsound: %d/%d notes present', [Got, Total]));
+  Result := AbcSfInstalled();
+end;
+
+procedure InstallAbcSoundfont();
+begin
+  if not WizardIsTaskSelected('abcsound') then begin
+    Log('abcsound: task not selected, skipping');
+    Exit;
+  end;
+
+  // An upgrade keeps whatever is already there - the Excludes on the assets\*
+  // entry means [Files] never touched it.
+  if AbcSfInstalled() then begin
+    Log('abcsound: already present, skipping download');
+    Exit;
+  end;
+
+  if AcquireAbcSoundfont() then
+    Log('abcsound: installed into ' + ExpandConstant('{app}\' + AbcSfDirRel))
+  else
+    SuppressibleMsgBox(
+      'ABC 楽譜の再生用音源を取得できませんでした。' + #13#10 +
+      '楽譜の表示を含め、再生以外の機能はすべて正常に動作します。' + #13#10#13#10 +
+      'あとからインストーラーを再実行すると再試行できます。',
+      mbInformation, MB_OK, IDOK);
+end;
+
+procedure InstallTikz();
 var
   Url, Sha, Tgz: String;
   Ok: Boolean;
 begin
-  if CurStep <> ssPostInstall then
-    Exit;
-
   if not WizardIsTaskSelected('tikz') then begin
     Log('tikz: task not selected, skipping');
     Exit;
@@ -343,4 +470,15 @@ begin
 
   if Tgz <> '' then
     DeleteFile(Tgz);
+end;
+
+// Both optional components are fetched after the files are in place. Each one
+// reports its own soft failure, so a machine that is offline for one is still
+// offered the other.
+procedure CurStepChanged(CurStep: TSetupStep);
+begin
+  if CurStep <> ssPostInstall then
+    Exit;
+  InstallTikz();
+  InstallAbcSoundfont();
 end;
