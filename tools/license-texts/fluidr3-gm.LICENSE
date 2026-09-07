@@ -1,0 +1,30 @@
+The ABC playback sound bank (the MP3 note samples under
+assets/libs/abcjs/soundfont/) is taken from the FluidR3_GM collection published
+by the midi-js-soundfonts project (https://github.com/paulrosen/midi-js-soundfonts),
+which is also the source abcjs uses by default.
+
+Only the General MIDI program 0 instrument (acoustic_grand_piano) is used.
+
+The samples were generated from FluidR3_GM.sf2 by Frank Wen, released under the
+Creative Commons Attribution 3.0 Unported license (CC BY 3.0). Attribution to
+Frank Wen must accompany any redistribution. The tooling in the
+midi-js-soundfonts repository itself is MIT-licensed.
+
+Creative Commons Attribution 3.0 Unported (CC BY 3.0)
+-----------------------------------------------------------
+Full text: https://creativecommons.org/licenses/by/3.0/legalcode
+Summary:   https://creativecommons.org/licenses/by/3.0/
+
+You are free to:
+  Share  - copy and redistribute the material in any medium or format
+  Adapt  - remix, transform, and build upon the material
+for any purpose, even commercially.
+
+Under the following terms:
+  Attribution - You must give appropriate credit, provide a link to the
+  license, and indicate if changes were made. You may do so in any reasonable
+  manner, but not in any way that suggests the licensor endorses you or your
+  use.
+
+No additional restrictions - You may not apply legal terms or technological
+measures that legally restrict others from doing anything the license permits.

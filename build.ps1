@@ -71,6 +71,7 @@ $libsSentinels = @(
     'libs\plotly\plotly.min.js',
     'libs\js-yaml.min.js',
     'libs\abcjs\abcjs-basic-min.js',
+    'libs\abcjs\soundfont\acoustic_grand_piano-mp3\C4.mp3',
     'libs\feynmark\feynmark.min.js',
     'libs\tikzjax\dist\tikzjax.js',
     'libs\kataskeve\kataskeve.min.js',

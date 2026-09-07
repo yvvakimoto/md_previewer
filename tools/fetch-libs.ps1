@@ -40,6 +40,16 @@ $PlotlyVersion  = '2.35.2'
 $JsYamlVersion  = '4.1.0'
 $AbcjsVersion   = '6.6.3'
 $TikzjaxVersion = '1.5.0'   # @rod2ik/tikzjax — WASM TeX for tikz-cd commutative diagrams
+
+# abcjs playback sound bank. abcjs' synth fetches one MP3 per note from
+#   <soundFontUrl><instrument>-mp3/<note>.mp3
+# and its built-in default is a CDN, which the offline-viewing rule forbids — so
+# the notes are bundled and assets/index.html passes soundFontUrl explicitly.
+# Only the GM program 0 instrument is shipped (~2.1MB); everything else would be
+# ~2MB apiece. KEEP THIS IN SYNC WITH installer\md-previewer.iss, which downloads
+# the very same files at install time (the .iss cannot read this script).
+$AbcSoundfontInstrument = 'acoustic_grand_piano'
+$AbcSoundfontBaseUrl    = 'https://paulrosen.github.io/midi-js-soundfonts/FluidR3_GM'
 # kataskeve / kataskeve3d / feynmark are distributed from their GitHub repos
 # (committed dist/, served by cdn.jsdelivr.net/gh/...), not from npm — so these
 # pins are git TAGS and the URLs below carry the `v` prefix the tags actually use.
@@ -70,6 +80,17 @@ $KatexFonts = @(
   'KaTeX_Size4-Regular',
   'KaTeX_Typewriter-Regular'
 )
+
+# ---- abcjs sound-bank note list (the 88 piano keys, A0..C8) --------------
+# midi-js-soundfonts names black keys with FLATS (Db, Eb, Gb, Ab, Bb) — which is
+# also what abcjs' pitchToNoteName() asks for. Sharps would 404 silently.
+$AbcSoundfontNotes = @('A0', 'Bb0', 'B0')
+foreach ($oct in 1..7) {
+  foreach ($n in @('C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B')) {
+    $AbcSoundfontNotes += "$n$oct"
+  }
+}
+$AbcSoundfontNotes += 'C8'
 
 # ---- Download table -----------------------------------------------------
 # Each entry: @{ Url = '...'; Dest = '<relative to LibsDir>' }
@@ -123,6 +144,14 @@ $Downloads.Add(@{
   Url  = "https://cdn.jsdelivr.net/npm/abcjs@$AbcjsVersion/dist/abcjs-basic-min.js"
   Dest = 'abcjs/abcjs-basic-min.js'
 })
+
+# abcjs playback sound bank — 88 small MP3s, one per piano key.
+foreach ($note in $AbcSoundfontNotes) {
+  $Downloads.Add(@{
+    Url  = "$AbcSoundfontBaseUrl/$AbcSoundfontInstrument-mp3/$note.mp3"
+    Dest = "abcjs/soundfont/$AbcSoundfontInstrument-mp3/$note.mp3"
+  })
+}
 
 # kataskeve (2D) — one 28KB IIFE, zero dependencies, no runtime-fetched assets.
 # dist/kataskeve.css is deliberately NOT fetched: it is container/error chrome

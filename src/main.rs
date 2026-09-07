@@ -448,6 +448,11 @@ pub(crate) fn get_mime_type(path: &PathBuf) -> &'static str {
         Some("webm") => "video/webm",
         Some("ogv") | Some("ogg") => "video/ogg",
 
+        // Audio (abcjs playback sound bank lives in assets/libs/abcjs/soundfont/)
+        Some("mp3") => "audio/mpeg",
+        Some("wav") => "audio/wav",
+        Some("m4a") => "audio/mp4",
+
         // WebAssembly (TikZJax WASM TeX engine, served from assets/libs/tikzjax/)
         Some("wasm") => "application/wasm",
 
@@ -3258,6 +3263,7 @@ mod tests {
         assert_eq!(mime("a.tsv"), "text/tab-separated-values; charset=utf-8");
         assert_eq!(mime("a.txt"), "text/plain; charset=utf-8");
         assert_eq!(mime("a.wasm"), "application/wasm"); // TikZJax WASM engine
+        assert_eq!(mime("C4.mp3"), "audio/mpeg"); // abcjs playback sound bank
         // TikZJax's gzipped assets (tex.wasm.gz / core.dump.gz / tex_files/*.gz)
         // are served raw and decompressed in JS, so .gz stays the octet default.
         assert_eq!(mime("core.dump.gz"), "application/octet-stream");
