@@ -9048,6 +9048,12 @@ ${previewClone.outerHTML}
         // gesture may resume it — which the play button is, so resuming here (inside
         // the click) is the whole reason this is async. Priming a suspended context
         // never produces sound and never settles into anything the bar could report.
+        //
+        // ⚠ The wait is BOUNDED because resume() settles only once the policy is
+        // satisfied: where the click did not count as a gesture the promise stays
+        // pending forever, and the bar would sit on 「音源を読み込み中」 with no way
+        // out. On timeout the state check in __abcPlay reports a blocked context.
+        const __ABC_RESUME_TIMEOUT_MS = 1500;
         async function __abcAudioContext() {
             if (!__abcAudioCtx) {
                 const Ctor = window.AudioContext || window.webkitAudioContext;
@@ -9055,7 +9061,12 @@ ${previewClone.outerHTML}
                 window.ABCJS.synth.registerAudioContext(__abcAudioCtx);
             }
             if (__abcAudioCtx.state === 'suspended') {
-                try { await __abcAudioCtx.resume(); } catch (e) { /* reported below */ }
+                try {
+                    await Promise.race([
+                        __abcAudioCtx.resume(),
+                        new Promise((r) => setTimeout(r, __ABC_RESUME_TIMEOUT_MS))
+                    ]);
+                } catch (e) { /* the state check in __abcPlay is the real verdict */ }
             }
             return __abcAudioCtx;
         }

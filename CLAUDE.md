@@ -333,6 +333,7 @@ unless noted.
 | `__MARP_ZOOM_MIN` / `MAX` | 1 / 8 | deck-mode `Ctrl`+wheel zoom range |
 | `__MARKER_LIFE_MS` / `FADE_MS` / `ALPHA` | 2000 / 500 / 0.55 | Marp selection highlighter |
 | `__LASER_TRAIL_MS` / `HEAD_R` | 260 / 7 | laser pointer comet trail |
+| `__ABC_RESUME_TIMEOUT_MS` | 1500 | ⚠ `AudioContext.resume()` settles only once the autoplay policy is satisfied — an unbounded await hangs the play button on 「音源を読み込み中」 forever |
 | `__MW_HOLIDAY_TIMEOUT_MS` / `__MW_CAL_MAX_MONTHS` | 4000 / 36 | markwhen calendar: online holidays are best-effort; wide spans fall back to the timeline |
 | `__PDF_IMG_MAX_EDGE` / `TARGET_SCALE` / `SLACK` / `JPEG_QUALITY` | 1600 / 2 / 1.25 / 0.82 | PDF image downscale — Chromium embeds the live decoded bitmap verbatim |
 | `__PDF_V_PAPER_W` / `_H` / `_MARGIN` / `_MIN_SCALE` | 1122 / 793 / 76 / 0.5 | vertical-writing PDF: A4 landscape floored to whole CSS px (⚠ a fraction taller emits a blank page per sheet) |
