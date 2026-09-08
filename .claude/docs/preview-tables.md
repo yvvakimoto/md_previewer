@@ -1,6 +1,9 @@
 # Preview tables / copy and edit
 
 **Owns:** the table copy/edit UI in `assets/index.html` (`tbl*` helpers, the `savefile:` round trip)
+**Also read:** preview-markdown-ext.md's task-list section — the second `data-line`-keyed
+write-back, which reuses `tblReadLines` / `tblReplaceLines` (generic despite the `tbl` prefix)
+and the same refuse-first shape
 **Read before:** changing Copy table / Edit table, or anything that splices Markdown source by `data-line`.
 **Related:** preview-core.md (`data-line` fidelity), editor-tables.md (the mirrored emitter)
 

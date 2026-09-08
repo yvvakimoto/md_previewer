@@ -271,6 +271,25 @@ def main():
                   page.evaluate("() => window.__sentIpc.slice()"), [])
             page.evaluate("() => { const d=document.getElementById('kc-edit'); d && d.remove(); }")
 
+            # ---------- positive: a focused task checkbox must NOT suppress shortcuts ----
+            # A task-list checkbox is interactive (clicking it writes back to the .md) and
+            # Chromium focuses it on click. It is an <input>, so the text-entry guard used
+            # to swallow every single-letter shortcut after one click — and permanently if
+            # the toggle was refused, since nothing then re-renders #preview.
+            focused = page.evaluate("""() => {
+              const b = document.querySelector('#preview li.task-list-item input[type=checkbox]');
+              if (!b) return 'NO TASK CHECKBOX IN FIXTURE';
+              b.focus();
+              return document.activeElement === b;
+            }""")
+            check("a task checkbox can take focus", focused, True)
+            before = body_has(page, "wide")
+            press(page, "w")
+            check("W with a task checkbox focused still toggles wide",
+                  body_has(page, "wide"), not before)
+            press(page, "w")   # restore
+            page.evaluate("() => document.activeElement.blur()")
+
             # ---------- Marp deck navigation (P / arrows) ----------
             load(args.marp_doc)
             press(page, "p")

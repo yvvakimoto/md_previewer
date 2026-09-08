@@ -2473,10 +2473,16 @@
         #preview li.task-list-item {
             list-style: none;
         }
+        /* Clickable in the live preview (the click writes the toggled marker back to
+           the source .md — see __taskToggle). An export / PDF / capture re-disables
+           them, and `:disabled` is what keeps the cursor honest there. */
         #preview li.task-list-item > input[type="checkbox"],
         #preview li.task-list-item > p:first-child > input[type="checkbox"] {
             margin: 0 0.4em 0 0;
             vertical-align: middle;
+            cursor: pointer;
+        }
+        #preview li.task-list-item input[type="checkbox"]:disabled {
             cursor: default;
         }
 
@@ -2953,6 +2959,14 @@
                                      en: "Can't parse this table's source" },
             'table.errMismatch':   { ja: '表のソースと表示が一致しません',
                                      en: "Table source and rendering don't match" },
+
+            'task.errNoFile':      { ja: 'ファイルが開かれていません', en: 'No file is currently open' },
+            'task.errLocate':      { ja: 'このチェックボックスのソース位置を特定できません',
+                                     en: "Can't locate this checkbox in the source" },
+            'task.errMismatch':    { ja: 'チェックリストのソースと表示が一致しません',
+                                     en: "Checklist source and rendering don't match" },
+            'task.saveFailed':     { ja: 'チェックの保存に失敗しました',
+                                     en: 'Failed to save the checkbox' },
 
             'menu.rowAbove':       { ja: '上に行を挿入',     en: 'Insert row above' },
             'menu.rowBelow':       { ja: '下に行を挿入',     en: 'Insert row below' },
@@ -3600,6 +3614,7 @@
         // "one page per slide, no margins" — see __marpPrepareForPdf below.
         let __pdfSwaps = [];
         let __pdfImgSwaps = [];   // {img, origSrc, origSrcset}
+        let __pdfTaskBoxes = [];  // task checkboxes disabled for the print, restored after
         let __pdfMarpRestore = null;   // teardown closure set by __marpPrepareForPdf
         let __pdfVerticalRestore = null;   // ditto, set by __verticalPrepareForPdf
         const __PDF_IMG_MAX_EDGE = 1600;      // absolute cap on the long edge (~A4 width at high DPI)
@@ -3946,9 +3961,15 @@
         window.__beforePdfPrint = async function () {
             __pdfSwaps = [];
             __pdfImgSwaps = [];
+            __pdfTaskBoxes = [];
             __pdfMarpRestore = null;
             __pdfVerticalRestore = null;
             let page = null;
+            // Task checkboxes are interactive in the live preview; Chromium prints an
+            // enabled control with its accent colour and a disabled one grey, so print
+            // them inert to keep PDF output identical to what it has always been.
+            document.querySelectorAll('#preview li.task-list-item input[type="checkbox"]:not([disabled])')
+                .forEach((el) => { el.setAttribute('disabled', ''); __pdfTaskBoxes.push(el); });
             try {
                 // Marp layout first: __downscaleImageForPdf sizes each image against its
                 // DISPLAYED box, and in list mode that box is a ~280px thumbnail — an
@@ -4037,6 +4058,8 @@
                 if (origSrcset != null) img.setAttribute('srcset', origSrcset);
             }
             __pdfImgSwaps = [];
+            for (const el of __pdfTaskBoxes) el.removeAttribute('disabled');
+            __pdfTaskBoxes = [];
             // Marp layout last: it ends in a fitMarpSlides() pass, which measures the
             // DOM — so the images and videos must already be back to their real sizes.
             if (__pdfMarpRestore) {
@@ -4704,8 +4727,19 @@
 
         // True when the event target is a text-entry surface, so a bare letter
         // belongs to whatever the user is typing rather than to a shortcut.
+        // ⚠ A checkbox / radio is an INPUT but consumes no text, and Chromium FOCUSES one
+        // when it is clicked. Counting it here made a single click on a task-list
+        // checkbox kill every single-letter shortcut (M / S / H / N / W / A / P / Z / E
+        // and the deck keys) until focus moved elsewhere — permanently if the toggle was
+        // refused, since then no re-render rebuilds #preview to drop the focused node.
+        // It never showed up before because a disabled checkbox is not focusable.
         function __isTypingTarget(t) {
-            return !!(t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable));
+            if (!t) return false;
+            if (t.tagName === 'INPUT') {
+                const ty = (t.getAttribute('type') || '').toLowerCase();
+                return ty !== 'checkbox' && ty !== 'radio';
+            }
+            return !!(t.tagName === 'TEXTAREA' || t.isContentEditable);
         }
 
         // Register a keydown handler for an unmodified letter key (case-insensitive).
@@ -5374,6 +5408,11 @@
             // reach — drop the bar and ship the staff as the plain SVG it already is.
             previewClone.querySelectorAll('.abc-audio-bar').forEach(el => el.remove());
             previewClone.querySelectorAll('.abc-playing').forEach(el => el.classList.remove('abc-playing'));
+            // Task-list checkboxes are interactive in the live preview (the click writes
+            // back to the source .md); an artifact has no host to write to, so re-disable
+            // them — which also keeps the artifact looking exactly like it always has.
+            previewClone.querySelectorAll('li.task-list-item input[type="checkbox"]')
+                .forEach((el) => el.setAttribute('disabled', ''));
             // Table edit mode must never leak into an artifact (a commit or cancel clears
             // it, but an export while editing would otherwise ship editable cells).
             previewClone.querySelectorAll('.table-editing').forEach(el => el.classList.remove('table-editing'));
@@ -6361,12 +6400,45 @@ ${previewClone.outerHTML}
         // the GFM classes; marp-core's markdown-it ships no task-list plugin at all, so
         // in Marp `- [ ]` survives as literal "[ ] …" text in a plain bullet. Given a
         // NodeList of <li> elements, this handles BOTH cases and normalizes them to the
-        // canonical GFM DOM shape (a leading disabled checkbox + the .task-list-item /
+        // canonical GFM DOM shape (a leading checkbox + the .task-list-item /
         // .contains-task-list classes) so the shared #preview .task-list-item CSS styles
-        // both pipelines and rides into HTML export.
+        // both pipelines and rides into HTML export. The checkbox is INTERACTIVE in the
+        // live preview — clicking it writes the toggled marker back to the source .md
+        // (see __taskToggle) — and re-disabled for every export path.
+        //
+        // A source line that renders as a task-list item. The single source of truth
+        // for "which lines does a rendered checkbox correspond to", used by
+        // __taskLocate() to map a clicked checkbox back to its `- [ ]` line.
+        // Mirrors what the two renderers actually require, so it can never count a
+        // line neither of them turned into a checkbox:
+        //   - marked (normal pipeline) tests /^\[[ xX]\] / against the item text with the
+        //     list marker already stripped, so ONE LITERAL SPACE after `]` is mandatory
+        //     (a tab is not a space, and `- [x]` at end-of-line is not a task). It also
+        //     folds an indent of 5+ spaces after the marker back to 1 (`h > 4 ? 1 : h`),
+        //     which makes the item content an indented code block rather than a task —
+        //     hence the {1,4} cap;
+        //   - markdown-it ships no task plugin, so in Marp the checkbox exists iff
+        //     `markerRe` below matched the <li>'s leading text node.
+        // A blockquote prefix is allowed because `> - [ ] x` renders as a task list and
+        // its data-line resolves to the <blockquote>. Anything this disagrees with is
+        // caught by the count + state-sequence cross-check in __taskLocate() and refused,
+        // never spliced — so the two renderers' remaining edge cases cost a toggle, never
+        // the wrong line.
+        const MD_TASK_LINE_RE = /^[ \t]*(?:>[ \t]?)*[ \t]*(?:[-*+]|\d{1,9}[.)])[ \t]{1,4}\[([ xX])\] /;
+
         function applyTaskLists(liNodes) {
             if (!liNodes) return;
-            const markerRe = /^(\s*)\[([ xX])\]\s+/;
+            // `[ \t]+`, not `\s+`: with marp-core's breaks:true a bare `- [x]` line is
+            // followed by a newline in the same text node, and `\s` matched it — so Marp
+            // rendered a checkbox where marked (which demands a space) renders literal
+            // text. Keep this in step with MD_TASK_LINE_RE above.
+            const markerRe = /^([ \t]*)\[([ xX])\][ \t]+/;
+            // The ONE place that decides whether task checkboxes are interactive.
+            // They are, except in the hidden `--export-png` capture window, where a
+            // live-looking control would change every screenshot's pixels for a
+            // feature no capture can use. The HTML export re-disables them on its
+            // clone, and __beforePdfPrint() does the same on the live DOM.
+            const inert = !!window.__captureConfig;
             const tag = (li) => {
                 li.classList.add('task-list-item');
                 const parent = li.parentElement;
@@ -6385,6 +6457,9 @@ ${previewClone.outerHTML}
                 const hostFirstEl = host.firstElementChild;
                 if (hostFirstEl && hostFirstEl.tagName === 'INPUT'
                     && hostFirstEl.getAttribute('type') === 'checkbox') {
+                    // marked hard-codes disabled="" in its checkbox renderer.
+                    if (inert) hostFirstEl.setAttribute('disabled', '');
+                    else hostFirstEl.removeAttribute('disabled');
                     tag(li);
                     return;
                 }
@@ -6404,7 +6479,7 @@ ${previewClone.outerHTML}
                 textNode.textContent = textNode.textContent.slice(m[0].length);
                 const box = document.createElement('input');
                 box.type = 'checkbox';
-                box.disabled = true;
+                box.disabled = inert;
                 if (m[2] !== ' ') box.checked = true;
                 host.insertBefore(box, host.firstChild);
                 tag(li);
@@ -12280,6 +12355,140 @@ ${previewClone.outerHTML}
         }
         setupTableContextMenu();
 
+        // ===== Task-list checkbox toggle =================================================
+        // Clicking a rendered `- [ ]` / `- [x]` checkbox rewrites THAT ONE source line and
+        // saves the file through the same generic `savefile:` IPC the table editor and the
+        // Marp theme picker use — no Rust change. Works in BOTH pipelines: the locate step
+        // only needs a `[data-line]` ancestor, which is the <li> / <ul> / <blockquote> in
+        // the normal preview and the slide's <svg> in Marp.
+        //
+        // Refuse-first, like __tableLocate(): a checkbox whose source line cannot be
+        // PROVEN gets a toast instead of a guessed splice. #preview is rebuilt wholesale by
+        // every render, so the listener is delegated and no node reference is ever held.
+
+        // Text we have posted but not yet seen come back. A `savefile:` round trip costs a
+        // disk write plus a full re-render, and the next click can easily land inside that
+        // window; splicing that one against `currentMarkdownRaw` (still the pre-write text)
+        // would silently drop the previous toggle. Cleared where loadFileFromRust()
+        // reassigns currentMarkdownRaw — NOT in renderMarkdown(), whose M / S re-renders
+        // leave the source untouched.
+        let __taskPendingRaw = null;
+        function __taskRaw() {
+            return (__taskPendingRaw != null) ? __taskPendingRaw : currentMarkdownRaw;
+        }
+
+        // Every checkbox applyTaskLists() can produce, in document order. The two selectors
+        // mirror its tight (<li>) / loose (<li> > <p>) host split, and the CSS rule's.
+        const TASK_BOX_SEL = 'li.task-list-item > input[type="checkbox"],'
+            + ' li.task-list-item > p:first-child > input[type="checkbox"]';
+
+        // Last source line still belonging to `lineEl`: one before the next stamped element
+        // in document order that is NOT one of its descendants. Descendants have to be
+        // skipped because a top-level list stamps its own <li>s as well (stampLineNumbers).
+        function __taskBlockEnd(lineEl, lastLine) {
+            const all = Array.from(preview.querySelectorAll('[data-line]'));
+            const at = all.indexOf(lineEl);
+            if (at < 0) return lastLine;
+            const own = parseInt(lineEl.getAttribute('data-line'), 10);
+            for (let i = at + 1; i < all.length; i++) {
+                if (lineEl.contains(all[i])) continue;
+                const n = parseInt(all[i].getAttribute('data-line'), 10);
+                if (Number.isFinite(n) && n > own) return n - 1;
+            }
+            return lastLine;
+        }
+
+        // Resolve a clicked checkbox to its source line. `wasChecked` is the state BEFORE
+        // the click — by the time `change` fires the browser has already flipped the input.
+        function __taskLocate(box, wasChecked) {
+            if (!currentFilePath) return { error: t('task.errNoFile') };
+            const li = box.closest('li.task-list-item');
+            if (!li) return { error: t('task.errLocate') };
+            // A footnote body is rendered at the BOTTOM of the document, out of source
+            // order, and its definition lines were replaced with blanks before the block
+            // line numbers were computed — so a `[data-line]` ancestor there, if the
+            // positional stamping happens to reach that far, would be meaningless.
+            if (li.closest('.footnotes, .footnote-content, .marp-fn-body, [data-fn-id]')) {
+                return { error: t('task.errLocate') };
+            }
+            const lineEl = li.closest('[data-line]');
+            if (!lineEl) return { error: t('task.errLocate') };
+            const startLine = parseInt(lineEl.getAttribute('data-line'), 10);
+            if (!Number.isFinite(startLine)) return { error: t('task.errLocate') };
+            const raw = __taskRaw();
+            const lines = raw.split(/\r\n|\n|\r/);
+            const endLine = Math.min(__taskBlockEnd(lineEl, lines.length), lines.length);
+            if (startLine < 1 || endLine < startLine) return { error: t('task.errLocate') };
+            // Stepped from line 1 so the scanner sees the front matter and every fence that
+            // opened before the block; only [startLine..endLine] is collected.
+            const scan = __makeMdLineScanner(lines);
+            const hits = [];
+            for (let i = 0; i < endLine; i++) {
+                const kind = scan.step(i);
+                if (i + 1 < startLine || kind !== 'body') continue;
+                const m = MD_TASK_LINE_RE.exec(lines[i]);
+                if (m) hits.push({ line: i + 1, checked: m[1] !== ' ' });
+            }
+            // Cross-check: the block's task lines must correspond 1:1 — in order AND in
+            // state — to the checkboxes actually on screen inside it. This is what makes a
+            // `- [ ]` neither renderer turned into a checkbox (an indented code block, a
+            // footnote body hoisted to the end of the document, an HTML comment) refuse the
+            // toggle instead of misdirecting the splice by one item.
+            const boxes = Array.from(lineEl.querySelectorAll(TASK_BOX_SEL));
+            const idx = boxes.indexOf(box);
+            if (idx < 0 || boxes.length !== hits.length) return { error: t('task.errMismatch') };
+            for (let i = 0; i < boxes.length; i++) {
+                const shown = (i === idx) ? wasChecked : boxes[i].checked;
+                if (shown !== hits[i].checked) return { error: t('task.errMismatch') };
+            }
+            return { raw, line: hits[idx].line, text: lines[hits[idx].line - 1] };
+        }
+
+        // Flip the one marker character, leaving indent, marker style and spacing exactly as
+        // the author wrote them (the table emitter's rule: never reformat a line the user
+        // did not touch). Checking always writes `x`, never `X`.
+        function __taskFlipLine(text, checked) {
+            const m = MD_TASK_LINE_RE.exec(text);
+            if (!m) return null;
+            const at = m[0].lastIndexOf('[');
+            if (at < 0) return null;
+            return text.slice(0, at + 1) + (checked ? 'x' : ' ') + text.slice(at + 2);
+        }
+
+        function __taskToggle(box) {
+            const wasChecked = !box.checked;
+            const revert = () => { box.checked = wasChecked; };
+            const loc = __taskLocate(box, wasChecked);
+            if (loc.error) { showToast(loc.error); revert(); return; }
+            const nextLine = __taskFlipLine(loc.text, box.checked);
+            if (nextLine == null) { showToast(t('task.errMismatch')); revert(); return; }
+            // Offset-based splice of a one-line span, so the file's EOLs — CRLF or LF, and a
+            // missing trailing newline — are left exactly as they were.
+            const next = tblReplaceLines(loc.raw, loc.line, loc.line, [nextLine]);
+            if (next == null || next === loc.raw) { showToast(t('task.saveFailed')); revert(); return; }
+            try {
+                window.ipc.postMessage('savefile:' + JSON.stringify({
+                    path: currentFilePath,
+                    content: next,
+                }));
+                // No local re-render: the round trip (savefile: → EditorSavedContent →
+                // loadFileFromRust) re-renders from the saved content and restores the
+                // scroll position, exactly as a table commit does.
+                __taskPendingRaw = next;
+            } catch (e) {
+                console.warn('__taskToggle: postMessage failed', e);
+                showToast(t('task.saveFailed'));
+                revert();
+            }
+        }
+
+        preview.addEventListener('change', (e) => {
+            const box = e.target;
+            if (!box || box.tagName !== 'INPUT' || box.type !== 'checkbox') return;
+            if (!box.closest('li.task-list-item')) return;
+            __taskToggle(box);
+        });
+
         // Editor sync — reverse jump: clicking on a rendered block emits a
         // jumpTo over the localhost WS so the editor can move its cursor.
         // We piggy-back on the existing data-line stamping (see stampLineNumbers).
@@ -12289,8 +12498,11 @@ ${previewClone.outerHTML}
         preview.addEventListener('click', (e) => {
             // Don't emit for link/button/copy clicks — those are interactive UI.
             // Also skip editable table cells: clicking one to place the caret must not
-            // fire a spurious editor jump.
-            if (e.target.closest('a, button, .copy-button, [contenteditable]')) return;
+            // fire a spurious editor jump. A task-list checkbox is interactive too, and
+            // its own round trip already re-renders the document.
+            if (e.target.closest('a, button, .copy-button, [contenteditable],'
+                                 + ' li.task-list-item > input[type="checkbox"],'
+                                 + ' li.task-list-item > p:first-child > input[type="checkbox"]')) return;
             if (Date.now() < suppressJumpUntil) return;
             const block = e.target.closest('[data-line]');
             if (!block) return;
@@ -12729,6 +12941,9 @@ ${previewClone.outerHTML}
 
             currentMarkdown = fileData.content;
             currentMarkdownRaw = (fileData.raw != null) ? fileData.raw : fileData.content;
+            // Inbound content is authoritative, so a checkbox toggle in flight has now
+            // either landed or been superseded.
+            __taskPendingRaw = null;
             currentFilePath = fileData.filepath;
             setWindowTitle(fileData.filename);
             try {
