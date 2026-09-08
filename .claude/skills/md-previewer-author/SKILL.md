@@ -97,24 +97,42 @@ bullets / too much text / an oversized figure makes the body spill past the slid
 previewer auto-shrinks an overflowing body down to a 0.5 floor, but past that the content is
 clipped/scrolled — which looks broken in an exported deck. The previewer has a **headless
 PNG-capture mode** built exactly so you can *see* your own slides and fix them without a human
-in the loop. **After authoring a Marp deck, run it** (needs a built `assets/` tree — see the
-repo's `build.ps1`; use `cargo run --release --` in the repo, or the installed
-`md-previewer.exe`):
+in the loop. **After authoring a Marp deck, run it** — but first figure out which of these two
+contexts you're in, since this skill is used both inside the md_previewer source repo and (via
+the installer) on machines that only have the installed app:
 
-```powershell
-md-previewer.exe <deck.md> --export-png <outdir>
-# in the repo without a built exe: cargo run --release -- <deck.md> --export-png <outdir>
-```
+- **Inside the md_previewer repo** (a `tools/preview-harness/shoot.py` exists at the repo root
+  above your working directory): use the build-free harness, or `cargo run` for the byte-exact
+  WebView2 path.
 
-**Faster, build-free alternative (when working in the md_previewer repo):**
+  ```powershell
+  python tools/preview-harness/shoot.py <deck.md> --out <outdir> [--slides 3,5-7] [--scale 1]
+  # byte-exact WebView2 alternative (needs a built assets/ tree — see the repo's build.ps1):
+  cargo run --release -- <deck.md> --export-png <outdir>
+  ```
 
-```powershell
-python tools/preview-harness/shoot.py <deck.md> --out <outdir> [--slides 3,5-7] [--scale 1]
-```
+  `shoot.py` renders the deck in a **real headless browser** (Playwright + system Edge/Chrome
+  — no `cargo build`, no `playwright install`) and writes the **same** `slide-NN.png` +
+  `layout.json`. Prefer it for quick iteration.
 
-It renders the deck in a **real headless browser** (Playwright + system Edge/Chrome — no
-`cargo build`, no `playwright install`) and writes the **same** `slide-NN.png` + `layout.json`.
-Prefer it for quick iteration; `--export-png` is the byte-exact actual-WebView2 path.
+- **Everywhere else** (a normal project, no md_previewer checkout): `md-previewer.exe` is
+  **not on PATH** — the installer places it only under
+  `%LOCALAPPDATA%\Programs\MdPreviewer\`, with no PATH or App Paths registration, so the bare
+  command name will not resolve. Locate the installed executable at runtime instead:
+
+  ```powershell
+  $exe = (Get-Command md-previewer.exe -ErrorAction SilentlyContinue).Source
+  if (-not $exe) {
+    $candidate = Join-Path $env:LOCALAPPDATA 'Programs\MdPreviewer\md-previewer.exe'
+    if (Test-Path -LiteralPath $candidate) { $exe = $candidate }
+  }
+  if ($exe) {
+    & $exe <deck.md> --export-png <outdir>
+  }
+  ```
+
+  If `$exe` is still empty, no build or install was found — skip PNG verification and rely on
+  the structural re-read at the top of this step instead of guessing at a path.
 
 Either command writes one `slide-NN.png` per slide plus a `layout.json`, then exits. Then:
 
@@ -141,7 +159,8 @@ structural re-read above or the GUI below also works.
 
 ### Confirm it renders in the GUI (optional, heavier)
 
-Launches a real window (also needs the built `assets/` tree):
+Launches a real window (also needs the built `assets/` tree) — repo-only; outside the repo,
+launch the installed `md-previewer.exe` found above directly instead:
 
 ```powershell
 cargo run --release -- <path-to-file.md>

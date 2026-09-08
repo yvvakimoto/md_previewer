@@ -17,6 +17,13 @@ ships an in-house `modelica` grammar, so ```` ```modelica ```` is a real choice 
 **Nested lists:** indent a child to the column just after the parent marker — `- ` items by
 2 spaces, `1. ` items by 3 spaces (`10. ` by 4). Misaligned indentation breaks nesting.
 
+**Task lists are live** — `samples/tasklist.md`. The reader can click a rendered checkbox and
+the previewer rewrites that one `- [ ]` / `- [x]` line in the file, in the normal preview and
+in Marp slides alike. So a checklist you write is a checklist the reader can actually tick
+off; prefer it over a table with a 状態 column when the document is meant to be worked
+through. Write the marker exactly `- [ ] ` / `- [x] ` (one space after `]`) — anything else
+renders as literal text.
+
 ## Fenced divs (Pandoc-style) — `samples/alignment.md`
 
 Open with `::: keyword`, close with a bare `:::`. The block body is normal Markdown.

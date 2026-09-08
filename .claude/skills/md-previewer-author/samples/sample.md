@@ -37,6 +37,8 @@ You can make text **bold**, *italic*, or ***both***. You can also use ~~striketh
     - 2 桁マーカー配下は 4 スペース字下げ
 
 ### Task List
+チェックボックスはクリックで付け外しでき、このファイルに書き戻されます。
+
 - [x] 完了したタスク
 - [ ] 未完了のタスク
 - [ ] もう一つのタスク
