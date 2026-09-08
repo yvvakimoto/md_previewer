@@ -72,6 +72,7 @@ README.md 「対応している記法・機能」.
 | Diagram / figure fences: `mermaid`, `plotly`, `abc` (+ playback), `markwhen`, `tikz`/`tikzcd`, `kataskeve`/`kataskeve3d`, `feynman`, `csv`/`tsv`, KaTeX math, highlight.js (+ in-house Modelica grammar) | `preview-blocks.md` |
 | Footnotes, `::: center/right/left/message/vcenter/columns` fenced divs, `[text]{color=…}` inline spans, definition lists, ruby (`｜猫《ねこ》`), task lists, CJK soft-break join | `preview-markdown-ext.md` |
 | Copy table for PowerPoint (rich-HTML clipboard); Edit table (writes back to the `.md`) | `preview-tables.md` |
+| Clickable task-list checkboxes — a click rewrites that one `- [ ]` line in the `.md` (both pipelines; inert in every export) | `preview-markdown-ext.md` |
 | Images via the `/userfile/` route with `\|WxH` sizing and `../` paths; video + YouTube embeds; cross-file `.md` links with back/forward history; `Ctrl`+click opens a new window; drag & drop; `Ctrl+N` new file; `Ctrl+D` install dir | `preview-files-media.md` |
 | Marp slides (`marp: true`), 3 views (`P`), autofit (`A`), laser pointer (`Z`), 8-colour theme family, selection highlighter | `marp.md` |
 | Dark/light (`M`), style picker (`S`) with a per-style ⚙ `@user-vars` pane, `bunko.css` 文庫本 / `tategaki.css` 縦書き, section numbering (`N`), wide layout (`W`), `confidential:` / `watermark:` overlay | `styles-theming.md` |
@@ -266,6 +267,7 @@ that are checked (or partly checked) can rely on the harness remembering.
 | A | B | Checked by |
 |---|---|---|
 | `isParagraphLine()` — `tools/build-editor/mdBlocks.js` | `__isMdParagraphLine()` — `assets/index.html` | indirect (`cells.test.mjs`) |
+| task-list marker rule — upstream `marked` (`/^\[[ xX]\] /` after the marker is stripped, plus `h > 4 ? 1 : h` on the post-marker indent) | `MD_TASK_LINE_RE` + `applyTaskLists`'s `markerRe` — `assets/index.html`. ⚠ `markerRe` used `\s+`, which matched a NEWLINE, so Marp rendered a checkbox where marked renders literal text | ✅ `taskcheck.py` (a disagreement shows up as a refused toggle) |
 | `emitTable` / `escapeTableCell` / `displayWidth` — `mdTable.js` | `tblEmitRow` / `tblEscapeCell` / `tblPadCell` / `tblDisplayWidth` — `assets/index.html` | per-side only |
 | `__editorI18n` (`ed.*`) — `tools/build-editor/i18n.js` | `__I18N` — `assets/index.html`; six `common.*` byte-identical | ✅ `i18ncheck.py` |
 | `slugify()` — `src/main.rs` | `generateHeadingId()` — `assets/index.html` | ❌ **already diverged**: `# Café` → `café` (Rust `\w` is Unicode-aware) vs `caf` (JS `\w` is ASCII). Pinned as-is by a test; fixing it needs its own change window |
@@ -294,6 +296,7 @@ that are checked (or partly checked) can rely on the harness remembering.
 | the render pipeline, any preprocessing pass | `python tools/preview-harness/domdump.py` (+ `gate.sh <label> <files…>` to diff against `_dom/base`) |
 | shortcuts, context menus, Marp autofit, `@user-vars` | `python tools/preview-harness/keycheck.py` |
 | preview table edit mode | `python tools/preview-harness/tablecheck.py` + `node tools/preview-harness/table-model.test.cjs` |
+| task-list checkboxes, `applyTaskLists()`, `__isTypingTarget()` | `python tools/preview-harness/taskcheck.py` (+ `keycheck.py` for the focus case) |
 | cell mode | `python tools/preview-harness/cellcheck.py` + `cd tools/build-editor && node cells.test.mjs` |
 | editor↔preview scroll sync (either axis) | `python tools/preview-harness/synccheck.py` |
 | Office-table paste | `python tools/preview-harness/pastecheck.py` + `cd tools/build-editor && node tablePaste.test.mjs` |
