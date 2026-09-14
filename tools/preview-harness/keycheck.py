@@ -219,6 +219,97 @@ def main():
             page.evaluate("() => applyUserStyle(null)")
             shoot.wait_for_render(page)
 
+            # ---------- body text scale (Ctrl +/-/0, Ctrl+Wheel) ----------
+            # MUST come after the bunko block above: one context is reused for the
+            # whole run, so a scale left persisted in localStorage would corrupt the
+            # 510px/663px 版面 assertions. The style is back to the baseline here.
+            def fs_px():
+                return page.evaluate(
+                    "() => getComputedStyle(document.getElementById('preview')).fontSize")
+            def fs_stored():
+                return page.evaluate("() => localStorage.getItem('fontScale')")
+
+            check("the baseline preview starts at the UA default", fs_px(), "16px")
+            check("...with nothing persisted", fs_stored(), None)
+            # `=` is the unshifted US key for `+`; the handler must accept it so the
+            # shortcut works without Shift on a US layout.
+            press(page, "=", ctrl=True)
+            check("Ctrl+= steps the body text up one rung", fs_px(), "17.6px")
+            check("...and persists the multiplier, not a px size", fs_stored(), "1.1")
+            press(page, "+", ctrl=True, shift=True)
+            check("Ctrl+Shift++ (the physical US `+`) steps again", fs_px(), "20px")
+            press(page, "-", ctrl=True)
+            check("Ctrl+- steps back down", fs_px(), "17.6px")
+            # The cap scales with the text so the measure (characters per line) holds.
+            check("...and the column cap follows the text",
+                  page.evaluate(
+                      "() => getComputedStyle(document.getElementById('preview')).maxWidth"),
+                  "986px")
+            press(page, "0", ctrl=True)
+            check("Ctrl+0 returns to the default", fs_px(), "16px")
+            check("...and clears the stored value", fs_stored(), None)
+            # The scale is a layout property, so it has to be a real declaration the
+            # export can carry - not a viewport zoom the document cannot see.
+            press(page, "=", ctrl=True)
+            check("the scale is declared in a carryable <style>",
+                  page.evaluate(
+                      "() => (document.getElementById('font-scale-style')||{}).textContent"),
+                  "body:not(.marp) #preview{--md-font-scale:1.1 !important;}")
+            check("...and the artifact carries it",
+                  page.evaluate(
+                      "async () => { const a = await buildExportArtifact();"
+                      " const h = typeof a === 'string' ? a : a.html;"
+                      " return h.includes('--md-font-scale:1.1'); }"), True)
+            press(page, "0", ctrl=True)
+            check("the default stamps nothing at all",
+                  page.evaluate(
+                      "() => (document.getElementById('font-scale-style')||{}).textContent"), "")
+
+            # The modal row is the discoverable half of the same setting.
+            press(page, "s")
+            check("the style modal carries a body-text-size row",
+                  page.evaluate("() => !document.getElementById('font-scale-row').hidden"), True)
+            page.evaluate(
+                "() => document.querySelector('#font-scale-row [data-act=\"font-scale-up\"]').click()")
+            page.wait_for_timeout(150)
+            check("its + button drives the same value", fs_px(), "17.6px")
+            check("...and the readout follows",
+                  page.evaluate("() => document.getElementById('font-scale-value').textContent"),
+                  "110%")
+            page.evaluate(
+                "() => document.querySelector('#font-scale-row [data-act=\"font-scale-reset\"]').click()")
+            page.wait_for_timeout(150)
+            check("its reset button restores the default", fs_px(), "16px")
+            # The row belongs to the document, not to the style being configured, so
+            # it shares the list's visibility rather than the pane's.
+            page.evaluate(
+                "() => document.querySelector('tr.style-row[data-style=\"bunko.css\"] .style-gear').click()")
+            page.wait_for_function("() => !document.getElementById('style-vars-pane').hidden")
+            check("the gear pane hides the body-text-size row",
+                  page.evaluate("() => document.getElementById('font-scale-row').hidden"), True)
+            # bunko defines its 版面 in CHARACTERS and so opts out of the multiplier
+            # entirely (its PDF rescale would cancel it out exactly). The row has to
+            # say so rather than silently storing a value that does nothing.
+            page.evaluate("() => document.querySelector('#style-vars-pane .sv-back').click()")
+            page.wait_for_timeout(150)
+            check("...and shows it again on the way back",
+                  page.evaluate("() => document.getElementById('font-scale-row').hidden"), False)
+            check("under a character-defined 版面 the row reports itself inactive",
+                  page.evaluate(
+                      "() => !document.querySelector('#font-scale-row .fs-fixed').hidden"), True)
+            check("...with its stepper disabled",
+                  page.evaluate(
+                      "() => document.querySelector('#font-scale-row [data-act=\"font-scale-up\"]').disabled"),
+                  True)
+            press(page, "Escape")
+            press(page, "=", ctrl=True)
+            check("...and the shortcut stores nothing there either", fs_stored(), None)
+            check("...leaving the 版面 exactly as the theme set it",
+                  page.evaluate(
+                      "() => getComputedStyle(document.getElementById('preview')).height"), "663px")
+            page.evaluate("() => applyUserStyle(null)")
+            shoot.wait_for_render(page)
+
             press(page, "h")
             check("H opens the help modal",
                   page.evaluate("() => !!document.querySelector('#help-modal.visible')"), True)

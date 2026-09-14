@@ -70,6 +70,14 @@
     box-sizing: content-box;
 
     font-family: var(--bunko-font, "Yu Mincho", "YuMincho", "MS Mincho", "ＭＳ 明朝", serif);
+    /* ⚠ --md-font-scale (Ctrl +/-/0 の本文拡大率) は意図的に掛けていない。
+     * 文庫の版面は px ではなく「39字 × 16行」という字数で定義されており、
+     * PDF 出力では __verticalPrepareForPdf が --md-print-scale を
+     * innerH / 版面 で計算して A4 に詰める ―― その f は倍率の逆数に
+     * ぴったり一致するので、倍率を掛けると紙の上では完全に打ち消され、
+     * 同じ PDF しか出てこない (拡大側では版面が余白を突き抜けて欠ける)。
+     * このテーマの文字サイズは ⚙ の「文字サイズ」「1行の文字数」が受け持つ。
+     * 詳細は .claude/docs/styles-theming.md / export.md。 */
     font-size: calc(var(--bunko-font-size, 17px) * var(--md-print-scale, 1));
     /* 倍率ではなく絶対長で指定するのが要点。倍率 (無単位) は子孫ごとに font-size を
      * 掛け直すので、脚注 (0.9em) などで行送りが変わり行取りが崩れる。絶対長なら

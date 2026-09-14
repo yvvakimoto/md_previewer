@@ -75,13 +75,14 @@ README.md 「対応している記法・機能」.
 | Clickable task-list checkboxes — a click rewrites that one `- [ ]` line in the `.md` (both pipelines; inert in every export) | `preview-markdown-ext.md` |
 | Images via the `/userfile/` route with `\|WxH` sizing and `../` paths; video + YouTube embeds; cross-file `.md` links with back/forward history; `Ctrl`+click opens a new window; drag & drop; `Ctrl+N` new file; `Ctrl+D` install dir | `preview-files-media.md` |
 | Marp slides (`marp: true`), 3 views (`P`), autofit (`A`), laser pointer (`Z`), 8-colour theme family, selection highlighter | `marp.md` |
+| Body text size (`Ctrl` `+`/`-`/`0`, `Ctrl`+wheel, and an `S`-modal row) — a layout multiplier, so it reaches the PDF / HTML export | `styles-theming.md` |
 | Dark/light (`M`), style picker (`S`) with a per-style ⚙ `@user-vars` pane, `bunko.css` 文庫本 / `tategaki.css` 縦書き, section numbering (`N`), wide layout (`W`), `confidential:` / `watermark:` overlay | `styles-theming.md` |
 | Companion editor (`E`): CodeMirror 6, Vim, live preview, cell mode, Office-table paste, autocomplete, font zoom, ⚙ settings | `editor-*.md` |
 | UI language toggle (ja / en), one shared `uiLang` key across both windows | `i18n.md` |
 | Export to standalone HTML or PDF (`X`); headless `--export-png` for agents | `export.md` |
 | Workspace (directory) mode with file tree and `_toc.md`; `.mdx` ZIP bundles | `rust-host.md` |
 | Auto-update: GitHub Releases by default (ON, via the shipped `assets/update.json`), or an intranet file share with `provider: "share"` | `auto-update.md` |
-| Help modal (`H`), zoom (`Ctrl` `+`/`-`/`0`) | `preview-core.md` |
+| Help modal (`H`) | `preview-core.md` |
 | Claude Code authoring skill, shipped by the installer as an opt-in task (OFF by default) | `authoring-skill.md` |
 
 ---
@@ -93,7 +94,7 @@ A file with no owning doc is an anomaly.
 
 | File / directory | Responsibility | Doc |
 |---|---|---|
-| `src/main.rs` | window + event loop (`tao`), WebView2 host (`wry`), `pulldown-cmark` initial render, `notify` watcher, `app://` protocol and the `/userfile/` route, workspace state | `rust-host.md` |
+| `src/main.rs` | window + event loop (`tao`), WebView2 host (`wry`), `pulldown-cmark` initial render, `notify` watcher, `app://` protocol and the `/userfile/` route, workspace state. ⚠ `with_hotkeys_zoom(false)` + a one-shot `webview.zoom(1.0)`: WebView2 browser zoom is deliberately OFF (the preview owns `Ctrl` `+`/`-`/`0` itself) | `rust-host.md` |
 | `src/editor_registry.rs` | the one paired editor `WebView`; preview↔editor IPC routing | `editor-core.md` |
 | `src/mdx.rs` | `.mdx` ZIP extract-to-temp and repack | `rust-host.md` |
 | `src/updater.rs` | auto-update: provider dispatch (`github` / `share`), detect + fetch + silent install | `auto-update.md` |
@@ -161,6 +162,8 @@ than in a detail doc, so that a missed pointer is not fatal.
    silent. Net: `domdump.py`. Two corollaries: a page-split tail **drops** its `data-line`, and
    **never stamp `data-line` on a wrapper** (`__tableLocate()`'s `lineEl.contains(tableEl)`
    would then match every table and refuse to edit any of them).
+
+5b. **A theme that wants the reader's body-text scale must route its own `font-size` through `var(--md-font-scale, 1)`** — the same "theme declares, the app implements" shape as `--md-page-lines`, and the same multiplier trick as `--md-print-scale`. A theme that does not is simply never scaled, which is a deliberate choice for `bunko.css` (its 版面 is defined in characters, and the PDF rescale would cancel the multiplier out exactly). ⚠ A `rem`-based `max-width` does **not** follow it — `rem` is the root font size, so `hakuro-modern.css` had to multiply its own cap or its measure would shrink as the text grew. Detail: `styles-theming.md`.
 
 ### Adding a figure engine — the three-part checklist
 
@@ -291,6 +294,7 @@ that are checked (or partly checked) can rely on the harness remembering.
 | `GALLERY` — `tools/preview-harness/shoot-docs.py` | gallery snippet literals — `docs/index.html` | ⚠ warn-only |
 | kataskeve / kataskeve3d / model3d container + error CSS | hand-carried into `assets/index.html`'s first `<style>` | ❌ |
 | `SS` — `tools/build-three/entry.js` | `__MODEL3D_SS` — `assets/index.html` (the export pass pins the `<img>` width against it) | ✅ `exportcheck.py` asserts the PNG is intrinsically 2× the pinned width |
+| baseline `#preview { font-size: calc(var(--md-font-scale,1) * 16px) }` — `assets/index.html` | each bundled theme's own `font-size` (`classical` / `hakuro-modern` / `tategaki`; `bunko` opts out on purpose) | partial (`exportcheck.py` runs two scaled cases; a theme that silently stopped consuming the variable would not be caught) |
 | `_FIGURES_READY_JS` — `tools/preview-harness/shoot.py` | the set of async figure kinds — `assets/index.html` | ❌ silent |
 | `CELL_HELP` — `tools/build-editor/cells.js` | the newest-first Esc chain — `entry.js` | ❌ |
 | `$libsSentinels` — `build.ps1` | the library set fetched by `tools/fetch-libs.ps1` | ❌ |
@@ -304,6 +308,7 @@ that are checked (or partly checked) can rely on the harness remembering.
 |---|---|
 | the render pipeline, any preprocessing pass | `python tools/preview-harness/domdump.py` (+ `gate.sh <label> <files…>` to diff against `_dom/base`) |
 | shortcuts, context menus, Marp autofit, `@user-vars` | `python tools/preview-harness/keycheck.py` |
+| `--md-font-scale`, a theme's base `font-size`, `with_hotkeys_zoom` | `keycheck.py` + `exportcheck.py` + `pdfcheck.py` (the scaled cases are the only ones that can see it) |
 | preview table edit mode | `python tools/preview-harness/tablecheck.py` + `node tools/preview-harness/table-model.test.cjs` |
 | task-list checkboxes, `applyTaskLists()`, `__isTypingTarget()` | `python tools/preview-harness/taskcheck.py` (+ `keycheck.py` for the focus case) |
 | `model3d` / `tools/build-three/` | `python tools/preview-harness/keycheck.py` (pixels, theme salt, **and the leak nets: one WebGL context, flat shader-program count**) + `exportcheck.py` + `pdfcheck.py` |
@@ -344,6 +349,7 @@ unless noted.
 | `_TIKZ_WAIT_MS` (`shoot.py`) | 45000 | must exceed the 30 s in-page timeout so a failure resolves |
 | `__MARP_FIT_MIN` | 0.5 | autofit shrink floor; below it the body scrolls instead |
 | `__MARP_ZOOM_MIN` / `MAX` | 1 / 8 | deck-mode `Ctrl`+wheel zoom range |
+| `__FONT_SCALE_STEPS` | `[0.6 … 2.5]` | body-text `--md-font-scale` ladder (`Ctrl` `+`/`-`/`0`). A fixed list, not a range: it makes reset exact and a stored value trivially validatable. ⚠ Pinned to 1 under `--export-png`, or the PNG depends on the operator's localStorage |
 | `__MARKER_LIFE_MS` / `FADE_MS` / `ALPHA` | 2000 / 500 / 0.55 | Marp selection highlighter |
 | `__LASER_TRAIL_MS` / `HEAD_R` | 260 / 7 | laser pointer comet trail |
 | `__ABC_RESUME_TIMEOUT_MS` | 1500 | ⚠ `AudioContext.resume()` settles only once the autoplay policy is satisfied — an unbounded await hangs the play button on 「音源を読み込み中」 forever |

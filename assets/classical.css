@@ -55,7 +55,9 @@ body {
     background: var(--cl-bg-paper);
     color: var(--cl-ink);
     font-family: var(--cl-font-serif);
-    font-size: 17px;
+    /* 本文サイズは --md-font-scale (Ctrl +/-/0) 経由。乗数にするだけで
+     * 見出し・余白など em 由来の寸法がすべて相似に追従する。 */
+    font-size: calc(var(--md-font-scale, 1) * 17px);
     line-height: 1.85;
     letter-spacing: 0.01em;
     box-shadow: 0 2px 22px rgba(60, 40, 20, 0.07);

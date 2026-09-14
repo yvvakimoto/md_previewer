@@ -89,9 +89,13 @@ body {
 #preview-container { background: var(--hk-bg); }
 
 #preview {
-    max-width: 40rem;                    /* tighter column — BIZ UDP holds up at narrow widths */
+    /* ⚠ rem is the ROOT font size, not #preview's, so the column does NOT
+       follow --md-font-scale on its own — without the multiplier here the
+       measure would SHRINK as the text grows, the opposite of every other
+       theme. The padding is chrome and stays put (see index.html). */
+    max-width: calc(40rem * var(--md-font-scale, 1));   /* tighter column — BIZ UDP holds up at narrow widths */
     padding: 60px 44px 96px;
-    font-size: 15px;
+    font-size: calc(var(--md-font-scale, 1) * 15px);
     line-height: 1.75;
     color: var(--hk-ink);
     letter-spacing: 0.005em;
