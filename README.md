@@ -27,7 +27,7 @@ Windows 専用の、軽量なスタンドアロン Markdown プレビューア�
 | オフライン動作 | ◯（CDN 不使用、全アセット同梱） | ◯ | ◯ | ◯ |
 | **CSS テーマの追加方法** | **`assets/` に `.css` を 1 枚置くだけ**（`S` キーのモーダルで選択） | `settings.json` の `markdown.styles` に絶対パス／URL を列挙 | コミュニティテーマのインストール／`.obsidian/snippets/` に CSS 配置 | テーマフォルダに `.css` 配置（命名規約あり） |
 | ライセンス | OSS（無償） | OSS（無償） | 個人利用無償／商用有償 | **有償**（v1.0 以降ライセンス購入が必要） |
-| 拡張記法 | Mermaid / KaTeX / Marp スライド / CSV・TSV テーブル / **外部CSV→Plotly 対話的チャート** / ABC 楽譜（再生つき・音源は任意DL） / **Markwhen タイムライン／カレンダー**（`display: calendar`・祝日はオンライン時のみ考慮） / **tikz-cd 可換図式**（WASM TeX、描画はオフライン／初回のみ要DL） / **Kataskeve 平面幾何・Kataskeve3D 立体幾何の作図**（陰線処理つきペン画風） / **Feynman 図**（[feynmark](https://github.com/yvvakimoto/feynmark)、宣言的 DSL・自動レイアウト） / Footnote ツールチップ（標準同梱） | 多くは拡張機能の追加導入が必要 | コアおよびプラグインで対応 | Mermaid / KaTeX 等を内蔵（Marp 非対応） |
+| 拡張記法 | Mermaid / KaTeX / Marp スライド / CSV・TSV テーブル / **外部CSV→Plotly 対話的チャート** / ABC 楽譜（再生つき・音源は任意DL） / **Markwhen タイムライン／カレンダー**（`display: calendar`・祝日はオンライン時のみ考慮） / **tikz-cd 可換図式**（WASM TeX、描画はオフライン／初回のみ要DL） / **Kataskeve 平面幾何・Kataskeve3D 立体幾何の作図**（陰線処理つきペン画風） / **Feynman 図**（[feynmark](https://github.com/yvvakimoto/feynmark)、宣言的 DSL・自動レイアウト） / **3D モデル表示**（STL・OBJ・glTF ほか、回転・ズーム可） / Footnote ツールチップ（標準同梱） | 多くは拡張機能の追加導入が必要 | コアおよびプラグインで対応 | Mermaid / KaTeX 等を内蔵（Marp 非対応） |
 | 単独 HTML / PDF エクスポート | ◯（`X` キー、自己完結 HTML／しおり・リンク付き PDF を拡張子で選択） | △（拡張機能依存） | △（プラグイン依存） | ◯ |
 
 ### 補足
@@ -209,6 +209,7 @@ md-previewer.exe path\to\bundle.mdx
 - **Kataskeve 平面幾何作図** — ` ```kataskeve ` フェンスに式志向の DSL で点・線分・直線・円・多角形・派生点（中点・垂足・交点・重心・内心・外心・垂心）・変換（平行移動・回転・反射・拡大）・角マーク／等長マークを書くと、**インライン SVG** として描画。同梱の [kataskeve](https://github.com/yvvakimoto/kataskeve)（MIT）は依存ゼロで **完全オフライン**。ダークモード追従（方眼と座標軸の色がテーマに追従）、一般文書・Marp スライド両対応。出力がインライン SVG なので **HTML エクスポートにもそのまま乗り**、狭い段組みでもクリップされず縮小されます。[Kataskeve のサンプル](samples/kataskeve.md) 参照
 - **Kataskeve3D 立体幾何作図** — ` ```kataskeve3d ` フェンスで球・楕円体・円柱・円錐・トーラス・多面体・パラメトリック曲面（双曲面・放物面・鞍型・Flamm の放物面・球面調和関数）・ペンローズの三角形を、**陰線処理と点描陰影つきのペン画風の図**として描画。`cut` / `cap` による切断や、トーラスのヴィラルソー円・双接平面も扱えます。同梱の [kataskeve3d](https://github.com/yvvakimoto/kataskeve3d)（MIT）は依存ゼロで完全オフライン（WASM は任意の高速化で、無くても描画結果は同一）。ダークモード追従、一般文書・Marp スライド両対応。**2D と違い出力は `<canvas>` のラスタ**なので、HTML エクスポートでは PNG 画像に変換して埋め込みます（自己完結は保たれ、CDN も参照しません）。PDF 出力と `--export-png` はライブ DOM を印刷／撮影するので変換は不要です。[Kataskeve3D のサンプル](samples/kataskeve3d.md) 参照
 - **Feynman 図** — ` ```feynman ` フェンスに [feynmark](https://github.com/yvvakimoto/feynmark)（MIT）の宣言的 DSL を書くと、**ファインマン図**をインライン SVG として自動レイアウトして描画。フェルミオン・光子・グルーオン等の線種、運動量・頂点の装飾、複数の図をまとめて式に埋め込む `equation { @name }` 記法に対応。ラベルは KaTeX（本アプリに同梱）で組版。ダークモード追従（`currentColor` 描画のため再描画なし）、一般文書・Marp スライド両対応、HTML エクスポートにもインライン SVG として追従。[Feynman 図のサンプル](samples/feynman.md) 参照
+- **3D モデル表示（STL / CAD メッシュ）** — ` ```model3d ` フェンスに 3D メッシュファイルへのパスを書くと、同梱の [three.js](https://threejs.org/)（MIT）が**その形状をプレビュー内に描画**します。**マウスドラッグで回転・ホイールでズーム**でき、視点は編集中も保持されます。対応形式は **STL**（バイナリ／ASCII）・**OBJ**（`.mtl` 対応）・**PLY**・**glTF**・**GLB**・**3MF** で、CAD からメッシュに書き出したデータや 3D プリンタ用の STL をそのまま貼れます。エッジ線・ワイヤーフレーム・床グリッド・座標軸・初期カメラ角度・色をフェンス内の YAML で指定でき、サイズは `width:` / `height:` で決まります（レイアウトからは測らないので、どの表示モード・どのエクスポートでも同じ大きさで出ます）。ライブラリは同梱なので **完全オフライン**（初回だけ遅延ロード）、ダークモード追従、一般文書・Marp スライド両対応。モデルファイルを保存し直すとプレビューも追従します。**出力は `<canvas>` のラスタなので、HTML エクスポートでは PNG 画像に変換して埋め込みます**（自己完結は保たれ、CDN も参照しません。書き出した HTML では静止画になります）。PDF 出力と `--export-png` はライブ DOM を印刷／撮影するので変換は不要です。※ STEP / IGES などのソリッド CAD 形式、Draco / KTX2 圧縮 glTF、glTF のアニメーション再生は対象外です（CAD 側でメッシュに書き出してください）。[3D モデルのサンプル](samples/model3d.md) 参照
 - **画像**
   - 相対パスは Markdown ファイルのあるフォルダを基準に解決。`../` / `../../` のように**開いている文書より上の親階層を辿る参照にも対応**（画像・動画・`plotly` の `file:` 共通）。[親階層参照のサンプル](samples/parent-paths/demo.md) 参照
   - 内部プロトコル（`/userfile/`）経由で配信し、ブラウザが並列・非同期に読み込み（画像を多く含む文書・スライドでも起動が高速）
@@ -570,6 +571,7 @@ md-previewer.exe <file.md|.mdx> --export-png <出力ディレクトリ> [--slide
 | `kataskeve.md` | 平面初等幾何の作図（基本作図・派生点・円・変換・角マーク・内接円・九点円・パスカルの定理） |
 | `kataskeve3d.md` | 立体幾何の作図（球・多面体・切断・ヴィラルソー円・パラメトリック曲面・ペンローズの三角形） |
 | `feynman.md` | Feynman 図（feynmark：線種・自己エネルギーループ・equation への埋め込み・エラー時の挙動） |
+| `model3d.md` | 3D モデル表示（STL / OBJ / PLY / glTF / GLB / 3MF・エッジ・グリッド・カメラ角度・エラー時の挙動） |
 | `links.md` + `links-other.md` | クロスファイル `.md` リンクと履歴ナビ |
 | `marp.md` | Marp スライドモード |
 | `cells.md` | エディタの Jupyter 風セルモード（`---` 区切りのセル操作・コマンドモードのキー） |

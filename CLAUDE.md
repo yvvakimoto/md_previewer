@@ -28,7 +28,7 @@ substitute.
 | About to edit / debug | Read first | Answers, among others |
 |---|---|---|
 | `assets/index.html` — render loop, `__*` shared helpers, diagram caches, `data-line` | `.claude/docs/preview-core.md` | Why is my DOM node gone after a keystroke? Which helper already does this? Why did my diagram stop re-rendering? |
-| `assets/index.html` — a ` ```lang ` fence; `assets/libs/<engine>` | `.claude/docs/preview-blocks.md` | How do I add an engine? Why must it go through `awaitLib`? Why is the SVG cached without a theme salt? |
+| `assets/index.html` — a ` ```lang ` fence; `assets/libs/<engine>` | `.claude/docs/preview-blocks.md` | How do I add an engine? Why must it go through `awaitLib`? Why is the SVG cached without a theme salt? Why does `model3d` share one WebGL context and blit into a 2D canvas? |
 | `assets/index.html` — a `marked` extension, a DOM post-pass, new Markdown syntax | `.claude/docs/preview-markdown-ext.md` | Where are the other implementations? When do I need a sentinel pre-pass? |
 | `assets/index.html` — Copy table / Edit table, anything splicing source by `data-line` | `.claude/docs/preview-tables.md` | Why does edit mode refuse this table? Why is the emitter formatting-preserving? |
 | `assets/index.html` — `/userfile/` URLs, images, video, cross-file links, history, drag & drop | `.claude/docs/preview-files-media.md` | Why is my Japanese-path image 404ing? Why is `..` resolved to an absolute path? |
@@ -69,7 +69,7 @@ README.md 「対応している記法・機能」.
 | Feature | Detail |
 |---|---|
 | GFM preview, auto-reload on external change, sidebar TOC | `preview-core.md` |
-| Diagram / figure fences: `mermaid`, `plotly`, `abc` (+ playback), `markwhen`, `tikz`/`tikzcd`, `kataskeve`/`kataskeve3d`, `feynman`, `csv`/`tsv`, KaTeX math, highlight.js (+ in-house Modelica grammar) | `preview-blocks.md` |
+| Diagram / figure fences: `mermaid`, `plotly`, `abc` (+ playback), `markwhen`, `tikz`/`tikzcd`, `kataskeve`/`kataskeve3d`, `feynman`, `model3d` (3D mesh files, interactive), `csv`/`tsv`, KaTeX math, highlight.js (+ in-house Modelica grammar) | `preview-blocks.md` |
 | Footnotes, `::: center/right/left/message/vcenter/columns` fenced divs, `[text]{color=…}` inline spans, definition lists, ruby (`｜猫《ねこ》`), task lists, CJK soft-break join | `preview-markdown-ext.md` |
 | Copy table for PowerPoint (rich-HTML clipboard); Edit table (writes back to the `.md`) | `preview-tables.md` |
 | Clickable task-list checkboxes — a click rewrites that one `- [ ]` line in the `.md` (both pipelines; inert in every export) | `preview-markdown-ext.md` |
@@ -110,8 +110,8 @@ A file with no owning doc is an anomaly.
 | `assets/libs/hljs-modelica.js` | in-house highlight.js grammar — **tracked, hand-written** | `preview-blocks.md` |
 | `assets/THIRD_PARTY_LICENSES.txt` | generated, git-ignored | `build-and-deps.md` |
 | `tools/build-editor/` | CodeMirror 6 + Vim bundle and its modules | `editor-*.md` |
-| `tools/build-marp/`, `tools/build-markwhen/` | esbuild IIFE bundles | `build-and-deps.md` |
-| `tools/fetch-libs.ps1`, `install-deps.ps1`, `collect-licenses.ps1`, `make-icon/` | dependency and asset toolchain | `build-and-deps.md` |
+| `tools/build-marp/`, `tools/build-markwhen/`, `tools/build-three/` | esbuild IIFE bundles (`build-three` is three.js + the whole `model3d` facade) | `build-and-deps.md` |
+| `tools/fetch-libs.ps1`, `install-deps.ps1`, `collect-licenses.ps1`, `make-icon/`, `make-3d-samples/` | dependency and asset toolchain | `build-and-deps.md` |
 | `tools/preview-harness/` | build-free browser harness + every verification script | `harness-testing.md` |
 | `tools/release-on-main.ps1`, `tools/hooks/` | release automation | `release.md` |
 | `installer/`, `build.rs`, `app.rc` | Inno Setup installer, icon embedding | `build-and-deps.md` |
@@ -175,6 +175,14 @@ than in a detail doc, so that a missed pointer is not fatal.
    eternal splash by a second route.
 8. ⚠ **Register a new async figure kind in `shoot.py`'s `_FIGURES_READY_JS`**, or its output is
    silently missing from every screenshot and every DOM digest.
+8b. ⚠ **A `<canvas>` figure must never be sized from layout, and never gets a WebGL context of
+   its own.** `kataskeve3d` and `model3d` both take their size from the fence spec, because
+   `clientWidth` is 0 on a `display:none` deck slide, untransformed in list mode, and different
+   again after `__marpPrepareForPdf()` / `__prepareCapture()` — a layout-derived figure's pixel
+   size depends on which view mode rendered it, which makes the harness digests view-mode
+   dependent. And `model3d` drives **one** shared renderer outside `#preview`, blitting into
+   per-block 2D canvases: a renderer per block would leak a context per keystroke and blow past
+   Chromium's ~16-context cap, whose only symptom is older figures going blank in silence.
 
 ### Editor
 
@@ -281,7 +289,8 @@ that are checked (or partly checked) can rely on the harness remembering.
 | `$AbcSoundfontNotes` + base URL — `tools/fetch-libs.ps1` | `AbcSfNotes()` + `AbcSfBaseUrl` — `installer/md-previewer.iss` (88 note names; flats only, `C8` last) | ❌ |
 | `#keys` list — `docs/index.html` | the `<table>` in `#help-modal` — `assets/index.html`, paired by i18n-key **suffix, not position** | ✅ `docskeycheck.py` |
 | `GALLERY` — `tools/preview-harness/shoot-docs.py` | gallery snippet literals — `docs/index.html` | ⚠ warn-only |
-| kataskeve / kataskeve3d container + error CSS | hand-carried into `assets/index.html`'s first `<style>` | ❌ |
+| kataskeve / kataskeve3d / model3d container + error CSS | hand-carried into `assets/index.html`'s first `<style>` | ❌ |
+| `SS` — `tools/build-three/entry.js` | `__MODEL3D_SS` — `assets/index.html` (the export pass pins the `<img>` width against it) | ✅ `exportcheck.py` asserts the PNG is intrinsically 2× the pinned width |
 | `_FIGURES_READY_JS` — `tools/preview-harness/shoot.py` | the set of async figure kinds — `assets/index.html` | ❌ silent |
 | `CELL_HELP` — `tools/build-editor/cells.js` | the newest-first Esc chain — `entry.js` | ❌ |
 | `$libsSentinels` — `build.ps1` | the library set fetched by `tools/fetch-libs.ps1` | ❌ |
@@ -297,6 +306,7 @@ that are checked (or partly checked) can rely on the harness remembering.
 | shortcuts, context menus, Marp autofit, `@user-vars` | `python tools/preview-harness/keycheck.py` |
 | preview table edit mode | `python tools/preview-harness/tablecheck.py` + `node tools/preview-harness/table-model.test.cjs` |
 | task-list checkboxes, `applyTaskLists()`, `__isTypingTarget()` | `python tools/preview-harness/taskcheck.py` (+ `keycheck.py` for the focus case) |
+| `model3d` / `tools/build-three/` | `python tools/preview-harness/keycheck.py` (pixels, theme salt, **and the leak nets: one WebGL context, flat shader-program count**) + `exportcheck.py` + `pdfcheck.py` |
 | cell mode | `python tools/preview-harness/cellcheck.py` + `cd tools/build-editor && node cells.test.mjs` |
 | editor↔preview scroll sync (either axis) | `python tools/preview-harness/synccheck.py` |
 | Office-table paste | `python tools/preview-harness/pastecheck.py` + `cd tools/build-editor && node tablePaste.test.mjs` |
@@ -340,6 +350,10 @@ unless noted.
 | `__MW_HOLIDAY_TIMEOUT_MS` / `__MW_CAL_MAX_MONTHS` | 4000 / 36 | markwhen calendar: online holidays are best-effort; wide spans fall back to the timeline |
 | `__PDF_IMG_MAX_EDGE` / `TARGET_SCALE` / `SLACK` / `JPEG_QUALITY` | 1600 / 2 / 1.25 / 0.82 | PDF image downscale — Chromium embeds the live decoded bitmap verbatim |
 | `__PDF_V_PAPER_W` / `_H` / `_MARGIN` / `_MIN_SCALE` | 1122 / 793 / 76 / 0.5 | vertical-writing PDF: A4 landscape floored to whole CSS px (⚠ a fraction taller emits a blank page per sheet) |
+| `__MODEL3D_SS` (+ `SS` in `tools/build-three/entry.js`) | 2 | model3d backing-store multiplier. ⚠ A literal 2, NOT `devicePixelRatio`: `--png-scale` is already 2, so this rasterizes 1:1 instead of resampling, while real DPR would make exported PNG bytes machine-dependent |
+| `MODEL_CACHE_MAX` / `BITMAP_CACHE_MAX` (`tools/build-three/entry.js`) | 8 / 12 | parsed meshes / rendered bitmaps. ⚠ The bitmap cap is 12, not kataskeve3d's 64: an entry is ~5MB at 680×460 SS=2, so 64 would be ~320MB |
+| `MAX_BYTES` / `FETCH_TIMEOUT_MS` (`tools/build-three/entry.js`) | 64MB / 15000 | model3d is the only engine that is I/O-bound on the awaited path, so an unbounded fetch could wedge the 「読み込み中…」 splash |
+| `MAX_LOGICAL_W` / `_H` (`tools/build-three/entry.js`) | 1024 / 1024 | keeps the shared GL canvas within 2048 per axis at SS = 2 |
 | `__PAGE_MAX_ITER` / `__CSS_IMPORT_MAX_DEPTH` | 4000 / 4 | pagination loop guard; `@import` splice depth cap |
 | `CASCADE_STEP` / `CASCADE_CYCLE` (`src/main.rs`) | 36.0 / 6 | `Ctrl`+click window cascade, in logical px `[m]` |
 

@@ -43,7 +43,8 @@ Example opening line to the user:
 - Read the relevant reference for exact syntax:
   - `references/features.md` — all normal-pipeline extensions (fenced divs, inline spans,
     footnotes, definition lists, ruby/振り仮名, mermaid, markwhen, csv/tsv, plotly, abc,
-    tikz/tikzcd, kataskeve/kataskeve3d, feynman, KaTeX, image sizing, video/YouTube,
+    tikz/tikzcd, kataskeve/kataskeve3d, feynman, model3d (3D mesh files), KaTeX,
+    image sizing, video/YouTube,
     blockquote attribution, soft-break rules, cross-file links, workspace `_toc.md`,
     `confidential:`/`watermark:` front-matter, `.mdx` bundles).
   - `references/marp-slides.md` — Marp deck authoring (front-matter, separators, `_class`
@@ -51,7 +52,8 @@ Example opening line to the user:
 - Canonical worked examples are **bundled with this skill** under `samples/` (e.g.
   `samples/marp.md`, `samples/alignment.md`, `samples/inline-style.md`, `samples/ruby.md`,
   `samples/plotly.md`, `samples/deflist.md`, `samples/markwhen.md`, `samples/tikzcd.md`,
-  `samples/kataskeve.md`, `samples/feynman.md`, `samples/confidential.md`,
+  `samples/kataskeve.md`, `samples/feynman.md`, `samples/model3d.md`,
+  `samples/confidential.md`,
   `samples/footnotes.md`, `samples/math.md`, plus `samples/workspace/` and the
   `samples/data/` CSVs the plotly example reads). Paths are relative to this skill
   directory, so they resolve even when the skill is used outside the md_previewer repo.
