@@ -139,6 +139,19 @@ PLAIN_MD = """# 通常のドキュメント
 本文本文本文。
 """
 
+# Long enough to run past one A4 page once the body text is scaled up, so the
+# "does the multiplier actually reach the paper" check has a page count to move.
+SCALED_MD = """# 文字サイズのスケール
+
+""" + ("""
+本文の文字サイズは `--md-font-scale` という倍率で決まる。これは表示上のズームでは
+なくレイアウト上の文字サイズなので、PDF を書き出したときにも紙面の字がそのまま大き
+くなる。従来の WebView2 のブラウザズームは viewport だけの device scale だったため、
+CDP の Page.printToPDF が紙のサイズで組み直す PDF にはまったく届かなかった。
+
+""" * 8)
+
+
 # Record every IPC message the page posts, so the ack payload is inspectable.
 RECORD_IPC_JS = """() => {
   window.__ipcLog = [];
@@ -169,6 +182,31 @@ def open_styled(browser, style):
     page.add_init_script(
         "(() => { try { localStorage.setItem('styleName', %s); } catch (e) {} })()" % json.dumps(style))
     return ctx, page, ctx.new_cdp_session(page)
+
+
+def open_scaled(browser, scale):
+    """A fresh context whose localStorage carries a body text scale, as a returning
+    reader's would. Same shape (and same reason) as open_styled: add_init_script
+    only runs on navigation, and a per-case context keeps the value from leaking."""
+    ctx = browser.new_context(viewport={"width": 1440, "height": 900})
+    page = ctx.new_page()
+    page.set_default_timeout(20000)
+    page.add_init_script(
+        "(() => { try { localStorage.setItem('fontScale', %s); } catch (e) {} })()"
+        % json.dumps(str(scale)))
+    return ctx, page, ctx.new_cdp_session(page)
+
+
+def body_font_pt(doc, page_index=0):
+    """The most common span size on a page — i.e. the body text size, in points."""
+    sizes = {}
+    for block in doc[page_index].get_text("dict")["blocks"]:
+        for line in block.get("lines", []):
+            for span in line.get("spans", []):
+                n = len(span.get("text", "").strip())
+                if n:
+                    sizes[round(span["size"], 2)] = sizes.get(round(span["size"], 2), 0) + n
+    return max(sizes.items(), key=lambda kv: kv[1])[0] if sizes else None
 
 
 def load_vertical(page, url):
@@ -256,8 +294,9 @@ def main():
     deck43 = os.path.join(tmp, "deck43.md")
     plain = os.path.join(tmp, "plain.md")
     vertical = os.path.join(tmp, "vertical.md")
+    scaled = os.path.join(tmp, "scaled.md")
     for path, body in ((deck, DECK_MD), (deck43, DECK_43_MD), (plain, PLAIN_MD),
-                       (vertical, VERTICAL_MD)):
+                       (vertical, VERTICAL_MD), (scaled, SCALED_MD)):
         with open(path, "w", encoding="utf-8") as fh:
             fh.write(body)
 
@@ -456,6 +495,51 @@ def main():
                   all(near(t, (255, 255, 255)) for t in tail), tail)
             check("bookmarks still generated", len(doc.get_toc()) >= 2, doc.get_toc())
             doc.close()
+
+            # ---- the body text scale actually reaches the paper ---------------
+            # This is the whole point of --md-font-scale, and nothing else here can
+            # see it: every other assertion in this file runs at the default scale,
+            # where the feature is a no-op by construction. The old WebView2 browser
+            # zoom would pass a page-count check too (it changes nothing), so the
+            # load-bearing assertion is the measured span size in POINTS.
+            print("\n[本文の文字サイズ倍率 — PDF に届くか]")
+            sizes, pages = {}, {}
+            for scale in (1.0, 1.5):
+                sctx, spage, sclient = open_scaled(browser, scale)
+                load(spage, base + scaled, marp=False)
+                out = os.path.join(tmp, "scaled-%s.pdf" % scale)
+                run_export(spage, sclient, out)
+                doc = fitz.open(out)
+                sizes[scale], pages[scale] = body_font_pt(doc), doc.page_count
+                doc.close()
+                sctx.close()
+            check("a default-scale export is unchanged (12pt body = 16 CSS px)",
+                  approx(sizes[1.0], 12, 0.4), sizes)
+            check("a 1.5x reader gets 1.5x type on paper",
+                  sizes[1.5] is not None and approx(sizes[1.5] / sizes[1.0], 1.5, 0.05),
+                  sizes)
+            check("...and the same text therefore needs more sheets",
+                  pages[1.5] > pages[1.0], pages)
+
+            # A toast is on screen for 1400 ms, so whether it lands in the PDF is purely
+            # a race between the reader and the timer -- and it WAS landing there: the
+            # @media print block hid #slide-counter / #laser-canvas / #update-banner
+            # but not #toast, even though its comment claimed parity with the body.capturing
+            # set (which does hide it). PDF prints the live DOM, so a capture-only rule
+            # never applied. Print with a toast deliberately up.
+            tctx, tpage, tclient = open_scaled(browser, 1.0)
+            load(tpage, base + scaled, marp=False)
+            tpage.evaluate("() => showToast('PRINTCHROMEPROBE')")
+            check("a toast really is on screen when we print",
+                  tpage.evaluate("() => document.getElementById('toast').classList.contains('visible')"), True)
+            out = os.path.join(tmp, "toast.pdf")
+            run_export(tpage, tclient, out)
+            doc = fitz.open(out)
+            printed = "".join(doc[i].get_text() for i in range(doc.page_count))
+            doc.close()
+            tctx.close()
+            check("...but no preview-only toast is painted onto the paper",
+                  "PRINTCHROMEPROBE" not in printed, "the toast printed")
 
             # ---- model3d ------------------------------------------------------
             # export.md claims PDF and --export-png need no work for a canvas

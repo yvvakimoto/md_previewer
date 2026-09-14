@@ -1887,7 +1887,18 @@ fn main() -> wry::Result<()> {
             }
         })
         .with_url("app://localhost/index.html")?
-        .with_hotkeys_zoom(true);
+        // Ctrl +/-/0 is NOT WebView2 browser zoom any more. That zoom is a
+        // viewport-level device scale with no document representation, so it
+        // never reached the PDF (CDP Page.printToPDF re-lays out for the paper
+        // box at a fixed scale of 1). The preview now owns those keys itself
+        // and drives --md-font-scale, a real layout multiplier that the PDF and
+        // --export-png paths inherit because both print the live DOM.
+        // This matches the editor window, which has never enabled it either
+        // (src/editor_registry.rs) and implements its own font zoom.
+        // Caveat: wry maps this one flag to both SetIsZoomControlEnabled and
+        // SetIsPinchZoomEnabled, so touchscreen pinch goes with it; a precision
+        // touchpad pinch still arrives as wheel+ctrlKey and is handled in JS.
+        .with_hotkeys_zoom(false);
 
     // Tracks which markdown file the previewer is currently rendering.
     let current_file: CurrentFile = Arc::new(Mutex::new(
@@ -2361,6 +2372,15 @@ fn main() -> wry::Result<()> {
     }
 
     let webview = webview_builder.build()?;
+    // Clear any zoom factor WebView2 persisted per-origin in the user data
+    // folder while `with_hotkeys_zoom(true)` was still set: turning the zoom
+    // control off stops the USER changing it but does not reset it, so an
+    // upgrading install could otherwise be stuck at whatever it last pressed
+    // with no way back. SetZoomFactor is independent of IsZoomControlEnabled.
+    // Not repeated later: the StartUpdateCheck arm is the only post-render
+    // hook with the webview in scope, and it documents that it takes no
+    // webview lock so it cannot stall the loop.
+    webview.zoom(1.0);
     let webview = Arc::new(Mutex::new(webview));
 
     // Update-check watchdog. The check is normally kicked off by the preview's

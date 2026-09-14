@@ -89,9 +89,12 @@ body {
 #preview-container { background: var(--hk-bg); }
 
 #preview {
+    /* rem is the ROOT font size, not #preview's, so this cap deliberately does
+       NOT follow --md-font-scale — the 版面 keeps its width and a larger size
+       just fits fewer characters per line, same as the baseline. */
     max-width: 40rem;                    /* tighter column — BIZ UDP holds up at narrow widths */
     padding: 60px 44px 96px;
-    font-size: 15px;
+    font-size: calc(var(--md-font-scale, 1) * 15px);
     line-height: 1.75;
     color: var(--hk-ink);
     letter-spacing: 0.005em;

@@ -104,7 +104,23 @@
             background: white;
         }
 
+        /* --md-font-scale is the body-text zoom (Ctrl +/-/0, and the row in the
+           S-key modal). It is a MULTIPLIER, not a size, for the same reason
+           --md-print-scale is one: every length a theme derives from its body
+           font size scales similarly, so the typesetting never breaks. It is
+           stamped on `body:not(.marp) #preview` by applyFontScale(), so Marp
+           slides — which are laid out in a fixed 1280x720 box — never see it.
+           A theme opts in by routing its own font-size through the variable;
+           one that doesn't is simply never scaled (bunko.css deliberately
+           doesn't — its 版面 is defined in CHARACTERS, see styles-theming.md).
+           ⚠ Only the TYPE scales — max-width and padding stay put, so the 版面
+           keeps its width and a larger size simply fits fewer characters on a
+           line. Scaling the cap alongside the text would reproduce the old
+           browser zoom (same line, bigger everything), which is precisely what
+           this replaced: a reader enlarging the text wants to read the same
+           column more easily, not to widen the document. */
         #preview {
+            font-size: calc(var(--md-font-scale, 1) * 16px);
             max-width: 900px;
             margin: 0 auto;
             padding: 40px 20px;
@@ -513,8 +529,10 @@
            backgrounds; a theme can re-point --confidential-color under its own
            body.dark-mode rule for a dark-tuned shade.
            The default --confidential-size is capped (min(11vw, 6.5rem)) so the whole
-           rotated word fits within the ~900px document width and is never clipped,
-           and the default colour is kept faint — the fixed watermark stays put while
+           rotated word fits within the document width and is never clipped. Note it
+           is viewport- and root-anchored (vw / rem), so it deliberately does NOT
+           follow --md-font-scale: the mark belongs to the page, not to the body text.
+           The default colour is kept faint — the fixed watermark stays put while
            the page scrolls, so a stronger colour would read as visually jarring. */
         body.confidential:not(.marp) #preview::before {
             content: var(--confidential-label, "CONFIDENTIAL");
@@ -2038,10 +2056,16 @@
                 print-color-adjust: exact;
             }
             /* Fixed-position chrome the base rules above predate: each would otherwise
-               be painted onto the first printed page. Same set body.capturing hides. */
+               be painted onto the first printed page. Same set body.capturing hides.
+               ⚠ #toast belongs here too, and did not until a toast was actually caught
+               on a printed page: it is only on screen for 1400 ms, so whether it lands
+               in the PDF depends purely on how fast the reader reaches X after whatever
+               toasted (a style swap, a view change, the body text size). A capture-only
+               rule is not enough — PDF prints the live DOM without body.capturing. */
             #slide-counter,
             #laser-canvas,
-            #update-banner {
+            #update-banner,
+            #toast {
                 display: none !important;
             }
         }
@@ -2403,6 +2427,60 @@
             color: #c9d1d9;
         }
         body.dark-mode #style-vars-pane .sv-foot button:hover { background: #21262d; }
+        /* Body text scale row — style-independent, so it sits above the per-style
+           pane and borrows its visual language rather than living inside it. */
+        #font-scale-row {
+            margin-top: 14px;
+            padding-top: 12px;
+            border-top: 1px solid #e1e4e8;
+            font-size: 13px;
+        }
+        #font-scale-row .fs-head {
+            display: flex;
+            align-items: baseline;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        #font-scale-row .fs-label { color: #24292e; }
+        #font-scale-row .fs-hint { color: #57606a; font-size: 11px; }
+        #font-scale-row .fs-control {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 8px;
+        }
+        #font-scale-row button {
+            background: transparent;
+            border: 1px solid #d0d7de;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+            padding: 4px 10px;
+            color: #24292e;
+            min-width: 32px;
+        }
+        #font-scale-row button:hover:not(:disabled) { background: #f6f8fa; }
+        #font-scale-row button:disabled { opacity: 0.4; cursor: default; }
+        #font-scale-row .fs-reset { margin-left: auto; min-width: 0; }
+        #font-scale-value {
+            flex: 0 0 4.5em;
+            text-align: center;
+            font-variant-numeric: tabular-nums;
+            color: #24292e;
+        }
+        #font-scale-row .fs-fixed {
+            margin-top: 8px;
+            font-size: 11px;
+            line-height: 1.5;
+            color: #8a6d3b;
+        }
+        body.dark-mode #font-scale-row { border-top-color: #30363d; }
+        body.dark-mode #font-scale-row .fs-label,
+        body.dark-mode #font-scale-value { color: #c9d1d9; }
+        body.dark-mode #font-scale-row .fs-hint { color: #8b949e; }
+        body.dark-mode #font-scale-row button { border-color: #30363d; color: #c9d1d9; }
+        body.dark-mode #font-scale-row button:hover:not(:disabled) { background: #21262d; }
+        body.dark-mode #font-scale-row .fs-fixed { color: #d6a95f; }
         body.dark-mode #help-modal .panel,
         body.dark-mode #style-modal .panel {
             background: #161b22;
@@ -2919,7 +2997,13 @@
             'help.key.ctrlD':      { ja: 'インストール先フォルダを Explorer で開く', en: 'Open the install folder in Explorer' },
             'help.key.x':          { ja: '現在の文書をエクスポート（保存ダイアログで HTML / PDF を選択。PDFはクリック可能なリンクと見出しのしおりを保持）',
                                      en: 'Export the current document (pick HTML or PDF in the save dialog; PDF keeps clickable links and heading bookmarks)' },
-            'help.key.zoom':       { ja: 'ズームイン / アウト / リセット', en: 'Zoom in / out / reset' },
+            // The key SUFFIX (`zoom`) is what docskeycheck.py pairs against
+            // docs/index.html's `keys.zoom`; only the wording changed when the
+            // shortcut stopped being a browser zoom and became a body-text scale.
+            'help.key.zoom':       { ja: '本文の文字サイズ 拡大 / 縮小 / 既定',
+                                     en: 'Body text size: larger / smaller / reset' },
+            'help.key.fontScaleWheel': { ja: '本文の文字サイズを拡大 / 縮小',
+                                     en: 'Body text size: larger / smaller' },
             'help.key.history':    { ja: '開いたファイルの履歴を戻る / 進む', en: 'Go back / forward through opened files' },
             'help.key.ctrlClick':  { ja: '.md リンクを新しいプレビュアのウィンドウで開く（通常のクリックは同じウィンドウで遷移）',
                                      en: 'Open a .md link in a new previewer window (a plain click navigates in this window)' },
@@ -2953,6 +3037,16 @@
             'style.varShow':       { ja: '表示',       en: 'Show' },
             'style.backToList':    { ja: '← 一覧へ',   en: '← Back to the list' },
             'style.resetDefaults': { ja: '既定に戻す', en: 'Reset to defaults' },
+            // The body-text scale row. Deliberately worded as a RATIO so it reads
+            // distinctly from bunko.css / tategaki.css's own ⚙「文字サイズ」, which
+            // is an absolute px and composes with this one by multiplication.
+            'style.fontScale':     { ja: '本文の文字サイズ（倍率）', en: 'Body text size (scale)' },
+            'style.fontScaleHint': { ja: 'PDF / HTML 出力にも反映されます',
+                                     en: 'Also applied to PDF / HTML export' },
+            'style.fontScaleFixed': { ja: 'このスタイルは版面を字数で決めるため倍率は効きません。⚙ の「文字サイズ」で変更してください',
+                                      en: 'This style sizes its text block in characters, so the scale has no effect — use ⚙ → “Font size” instead' },
+            'style.fontScaleDown': { ja: '小さく', en: 'Smaller' },
+            'style.fontScaleUp':   { ja: '大きく', en: 'Larger' },
 
             'lic.loadFailed':      { ja: 'THIRD_PARTY_LICENSES.txt の読み込みに失敗しました ({error})',
                                      en: 'Could not load THIRD_PARTY_LICENSES.txt ({error})' },
@@ -3103,6 +3197,7 @@
             'toast.styleDefault':  { ja: 'デフォルト',       en: 'Default' },
             'toast.marpFixedTheme':{ ja: 'テーマはMarpディレクティブで固定されています',
                                      en: 'The theme is pinned by a Marp directive' },
+            'toast.fontScale':     { ja: '本文の文字サイズ {pct}%', en: 'Body text size {pct}%' },
             'toast.pdfExport':     { ja: 'PDF出力: {name}',  en: 'Exported PDF: {name}' },
             'toast.pdfExportFail': { ja: 'PDF出力に失敗しました', en: 'PDF export failed' },
             'toast.renderFail':    { ja: 'プレビューの描画に失敗しました', en: 'Preview rendering failed' },
@@ -3540,6 +3635,113 @@
             // `number` stays bare so the CSS can use it as a calc() coefficient.
             return spec.type === 'length' ? (v + spec.unit) : String(v);
         }
+        // ---- Body text scale (--md-font-scale) -------------------------------
+        // Ctrl +/-/0 used to be WebView2's own browser zoom (with_hotkeys_zoom in
+        // src/main.rs) — a viewport-level device scale with NO document
+        // representation, so it never reached the PDF, which CDP re-lays out for the
+        // paper box at a fixed scale of 1. This replaces it with a real layout
+        // multiplier, which the PDF and --export-png paths inherit for free because
+        // both print the LIVE DOM. See styles-theming.md for the theme contract.
+        //
+        // A discrete ladder rather than a continuous value: these are the familiar
+        // browser-zoom ratios, and a fixed list makes "reset" exact and a stored
+        // value trivially validatable.
+        const __FONT_SCALE_STEPS = [0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.25, 1.5, 1.75, 2.0, 2.5];
+        const __FONT_SCALE_DEFAULT = 1;
+        // Pinned to 1 under --export-png. The capture process shares this origin's
+        // localStorage with the GUI (the same fact the shared uiLang key relies on),
+        // so honouring a persisted scale would make the emitted PNG depend on
+        // whatever the user last pressed — the machine-dependent-output trap that
+        // __MODEL3D_SS carries its own warning about.
+        function __readFontScale() {
+            if (window.__captureConfig) return __FONT_SCALE_DEFAULT;
+            const n = parseFloat(localStorage.getItem('fontScale'));
+            // Anything unproven falls back to the default — the same rule
+            // __styleVarCssValue() applies to a stored @user-vars value, so a ladder
+            // that changes in a future version can never leave a stale scale behind.
+            return __FONT_SCALE_STEPS.indexOf(n) >= 0 ? n : __FONT_SCALE_DEFAULT;
+        }
+        let fontScale = __readFontScale();
+        // Plotly sizes a chart to its container at render time and does not track a
+        // later CSS-driven width change, so an autosize chart keeps a stale width and
+        // stops filling its box. Two callers need this: the Marp autofit pass (which
+        // rewrites the section's logical width) and the body scale (which moves
+        // #preview's max-width).
+        function __resizePlotlyBlocks() {
+            if (!(window.Plotly && Plotly.Plots && typeof Plotly.Plots.resize === 'function')) return;
+            preview.querySelectorAll('.plotly-block.js-plotly-plot').forEach((el) => {
+                try { Plotly.Plots.resize(el); } catch (e) {}
+            });
+        }
+        // ⚠ The Marp exclusion is DECLARATIVE (`body:not(.marp)`), not a guard in
+        // this function. __refreshStyleVars / __refreshMarpStyleVars have to re-check
+        // their mode at resolve time because the boot-time user-style fetch can
+        // resolve after a Marp document has rendered; a selector cannot lose that
+        // race, so this needs no hook on Marp entry or exit at all.
+        function applyFontScale() {
+            let st = document.getElementById('font-scale-style');
+            if (!st) {
+                st = document.createElement('style');
+                st.id = 'font-scale-style';
+                document.head.appendChild(st);
+            }
+            // Empty at the default so the HTML export carries nothing extra and the
+            // artifact stays byte-identical to what it was before this feature.
+            st.textContent = fontScale === __FONT_SCALE_DEFAULT
+                ? ''
+                : 'body:not(.marp) #preview{--md-font-scale:' + fontScale + ' !important;}';
+        }
+        function setFontScale(v, opts) {
+            const next = __FONT_SCALE_STEPS.indexOf(v) >= 0 ? v : __FONT_SCALE_DEFAULT;
+            const quiet = !!(opts && opts.quiet);
+            // Under a character-defined 版面 the multiplier is genuinely inert (the
+            // theme does not consume it), so storing a new value would silently arm
+            // a change the reader only sees on some *other* style later. Refuse and
+            // say why — the same thing the modal's disabled buttons express.
+            if (__fontScaleIsFixedLayout()) {
+                if (!quiet) showToast(t('style.fontScaleFixed'));
+                return;
+            }
+            if (next === fontScale) { __updateFontScaleUI(); if (!quiet) __toastFontScale(); return; }
+            const anchor = capturePreviewAnchor();
+            fontScale = next;
+            if (next === __FONT_SCALE_DEFAULT) localStorage.removeItem('fontScale');
+            else localStorage.setItem('fontScale', String(next));
+            applyFontScale();
+            // A theme that paginates (bunko's --md-page-lines) has to re-split: its
+            // boundaries were measured against the old geometry, and a figure's px
+            // size does not scale with the text, so a page's line count moves. This
+            // returns early for every other theme, which is why it is unconditional.
+            __schedulePaginateRefresh();
+            __resizePlotlyBlocks();
+            requestAnimationFrame(() => restorePreviewAnchor(anchor));
+            __updateFontScaleUI();
+            if (!quiet) __toastFontScale();
+        }
+        function __toastFontScale() {
+            showToast(t('toast.fontScale', { pct: String(Math.round(fontScale * 100)) }));
+        }
+        // dir: +1 / -1 to step the ladder, 0 to reset. An unknown current value (a
+        // ladder that shrank between versions) steps from the default.
+        function stepFontScale(dir, opts) {
+            if (!dir) { setFontScale(__FONT_SCALE_DEFAULT, opts); return; }
+            let i = __FONT_SCALE_STEPS.indexOf(fontScale);
+            if (i < 0) i = __FONT_SCALE_STEPS.indexOf(__FONT_SCALE_DEFAULT);
+            const j = Math.max(0, Math.min(__FONT_SCALE_STEPS.length - 1, i + dir));
+            setFontScale(__FONT_SCALE_STEPS[j], opts);
+        }
+        // A theme whose 版面 is defined in CHARACTERS rather than pixels (bunko.css,
+        // via --md-page-lines) deliberately does not route its font size through the
+        // multiplier: 39字 × 16行 is the layout, and the PDF export already rescales
+        // that block to the paper with --md-print-scale, which would cancel the
+        // multiplier out exactly. Such a theme's own ⚙ is the control instead, so the
+        // modal row reports itself as inactive rather than silently doing nothing.
+        function __fontScaleIsFixedLayout() {
+            if (!preview) return false;
+            const n = parseFloat(getComputedStyle(preview).getPropertyValue('--md-page-lines'));
+            return Number.isFinite(n) && n >= 1;
+        }
+
         // Stamp the overrides into a dedicated <style>. Same mechanism, and the
         // same reason, as applyWatermarkLabel's #confidential-label-style: the
         // property has to be declared with !important on the very elements that
@@ -3628,6 +3830,9 @@
         }
         applyDarkMode(darkMode);
         applyUserStyle(currentStyle);
+        // One call for the life of the page: the rule is scoped `body:not(.marp)`,
+        // so it needs no re-application on a style swap or a Marp entry/exit.
+        applyFontScale();
         // Expose the current calendar year to CSS as a *string* custom property so
         // themes can print an auto-updating year (e.g. a copyright line) without any
         // JS of their own:  content: "© " var(--current-year) " …";
@@ -4700,6 +4905,10 @@
         // 縦書きモード時、マウスホイールの縦方向回転を横スクロールに変換する。
         // (vertical-rl の文書では読書方向が横軸なので、自然な読み進めを可能にする)
         previewContainer.addEventListener('wheel', (e) => {
+            // Ctrl+wheel is the body-text scale (see the handler below); this one is
+            // registered first on the same element and calls preventDefault(), so
+            // without this bail it would swallow it under tategaki / bunko.
+            if (e.ctrlKey) return;
             const wm = getComputedStyle(preview).writingMode;
             if (wm !== 'vertical-rl' && wm !== 'vertical-lr') return;
             // ユーザーが Shift キーで明示的に横スクロールしている場合は重複させない
@@ -4714,11 +4923,24 @@
             e.preventDefault();
         }, { passive: false });
 
+        // Ctrl+wheel outside Marp: step the body text scale. Chromium also reports a
+        // precision-touchpad pinch as wheel+ctrlKey, so this is what gives pinch-zoom
+        // back after src/main.rs turned WebView2's own zoom control off (that flag
+        // gates pinch as well as the hotkeys). Registered BEFORE the Marp deck
+        // handler below, which is why this one bails on body.marp rather than the
+        // other way round.
+        previewContainer.addEventListener('wheel', (e) => {
+            if (!e.ctrlKey || document.body.classList.contains('marp')) return;
+            e.preventDefault();
+            stepFontScale(e.deltaY < 0 ? 1 : -1);
+        }, { passive: false });
+
         // Marp deck-mode: Ctrl+wheel zooms the active slide centered on the cursor.
         // (Independent of the vertical-writing wheel handler above, which bails
-        // unless writing-mode is vertical.) We intercept and preventDefault so
-        // WebView2's built-in browser zoom (with_hotkeys_zoom) doesn't also fire;
-        // outside deck mode that browser zoom is left untouched.
+        // unless writing-mode is vertical.) We intercept and preventDefault so the
+        // body-text-scale handler above — and any residual WebView2 zoom — can't also
+        // fire; in Marp mode the slide box is fixed, so the deck zoom is the only
+        // zoom there is.
         previewContainer.addEventListener('wheel', (e) => {
             if (!e.ctrlKey) return;
             if (!document.body.classList.contains('marp')
@@ -4829,6 +5051,19 @@
             document.addEventListener('keydown', (e) => {
                 if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return;
                 if (typeof e.key !== 'string' || e.key.toLowerCase() !== key) return;
+                if (__isTypingTarget(e.target)) return;
+                return handler(e);
+            });
+        }
+
+        // Ctrl/Cmd prelude only, no key test and Shift ALLOWED — the sibling of
+        // onShortcutKey for handlers that dispatch on several Ctrl combinations.
+        // Shift has to be let through here because on a US layout `Ctrl` `+` is
+        // physically Ctrl+Shift+`=`; onCtrlKey's !e.shiftKey guard (which keeps
+        // Ctrl+Shift+N free) would drop it.
+        function onCtrlShortcutKey(handler) {
+            document.addEventListener('keydown', (e) => {
+                if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
                 if (__isTypingTarget(e.target)) return;
                 return handler(e);
             });
@@ -4985,9 +5220,39 @@
             if (pane) { pane.hidden = true; pane.innerHTML = ''; }
             const tbl = document.querySelector('#style-modal table');
             if (tbl) tbl.hidden = false;
+            __setFontScaleRowHidden(false);
             const title = document.getElementById('style-modal-title');
             if (title) title.textContent = t('style.title');
             __styleVarsState = null;
+        }
+        // The scale row shares the list's visibility: it belongs to the document,
+        // not to the style being configured in the pane.
+        // Showing it always re-reads the state, because the active style can have
+        // changed while the row was hidden: the ⚙ activates the style it configures,
+        // so 「← 一覧へ」 can land on a theme whose 版面 is fixed (bunko) when the
+        // row was last drawn under one whose isn't.
+        function __setFontScaleRowHidden(hidden) {
+            const row = document.getElementById('font-scale-row');
+            if (!row) return;
+            row.hidden = hidden;
+            if (!hidden) __updateFontScaleUI();
+        }
+        function __updateFontScaleUI() {
+            const val = document.getElementById('font-scale-value');
+            if (val) val.textContent = Math.round(fontScale * 100) + '%';
+            const row = document.getElementById('font-scale-row');
+            if (!row) return;
+            const fixed = __fontScaleIsFixedLayout();
+            const note = row.querySelector('.fs-fixed');
+            if (note) note.hidden = !fixed;
+            const i = __FONT_SCALE_STEPS.indexOf(fontScale);
+            const dis = (act, off) => {
+                const b = row.querySelector('[data-act="' + act + '"]');
+                if (b) b.disabled = fixed || off;
+            };
+            dis('font-scale-down', i === 0);
+            dis('font-scale-up', i === __FONT_SCALE_STEPS.length - 1);
+            dis('font-scale-reset', fontScale === __FONT_SCALE_DEFAULT);
         }
         // `name` is the spec / storage key (a user style's file, or `marp/<file>`
         // for a Marp theme — see __marpThemeVarsKey). `opts.display` is the label
@@ -5015,6 +5280,7 @@
             __styleVarsState = { name, spec, values: __readStyleVars(name), anchor: capturePreviewAnchor() };
             const tbl = document.querySelector('#style-modal table');
             if (tbl) tbl.hidden = true;
+            __setFontScaleRowHidden(true);
             const title = document.getElementById('style-modal-title');
             if (title) title.textContent = t('style.settingsFor', { name: opts.display || name });
             pane.hidden = false;
@@ -5156,7 +5422,13 @@
             if (!m) return;
             // Always start (and leave) on the list, so S never reopens mid-form.
             closeStyleVarsPane();
-            if (open) __renderStyleRows(document.body.classList.contains('marp'));
+            const marp = document.body.classList.contains('marp');
+            if (open) __renderStyleRows(marp);
+            // In Marp mode the modal lists slide themes and the scale does not apply
+            // (the slide box is fixed) — closeStyleVarsPane() above has just shown
+            // the row, so hide it again here rather than duplicating the test there.
+            if (marp) __setFontScaleRowHidden(true);
+            else __updateFontScaleUI();
             m.classList.toggle('visible', open);
         }
         onPlainKey('s', (e) => {
@@ -5206,6 +5478,18 @@
                 } else if (gearRow.dataset.style) {
                     setStyleVarsPaneOpen(gearRow.dataset.style);
                 }
+                return;
+            }
+            // Body text scale row. Checked before the .style-row branch below: it
+            // lives outside the table, so it can never be mistaken for a style
+            // switch, but keeping the order explicit keeps that true if it moves.
+            const fsBtn = target.closest('#font-scale-row button[data-act]');
+            if (fsBtn) {
+                const act = fsBtn.dataset.act;
+                // Quiet: the readout in the row already shows the new value, so a
+                // toast on top of it would just cover the modal.
+                if (act === 'font-scale-reset') setFontScale(__FONT_SCALE_DEFAULT, { quiet: true });
+                else stepFontScale(act === 'font-scale-up' ? 1 : -1, { quiet: true });
                 return;
             }
             if (target.closest('#style-vars-pane .sv-back')) {
@@ -5813,6 +6097,11 @@
             // reader tuned it. Same reason: #style-vars-style is not the first <style>.
             const svStyleEl = document.getElementById('style-vars-style');
             const svCss = svStyleEl && svStyleEl.textContent ? svStyleEl.textContent : '';
+            // And the body text scale (Ctrl +/-/0), for the same reason again:
+            // #font-scale-style is not the first <style> either. Empty at the
+            // default, so an unscaled document exports exactly as it always did.
+            const fsStyleEl = document.getElementById('font-scale-style');
+            const fsCss = fsStyleEl && fsStyleEl.textContent ? fsStyleEl.textContent : '';
             // Title: prefer the source filename basename (without .md/.markdown) so browser tabs and
             // bookmarks identify the document. Falls back to document.title for files opened via
             // drag-drop where we somehow don't have a path.
@@ -6027,6 +6316,7 @@ ${baseCss}
 ${userCssText ? '\n/* user style */\n' + userCssText : ''}
 ${wmCss ? '\n/* watermark label override */\n' + wmCss : ''}
 ${svCss ? '\n/* @user-vars overrides (⚙) */\n' + svCss : ''}
+${fsCss ? '\n/* body text scale (Ctrl +/-/0) */\n' + fsCss : ''}
 ${tikzFontCss ? '\n/* tikz Computer-Modern fonts (inlined) */\n' + tikzFontCss : ''}
 /* export overrides: artifact is always visible (no splash / drop-zone gating) */
 #app-container { display: flex !important; }
@@ -6190,6 +6480,22 @@ ${previewClone.outerHTML}
             if (window.ipc && typeof window.ipc.postMessage === 'function') {
                 window.ipc.postMessage('openinstalldir:');
             }
+        });
+
+        // Body text size. Matching on e.key (not e.code) is enough for the numpad
+        // too: NumpadAdd reports '+', NumpadSubtract '-', Numpad0 '0'. `=` is the
+        // unshifted US key for `+`, and `;` is the JP one. Inert in Marp mode, where
+        // the slide box is fixed — deck mode keeps its own Ctrl+wheel zoom.
+        onCtrlShortcutKey((e) => {
+            if (typeof e.key !== 'string') return;
+            let dir;
+            if (e.key === '+' || e.key === '=' || e.key === ';') dir = 1;
+            else if (e.key === '-' || e.key === '_') dir = -1;
+            else if (e.key === '0') dir = 0;
+            else return;
+            e.preventDefault();
+            if (document.body.classList.contains('marp')) return;
+            stepFontScale(dir);
         });
 
         // Compute starting source-line for each top-level block token
@@ -8645,17 +8951,10 @@ ${previewClone.outerHTML}
                 section.style.height = (100 / f) + '%';
                 section.style.transform = 'scale(' + f + ')';
             });
-            // Plotly charts are sized to their container at render time and don't
-            // auto-track a CSS-driven width change. The fit pass above enlarges an
-            // overflowing section's logical width by 1/f (and resets it back when it
-            // no longer overflows), so an autosize chart rendered before the fit stays
-            // at its stale width and no longer fills the slide — it looks off-center.
-            // Re-fit every initialized plotly chart to the current container width.
-            if (window.Plotly && Plotly.Plots && typeof Plotly.Plots.resize === 'function') {
-                preview.querySelectorAll('.plotly-block.js-plotly-plot').forEach(el => {
-                    try { Plotly.Plots.resize(el); } catch (e) {}
-                });
-            }
+            // The fit pass above enlarges an overflowing section's logical width by
+            // 1/f (and resets it back when it no longer overflows), which is a
+            // CSS-driven container-width change — see __resizePlotlyBlocks().
+            __resizePlotlyBlocks();
         }
         // Temporarily leave deck / list view so every slide is display:block and
         // therefore measurable: fitMarpSlides() skips a slide whose content height
@@ -13431,7 +13730,8 @@ ${previewClone.outerHTML}
                     <tr><td class="keys"><span class="kc"><kbd>Ctrl</kbd>+<kbd>N</kbd></span></td><td data-i18n="help.key.ctrlN">新規の空Markdownファイルを作成</td></tr>
                     <tr><td class="keys"><span class="kc"><kbd>Ctrl</kbd>+<kbd>D</kbd></span></td><td data-i18n="help.key.ctrlD">インストール先フォルダを Explorer で開く</td></tr>
                     <tr><td class="keys"><kbd>X</kbd></td><td data-i18n="help.key.x">現在の文書をエクスポート（保存ダイアログで HTML / PDF を選択。PDFはクリック可能なリンクと見出しのしおりを保持）</td></tr>
-                    <tr><td class="keys"><span class="kc"><kbd>Ctrl</kbd>+<kbd>+</kbd> /</span> <span class="kc"><kbd>Ctrl</kbd>+<kbd>-</kbd> /</span> <span class="kc"><kbd>Ctrl</kbd>+<kbd>0</kbd></span></td><td data-i18n="help.key.zoom">ズームイン / アウト / リセット</td></tr>
+                    <tr><td class="keys"><span class="kc"><kbd>Ctrl</kbd>+<kbd>+</kbd> /</span> <span class="kc"><kbd>Ctrl</kbd>+<kbd>-</kbd> /</span> <span class="kc"><kbd>Ctrl</kbd>+<kbd>0</kbd></span></td><td data-i18n="help.key.zoom">本文の文字サイズ 拡大 / 縮小 / 既定</td></tr>
+                    <tr><td class="keys"><span class="kc"><kbd>Ctrl</kbd>+<kbd>Wheel</kbd></span></td><td data-i18n="help.key.fontScaleWheel">本文の文字サイズを拡大 / 縮小</td></tr>
                     <tr><td class="keys"><span class="kc"><kbd>Alt</kbd>+<kbd>←</kbd> /</span> <span class="kc"><kbd>Alt</kbd>+<kbd>→</kbd></span></td><td data-i18n="help.key.history">開いたファイルの履歴を戻る / 進む</td></tr>
                     <tr><td class="keys" data-i18n-html="help.cell.ctrlClick"><span class="kc"><kbd>Ctrl</kbd>+クリック</span></td><td data-i18n="help.key.ctrlClick">.md リンクを新しいプレビュアのウィンドウで開く（通常のクリックは同じウィンドウで遷移）</td></tr>
                     <tr><td class="keys"><kbd>P</kbd></td><td data-i18n="help.key.p">Marp表示の切り替え: スクロール → デッキ → 一覧（一覧でサムネイルをクリックするとデッキで開く）</td></tr>
@@ -13464,6 +13764,22 @@ ${previewClone.outerHTML}
             <table>
                 <tbody id="style-modal-rows"></tbody>
             </table>
+            <!-- The body text scale is style-INDEPENDENT (one value for every
+                 style), so it sits outside the table __renderStyleRows() rebuilds
+                 and outside the per-style #style-vars-pane. -->
+            <div id="font-scale-row">
+                <div class="fs-head">
+                    <span class="fs-label" data-i18n="style.fontScale">本文の文字サイズ（倍率）</span>
+                    <span class="fs-hint" data-i18n="style.fontScaleHint">PDF / HTML 出力にも反映されます</span>
+                </div>
+                <div class="fs-control">
+                    <button type="button" data-act="font-scale-down" data-i18n-attr="title:style.fontScaleDown" title="小さく">−</button>
+                    <span id="font-scale-value">100%</span>
+                    <button type="button" data-act="font-scale-up" data-i18n-attr="title:style.fontScaleUp" title="大きく">＋</button>
+                    <button type="button" class="fs-reset" data-act="font-scale-reset" data-i18n="style.resetDefaults">既定に戻す</button>
+                </div>
+                <div class="fs-fixed" hidden data-i18n="style.fontScaleFixed">このスタイルは版面を字数で決めるため倍率は効きません。⚙ の「文字サイズ」で変更してください</div>
+            </div>
             <div id="style-vars-pane" hidden></div>
         </div>
     </div>

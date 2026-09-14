@@ -114,12 +114,23 @@ def start_harness(port, repo_root, assets_dir):
     return httpd
 
 
-def run_style(browser, base_url, doc, style, vertical):
-    """Build the artifact under `style`, load it back, and diff the two."""
+def run_style(browser, base_url, doc, style, vertical, font_scale=None):
+    """Build the artifact under `style`, load it back, and diff the two.
+
+    `font_scale` seeds the body text multiplier (Ctrl +/-/0). It matters here
+    because buildExportArtifact() snapshots only the document's FIRST <style>,
+    so #font-scale-style has to be carried out explicitly the way the @user-vars
+    overrides are -- and at the default scale that element is empty, which means
+    every other case in this file would pass with the carry missing entirely.
+    """
     ctx = browser.new_context(viewport={"width": 1440, "height": 900})
     page = ctx.new_page()
     page.set_default_timeout(20000)
     page.add_init_script(shoot.style_init_script(style))
+    if font_scale is not None:
+        page.add_init_script(
+            "(() => { try { localStorage.setItem('fontScale', %s); } catch (e) {} })()"
+            % json.dumps(str(font_scale)))
     page.goto(base_url + doc, wait_until="domcontentloaded")
     page.wait_for_function(
         "() => { const p=document.getElementById('preview'); return p && p.children.length>0; }")
@@ -143,6 +154,8 @@ def run_style(browser, base_url, doc, style, vertical):
     art = page2.evaluate(PROBE)
 
     label = style or "既定"
+    if font_scale is not None:
+        label += " @ %sx" % font_scale
     print("\n[%s]" % label)
     check("the artifact renders a #preview", art is not None, art)
     if art is None:
@@ -305,6 +318,11 @@ def main():
             run_style(browser, base, vertical, "tategaki.css", True)
             run_style(browser, base, plain, "parchment.css", False)
             run_style(browser, base, plain, None, False)
+            # The scaled pair. tategaki is included because its own font size
+            # composes with the multiplier, so the artifact has to reproduce a
+            # product of two variables rather than one literal.
+            run_style(browser, base, plain, None, False, font_scale=1.5)
+            run_style(browser, base, vertical, "tategaki.css", True, font_scale=1.25)
             # samples/model3d.md rather than a synthetic doc: it is the file that
             # already exercises every option and every error path, and it keeps this
             # check honest about what ships.
