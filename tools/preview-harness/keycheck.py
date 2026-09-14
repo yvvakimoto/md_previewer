@@ -240,11 +240,18 @@ def main():
             check("Ctrl+Shift++ (the physical US `+`) steps again", fs_px(), "20px")
             press(page, "-", ctrl=True)
             check("Ctrl+- steps back down", fs_px(), "17.6px")
-            # The cap scales with the text so the measure (characters per line) holds.
-            check("...and the column cap follows the text",
+            # ONLY the type scales. A cap that grew with the text would just be the
+            # old browser zoom again (same line, bigger everything); the point of a
+            # layout multiplier is that the 版面 holds its width and a larger size
+            # fits fewer characters on a line.
+            check("...while the column keeps its width",
                   page.evaluate(
                       "() => getComputedStyle(document.getElementById('preview')).maxWidth"),
-                  "986px")
+                  "900px")
+            check("...and so does its padding",
+                  page.evaluate(
+                      "() => getComputedStyle(document.getElementById('preview')).padding"),
+                  "40px 20px")
             press(page, "0", ctrl=True)
             check("Ctrl+0 returns to the default", fs_px(), "16px")
             check("...and clears the stored value", fs_stored(), None)

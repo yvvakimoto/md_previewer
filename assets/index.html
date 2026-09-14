@@ -113,11 +113,15 @@
            A theme opts in by routing its own font-size through the variable;
            one that doesn't is simply never scaled (bunko.css deliberately
            doesn't — its 版面 is defined in CHARACTERS, see styles-theming.md).
-           The padding is chrome and stays unscaled; since box-sizing is
-           border-box the cap has to add it back, or the measure would drift. */
+           ⚠ Only the TYPE scales — max-width and padding stay put, so the 版面
+           keeps its width and a larger size simply fits fewer characters on a
+           line. Scaling the cap alongside the text would reproduce the old
+           browser zoom (same line, bigger everything), which is precisely what
+           this replaced: a reader enlarging the text wants to read the same
+           column more easily, not to widen the document. */
         #preview {
             font-size: calc(var(--md-font-scale, 1) * 16px);
-            max-width: calc(40px + 860px * var(--md-font-scale, 1));
+            max-width: 900px;
             margin: 0 auto;
             padding: 40px 20px;
         }

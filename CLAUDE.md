@@ -163,7 +163,7 @@ than in a detail doc, so that a missed pointer is not fatal.
    **never stamp `data-line` on a wrapper** (`__tableLocate()`'s `lineEl.contains(tableEl)`
    would then match every table and refuse to edit any of them).
 
-5b. **A theme that wants the reader's body-text scale must route its own `font-size` through `var(--md-font-scale, 1)`** — the same "theme declares, the app implements" shape as `--md-page-lines`, and the same multiplier trick as `--md-print-scale`. A theme that does not is simply never scaled, which is a deliberate choice for `bunko.css` (its 版面 is defined in characters, and the PDF rescale would cancel the multiplier out exactly). ⚠ A `rem`-based `max-width` does **not** follow it — `rem` is the root font size, so `hakuro-modern.css` had to multiply its own cap or its measure would shrink as the text grew. Detail: `styles-theming.md`.
+5b. **A theme that wants the reader's body-text scale must route its own `font-size` through `var(--md-font-scale, 1)`** — the same "theme declares, the app implements" shape as `--md-page-lines`, and the same multiplier trick as `--md-print-scale`. A theme that does not is simply never scaled, which is a deliberate choice for `bunko.css` (its 版面 is defined in characters, and the PDF rescale would cancel the multiplier out exactly). ⚠ **Scale the type only** — a theme must NOT route `max-width` / `padding` through the variable: the 版面 holds its width and a larger size fits fewer characters per line. Scaling the cap too just reproduces the browser zoom this replaced. Detail: `styles-theming.md`.
 
 ### Adding a figure engine — the three-part checklist
 
