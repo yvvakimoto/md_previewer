@@ -75,7 +75,8 @@ $libsSentinels = @(
     'libs\feynmark\feynmark.min.js',
     'libs\tikzjax\dist\tikzjax.js',
     'libs\kataskeve\kataskeve.min.js',
-    'libs\kataskeve3d\kataskeve3d.min.js'
+    'libs\kataskeve3d\kataskeve3d.min.js',
+    'libs\three\three.iife.js'
 ) | ForEach-Object { Join-Path $AssetsDir $_ }
 
 $libsMissing = $libsSentinels | Where-Object { -not (Test-Path -LiteralPath $_) }

@@ -20,10 +20,12 @@ __pycache__/
 /assets/libs/kataskeve3d/
 /assets/libs/tikzjax/
 /assets/libs/feynmark/
-#   - esbuild bundles built by tools/build-marp, tools/build-editor & tools/build-markwhen:
+#   - esbuild bundles built by tools/build-marp, tools/build-editor,
+#     tools/build-markwhen & tools/build-three:
 /assets/libs/marp/
 /assets/libs/editor/
 /assets/libs/markwhen/
+/assets/libs/three/
 
 /assets/THIRD_PARTY_LICENSES.txt
 /dist
@@ -43,6 +45,9 @@ tools/build-editor/node_modules/
 tools/build-editor/package-lock.json
 
 # Markwhen bundler (Node toolchain)
+tools/build-three/node_modules/
+tools/build-three/package-lock.json
+
 tools/build-markwhen/node_modules/
 tools/build-markwhen/package-lock.json
 

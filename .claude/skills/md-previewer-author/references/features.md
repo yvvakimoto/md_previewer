@@ -317,6 +317,39 @@ diagram tree {
 ```
 ````
 
+## 3D models — `samples/model3d.md`
+
+A `model3d` fence points at an external 3D **mesh** file and renders it interactively
+(drag to rotate, wheel to zoom). Formats: `stl` (binary or ASCII), `obj` (+ `mtl`),
+`ply`, `gltf`, `glb`, `3mf`. The body is a small YAML spec, or just the bare path.
+
+Size comes from `width:` / `height:` and is never measured from layout, so the figure is
+identical in every view mode and every export. HTML export embeds a PNG snapshot (a canvas
+bitmap does not serialize), so the artifact stays self-contained but is not interactive.
+
+````markdown
+```model3d
+file: data/bracket.stl
+color: "#8ab4f8"
+edges: true
+grid: true
+```
+````
+
+Shortest form:
+
+````markdown
+```model3d
+data/bracket.stl
+```
+````
+
+Keys: `file` (required), `format`, `width` / `height` (680 / 460), `color`, `background`,
+`edges`, `wireframe`, `grid`, `axes`, `camera: {azimuth, elevation, distance}`, `mtl`.
+
+**Not supported**: STEP / IGES / DWG (solid CAD — export a mesh first), Draco- or
+KTX2-compressed glTF, glTF animation playback. Models are capped at 64 MB.
+
 ## KaTeX math — `samples/math.md`
 
 Inline `$ ... $`, display `$$ ... $$`. Right-clicking rendered math offers Copy MathML / LaTeX.

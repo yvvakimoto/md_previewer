@@ -457,6 +457,60 @@ def main():
             check("bookmarks still generated", len(doc.get_toc()) >= 2, doc.get_toc())
             doc.close()
 
+            # ---- model3d ------------------------------------------------------
+            # export.md claims PDF and --export-png need no work for a canvas
+            # figure because both print the LIVE DOM, where the pixels are already
+            # there. That is a claim worth holding to, not assuming: a canvas that
+            # printed blank would look exactly like a correct run in every other
+            # check here. So assert the raster actually lands on the page.
+            print("\n[model3d]")
+            m3doc = os.path.join(repo_root, "samples", "model3d.md").replace(os.sep, "/")
+            load(page, base + m3doc, marp=False)
+            has_gl = page.evaluate("() => !!(window.Model3D && window.Model3D.available())")
+            if not has_gl:
+                print("  SKIP model3d PDF checks: this browser has no WebGL2")
+            else:
+                nblocks = page.evaluate(
+                    "() => document.querySelectorAll('.model3d canvas').length")
+                check("the live document has model3d canvases", nblocks > 0, nblocks)
+                out = os.path.join(tmp, "model3d.pdf")
+                run_export(page, client, out)
+                doc = fitz.open(out)
+                # __beforePdfPrint() must NOT have swapped the canvas for an <img>
+                # the way it does for <video>: that path is PDF-only chrome for
+                # elements that print blank, and a canvas is not one of them.
+                # Chromium embeds the canvas bitmap as a page image.
+                imgs = []
+                for pno in range(doc.page_count):
+                    imgs.extend(doc[pno].get_images(full=True))
+                check("the canvas bitmap is embedded as a PDF image",
+                      len(imgs) >= nblocks,
+                      "got %d image(s) for %d canvas(es)" % (len(imgs), nblocks))
+                # And it must carry real resolution, not a 1x1 placeholder. The
+                # backing store is 2x the 680 logical default, so the widest
+                # embedded image should be comfortably over 680px.
+                widest = max((im[2] for im in imgs), default=0)
+                check("the embedded raster keeps its 2x resolution",
+                      widest >= 680, "widest embedded image is %dpx" % widest)
+                # Finally: something non-white actually printed where the first
+                # figure sits. This is the assertion that fails if the canvas
+                # prints blank.
+                pix = doc[0].get_pixmap(dpi=72)
+                nonwhite = 0
+                for y in range(0, pix.height, 3):
+                    for x in range(0, pix.width, 3):
+                        if not near(tuple(pix.pixel(x, y)[:3]), (255, 255, 255), 8):
+                            nonwhite += 1
+                check("the printed page is not blank where the figure sits",
+                      nonwhite > 200, "only %d non-white sample(s)" % nonwhite)
+                # __afterPdfPrint() must leave the live canvas intact and still
+                # rendered, since the preview keeps running after an export.
+                page.evaluate("() => window.__afterPdfPrint && window.__afterPdfPrint()")
+                check("the live canvases survive the print round trip",
+                      page.evaluate("() => [...document.querySelectorAll('.model3d canvas')]"
+                                    ".every(c => c.width > 0 && c.height > 0)"), True)
+                doc.close()
+
             ctx.close()
             browser.close()
     finally:

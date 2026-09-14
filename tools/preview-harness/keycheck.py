@@ -575,6 +575,97 @@ def main():
             check("kataskeve3d is pixel-identical after a dark/light round trip",
                   page.evaluate(snap3), before)
 
+            # ---------- model3d ----------
+            # Like kataskeve3d the app holds no innerHTML cache for it, so pixels
+            # are the only observable. Unlike kataskeve3d it drives WebGL through a
+            # single shared renderer that lives OUTSIDE #preview, so this block also
+            # carries the leak assertions — the ones that catch the failure mode a
+            # DOM digest can never see: "the app freezes after a few minutes of
+            # editing" because every render leaked a context or a shader program.
+            load("samples/model3d.md")
+            if not page.evaluate("() => !!(window.Model3D && window.Model3D.available())"):
+                # A headless browser with no WebGL2 renders every block as an error
+                # box, which _FIGURES_READY_JS accepts as settled. That is a real
+                # environment, not a failure, so assert the graceful path instead of
+                # the pixels and say so loudly.
+                print("SKIP model3d pixel checks: this browser has no WebGL2")
+                check("model3d degrades to an error box without WebGL2",
+                      page.evaluate("() => document.querySelectorAll("
+                                    "'.model3d .model3d-error').length > 0"), True)
+            else:
+                snapM = ("() => [...document.querySelectorAll('.model3d canvas')]"
+                         ".map(c => c.toDataURL('image/png')).join('\\u0000')")
+                before = page.evaluate(snapM)
+                check("model3d renders pixels", len(before) > 1000, True)
+
+                # The backing store is 2x the logical size (see __MODEL3D_SS): that
+                # is what makes --png-scale 2 rasterize 1:1 instead of resampling,
+                # and what obliges the HTML export to pin the <img> width. If
+                # somebody "simplifies" it to 1x, this is the check that notices.
+                check("model3d canvas backing store is 2x its logical width",
+                      page.evaluate("""() => {
+                          const el = document.querySelector('.model3d');
+                          const cv = el && el.querySelector('canvas');
+                          if (!cv) return null;
+                          return cv.width === Number(el.getAttribute('data-model3d-w')) * 2
+                              && cv.height === Number(el.getAttribute('data-model3d-h')) * 2;
+                      }"""), True)
+
+                press(page, "m")          # -> dark
+                page.wait_for_timeout(500)
+                shoot.wait_for_render(page)
+                dark = page.evaluate(snapM)
+                # The default mesh / edge / grid colours are theme-derived, so the
+                # rendered bitmap cache MUST be theme-salted or the M key would
+                # leave the light-mode pixels on screen.
+                check("model3d bitmap cache is theme-salted", dark != before, True)
+                press(page, "m")          # -> light: must hit the original key
+                page.wait_for_timeout(500)
+                shoot.wait_for_render(page)
+                check("model3d is pixel-identical after a dark/light round trip",
+                      page.evaluate(snapM), before)
+
+                # Sustained-edit soak. Each toggle is a full renderMarkdown, i.e. a
+                # complete #preview innerHTML rebuild plus an unmountAll/mount cycle
+                # for every block — the same shape as a live-edit keystroke.
+                stats0 = page.evaluate("() => window.Model3D._debug.stats()")
+                for _ in range(6):
+                    press(page, "m")
+                    page.wait_for_timeout(120)
+                    shoot.wait_for_render(page)
+                stats1 = page.evaluate("() => window.Model3D._debug.stats()")
+                check("model3d holds exactly one WebGL context after 6 rebuilds",
+                      stats1.get("contexts"), 1)
+                # The real leak: a material created per render would add a
+                # WebGLPrograms entry each time, since a program is only released
+                # when its material is disposed. Flat, not monotonic.
+                check("model3d compiles no new shader programs across rebuilds",
+                      stats1.get("programs") <= stats0.get("programs"), True)
+                check("model3d bitmap cache stays within its cap",
+                      stats1.get("bitmaps") <= 12, True)
+                check("model3d model cache stays within its cap",
+                      stats1.get("models") <= 8, True)
+                check("model3d leaves no pending render handle",
+                      [stats1.get("pendingRaf"), stats1.get("pendingTimeout")],
+                      [False, False])
+                # unmountAll() must leave nothing registered, or the next render
+                # would double-render every block.
+                page.evaluate("() => window.Model3D.unmountAll()")
+                check("model3d unmountAll empties the registry",
+                      page.evaluate("() => window.Model3D._debug.stats().blocks"), 0)
+                check("model3d unmountAll is idempotent",
+                      page.evaluate("() => { window.Model3D.unmountAll();"
+                                    " return window.Model3D._debug.stats().blocks; }"), 0)
+
+            # Every error path in samples/model3d.md must land as an in-place error
+            # box and leave the surrounding document alone.
+            load("samples/model3d.md")
+            check("model3d error blocks render in place",
+                  page.evaluate("() => document.querySelectorAll('.model3d-error').length"), 3)
+            check("model3d error text is localized through err.prefix",
+                  page.evaluate("() => [...document.querySelectorAll('.model3d-error')]"
+                                ".every(e => e.textContent.indexOf('Model3D') === 0)"), True)
+
             errors = page.evaluate("() => (window.__kcErrors || [])")
             check("no uncaught page errors recorded", errors, [])
 

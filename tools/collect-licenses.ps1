@@ -127,6 +127,17 @@ $direct = @(
     Upstream='https://github.com/yvvakimoto/feynmark';
     Path='assets/libs/feynmark/feynmark.min.js';
     LicenseFile='tools/license-texts/feynmark.LICENSE' }
+  # fflate is NOT an npm dependency of anything here, so Add-NpmTree below cannot
+  # see it: three vendors a copy inside its own tarball at
+  # examples/jsm/libs/fflate.module.js, and 3MFLoader imports it by relative path
+  # (a .3mf is a ZIP container), so esbuild inlines it into three.iife.js. The
+  # bundle is built with legalComments:'none', which strips fflate's own MIT
+  # banner - without this hand-written entry the notice would ship nowhere.
+  [pscustomobject]@{ Name='fflate';       Version='0.8.2'; Spdx='MIT';
+    Upstream='https://github.com/101arrowz/fflate';
+    Path='assets/libs/three/three.iife.js';
+    Note='Bundled inside three.iife.js rather than shipped as its own file: three vendors fflate at examples/jsm/libs/fflate.module.js and 3MFLoader imports it to unzip .3mf containers.';
+    LicenseFile='tools/license-texts/fflate.LICENSE' }
   # TikZJax is a WebAssembly build of TeX/pgf/TikZ for the tikzcd / tikz fenced
   # blocks. It is the project's only copyleft dependency and the only one the
   # installer does NOT ship: distributing a compiled GPL binary would oblige us
@@ -242,6 +253,7 @@ function Add-NpmTree {
 Add-NpmTree 'Marp Core IIFE bundle (assets/libs/marp/marp.iife.js)' (Join-Path $RepoRoot 'tools/build-marp/node_modules')
 Add-NpmTree 'CodeMirror editor IIFE bundle (assets/libs/editor/editor.iife.js)' (Join-Path $RepoRoot 'tools/build-editor/node_modules')
 Add-NpmTree 'Markwhen parser IIFE bundle (assets/libs/markwhen/markwhen.iife.js)' (Join-Path $RepoRoot 'tools/build-markwhen/node_modules')
+Add-NpmTree 'three.js IIFE bundle (assets/libs/three/three.iife.js)' (Join-Path $RepoRoot 'tools/build-three/node_modules')
 
 # ---- Write file ----------------------------------------------------------
 $dir = Split-Path -Parent $OutFile

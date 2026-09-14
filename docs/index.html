@@ -323,6 +323,10 @@
       <span data-i18n="lib.feynmark">ファインマン図</span><em class="lic">MIT</em>
     </li>
     <li class="feat feat-ext">
+      <a href="https://threejs.org/" target="_blank" rel="noopener noreferrer">three.js</a>
+      <span data-i18n="lib.three">3D メッシュ（STL ほか）の表示</span><em class="lic">MIT</em>
+    </li>
+    <li class="feat feat-ext">
       <a href="https://codemirror.net/" target="_blank" rel="noopener noreferrer">CodeMirror 6</a>
       <span data-i18n="lib.cm">内蔵エディタの土台</span><em class="lic">MIT</em>
     </li>
@@ -627,6 +631,23 @@ diagram tree {
         <figure class="g-out">
           <img loading="lazy" src="assets/img/gallery/feynman.webp" style="--g-cap: 261px" width="538" height="322"
                data-i18n-attr="alt:gal.feyAlt" alt="電子と陽電子が光子を介してミューオン対になるツリーレベルの図">
+        </figure>
+      </div>
+    </article>
+
+    <article class="g-card g-12">
+      <h3 class="g-title"><span data-i18n="gal.m3dT">3D モデル</span><em class="g-tag">model3d</em></h3>
+      <div class="g-body">
+<pre class="g-src"><code>```model3d
+file: data/bracket.stl
+width: 480
+height: 320
+edges: true
+grid: true
+```</code></pre>
+        <figure class="g-out">
+          <img loading="lazy" src="assets/img/gallery/model3d.webp" style="--g-cap: 504px" width="1008" height="510"
+               data-i18n-attr="alt:gal.m3dAlt" alt="STL ファイルから読み込んだ L 字ブラケットを、稜線と床グリッドつきで立体表示した図">
         </figure>
       </div>
     </article>

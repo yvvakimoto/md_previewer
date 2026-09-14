@@ -1140,6 +1140,54 @@
             color: #ffa198;
         }
 
+        /* model3d — 3D mesh files (STL/OBJ/PLY/glTF/GLB/3MF) via the bundled
+           three.js facade (libs/three/three.iife.js, MIT). Like kataskeve3d this
+           is a <canvas>, so the img rule serves the HTML export where
+           buildExportArtifact() swaps in a PNG (a canvas bitmap does not
+           serialize) — but UNLIKE kataskeve3d the backing store is 2x the
+           logical size, so the export must also pin the <img> width or the PNG
+           would display at double size. See __MODEL3D_SS in the script below.
+           display:block means text-align cannot centre the box; margin:0 auto
+           does — which is also why .model3d is deliberately NOT added to the
+           .marp-fig / .md-vcenter selector lists above, exactly as kataskeve3d
+           is not. touch-action:none stops the WebView2 pan/zoom gesture from
+           eating the OrbitControls drag. */
+        .model3d {
+            margin: 16px 0;
+            text-align: center;
+        }
+        .model3d canvas,
+        .model3d img {
+            max-width: 100%;
+            height: auto;
+            display: block;
+            margin: 0 auto;
+        }
+        .model3d canvas {
+            touch-action: none;
+            cursor: grab;
+        }
+        .model3d canvas:active {
+            cursor: grabbing;
+        }
+        .model3d-error {
+            margin: 16px 0;
+            padding: 12px 16px;
+            border: 1px solid #d73a49;
+            border-radius: 4px;
+            background: #ffeef0;
+            color: #b31d28;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', monospace;
+            font-size: 0.9em;
+            white-space: pre-wrap;
+            text-align: left;
+        }
+        body.dark-mode .model3d-error {
+            background: #2a0d10;
+            border-color: #f85149;
+            color: #ffa198;
+        }
+
         /* Feynman diagrams (feynmark, MIT, assets/libs/feynmark/,
            https://github.com/yvvakimoto/feynmark) — renders SVG with
            stroke/fill: currentColor, so dark mode needs no re-render (cache is
@@ -1878,8 +1926,8 @@
             }
 
             /* Also prevent breaks in mermaid diagrams, math expressions and
-               kataskeve geometry figures */
-            .mermaid, .katex-display, .kataskeve, .kataskeve3d {
+               kataskeve geometry / model3d mesh figures */
+            .mermaid, .katex-display, .kataskeve, .kataskeve3d, .model3d {
                 break-inside: avoid;
                 page-break-inside: avoid;
             }
@@ -2984,6 +3032,20 @@
             'err.prefix':          { ja: '{engine} エラー: ', en: '{engine} error: ' },
             'err.libLoadFail':     { ja: '{engine} のライブラリを読み込めませんでした。インストールが不完全な可能性があります。',
                                      en: 'Could not load the {engine} library. The installation may be incomplete.' },
+            'err.model3dNoWebgl':  { ja: 'WebGL2 が利用できないため 3D モデルを表示できません（グラフィックドライバか設定を確認してください）',
+                                     en: 'WebGL2 is unavailable, so the 3D model cannot be shown (check the graphics driver or settings)' },
+            'err.model3dNoFile':   { ja: '`file:` が必要です（.stl / .obj / .ply / .gltf / .glb / .3mf への相対パス）',
+                                     en: '`file:` is required (a relative path to a .stl / .obj / .ply / .gltf / .glb / .3mf)' },
+            'err.model3dFormat':   { ja: '未対応の形式です: .{ext}（対応: {list}）',
+                                     en: 'Unsupported format: .{ext} (supported: {list})' },
+            'err.model3dTooLarge': { ja: 'モデルが大きすぎます（上限 {mb} MB）',
+                                     en: 'The model is too large (limit {mb} MB)' },
+            'err.model3dTimeout':  { ja: 'モデルの読み込みがタイムアウトしました',
+                                     en: 'Loading the model timed out' },
+            'err.model3dMissing':  { ja: '`{file}` を読み込めませんでした（ファイルが見つかりません）',
+                                     en: 'Could not load `{file}` (file not found)' },
+            'err.model3dDraco':    { ja: '圧縮された glTF（Draco / KTX2）には未対応です。非圧縮で書き出してください。',
+                                     en: 'Compressed glTF (Draco / KTX2) is not supported. Re-export without compression.' },
             'err.tikzMissing':     { ja: 'TikZ コンポーネントが未インストールです。インストーラーを再実行し、「TikZ・可換図式コンポーネントをダウンロード」にチェックを入れてください。',
                                      en: 'The TikZ component is not installed. Re-run the installer and tick “Download the TikZ / commutative-diagram component”.' },
             'err.tikzLoadFail':    { ja: 'TikZ エンジンを読み込めませんでした（libs/tikzjax）',
@@ -4405,6 +4467,13 @@
             // us in a broken render.
             try { await window.kataskeve3d.ensureWasm(); } catch (e) {}
         }
+        // model3d — 3D mesh files (STL/OBJ/PLY/glTF/GLB/3MF) for ```model3d blocks.
+        // window.Model3D is OUR OWN facade over three.js (tools/build-three/), not
+        // three's namespace: the whole renderer, both caches and the camera state
+        // live inside the bundle, deliberately outside #preview so they survive the
+        // innerHTML rebuild. It has no auto-init to suppress and injects no CSS, so
+        // this needs neither an attrs argument nor an initialize() call.
+        function ensureModel3d() { return loadLib('libs/three/three.iife.js'); }
         // User-defined Marp theme CSS files discovered by the Rust host in
         // assets/marp/*.css. Fetched once, cached, and registered with
         // marp.themeSet.add() on each render. Themes must begin with a
@@ -4591,6 +4660,7 @@
         let kataskeveCounter = 0;
         let kataskeve3dCounter = 0;
         let feynmanCounter = 0;
+        let model3dCounter = 0;
         let currentMarkdown = '';
         // Un-embedded source markdown (relative image paths intact). Mirrors
         // `currentMarkdown` but without base64-embedded images, so host-bound
@@ -5527,6 +5597,44 @@
                         cloneK3[i].appendChild(img);
                     } catch (e) {
                         console.warn('export: failed to rasterize kataskeve3d canvas', e);
+                    }
+                }
+            }
+
+            // Rasterize model3d canvases, on the same pairing-by-index shape as
+            // kataskeve3d above and for the same reason (a canvas serializes without
+            // its bitmap, and there is no offline-safe three.js CDN story to hand an
+            // artifact the way plotly gets one).
+            //
+            // ⚠ Do NOT copy kataskeve3d's "toDataURL is safe: CPU rasterizer, never
+            // origin-tainted" reasoning — it does not transfer. This canvas holds a
+            // blit of a WebGL render, and it is readable for two different reasons:
+            // the shared renderer sets preserveDrawingBuffer, and every texture
+            // arrives same-origin through /userfile/, so the canvas is never tainted.
+            //
+            // ⚠ The width attribute is required, and this is the one place model3d
+            // differs from kataskeve3d: the backing store is __MODEL3D_SS x the
+            // logical size, so the PNG's intrinsic width is 2x and would display at
+            // double size. It is READ OFF THE CLONE's data-model3d-w rather than
+            // measured, because __restoreMarpExportView() has already run by here and
+            // in deck mode the live canvas sits in a display:none slide whose
+            // getBoundingClientRect() is 0x0.
+            {
+                const liveM3 = Array.from(preview.querySelectorAll('.model3d'));
+                const cloneM3 = Array.from(previewClone.querySelectorAll('.model3d'));
+                for (let i = 0; i < cloneM3.length && i < liveM3.length; i++) {
+                    const cv = liveM3[i].querySelector('canvas');
+                    if (!cv || !cv.width) continue; // an error block — leave as-is
+                    try {
+                        const img = document.createElement('img');
+                        img.src = cv.toDataURL('image/png');
+                        img.alt = 'model3d';
+                        const w = cloneM3[i].getAttribute('data-model3d-w');
+                        if (w) img.setAttribute('width', w);
+                        cloneM3[i].innerHTML = '';
+                        cloneM3[i].appendChild(img);
+                    } catch (e) {
+                        console.warn('export: failed to rasterize model3d canvas', e);
                     }
                 }
             }
@@ -9514,6 +9622,198 @@ ${previewClone.outerHTML}
             });
         }
 
+
+        // ---- model3d: 3D mesh files (STL/OBJ/PLY/glTF/GLB/3MF) via three.js ----
+        // The engine itself is window.Model3D (tools/build-three/entry.js); read the
+        // header comment there before changing any of this. The short version:
+        //
+        //  * ONE WebGLRenderer for the whole page, on a detached canvas, living
+        //    outside #preview. Each block gets a plain 2D <canvas> and the GL result
+        //    is blitted into it with drawImage. That is what makes the captured
+        //    surface a 2D canvas whose bitmap toDataURL() reads back — the same
+        //    reason kataskeve3d's export path works — and it means block count and
+        //    keystroke count never multiply WebGL contexts.
+        //  * Rendering is ON DEMAND (no standing rAF loop) with a synchronous flush,
+        //    so the hidden window --export-png renders into still gets real pixels.
+        //  * There is NO entry in the __diagCacheHit scheme, for exactly the reason
+        //    kataskeve3d has none: a <canvas> serializes without its bitmap, so
+        //    round-tripping el.innerHTML yields a permanently blank box. The engine
+        //    caches rendered BITMAPS internally instead, keyed with a theme salt.
+        //    Hence the name ...Blocks, not ...Cached.
+        //
+        // Fence disambiguation needs NO lookahead here: `model3d` shares no prefix
+        // with any other fence, so the plain \b in needsModel3d is sufficient and
+        // the kataskeve/kataskeve3d gymnastics do not apply. Do not add one.
+
+        // Must match SS in tools/build-three/entry.js. The backing store is 2x the
+        // logical size so that --png-scale 2 rasterizes 1:1 instead of resampling.
+        const __MODEL3D_SS = 2;
+
+        function __model3dParseSpec(raw) {
+            let spec = window.jsyaml ? jsyaml.load(raw) : JSON.parse(raw);
+            // The shortest form is a bare path on its own line, which YAML resolves
+            // to a plain string rather than a mapping.
+            if (typeof spec === 'string') spec = { file: spec.trim() };
+            if (!spec || typeof spec !== 'object' || Array.isArray(spec)) {
+                const e = new Error('empty spec');
+                e.noFile = true;
+                throw e;
+            }
+            if (!spec.file || typeof spec.file !== 'string') {
+                const e = new Error('no file');
+                e.noFile = true;
+                throw e;
+            }
+            return spec;
+        }
+
+        // Build an ABSOLUTE /userfile/ URL plus its directory, even when the path
+        // does not escape the document directory (the case where toUserfileUrl()
+        // would keep it relative).
+        //
+        // ⚠ The absoluteness is load-bearing for glTF, not cosmetic: three resolves
+        // a .gltf's sibling .bin / textures with LoaderUtils.extractUrlBase(), which
+        // is plain string manipulation on this URL. From a shallow base a uri of
+        // "../tex/x.png" becomes /userfile/../tex/x.png, and the URL parser then
+        // collapses the `..` PAST the /userfile/ prefix (-> /tex/x.png), losing the
+        // route — the same trap relPathEscapesBase() guards for images. An absolute
+        // Windows path is always deep enough that `..` cannot reach the prefix.
+        // It must also stay ORIGIN-RELATIVE (/userfile/…, never
+        // https://app.localhost/userfile/…): resolveURL()'s host-relative branch
+        // fires on an https base and would truncate it to the bare origin.
+        function __model3dUrls(filePath) {
+            const fwd = String(filePath).replace(/\\/g, '/');
+            let abs = fwd;
+            if (!/^[A-Za-z]:\//.test(fwd) && !fwd.startsWith('/')) {
+                abs = currentFilePath
+                    ? resolveRelativePath(fwd).replace(/^file:\/\/\//, '')
+                    : fwd;
+            }
+            const url = '/userfile/' + encodePathForUserfile(abs);
+            const dir = url.slice(0, url.lastIndexOf('/') + 1);
+            return { url: url, resourcePath: dir, abs: abs };
+        }
+
+        function __model3dWatch(relPath) {
+            // Reuses the plotly CSV watch. The Rust side is a plain
+            // HashSet<PathBuf> with no CSV-specific handling, so it tracks a .stl
+            // just as well — the `csv` in the name is historical. This is what makes
+            // a re-export from a CAD tool show up without reopening the document
+            // (paired with the model cache being keyed on Last-Modified).
+            // ⚠ Known limit, inherited: the Rust handler resolves with a plain
+            // join() and does not normalize `..`, so a path containing `../` is
+            // fetched fine but does not live-reload.
+            try {
+                if (window.ipc && typeof window.ipc.postMessage === 'function') {
+                    window.ipc.postMessage('csvwatch:' + relPath);
+                }
+            } catch (e) {}
+        }
+
+        function __model3dErrorHtml(err, file) {
+            const P = t('err.prefix', { engine: 'Model3D' });
+            let body;
+            if (err && err.noWebgl) {
+                body = t('err.model3dNoWebgl');
+            } else if (err && err.noFile) {
+                body = t('err.model3dNoFile');
+            } else if (err && err.badFormat) {
+                body = t('err.model3dFormat', {
+                    ext: err.badFormat,
+                    list: (window.Model3D ? window.Model3D.supportedFormats : []).join(', '),
+                });
+            } else if (err && err.tooLarge) {
+                body = t('err.model3dTooLarge', { mb: Math.round(err.tooLarge.max / 1048576) });
+            } else if (err && err.name === 'AbortError') {
+                body = t('err.model3dTimeout');
+            } else if (err && (err.status === 404 || /404/.test(String(err.message || '')))) {
+                // three's FileLoader HttpError carries .response.status; our own
+                // bounded fetch sets .status. Either way, naming the path is the one
+                // fact worth having here — same reasoning as plotly's message.
+                body = t('err.model3dMissing', { file: file || '?' });
+            } else if (err && /DRACOLoader|KHR_draco|KHR_texture_basisu|KTX2/i.test(String(err.message || ''))) {
+                body = t('err.model3dDraco');
+            } else {
+                body = String((err && err.message) || err);
+            }
+            return '<div class="model3d-error">' + P + escapeHtml(body) + '</div>';
+        }
+
+        async function renderModel3dBlocks(root) {
+            const els = Array.from(root.querySelectorAll('[data-model3d]'));
+            if (els.length === 0) return;
+            const M = window.Model3D;
+            if (!M) {
+                __ksFailAll(root, '[data-model3d]', 'model3d-error', 'Model3D');
+                return;
+            }
+            const dark = document.body.classList.contains('dark-mode');
+            // Colours are resolved HERE, not in the bundle, so the engine stays
+            // theme-agnostic and index.html keeps owning the palette. The rendered
+            // bitmap cache is salted with this same flag, so the M key invalidates
+            // it and re-renders; nothing else is needed for dark mode.
+            const ink = dark ? '#c9d1d9' : '#2b3440';
+            const grid = dark ? '#3a4048' : '#c8ccd4';
+            for (let i = 0; i < els.length; i++) {
+                const el = els[i];
+                const raw = __diagSource(el, 'data-model3d-source');
+                let filePath = '';
+                try {
+                    const spec = __model3dParseSpec(raw);
+                    filePath = spec.file;
+                    const urls = __model3dUrls(spec.file);
+                    el.innerHTML = '';
+                    await M.mount(el, {
+                        url: urls.url,
+                        resourcePath: urls.resourcePath,
+                        mtlUrl: spec.mtl ? __model3dUrls(spec.mtl).url : null,
+                        // Sub-resources are resolved inside three, bypassing
+                        // toUserfileUrl(); without this a Japanese folder or texture
+                        // name 404s (and %E6 -> %25E6 is unrecoverable in Rust).
+                        urlModifier: (u) => (/^\/userfile\//i.test(u)
+                            ? '/userfile/' + encodePathForUserfile(u.slice('/userfile/'.length))
+                            : u),
+                        format: spec.format ? String(spec.format).toLowerCase() : null,
+                        width: spec.width,
+                        height: spec.height,
+                        color: spec.color || (dark ? '#9bb0c9' : '#8b9bb0'),
+                        edgeColor: spec.edgeColor || ink,
+                        gridColor: spec.gridColor || grid,
+                        // Transparent by default so the theme background shows
+                        // through, exactly like kataskeve3d.
+                        bgColor: spec.background || '#000000',
+                        bgAlpha: spec.background ? 1 : 0,
+                        edges: !!spec.edges,
+                        wireframe: !!spec.wireframe,
+                        grid: !!spec.grid,
+                        axes: !!spec.axes,
+                        azimuth: spec.camera && spec.camera.azimuth,
+                        elevation: spec.camera && spec.camera.elevation,
+                        cameraDistance: spec.camera && spec.camera.distance,
+                        themeSalt: dark ? 'd' : 'l',
+                        // Ordinal disambiguates two byte-identical fences so they do
+                        // not share one camera state.
+                        srcKey: M.hashString(raw) + '|' + i,
+                        interactive: !window.__captureConfig,
+                    });
+                    __model3dWatch(spec.file);
+                } catch (err) {
+                    // Errors are NOT cached anywhere, so a half-typed spec recovers
+                    // on the next keystroke and a setUiLang() re-render cannot serve
+                    // a stale-language message.
+                    el.innerHTML = __model3dErrorHtml(err, filePath);
+                }
+            }
+        }
+
+        function __model3dUnmount() {
+            // Must run BEFORE #preview is rebuilt, from BOTH pipelines. Releases the
+            // OrbitControls document-level drag listeners (the real leak) and frees
+            // the outgoing canvases' backing stores. Cheap and idempotent when there
+            // are no blocks, which matters because it runs on every keystroke.
+            try { if (window.Model3D) window.Model3D.unmountAll(); } catch (e) {}
+        }
+
         // ---- Feynman diagrams (feynmark, https://github.com/yvvakimoto/feynmark) ----
         // feynmark is a Mermaid-style declarative Feynman-diagram renderer: a
         // ```feynman fence holds one or more `diagram { ... }` / `equation { ... }`
@@ -10369,6 +10669,7 @@ ${previewClone.outerHTML}
             const { html, css } = marp.render(markdown);
 
             __abcStop(); // see the note at the normal pipeline's rebuild
+            __model3dUnmount();
             preview.innerHTML = '<style id="marp-style">' + css + '</style>' + html;
             // The theme's ⚙ overrides (--theme-color) ride along with every render.
             __refreshMarpStyleVars(getMarpTheme(currentMarkdown) || 'default');
@@ -10693,6 +10994,13 @@ ${previewClone.outerHTML}
                     div.id = 'marp-feynman-' + (feynmanCounter++);
                     div.setAttribute('data-feynman-source', encodeURIComponent(code.textContent));
                     pre.replaceWith(div);
+                } else if (lang === 'model3d') {
+                    const div = document.createElement('div');
+                    div.className = 'model3d';
+                    div.id = 'marp-model3d-' + (model3dCounter++);
+                    div.setAttribute('data-model3d', '1');
+                    div.setAttribute('data-model3d-source', encodeURIComponent(code.textContent));
+                    pre.replaceWith(div);
                 }
             });
 
@@ -10727,7 +11035,7 @@ ${previewClone.outerHTML}
             };
             const isFigureChild = (el) => {
                 if (el.nodeType !== 1) return false;
-                if (el.matches('.mermaid, .csv-table, table, .abc-notation, .plotly-block, .markwhen-timeline, .tikzcd-diagram, .tikz-diagram, .kataskeve, .kataskeve3d, .feynman-block, video, iframe.video-embed, .video-embed')) return true;
+                if (el.matches('.mermaid, .csv-table, table, .abc-notation, .plotly-block, .markwhen-timeline, .tikzcd-diagram, .tikz-diagram, .kataskeve, .kataskeve3d, .model3d, .feynman-block, video, iframe.video-embed, .video-embed')) return true;
                 if (isImageParagraph(el)) return true;
                 return false;
             };
@@ -10837,6 +11145,20 @@ ${previewClone.outerHTML}
             if (preview.querySelector('[data-kataskeve3d]')) {
                 await ensureKataskeve3d();
                 renderKataskeve3dBlocks(preview);
+            }
+
+            // model3d meshes in slides. Awaited like the kataskeve pair, and
+            // correct even though every slide is still display:none here: the size
+            // comes from the fence spec, so nothing is measured — which is exactly
+            // why a clientWidth-based design would have produced a blank slide 2 in
+            // deck mode and a differently-sized figure in list mode.
+            if (preview.querySelector('[data-model3d]')) {
+                try {
+                    await Promise.all([ensureJsYaml(), ensureModel3d()]);
+                    await renderModel3dBlocks(preview);
+                } catch (e) {
+                    __ksFailAll(preview, '[data-model3d]', 'model3d-error', 'Model3D');
+                }
             }
 
             // Render Feynman diagrams in slides (memoized; feynmark also needs
@@ -11089,6 +11411,7 @@ ${previewClone.outerHTML}
             tikzCounter = 0;
             kataskeveCounter = 0;
             kataskeve3dCounter = 0;
+            model3dCounter = 0;
 
             // A render replaces #preview wholesale, so an in-flight table edit cannot
             // survive it. Abandon the session and tell the user rather than letting the
@@ -11176,6 +11499,7 @@ ${previewClone.outerHTML}
             const needsKataskeve = /```kataskeve(?!3d)\b/.test(processedMarkdown);
             const needsKataskeve3d = /```kataskeve3d\b/.test(processedMarkdown);
             const needsFeynman = /```feynman\b/.test(processedMarkdown);
+            const needsModel3d = /```model3d\b/.test(processedMarkdown);
             const mermaidReady = needsMermaid ? ensureMermaid() : null;
             const katexReady = needsKatex ? ensureKatex() : null;
             const plotlyReady = needsPlotly ? Promise.all([ensureJsYaml(), ensurePlotly()]) : null;
@@ -11188,6 +11512,8 @@ ${previewClone.outerHTML}
             // document's own $...$ math is present — a feynman fence's own labels
             // ($e^-$-style) use it too.
             const feynmanReady = needsFeynman ? Promise.all([ensureFeynmark(), ensureKatex()]) : null;
+            // js-yaml parses the fence's spec, the same way plotly uses it.
+            const model3dReady = needsModel3d ? Promise.all([ensureJsYaml(), ensureModel3d()]) : null;
 
             // Flush the prior render's tracked CSV files so the Rust watcher only
             // monitors files referenced by the document we're about to render.
@@ -11292,6 +11618,10 @@ ${previewClone.outerHTML}
                 const id = `kataskeve-${kataskeveCounter++}`;
                 return `<div class="kataskeve" id="${id}" data-kataskeve="1" data-kataskeve-source="${encodeURIComponent(decodeEntities(code))}"></div>`;
             });
+            html = html.replace(/<pre><code class="language-model3d">([\s\S]*?)<\/code><\/pre>/g, (match, code) => {
+                const id = `model3d-${model3dCounter++}`;
+                return `<div class="model3d" id="${id}" data-model3d="1" data-model3d-source="${encodeURIComponent(decodeEntities(code))}"></div>`;
+            });
 
             // Render math expressions (await katex if needed). No element list:
             // html is still a string here, and renderMathExpressions() already
@@ -11337,6 +11667,7 @@ ${previewClone.outerHTML}
             // Playback holds live references into #preview; the rebuild below
             // invalidates them, so stop before the DOM under it disappears.
             __abcStop();
+            __model3dUnmount();
             preview.innerHTML = html;
 
             // Convert video / YouTube image-syntax embeds, then size remaining images.
@@ -11415,6 +11746,28 @@ ${previewClone.outerHTML}
                     renderKataskeve3dBlocks(preview);
                 } catch (e) {
                     __ksFailAll(preview, '[data-kataskeve3d]', 'kataskeve3d-error', 'Kataskeve3D');
+                }
+            }
+
+            // Render model3d meshes. Same strict `ready || ensureX()` inside a
+            // try/catch as the kataskeve pair above, for the same tilde-fence reason:
+            // ~~~model3d yields class="language-model3d" from marked (hence a host
+            // div) but escapes the ```-anchored needsModel3d regex, so model3dReady
+            // is null and window.Model3D is undefined — and an escaping TypeError
+            // would skip pagination, the TOC and __emitRenderDone for the whole
+            // document, hanging --export-png on an eternal splash.
+            //
+            // Awaited (not fire-and-forget like tikz) because --export-png only
+            // captures what landed before __emitRenderDone. No __nextPaint() beat is
+            // needed: the figure is sized from the fence spec, never measured from
+            // layout, which is also what keeps it identical across deck / list /
+            // scroll views and every export surface.
+            if (preview.querySelector('[data-model3d]')) {
+                try {
+                    await (model3dReady || Promise.all([ensureJsYaml(), ensureModel3d()]));
+                    await renderModel3dBlocks(preview);
+                } catch (e) {
+                    __ksFailAll(preview, '[data-model3d]', 'model3d-error', 'Model3D');
                 }
             }
 

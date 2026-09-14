@@ -100,7 +100,14 @@ _FIGURES_READY_JS = """() => {
   // feynmark emits inline SVG synchronously and, like kataskeve, parks no
   // loading placeholder -- so no spinner trap and no wait budget of its own.
   const fey = done('.feynman-block', m => m.querySelector('svg') || m.querySelector('.feynman-error'));
-  return mer && mw && abc && pl && tkz && ks2 && ks3 && fey;
+  // model3d blits a WebGL render into a 2D <canvas>, so — like kataskeve3d —
+  // its arm must not look for an <svg>. It parks no loading placeholder and is
+  // awaited before __emitRenderDone, so it needs no wait budget of its own.
+  // The .model3d-error half of the arm is load-bearing here in a way the other
+  // engines' is not: a headless browser without WebGL2 renders every block as
+  // an error box, and that is a legitimately settled state, not a hang.
+  const m3d = done('.model3d', m => m.querySelector('canvas') || m.querySelector('.model3d-error'));
+  return mer && mw && abc && pl && tkz && ks2 && ks3 && fey && m3d;
 }"""
 
 _TIKZ_SELECTOR_JS = "() => !!document.querySelector('.tikzcd-diagram, .tikz-diagram')"

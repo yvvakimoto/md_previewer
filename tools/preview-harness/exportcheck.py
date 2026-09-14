@@ -162,6 +162,103 @@ def run_style(browser, base_url, doc, style, vertical):
     ctx.close()
 
 
+def run_model3d(browser, base_url, doc):
+    """The ```model3d rasterization pass.
+
+    A <canvas> serializes without its bitmap, so the artifact would carry an
+    empty box unless buildExportArtifact() swaps in a PNG <img>. Two things make
+    this different from kataskeve3d's otherwise identical pass and are the reason
+    it gets its own checks:
+
+      * the backing store is 2x the logical size, so the PNG's intrinsic width is
+        2x and the <img> MUST carry an explicit width or the figure renders at
+        double size;
+      * that width is read off the clone's data-model3d-w rather than measured,
+        because by export time the live canvas may sit in a display:none slide.
+
+    The artifact must also stay fully self-contained: unlike plotly there is no
+    CDN script to re-render from, so a request to anything external is a bug.
+    """
+    ctx = browser.new_context(viewport={"width": 1280, "height": 900})
+    page = ctx.new_page()
+    page.set_default_timeout(30000)
+    page.goto(base_url + doc, wait_until="domcontentloaded")
+    page.wait_for_function(
+        "() => { const p=document.getElementById('preview'); return p && p.children.length>0; }")
+    shoot.wait_for_render(page)
+
+    print("\n[model3d]")
+    if not page.evaluate("() => !!(window.Model3D && window.Model3D.available())"):
+        print("SKIP model3d export checks: this browser has no WebGL2")
+        ctx.close()
+        return
+
+    live = page.evaluate("""() => {
+        const els = [...document.querySelectorAll('.model3d')];
+        return els.map(el => {
+            const cv = el.querySelector('canvas');
+            return {
+                w: Number(el.getAttribute('data-model3d-w')) || null,
+                canvasW: cv ? cv.width : null,
+            };
+        }).filter(r => r.canvasW);
+    }""")
+    check("the live document has model3d canvases to rasterize", len(live) > 0, live)
+
+    html = page.evaluate("async () => (await buildExportArtifact({})).html")
+
+    failed = []
+    external = []
+    page2 = ctx.new_page()
+    page2.set_default_timeout(30000)
+    page2.route("**" + ARTIFACT_PATH,
+                lambda route: route.fulfill(status=200, content_type="text/html; charset=utf-8", body=html))
+    page2.on("requestfailed", lambda r: failed.append(r.url))
+    page2.on("request", lambda r: external.append(r.url)
+             if not r.url.startswith("http://127.0.0.1") and not r.url.startswith("data:")
+             else None)
+    page2.goto(base_url.split("/index.html")[0] + ARTIFACT_PATH, wait_until="load")
+    page2.wait_for_timeout(600)
+
+    art = page2.evaluate("""() => {
+        const els = [...document.querySelectorAll('.model3d')];
+        return els.map(el => {
+            const img = el.querySelector('img');
+            if (!img) return { img: false };
+            return {
+                img: true,
+                dataUri: (img.getAttribute('src') || '').startsWith('data:image/png'),
+                widthAttr: Number(img.getAttribute('width')) || null,
+                naturalW: img.naturalWidth,
+                complete: img.complete && img.naturalWidth > 0,
+            };
+        });
+    }""")
+    stray = page2.evaluate("() => document.querySelectorAll('canvas').length")
+    check("no <canvas> element survives into the artifact", stray == 0,
+          "%d canvas element(s) left" % stray)
+    imgs = [a for a in art if a.get("img")]
+    check("every rasterized block became an <img>", len(imgs) == len(live),
+          "got %d img(s) for %d canvas(es)" % (len(imgs), len(live)))
+    check("each <img> carries an inline data:image/png URI",
+          all(a["dataUri"] for a in imgs), imgs[:2])
+    check("each <img> actually decodes", all(a["complete"] for a in imgs), imgs[:2])
+    want_w = [r["w"] for r in live]
+    got_w = [a["widthAttr"] for a in imgs]
+    check("each <img> pins its logical width", got_w == want_w,
+          "got %r, want %r" % (got_w, want_w))
+    # This is the assertion that catches dropping the width attribute: the PNG is
+    # intrinsically 2x, so without the pin the figure would render twice as wide.
+    got_n = [a["naturalW"] for a in imgs]
+    want_n = [a["widthAttr"] * 2 for a in imgs if a["widthAttr"]]
+    check("each PNG is intrinsically 2x the pinned width (the SS factor)",
+          got_n == want_n, "got %r, want %r" % (got_n, want_n))
+    check("the artifact requests nothing that fails", not failed, failed[:3])
+    check("the artifact requests nothing external (no CDN, fully self-contained)",
+          not external, external[:3])
+    ctx.close()
+
+
 def main():
     ap = argparse.ArgumentParser(description="HTML export fidelity check (preview-harness)")
     ap.add_argument("--channel", default=None, help="browser channel: msedge | chrome")
@@ -208,6 +305,10 @@ def main():
             run_style(browser, base, vertical, "tategaki.css", True)
             run_style(browser, base, plain, "parchment.css", False)
             run_style(browser, base, plain, None, False)
+            # samples/model3d.md rather than a synthetic doc: it is the file that
+            # already exercises every option and every error path, and it keeps this
+            # check honest about what ships.
+            run_model3d(browser, base, os.path.join(repo_root, "samples", "model3d.md").replace("\\", "/"))
 
             browser.close()
     finally:
