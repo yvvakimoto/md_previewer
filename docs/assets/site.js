@@ -143,6 +143,7 @@
     'lib.kataskeve': { ja: '平面幾何の作図', en: 'Plane-geometry constructions' },
     'lib.kataskeve3d': { ja: '立体の陰線処理とペン画', en: 'Hidden-line solids drawn in ink' },
     'lib.feynmark':  { ja: 'ファインマン図', en: 'Feynman diagrams' },
+    'lib.three':     { ja: '3D メッシュ（STL ほか）の表示', en: '3D mesh display (STL and friends)' },
     'lib.cm':        { ja: '内蔵エディタの土台', en: 'The built-in editor’s base' },
     'lib.cmvim':     { ja: 'Vim キーバインド', en: 'Vim keybindings' },
     'lib.dendenT':   { ja: 'でんでんマークダウン', en: 'Denden Markdown' },
@@ -222,6 +223,9 @@
     'gal.feyT':      { ja: 'ファインマン図', en: 'Feynman diagram' },
     'gal.feyAlt':    { ja: '電子と陽電子が光子を介してミューオン対になるツリーレベルの図',
                        en: 'A tree-level diagram: an electron and a positron annihilating into a muon pair through a photon' },
+    'gal.m3dT':      { ja: '3D モデル', en: '3D model' },
+    'gal.m3dAlt':    { ja: 'STL ファイルから読み込んだ L 字ブラケットを、稜線と床グリッドつきで立体表示した図',
+                       en: 'An L-bracket loaded from an STL file, shown in 3D with its edges and a floor grid' },
 
     /* Shortcuts section. The 21 preview rows mirror the app's OWN help-modal
        strings (__I18N 'help.key.*' in assets/index.html) and 19 of them are
@@ -263,7 +267,10 @@
     'keys.n':         { ja: 'セクション自動番号の切り替え', en: 'Toggle automatic section numbering' },
     'keys.l':         { ja: '行番号の表示切り替え', en: 'Toggle line numbers' },
     'keys.w':         { ja: '全幅レイアウトの切り替え', en: 'Toggle full-width layout' },
-    'keys.zoom':      { ja: 'ズームイン / アウト / リセット', en: 'Zoom in / out / reset' },
+    'keys.zoom':      { ja: '本文の文字サイズ 拡大 / 縮小 / 既定',
+                        en: 'Body text size: larger / smaller / reset' },
+    'keys.fontScaleWheel': { ja: '本文の文字サイズを拡大 / 縮小',
+                        en: 'Body text size: larger / smaller' },
     'keys.e':         { ja: 'エディタウィンドウを開く（Vimモード・数式入力補助・文字数カウント）',
                         en: 'Open the editor window (Vim mode, math input assist, character count)' },
     'keys.ctrlN':     { ja: '新規の空Markdownファイルを作成', en: 'Create a new empty Markdown file' },

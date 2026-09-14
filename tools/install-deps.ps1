@@ -65,7 +65,7 @@ function Invoke-NpmStep {
 }
 
 # ---- Step 1: static libs -----------------------------------------------
-Write-Header '[1/5] fetch static libs (marked / mermaid / KaTeX / highlight.js)'
+Write-Header '[1/6] fetch static libs (marked / mermaid / KaTeX / highlight.js)'
 $fetchArgs = @{ RepoRoot = $RepoRoot }
 if ($Force) { $fetchArgs['Force'] = $true }
 & (Join-Path $ScriptDir 'fetch-libs.ps1') @fetchArgs
@@ -93,21 +93,24 @@ pass -SkipNode to populate only the CDN-sourced static libs.
 }
 
 # Step 2: marp
-Invoke-NpmStep -ProjectDir (Join-Path $RepoRoot 'tools/build-marp')     -Label '[2/5] build marp IIFE bundle'
+Invoke-NpmStep -ProjectDir (Join-Path $RepoRoot 'tools/build-marp')     -Label '[2/6] build marp IIFE bundle'
 
 # Step 3: editor
-Invoke-NpmStep -ProjectDir (Join-Path $RepoRoot 'tools/build-editor')   -Label '[3/5] build editor IIFE bundle'
+Invoke-NpmStep -ProjectDir (Join-Path $RepoRoot 'tools/build-editor')   -Label '[3/6] build editor IIFE bundle'
 
 # Step 4: markwhen
-Invoke-NpmStep -ProjectDir (Join-Path $RepoRoot 'tools/build-markwhen') -Label '[4/5] build markwhen IIFE bundle'
+Invoke-NpmStep -ProjectDir (Join-Path $RepoRoot 'tools/build-markwhen') -Label '[4/6] build markwhen IIFE bundle'
 
-# Step 5: licenses (optional)
+# Step 5: three.js (the ```model3d 3D mesh engine)
+Invoke-NpmStep -ProjectDir (Join-Path $RepoRoot 'tools/build-three')    -Label '[5/6] build three.js IIFE bundle'
+
+# Step 6: licenses (optional)
 if ($Licenses) {
-  Write-Header '[5/5] regenerate THIRD_PARTY_LICENSES.txt'
+  Write-Header '[6/6] regenerate THIRD_PARTY_LICENSES.txt'
   & (Join-Path $ScriptDir 'collect-licenses.ps1') -RepoRoot $RepoRoot
 } else {
   Write-Host ''
-  Write-Host '[5/5] license regen skipped (pass -Licenses to run tools/collect-licenses.ps1)'
+  Write-Host '[6/6] license regen skipped (pass -Licenses to run tools/collect-licenses.ps1)'
 }
 
 Write-Host ''

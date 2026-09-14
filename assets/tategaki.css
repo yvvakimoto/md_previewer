@@ -35,8 +35,12 @@
     font-family: "Yu Mincho", "YuMincho", "Hiragino Mincho ProN",
                  "Noto Serif JP", "MS Mincho", "ＭＳ 明朝", serif;
     /* 既定値は従来のハードコード値と同一。末尾の @user-vars で宣言してあるので
-     * S キーのスタイル一覧の ⚙ から変更できる。 */
-    font-size: var(--tategaki-font-size, 17px);
+     * S キーのスタイル一覧の ⚙ から変更できる。
+     * --md-font-scale (Ctrl +/-/0 の本文拡大率) とは乗算で合成する ――
+     * ⚙ が「このテーマの本文は何 px か」を、倍率が「それを何倍で読むか」を
+     * 受け持つ。版面 (height: calc(100vh - 40px)) は固定なので、倍率を上げると
+     * 1 行の字数が減る。PDF でも height:auto で用紙に流れるため同じく効く。 */
+    font-size: calc(var(--tategaki-font-size, 17px) * var(--md-font-scale, 1));
     line-height: var(--tategaki-line-height, 1.9);
     letter-spacing: var(--tategaki-letter-spacing, 0.02em);
 

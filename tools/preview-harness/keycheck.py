@@ -219,6 +219,104 @@ def main():
             page.evaluate("() => applyUserStyle(null)")
             shoot.wait_for_render(page)
 
+            # ---------- body text scale (Ctrl +/-/0, Ctrl+Wheel) ----------
+            # MUST come after the bunko block above: one context is reused for the
+            # whole run, so a scale left persisted in localStorage would corrupt the
+            # 510px/663px 版面 assertions. The style is back to the baseline here.
+            def fs_px():
+                return page.evaluate(
+                    "() => getComputedStyle(document.getElementById('preview')).fontSize")
+            def fs_stored():
+                return page.evaluate("() => localStorage.getItem('fontScale')")
+
+            check("the baseline preview starts at the UA default", fs_px(), "16px")
+            check("...with nothing persisted", fs_stored(), None)
+            # `=` is the unshifted US key for `+`; the handler must accept it so the
+            # shortcut works without Shift on a US layout.
+            press(page, "=", ctrl=True)
+            check("Ctrl+= steps the body text up one rung", fs_px(), "17.6px")
+            check("...and persists the multiplier, not a px size", fs_stored(), "1.1")
+            press(page, "+", ctrl=True, shift=True)
+            check("Ctrl+Shift++ (the physical US `+`) steps again", fs_px(), "20px")
+            press(page, "-", ctrl=True)
+            check("Ctrl+- steps back down", fs_px(), "17.6px")
+            # ONLY the type scales. A cap that grew with the text would just be the
+            # old browser zoom again (same line, bigger everything); the point of a
+            # layout multiplier is that the 版面 holds its width and a larger size
+            # fits fewer characters on a line.
+            check("...while the column keeps its width",
+                  page.evaluate(
+                      "() => getComputedStyle(document.getElementById('preview')).maxWidth"),
+                  "900px")
+            check("...and so does its padding",
+                  page.evaluate(
+                      "() => getComputedStyle(document.getElementById('preview')).padding"),
+                  "40px 20px")
+            press(page, "0", ctrl=True)
+            check("Ctrl+0 returns to the default", fs_px(), "16px")
+            check("...and clears the stored value", fs_stored(), None)
+            # The scale is a layout property, so it has to be a real declaration the
+            # export can carry - not a viewport zoom the document cannot see.
+            press(page, "=", ctrl=True)
+            check("the scale is declared in a carryable <style>",
+                  page.evaluate(
+                      "() => (document.getElementById('font-scale-style')||{}).textContent"),
+                  "body:not(.marp) #preview{--md-font-scale:1.1 !important;}")
+            check("...and the artifact carries it",
+                  page.evaluate(
+                      "async () => { const a = await buildExportArtifact();"
+                      " const h = typeof a === 'string' ? a : a.html;"
+                      " return h.includes('--md-font-scale:1.1'); }"), True)
+            press(page, "0", ctrl=True)
+            check("the default stamps nothing at all",
+                  page.evaluate(
+                      "() => (document.getElementById('font-scale-style')||{}).textContent"), "")
+
+            # The modal row is the discoverable half of the same setting.
+            press(page, "s")
+            check("the style modal carries a body-text-size row",
+                  page.evaluate("() => !document.getElementById('font-scale-row').hidden"), True)
+            page.evaluate(
+                "() => document.querySelector('#font-scale-row [data-act=\"font-scale-up\"]').click()")
+            page.wait_for_timeout(150)
+            check("its + button drives the same value", fs_px(), "17.6px")
+            check("...and the readout follows",
+                  page.evaluate("() => document.getElementById('font-scale-value').textContent"),
+                  "110%")
+            page.evaluate(
+                "() => document.querySelector('#font-scale-row [data-act=\"font-scale-reset\"]').click()")
+            page.wait_for_timeout(150)
+            check("its reset button restores the default", fs_px(), "16px")
+            # The row belongs to the document, not to the style being configured, so
+            # it shares the list's visibility rather than the pane's.
+            page.evaluate(
+                "() => document.querySelector('tr.style-row[data-style=\"bunko.css\"] .style-gear').click()")
+            page.wait_for_function("() => !document.getElementById('style-vars-pane').hidden")
+            check("the gear pane hides the body-text-size row",
+                  page.evaluate("() => document.getElementById('font-scale-row').hidden"), True)
+            # bunko defines its 版面 in CHARACTERS and so opts out of the multiplier
+            # entirely (its PDF rescale would cancel it out exactly). The row has to
+            # say so rather than silently storing a value that does nothing.
+            page.evaluate("() => document.querySelector('#style-vars-pane .sv-back').click()")
+            page.wait_for_timeout(150)
+            check("...and shows it again on the way back",
+                  page.evaluate("() => document.getElementById('font-scale-row').hidden"), False)
+            check("under a character-defined 版面 the row reports itself inactive",
+                  page.evaluate(
+                      "() => !document.querySelector('#font-scale-row .fs-fixed').hidden"), True)
+            check("...with its stepper disabled",
+                  page.evaluate(
+                      "() => document.querySelector('#font-scale-row [data-act=\"font-scale-up\"]').disabled"),
+                  True)
+            press(page, "Escape")
+            press(page, "=", ctrl=True)
+            check("...and the shortcut stores nothing there either", fs_stored(), None)
+            check("...leaving the 版面 exactly as the theme set it",
+                  page.evaluate(
+                      "() => getComputedStyle(document.getElementById('preview')).height"), "663px")
+            page.evaluate("() => applyUserStyle(null)")
+            shoot.wait_for_render(page)
+
             press(page, "h")
             check("H opens the help modal",
                   page.evaluate("() => !!document.querySelector('#help-modal.visible')"), True)
@@ -574,6 +672,97 @@ def main():
             shoot.wait_for_render(page)
             check("kataskeve3d is pixel-identical after a dark/light round trip",
                   page.evaluate(snap3), before)
+
+            # ---------- model3d ----------
+            # Like kataskeve3d the app holds no innerHTML cache for it, so pixels
+            # are the only observable. Unlike kataskeve3d it drives WebGL through a
+            # single shared renderer that lives OUTSIDE #preview, so this block also
+            # carries the leak assertions — the ones that catch the failure mode a
+            # DOM digest can never see: "the app freezes after a few minutes of
+            # editing" because every render leaked a context or a shader program.
+            load("samples/model3d.md")
+            if not page.evaluate("() => !!(window.Model3D && window.Model3D.available())"):
+                # A headless browser with no WebGL2 renders every block as an error
+                # box, which _FIGURES_READY_JS accepts as settled. That is a real
+                # environment, not a failure, so assert the graceful path instead of
+                # the pixels and say so loudly.
+                print("SKIP model3d pixel checks: this browser has no WebGL2")
+                check("model3d degrades to an error box without WebGL2",
+                      page.evaluate("() => document.querySelectorAll("
+                                    "'.model3d .model3d-error').length > 0"), True)
+            else:
+                snapM = ("() => [...document.querySelectorAll('.model3d canvas')]"
+                         ".map(c => c.toDataURL('image/png')).join('\\u0000')")
+                before = page.evaluate(snapM)
+                check("model3d renders pixels", len(before) > 1000, True)
+
+                # The backing store is 2x the logical size (see __MODEL3D_SS): that
+                # is what makes --png-scale 2 rasterize 1:1 instead of resampling,
+                # and what obliges the HTML export to pin the <img> width. If
+                # somebody "simplifies" it to 1x, this is the check that notices.
+                check("model3d canvas backing store is 2x its logical width",
+                      page.evaluate("""() => {
+                          const el = document.querySelector('.model3d');
+                          const cv = el && el.querySelector('canvas');
+                          if (!cv) return null;
+                          return cv.width === Number(el.getAttribute('data-model3d-w')) * 2
+                              && cv.height === Number(el.getAttribute('data-model3d-h')) * 2;
+                      }"""), True)
+
+                press(page, "m")          # -> dark
+                page.wait_for_timeout(500)
+                shoot.wait_for_render(page)
+                dark = page.evaluate(snapM)
+                # The default mesh / edge / grid colours are theme-derived, so the
+                # rendered bitmap cache MUST be theme-salted or the M key would
+                # leave the light-mode pixels on screen.
+                check("model3d bitmap cache is theme-salted", dark != before, True)
+                press(page, "m")          # -> light: must hit the original key
+                page.wait_for_timeout(500)
+                shoot.wait_for_render(page)
+                check("model3d is pixel-identical after a dark/light round trip",
+                      page.evaluate(snapM), before)
+
+                # Sustained-edit soak. Each toggle is a full renderMarkdown, i.e. a
+                # complete #preview innerHTML rebuild plus an unmountAll/mount cycle
+                # for every block — the same shape as a live-edit keystroke.
+                stats0 = page.evaluate("() => window.Model3D._debug.stats()")
+                for _ in range(6):
+                    press(page, "m")
+                    page.wait_for_timeout(120)
+                    shoot.wait_for_render(page)
+                stats1 = page.evaluate("() => window.Model3D._debug.stats()")
+                check("model3d holds exactly one WebGL context after 6 rebuilds",
+                      stats1.get("contexts"), 1)
+                # The real leak: a material created per render would add a
+                # WebGLPrograms entry each time, since a program is only released
+                # when its material is disposed. Flat, not monotonic.
+                check("model3d compiles no new shader programs across rebuilds",
+                      stats1.get("programs") <= stats0.get("programs"), True)
+                check("model3d bitmap cache stays within its cap",
+                      stats1.get("bitmaps") <= 12, True)
+                check("model3d model cache stays within its cap",
+                      stats1.get("models") <= 8, True)
+                check("model3d leaves no pending render handle",
+                      [stats1.get("pendingRaf"), stats1.get("pendingTimeout")],
+                      [False, False])
+                # unmountAll() must leave nothing registered, or the next render
+                # would double-render every block.
+                page.evaluate("() => window.Model3D.unmountAll()")
+                check("model3d unmountAll empties the registry",
+                      page.evaluate("() => window.Model3D._debug.stats().blocks"), 0)
+                check("model3d unmountAll is idempotent",
+                      page.evaluate("() => { window.Model3D.unmountAll();"
+                                    " return window.Model3D._debug.stats().blocks; }"), 0)
+
+            # Every error path in samples/model3d.md must land as an in-place error
+            # box and leave the surrounding document alone.
+            load("samples/model3d.md")
+            check("model3d error blocks render in place",
+                  page.evaluate("() => document.querySelectorAll('.model3d-error').length"), 3)
+            check("model3d error text is localized through err.prefix",
+                  page.evaluate("() => [...document.querySelectorAll('.model3d-error')]"
+                                ".every(e => e.textContent.indexOf('Model3D') === 0)"), True)
 
             errors = page.evaluate("() => (window.__kcErrors || [])")
             check("no uncaught page errors recorded", errors, [])

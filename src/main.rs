@@ -412,6 +412,56 @@ pub(crate) fn paths_equal(a: &Path, b: &Path) -> bool {
     na == nb
 }
 
+/// Format a file's mtime as an RFC 7231 IMF-fixdate (`Sun, 06 Nov 1994 08:49:37 GMT`),
+/// the format an HTTP `Last-Modified` header takes. Hand-rolled from the Unix
+/// timestamp rather than pulling in `httpdate`/`chrono`: this is the only date
+/// formatting in the crate, and the civil-from-days conversion is a well-known
+/// closed form. Falls back to the epoch for a file whose mtime is unavailable or
+/// pre-1970, which is harmless — a constant validator simply never invalidates.
+pub(crate) fn http_date(meta: &fs::Metadata) -> String {
+    let secs = meta
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    http_date_from_secs(secs)
+}
+
+/// The pure half of `http_date`, split out so it can be unit-tested without a
+/// real file on disk.
+pub(crate) fn http_date_from_secs(secs: i64) -> String {
+    const DAY: i64 = 86400;
+    let days = secs.div_euclid(DAY);
+    let tod = secs.rem_euclid(DAY);
+    let (h, mi, sec) = (tod / 3600, (tod % 3600) / 60, tod % 60);
+    // Howard Hinnant's civil_from_days.
+    let z = days + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let year = if m <= 2 { y + 1 } else { y };
+    const WD: [&str; 7] = ["Thu", "Fri", "Sat", "Sun", "Mon", "Tue", "Wed"];
+    const MON: [&str; 12] = [
+        "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+    ];
+    format!(
+        "{}, {:02} {} {} {:02}:{:02}:{:02} GMT",
+        WD[days.rem_euclid(7) as usize],
+        d,
+        MON[(m - 1) as usize],
+        year,
+        h,
+        mi,
+        sec
+    )
+}
+
 // Determine MIME type based on file extension
 pub(crate) fn get_mime_type(path: &PathBuf) -> &'static str {
     let ext = path
@@ -455,6 +505,18 @@ pub(crate) fn get_mime_type(path: &PathBuf) -> &'static str {
 
         // WebAssembly (TikZJax WASM TeX engine, served from assets/libs/tikzjax/)
         Some("wasm") => "application/wasm",
+
+        // 3D mesh formats served to the ```model3d engine. Not strictly required
+        // (three's FileLoader sets its own responseType and ignores Content-Type,
+        // so the octet-stream default works), but the route should still describe
+        // what it serves. .obj / .mtl are plain text; the rest are binary or, for
+        // .gltf, JSON with a registered model/* type.
+        Some("stl") => "model/stl",
+        Some("obj") | Some("mtl") => "text/plain; charset=utf-8",
+        Some("ply") => "application/octet-stream",
+        Some("gltf") => "model/gltf+json",
+        Some("glb") => "model/gltf-binary",
+        Some("3mf") => "model/3mf",
 
         // Other common types
         Some("json") => "application/json",
@@ -1722,6 +1784,13 @@ fn main() -> wry::Result<()> {
                     Ok(meta) => {
                         let total = meta.len();
                         let mime_type = get_mime_type(&resolved_path);
+                        // The route previously sent no HTTP validator at all, which
+                        // left a webview-side cache no way to tell a re-exported
+                        // file from the one it already holds. The ```model3d engine
+                        // keys its parsed-mesh LRU on this, so without it a model
+                        // re-exported from a CAD tool would keep showing the stale
+                        // mesh for the life of the session.
+                        let last_modified = http_date(&meta);
 
                         match range_header.as_deref().and_then(|h| parse_byte_range(h, total)) {
                             Some((start, end)) => {
@@ -1742,6 +1811,7 @@ fn main() -> wry::Result<()> {
                                         .header("Accept-Ranges", "bytes")
                                         .header("Content-Range", format!("bytes {}-{}/{}", start, end, total))
                                         .header("Content-Length", len.to_string())
+                                        .header("Last-Modified", last_modified.clone())
                                         .body(buf.into())
                                         .unwrap()),
                                     Err(e) => {
@@ -1758,6 +1828,7 @@ fn main() -> wry::Result<()> {
                                     .header("Content-Type", mime_type)
                                     .header("Access-Control-Allow-Origin", "*")
                                     .header("Accept-Ranges", "bytes")
+                                    .header("Last-Modified", last_modified.clone())
                                     .body(content.into())
                                     .unwrap()),
                                 Err(e) => {
@@ -1816,7 +1887,18 @@ fn main() -> wry::Result<()> {
             }
         })
         .with_url("app://localhost/index.html")?
-        .with_hotkeys_zoom(true);
+        // Ctrl +/-/0 is NOT WebView2 browser zoom any more. That zoom is a
+        // viewport-level device scale with no document representation, so it
+        // never reached the PDF (CDP Page.printToPDF re-lays out for the paper
+        // box at a fixed scale of 1). The preview now owns those keys itself
+        // and drives --md-font-scale, a real layout multiplier that the PDF and
+        // --export-png paths inherit because both print the live DOM.
+        // This matches the editor window, which has never enabled it either
+        // (src/editor_registry.rs) and implements its own font zoom.
+        // Caveat: wry maps this one flag to both SetIsZoomControlEnabled and
+        // SetIsPinchZoomEnabled, so touchscreen pinch goes with it; a precision
+        // touchpad pinch still arrives as wheel+ctrlKey and is handled in JS.
+        .with_hotkeys_zoom(false);
 
     // Tracks which markdown file the previewer is currently rendering.
     let current_file: CurrentFile = Arc::new(Mutex::new(
@@ -2290,6 +2372,15 @@ fn main() -> wry::Result<()> {
     }
 
     let webview = webview_builder.build()?;
+    // Clear any zoom factor WebView2 persisted per-origin in the user data
+    // folder while `with_hotkeys_zoom(true)` was still set: turning the zoom
+    // control off stops the USER changing it but does not reset it, so an
+    // upgrading install could otherwise be stuck at whatever it last pressed
+    // with no way back. SetZoomFactor is independent of IsZoomControlEnabled.
+    // Not repeated later: the StartUpdateCheck arm is the only post-render
+    // hook with the webview in scope, and it documents that it takes no
+    // webview lock so it cannot stall the loop.
+    webview.zoom(1.0);
     let webview = Arc::new(Mutex::new(webview));
 
     // Update-check watchdog. The check is normally kicked off by the preview's
@@ -3270,6 +3361,40 @@ mod tests {
         // The default is why a non-image extension can never be usefully inlined.
         assert_eq!(mime("a.unknown"), "application/octet-stream");
         assert_eq!(mime("noext"), "application/octet-stream");
+        // ```model3d mesh formats.
+        assert_eq!(mime("part.stl"), "model/stl");
+        assert_eq!(mime("part.STL"), "model/stl");
+        assert_eq!(mime("part.obj"), "text/plain; charset=utf-8");
+        assert_eq!(mime("part.mtl"), "text/plain; charset=utf-8");
+        assert_eq!(mime("part.gltf"), "model/gltf+json");
+        assert_eq!(mime("part.glb"), "model/gltf-binary");
+        assert_eq!(mime("part.3mf"), "model/3mf");
+        // .ply may be binary, so it keeps the octet default rather than a text type.
+        assert_eq!(mime("part.ply"), "application/octet-stream");
+    }
+
+    // ---- http_date ---------------------------------------------------------
+
+    #[test]
+    fn http_date_formats_imf_fixdate() {
+        // Verified against the RFC 7231 example date, which is also the format's
+        // canonical illustration: 784111777 = Sun, 06 Nov 1994 08:49:37 GMT.
+        assert_eq!(
+            http_date_from_secs(784_111_777),
+            "Sun, 06 Nov 1994 08:49:37 GMT"
+        );
+        // The epoch itself, which is also the unavailable-mtime fallback.
+        assert_eq!(http_date_from_secs(0), "Thu, 01 Jan 1970 00:00:00 GMT");
+        // A leap day, the case a hand-rolled civil-from-days gets wrong.
+        assert_eq!(
+            http_date_from_secs(1_582_934_400),
+            "Sat, 29 Feb 2020 00:00:00 GMT"
+        );
+        // Y2038-adjacent, to show the i64 arithmetic does not wrap.
+        assert_eq!(
+            http_date_from_secs(2_147_483_647),
+            "Tue, 19 Jan 2038 03:14:07 GMT"
+        );
     }
 
     // ---- parse_byte_range --------------------------------------------------

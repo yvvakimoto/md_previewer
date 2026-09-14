@@ -328,6 +328,16 @@ diagram tree {
   m2 -- [fermion] b -- [fermion] m1
 }
 ```"""),
+
+    # Like kataskeve3d this is a <canvas> bitmap, not SVG. The fixture is written
+    # into samples/, so the relative `data/` path resolves to samples/data/.
+    ("model3d", ".model3d", r"""```model3d
+file: data/bracket.stl
+width: 480
+height: 320
+edges: true
+grid: true
+```"""),
 ]
 
 

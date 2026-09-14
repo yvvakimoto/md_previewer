@@ -28,7 +28,7 @@ substitute.
 | About to edit / debug | Read first | Answers, among others |
 |---|---|---|
 | `assets/index.html` — render loop, `__*` shared helpers, diagram caches, `data-line` | `.claude/docs/preview-core.md` | Why is my DOM node gone after a keystroke? Which helper already does this? Why did my diagram stop re-rendering? |
-| `assets/index.html` — a ` ```lang ` fence; `assets/libs/<engine>` | `.claude/docs/preview-blocks.md` | How do I add an engine? Why must it go through `awaitLib`? Why is the SVG cached without a theme salt? |
+| `assets/index.html` — a ` ```lang ` fence; `assets/libs/<engine>` | `.claude/docs/preview-blocks.md` | How do I add an engine? Why must it go through `awaitLib`? Why is the SVG cached without a theme salt? Why does `model3d` share one WebGL context and blit into a 2D canvas? |
 | `assets/index.html` — a `marked` extension, a DOM post-pass, new Markdown syntax | `.claude/docs/preview-markdown-ext.md` | Where are the other implementations? When do I need a sentinel pre-pass? |
 | `assets/index.html` — Copy table / Edit table, anything splicing source by `data-line` | `.claude/docs/preview-tables.md` | Why does edit mode refuse this table? Why is the emitter formatting-preserving? |
 | `assets/index.html` — `/userfile/` URLs, images, video, cross-file links, history, drag & drop | `.claude/docs/preview-files-media.md` | Why is my Japanese-path image 404ing? Why is `..` resolved to an absolute path? |
@@ -69,19 +69,20 @@ README.md 「対応している記法・機能」.
 | Feature | Detail |
 |---|---|
 | GFM preview, auto-reload on external change, sidebar TOC | `preview-core.md` |
-| Diagram / figure fences: `mermaid`, `plotly`, `abc` (+ playback), `markwhen`, `tikz`/`tikzcd`, `kataskeve`/`kataskeve3d`, `feynman`, `csv`/`tsv`, KaTeX math, highlight.js (+ in-house Modelica grammar) | `preview-blocks.md` |
+| Diagram / figure fences: `mermaid`, `plotly`, `abc` (+ playback), `markwhen`, `tikz`/`tikzcd`, `kataskeve`/`kataskeve3d`, `feynman`, `model3d` (3D mesh files, interactive), `csv`/`tsv`, KaTeX math, highlight.js (+ in-house Modelica grammar) | `preview-blocks.md` |
 | Footnotes, `::: center/right/left/message/vcenter/columns` fenced divs, `[text]{color=…}` inline spans, definition lists, ruby (`｜猫《ねこ》`), task lists, CJK soft-break join | `preview-markdown-ext.md` |
 | Copy table for PowerPoint (rich-HTML clipboard); Edit table (writes back to the `.md`) | `preview-tables.md` |
 | Clickable task-list checkboxes — a click rewrites that one `- [ ]` line in the `.md` (both pipelines; inert in every export) | `preview-markdown-ext.md` |
 | Images via the `/userfile/` route with `\|WxH` sizing and `../` paths; video + YouTube embeds; cross-file `.md` links with back/forward history; `Ctrl`+click opens a new window; drag & drop; `Ctrl+N` new file; `Ctrl+D` install dir | `preview-files-media.md` |
 | Marp slides (`marp: true`), 3 views (`P`), autofit (`A`), laser pointer (`Z`), 8-colour theme family, selection highlighter | `marp.md` |
+| Body text size (`Ctrl` `+`/`-`/`0`, `Ctrl`+wheel, and an `S`-modal row) — a layout multiplier, so it reaches the PDF / HTML export | `styles-theming.md` |
 | Dark/light (`M`), style picker (`S`) with a per-style ⚙ `@user-vars` pane, `bunko.css` 文庫本 / `tategaki.css` 縦書き, section numbering (`N`), wide layout (`W`), `confidential:` / `watermark:` overlay | `styles-theming.md` |
 | Companion editor (`E`): CodeMirror 6, Vim, live preview, cell mode, Office-table paste, autocomplete, font zoom, ⚙ settings | `editor-*.md` |
 | UI language toggle (ja / en), one shared `uiLang` key across both windows | `i18n.md` |
 | Export to standalone HTML or PDF (`X`); headless `--export-png` for agents | `export.md` |
 | Workspace (directory) mode with file tree and `_toc.md`; `.mdx` ZIP bundles | `rust-host.md` |
 | Auto-update: GitHub Releases by default (ON, via the shipped `assets/update.json`), or an intranet file share with `provider: "share"` | `auto-update.md` |
-| Help modal (`H`), zoom (`Ctrl` `+`/`-`/`0`) | `preview-core.md` |
+| Help modal (`H`) | `preview-core.md` |
 | Claude Code authoring skill, shipped by the installer as an opt-in task (OFF by default) | `authoring-skill.md` |
 
 ---
@@ -93,7 +94,7 @@ A file with no owning doc is an anomaly.
 
 | File / directory | Responsibility | Doc |
 |---|---|---|
-| `src/main.rs` | window + event loop (`tao`), WebView2 host (`wry`), `pulldown-cmark` initial render, `notify` watcher, `app://` protocol and the `/userfile/` route, workspace state | `rust-host.md` |
+| `src/main.rs` | window + event loop (`tao`), WebView2 host (`wry`), `pulldown-cmark` initial render, `notify` watcher, `app://` protocol and the `/userfile/` route, workspace state. ⚠ `with_hotkeys_zoom(false)` + a one-shot `webview.zoom(1.0)`: WebView2 browser zoom is deliberately OFF (the preview owns `Ctrl` `+`/`-`/`0` itself) | `rust-host.md` |
 | `src/editor_registry.rs` | the one paired editor `WebView`; preview↔editor IPC routing | `editor-core.md` |
 | `src/mdx.rs` | `.mdx` ZIP extract-to-temp and repack | `rust-host.md` |
 | `src/updater.rs` | auto-update: provider dispatch (`github` / `share`), detect + fetch + silent install | `auto-update.md` |
@@ -110,8 +111,8 @@ A file with no owning doc is an anomaly.
 | `assets/libs/hljs-modelica.js` | in-house highlight.js grammar — **tracked, hand-written** | `preview-blocks.md` |
 | `assets/THIRD_PARTY_LICENSES.txt` | generated, git-ignored | `build-and-deps.md` |
 | `tools/build-editor/` | CodeMirror 6 + Vim bundle and its modules | `editor-*.md` |
-| `tools/build-marp/`, `tools/build-markwhen/` | esbuild IIFE bundles | `build-and-deps.md` |
-| `tools/fetch-libs.ps1`, `install-deps.ps1`, `collect-licenses.ps1`, `make-icon/` | dependency and asset toolchain | `build-and-deps.md` |
+| `tools/build-marp/`, `tools/build-markwhen/`, `tools/build-three/` | esbuild IIFE bundles (`build-three` is three.js + the whole `model3d` facade) | `build-and-deps.md` |
+| `tools/fetch-libs.ps1`, `install-deps.ps1`, `collect-licenses.ps1`, `make-icon/`, `make-3d-samples/` | dependency and asset toolchain | `build-and-deps.md` |
 | `tools/preview-harness/` | build-free browser harness + every verification script | `harness-testing.md` |
 | `tools/release-on-main.ps1`, `tools/hooks/` | release automation | `release.md` |
 | `installer/`, `build.rs`, `app.rc` | Inno Setup installer, icon embedding | `build-and-deps.md` |
@@ -162,6 +163,8 @@ than in a detail doc, so that a missed pointer is not fatal.
    **never stamp `data-line` on a wrapper** (`__tableLocate()`'s `lineEl.contains(tableEl)`
    would then match every table and refuse to edit any of them).
 
+5b. **A theme that wants the reader's body-text scale must route its own `font-size` through `var(--md-font-scale, 1)`** — the same "theme declares, the app implements" shape as `--md-page-lines`, and the same multiplier trick as `--md-print-scale`. A theme that does not is simply never scaled, which is a deliberate choice for `bunko.css` (its 版面 is defined in characters, and the PDF rescale would cancel the multiplier out exactly). ⚠ **Scale the type only** — a theme must NOT route `max-width` / `padding` through the variable: the 版面 holds its width and a larger size fits fewer characters per line. Scaling the cap too just reproduces the browser zoom this replaced. Detail: `styles-theming.md`.
+
 ### Adding a figure engine — the three-part checklist
 
 6. ⚠ **Never bare-`await` an `ensureX()` / `loadLib()` promise in a figure branch — use
@@ -175,6 +178,14 @@ than in a detail doc, so that a missed pointer is not fatal.
    eternal splash by a second route.
 8. ⚠ **Register a new async figure kind in `shoot.py`'s `_FIGURES_READY_JS`**, or its output is
    silently missing from every screenshot and every DOM digest.
+8b. ⚠ **A `<canvas>` figure must never be sized from layout, and never gets a WebGL context of
+   its own.** `kataskeve3d` and `model3d` both take their size from the fence spec, because
+   `clientWidth` is 0 on a `display:none` deck slide, untransformed in list mode, and different
+   again after `__marpPrepareForPdf()` / `__prepareCapture()` — a layout-derived figure's pixel
+   size depends on which view mode rendered it, which makes the harness digests view-mode
+   dependent. And `model3d` drives **one** shared renderer outside `#preview`, blitting into
+   per-block 2D canvases: a renderer per block would leak a context per keystroke and blow past
+   Chromium's ~16-context cap, whose only symptom is older figures going blank in silence.
 
 ### Editor
 
@@ -281,7 +292,9 @@ that are checked (or partly checked) can rely on the harness remembering.
 | `$AbcSoundfontNotes` + base URL — `tools/fetch-libs.ps1` | `AbcSfNotes()` + `AbcSfBaseUrl` — `installer/md-previewer.iss` (88 note names; flats only, `C8` last) | ❌ |
 | `#keys` list — `docs/index.html` | the `<table>` in `#help-modal` — `assets/index.html`, paired by i18n-key **suffix, not position** | ✅ `docskeycheck.py` |
 | `GALLERY` — `tools/preview-harness/shoot-docs.py` | gallery snippet literals — `docs/index.html` | ⚠ warn-only |
-| kataskeve / kataskeve3d container + error CSS | hand-carried into `assets/index.html`'s first `<style>` | ❌ |
+| kataskeve / kataskeve3d / model3d container + error CSS | hand-carried into `assets/index.html`'s first `<style>` | ❌ |
+| `SS` — `tools/build-three/entry.js` | `__MODEL3D_SS` — `assets/index.html` (the export pass pins the `<img>` width against it) | ✅ `exportcheck.py` asserts the PNG is intrinsically 2× the pinned width |
+| baseline `#preview { font-size: calc(var(--md-font-scale,1) * 16px) }` — `assets/index.html` | each bundled theme's own `font-size` (`classical` / `hakuro-modern` / `tategaki`; `bunko` opts out on purpose) | partial (`exportcheck.py` runs two scaled cases; a theme that silently stopped consuming the variable would not be caught) |
 | `_FIGURES_READY_JS` — `tools/preview-harness/shoot.py` | the set of async figure kinds — `assets/index.html` | ❌ silent |
 | `CELL_HELP` — `tools/build-editor/cells.js` | the newest-first Esc chain — `entry.js` | ❌ |
 | `$libsSentinels` — `build.ps1` | the library set fetched by `tools/fetch-libs.ps1` | ❌ |
@@ -295,8 +308,10 @@ that are checked (or partly checked) can rely on the harness remembering.
 |---|---|
 | the render pipeline, any preprocessing pass | `python tools/preview-harness/domdump.py` (+ `gate.sh <label> <files…>` to diff against `_dom/base`) |
 | shortcuts, context menus, Marp autofit, `@user-vars` | `python tools/preview-harness/keycheck.py` |
+| `--md-font-scale`, a theme's base `font-size`, `with_hotkeys_zoom` | `keycheck.py` + `exportcheck.py` + `pdfcheck.py` (the scaled cases are the only ones that can see it) |
 | preview table edit mode | `python tools/preview-harness/tablecheck.py` + `node tools/preview-harness/table-model.test.cjs` |
 | task-list checkboxes, `applyTaskLists()`, `__isTypingTarget()` | `python tools/preview-harness/taskcheck.py` (+ `keycheck.py` for the focus case) |
+| `model3d` / `tools/build-three/` | `python tools/preview-harness/keycheck.py` (pixels, theme salt, **and the leak nets: one WebGL context, flat shader-program count**) + `exportcheck.py` + `pdfcheck.py` |
 | cell mode | `python tools/preview-harness/cellcheck.py` + `cd tools/build-editor && node cells.test.mjs` |
 | editor↔preview scroll sync (either axis) | `python tools/preview-harness/synccheck.py` |
 | Office-table paste | `python tools/preview-harness/pastecheck.py` + `cd tools/build-editor && node tablePaste.test.mjs` |
@@ -334,12 +349,17 @@ unless noted.
 | `_TIKZ_WAIT_MS` (`shoot.py`) | 45000 | must exceed the 30 s in-page timeout so a failure resolves |
 | `__MARP_FIT_MIN` | 0.5 | autofit shrink floor; below it the body scrolls instead |
 | `__MARP_ZOOM_MIN` / `MAX` | 1 / 8 | deck-mode `Ctrl`+wheel zoom range |
+| `__FONT_SCALE_STEPS` | `[0.6 … 2.5]` | body-text `--md-font-scale` ladder (`Ctrl` `+`/`-`/`0`). A fixed list, not a range: it makes reset exact and a stored value trivially validatable. ⚠ Pinned to 1 under `--export-png`, or the PNG depends on the operator's localStorage |
 | `__MARKER_LIFE_MS` / `FADE_MS` / `ALPHA` | 2000 / 500 / 0.55 | Marp selection highlighter |
 | `__LASER_TRAIL_MS` / `HEAD_R` | 260 / 7 | laser pointer comet trail |
 | `__ABC_RESUME_TIMEOUT_MS` | 1500 | ⚠ `AudioContext.resume()` settles only once the autoplay policy is satisfied — an unbounded await hangs the play button on 「音源を読み込み中」 forever |
 | `__MW_HOLIDAY_TIMEOUT_MS` / `__MW_CAL_MAX_MONTHS` | 4000 / 36 | markwhen calendar: online holidays are best-effort; wide spans fall back to the timeline |
 | `__PDF_IMG_MAX_EDGE` / `TARGET_SCALE` / `SLACK` / `JPEG_QUALITY` | 1600 / 2 / 1.25 / 0.82 | PDF image downscale — Chromium embeds the live decoded bitmap verbatim |
 | `__PDF_V_PAPER_W` / `_H` / `_MARGIN` / `_MIN_SCALE` | 1122 / 793 / 76 / 0.5 | vertical-writing PDF: A4 landscape floored to whole CSS px (⚠ a fraction taller emits a blank page per sheet) |
+| `__MODEL3D_SS` (+ `SS` in `tools/build-three/entry.js`) | 2 | model3d backing-store multiplier. ⚠ A literal 2, NOT `devicePixelRatio`: `--png-scale` is already 2, so this rasterizes 1:1 instead of resampling, while real DPR would make exported PNG bytes machine-dependent |
+| `MODEL_CACHE_MAX` / `BITMAP_CACHE_MAX` (`tools/build-three/entry.js`) | 8 / 12 | parsed meshes / rendered bitmaps. ⚠ The bitmap cap is 12, not kataskeve3d's 64: an entry is ~5MB at 680×460 SS=2, so 64 would be ~320MB |
+| `MAX_BYTES` / `FETCH_TIMEOUT_MS` (`tools/build-three/entry.js`) | 64MB / 15000 | model3d is the only engine that is I/O-bound on the awaited path, so an unbounded fetch could wedge the 「読み込み中…」 splash |
+| `MAX_LOGICAL_W` / `_H` (`tools/build-three/entry.js`) | 1024 / 1024 | keeps the shared GL canvas within 2048 per axis at SS = 2 |
 | `__PAGE_MAX_ITER` / `__CSS_IMPORT_MAX_DEPTH` | 4000 / 4 | pagination loop guard; `@import` splice depth cap |
 | `CASCADE_STEP` / `CASCADE_CYCLE` (`src/main.rs`) | 36.0 / 6 | `Ctrl`+click window cascade, in logical px `[m]` |
 
