@@ -91,8 +91,10 @@ body {
 #preview {
     /* rem is the ROOT font size, not #preview's, so this cap deliberately does
        NOT follow --md-font-scale — the 版面 keeps its width and a larger size
-       just fits fewer characters per line, same as the baseline. */
-    max-width: 40rem;                    /* tighter column — BIZ UDP holds up at narrow widths */
+       just fits fewer characters per line, same as the baseline.
+       --md-width-scale is the multiplier that DOES move it: it exists precisely
+       for the reader who wants a different measure rather than bigger type. */
+    max-width: calc(var(--md-width-scale, 1) * 40rem);   /* tighter column — BIZ UDP holds up at narrow widths */
     padding: 60px 44px 96px;
     font-size: calc(var(--md-font-scale, 1) * 15px);
     line-height: 1.75;

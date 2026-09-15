@@ -113,16 +113,26 @@
            A theme opts in by routing its own font-size through the variable;
            one that doesn't is simply never scaled (bunko.css deliberately
            doesn't — its 版面 is defined in CHARACTERS, see styles-theming.md).
-           ⚠ Only the TYPE scales — max-width and padding stay put, so the 版面
-           keeps its width and a larger size simply fits fewer characters on a
-           line. Scaling the cap alongside the text would reproduce the old
-           browser zoom (same line, bigger everything), which is precisely what
-           this replaced: a reader enlarging the text wants to read the same
-           column more easily, not to widen the document. */
+           ⚠ Only the TYPE scales UNDER THIS MULTIPLIER — max-width and padding
+           stay put, so the 版面 keeps its width and a larger size simply fits
+           fewer characters on a line. Scaling the cap alongside the text would
+           reproduce the old browser zoom (same line, bigger everything), which
+           is precisely what this replaced: a reader enlarging the text wants to
+           read the same column more easily, not to widen the document.
+
+           --md-width-scale is the SECOND, independent multiplier, for the
+           reader who actually wants a different measure (the S-modal's 本文の幅
+           row). It moves the cap and nothing else: padding stays put under
+           BOTH multipliers, because the gutter between the 版面 and the edge of
+           the paper-white is a constant reading margin, not part of the measure.
+           Same contract as above — a theme opts in by routing its own cap
+           through the variable (hakuro-modern's 40rem; tategaki's height, which
+           IS the line length under vertical-rl), one that doesn't is simply
+           never resized, and bunko refuses both (字数-defined 版面). */
         #preview {
             font-size: calc(var(--md-font-scale, 1) * 16px);
-            max-width: 900px;
-            margin: 0 auto;
+            max-width: calc(var(--md-width-scale, 1) * 900px);
+            margin: 0 auto;   /* a narrowed 版面 stays centred */
             padding: 40px 20px;
         }
 
@@ -422,8 +432,9 @@
         }
 
         /* Floating right-click menu, shared by every in-app context menu built with
-           __createContextMenu(): the KaTeX "Copy MathML / Copy LaTeX" menu and the
-           workspace file tree's collapse/expand menu. */
+           __createContextMenu(): the preview menu (KaTeX "Copy MathML / Copy LaTeX"
+           plus "Save as SVG / PNG" on a rendered figure), the table edit-mode menu
+           and the workspace file tree's collapse/expand menu. */
         .app-context-menu {
             position: fixed;
             z-index: 10000;
@@ -1898,8 +1909,14 @@
                 display: none !important;
             }
 
+            /* The measure on paper is the page box, not the window — but the
+               reader's own width setting still reaches it: min() keeps the
+               default (and everything above 1.0) at exactly the old 100%, and
+               lets a narrowed 版面 print narrow. A vertical-writing theme is the
+               documented exception: __verticalPrepareForPdf() forces
+               max-width:none !important so the text can flow across the sheet. */
             #preview {
-                max-width: 100%;
+                max-width: min(100%, calc(var(--md-width-scale, 1) * 100%));
             }
 
             /* The app shell's desk colour must never become the paper.
@@ -2427,29 +2444,31 @@
             color: #c9d1d9;
         }
         body.dark-mode #style-vars-pane .sv-foot button:hover { background: #21262d; }
-        /* Body text scale row — style-independent, so it sits above the per-style
-           pane and borrows its visual language rather than living inside it. */
-        #font-scale-row {
+        /* The two scale rows (本文の文字サイズ / 本文の幅) — style-independent, so
+           they sit above the per-style pane and borrow its visual language rather
+           than living inside it. One class, two ids: the ids are how the JS and the
+           harness address each row, the class is the shared chrome. */
+        .scale-row {
             margin-top: 14px;
             padding-top: 12px;
             border-top: 1px solid #e1e4e8;
             font-size: 13px;
         }
-        #font-scale-row .fs-head {
+        .scale-row .fs-head {
             display: flex;
             align-items: baseline;
             gap: 10px;
             flex-wrap: wrap;
         }
-        #font-scale-row .fs-label { color: #24292e; }
-        #font-scale-row .fs-hint { color: #57606a; font-size: 11px; }
-        #font-scale-row .fs-control {
+        .scale-row .fs-label { color: #24292e; }
+        .scale-row .fs-hint { color: #57606a; font-size: 11px; }
+        .scale-row .fs-control {
             display: flex;
             align-items: center;
             gap: 8px;
             margin-top: 8px;
         }
-        #font-scale-row button {
+        .scale-row button {
             background: transparent;
             border: 1px solid #d0d7de;
             border-radius: 6px;
@@ -2459,28 +2478,28 @@
             color: #24292e;
             min-width: 32px;
         }
-        #font-scale-row button:hover:not(:disabled) { background: #f6f8fa; }
-        #font-scale-row button:disabled { opacity: 0.4; cursor: default; }
-        #font-scale-row .fs-reset { margin-left: auto; min-width: 0; }
-        #font-scale-value {
+        .scale-row button:hover:not(:disabled) { background: #f6f8fa; }
+        .scale-row button:disabled { opacity: 0.4; cursor: default; }
+        .scale-row .fs-reset { margin-left: auto; min-width: 0; }
+        .scale-row .sc-value {
             flex: 0 0 4.5em;
             text-align: center;
             font-variant-numeric: tabular-nums;
             color: #24292e;
         }
-        #font-scale-row .fs-fixed {
+        .scale-row .fs-fixed {
             margin-top: 8px;
             font-size: 11px;
             line-height: 1.5;
             color: #8a6d3b;
         }
-        body.dark-mode #font-scale-row { border-top-color: #30363d; }
-        body.dark-mode #font-scale-row .fs-label,
-        body.dark-mode #font-scale-value { color: #c9d1d9; }
-        body.dark-mode #font-scale-row .fs-hint { color: #8b949e; }
-        body.dark-mode #font-scale-row button { border-color: #30363d; color: #c9d1d9; }
-        body.dark-mode #font-scale-row button:hover:not(:disabled) { background: #21262d; }
-        body.dark-mode #font-scale-row .fs-fixed { color: #d6a95f; }
+        body.dark-mode .scale-row { border-top-color: #30363d; }
+        body.dark-mode .scale-row .fs-label,
+        body.dark-mode .scale-row .sc-value { color: #c9d1d9; }
+        body.dark-mode .scale-row .fs-hint { color: #8b949e; }
+        body.dark-mode .scale-row button { border-color: #30363d; color: #c9d1d9; }
+        body.dark-mode .scale-row button:hover:not(:disabled) { background: #21262d; }
+        body.dark-mode .scale-row .fs-fixed { color: #d6a95f; }
         body.dark-mode #help-modal .panel,
         body.dark-mode #style-modal .panel {
             background: #161b22;
@@ -2986,8 +3005,8 @@
 
             'help.key.h':          { ja: 'このヘルプの表示 / 非表示', en: 'Show / hide this help' },
             'help.key.m':          { ja: 'ダーク / ライト表示の切り替え', en: 'Toggle dark / light appearance' },
-            'help.key.s':          { ja: 'スタイルの選択（行末の ⚙ でそのスタイル固有の設定。Marpモードでは Marpテーマ。フロントマターを書き換え）',
-                                     en: 'Choose a style (⚙ opens that style’s own settings; in Marp mode it picks the Marp theme and rewrites the front matter)' },
+            'help.key.s':          { ja: 'スタイルの選択（行末の ⚙ でそのスタイル固有の設定。下端の行で本文の文字サイズと幅。Marpモードでは Marpテーマ。フロントマターを書き換え）',
+                                     en: 'Choose a style (⚙ opens that style’s own settings; the rows at the bottom set the body text size and width; in Marp mode it picks the Marp theme and rewrites the front matter)' },
             'help.key.n':          { ja: 'セクション自動番号の切り替え', en: 'Toggle automatic section numbering' },
             'help.key.l':          { ja: '行番号の表示切り替え', en: 'Toggle line numbers' },
             'help.key.w':          { ja: '全幅レイアウトの切り替え', en: 'Toggle full-width layout' },
@@ -3047,6 +3066,18 @@
                                       en: 'This style sizes its text block in characters, so the scale has no effect — use ⚙ → “Font size” instead' },
             'style.fontScaleDown': { ja: '小さく', en: 'Smaller' },
             'style.fontScaleUp':   { ja: '大きく', en: 'Larger' },
+            // The content-width row. Same ratio wording as the size row above it, and
+            // the same percent readout — two adjacent rows formatted differently read
+            // as two unrelated features.
+            'style.widthScale':     { ja: '本文の幅（倍率）', en: 'Content width (scale)' },
+            'style.widthScaleHint': { ja: 'PDF / HTML 出力にも反映されます（縦書きテーマの PDF を除く）',
+                                      en: 'Also applied to PDF / HTML export (except a vertical theme’s PDF)' },
+            'style.widthScaleFixed': { ja: 'このスタイルは版面を字数で決めるため倍率は効きません。⚙ の「1行の文字数」で変更してください',
+                                       en: 'This style sizes its text block in characters, so the scale has no effect — use ⚙ → “Characters per line” instead' },
+            'style.widthScaleWide': { ja: '全幅表示（W）が有効です。幅を変えると全幅表示は解除されます',
+                                      en: 'Full-width layout (W) is on — changing the width turns it off' },
+            'style.widthScaleDown': { ja: '狭く', en: 'Narrower' },
+            'style.widthScaleUp':   { ja: '広く', en: 'Wider' },
 
             'lic.loadFailed':      { ja: 'THIRD_PARTY_LICENSES.txt の読み込みに失敗しました ({error})',
                                      en: 'Could not load THIRD_PARTY_LICENSES.txt ({error})' },
@@ -3061,6 +3092,8 @@
             'menu.copyLatex':      { ja: 'LaTeX をコピー',  en: 'Copy LaTeX' },
             'menu.collapseAll':    { ja: 'すべて閉じる', en: 'Collapse all' },
             'menu.expandAll':      { ja: 'すべて開く',   en: 'Expand all' },
+            'menu.saveSvg':        { ja: 'SVG として保存', en: 'Save as SVG' },
+            'menu.savePng':        { ja: 'PNG として保存', en: 'Save as PNG' },
             'fn.backToRef':        { ja: '参照元に戻る', en: 'Back to reference' },
 
             // ABC playback bar. NOT translatable and deliberately absent: the ♩=
@@ -3200,6 +3233,8 @@
             'toast.fontScale':     { ja: '本文の文字サイズ {pct}%', en: 'Body text size {pct}%' },
             'toast.pdfExport':     { ja: 'PDF出力: {name}',  en: 'Exported PDF: {name}' },
             'toast.pdfExportFail': { ja: 'PDF出力に失敗しました', en: 'PDF export failed' },
+            'toast.figureSaved':   { ja: '保存しました: {name}', en: 'Saved: {name}' },
+            'toast.figureSaveFail':{ ja: '図の保存に失敗しました', en: 'Could not save the figure' },
             'toast.renderFail':    { ja: 'プレビューの描画に失敗しました', en: 'Preview rendering failed' },
             'toast.openingWindow': { ja: '新しいウィンドウで開いています…', en: 'Opening in a new window…' },
             'toast.noFile':        { ja: '更新するファイルがありません', en: 'There is no file to update' },
@@ -3698,7 +3733,7 @@
             // theme does not consume it), so storing a new value would silently arm
             // a change the reader only sees on some *other* style later. Refuse and
             // say why — the same thing the modal's disabled buttons express.
-            if (__fontScaleIsFixedLayout()) {
+            if (__previewIsFixedLayout()) {
                 if (!quiet) showToast(t('style.fontScaleFixed'));
                 return;
             }
@@ -3731,15 +3766,91 @@
             setFontScale(__FONT_SCALE_STEPS[j], opts);
         }
         // A theme whose 版面 is defined in CHARACTERS rather than pixels (bunko.css,
-        // via --md-page-lines) deliberately does not route its font size through the
-        // multiplier: 39字 × 16行 is the layout, and the PDF export already rescales
-        // that block to the paper with --md-print-scale, which would cancel the
-        // multiplier out exactly. Such a theme's own ⚙ is the control instead, so the
-        // modal row reports itself as inactive rather than silently doing nothing.
-        function __fontScaleIsFixedLayout() {
+        // via --md-page-lines) deliberately does not route its font size OR its
+        // measure through a multiplier: 39字 × 16行 is the layout, and the PDF export
+        // already rescales that block to the paper with --md-print-scale, which would
+        // cancel the multiplier out exactly. Such a theme's own ⚙ is the control
+        // instead (「文字サイズ」/「1行の文字数」), so the modal rows report themselves
+        // as inactive rather than silently doing nothing.
+        // Both scale rows share this predicate — it separates exactly the two vertical
+        // themes: bunko declares --md-page-lines, tategaki does not.
+        function __previewIsFixedLayout() {
             if (!preview) return false;
             const n = parseFloat(getComputedStyle(preview).getPropertyValue('--md-page-lines'));
             return Number.isFinite(n) && n >= 1;
+        }
+
+        // ---- Content width (本文の幅) --------------------------------------------
+        // The second layout multiplier, and a structural twin of --md-font-scale
+        // above: same ladder-validated localStorage value, same <style> stamped with
+        // `body:not(.marp)` (slides are a fixed 1280x720 box), same "theme opts in by
+        // routing its own length through the variable" contract. It exists because
+        // the font scale deliberately does NOT move the 版面, so a reader who wants a
+        // different measure had only the all-or-nothing W key.
+        // The ladder is the font one minus its top rung: 2.5 x 900px = 2250px is off
+        // screen on every realistic window, so it would not differ from 2.0.
+        const __WIDTH_SCALE_STEPS = [0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.25, 1.5, 1.75, 2.0];
+        const __WIDTH_SCALE_DEFAULT = 1;
+        // Pinned to 1 under --export-png for the same reason __readFontScale() is, and
+        // it matters more here: this multiplier moves the emitted PNG's pixel width.
+        function __readWidthScale() {
+            if (window.__captureConfig) return __WIDTH_SCALE_DEFAULT;
+            const n = parseFloat(localStorage.getItem('widthScale'));
+            return __WIDTH_SCALE_STEPS.indexOf(n) >= 0 ? n : __WIDTH_SCALE_DEFAULT;
+        }
+        let widthScale = __readWidthScale();
+        function applyWidthScale() {
+            let st = document.getElementById('width-scale-style');
+            if (!st) {
+                st = document.createElement('style');
+                st.id = 'width-scale-style';
+                document.head.appendChild(st);
+            }
+            // Empty at the default, so an untouched HTML export carries nothing extra.
+            st.textContent = widthScale === __WIDTH_SCALE_DEFAULT
+                ? ''
+                : 'body:not(.marp) #preview{--md-width-scale:' + widthScale + ' !important;}';
+        }
+        function setWidthScale(v) {
+            const next = __WIDTH_SCALE_STEPS.indexOf(v) >= 0 ? v : __WIDTH_SCALE_DEFAULT;
+            // Under a character-defined 版面 the multiplier is inert (the theme does
+            // not consume it), so storing a value would silently arm a change the
+            // reader only sees on some other style later. Same refusal as setFontScale.
+            if (__previewIsFixedLayout()) return;
+            // body.wide (W key) is `max-width: none` at (1,1,0) and beats every theme's
+            // own cap, so while it is on this multiplier is completely inert. The two
+            // are controls of the SAME quantity, so acting is the honest resolution —
+            // the same doctrine as setStyleVarsPaneOpen() activating the style it is
+            // about to configure ("configuring a style you cannot see is meaningless").
+            // Cleared BEFORE the unchanged-value check: pressing 「既定に戻す」 while
+            // 全幅表示 is on must still put the reader back on the theme's own 版面.
+            const wasWide = document.body.classList.contains('wide');
+            if (wasWide) __setBodyClassFlag('wide', 'wide', false);
+            if (next === widthScale && !wasWide) { __updateWidthScaleUI(); return; }
+            const anchor = capturePreviewAnchor();
+            widthScale = next;
+            if (next === __WIDTH_SCALE_DEFAULT) localStorage.removeItem('widthScale');
+            else localStorage.setItem('widthScale', String(next));
+            applyWidthScale();
+            // A paginating theme would have to re-split: a narrower measure re-wraps
+            // every paragraph and moves every boundary. Unreachable today (the only
+            // such theme is refused above), and a no-op for every other theme, but the
+            // cost is one early return and the alternative is a silent bug later.
+            __schedulePaginateRefresh();
+            // Mandatory here, more so than for the font scale: Plotly sizes a chart to
+            // its container at render time and never tracks a later CSS-driven change,
+            // and moving that container's width is this control's whole purpose.
+            __resizePlotlyBlocks();
+            requestAnimationFrame(() => restorePreviewAnchor(anchor));
+            __updateWidthScaleUI();
+        }
+        // dir: +1 / -1 to step the ladder, 0 to reset. Mirrors stepFontScale().
+        function stepWidthScale(dir) {
+            if (!dir) { setWidthScale(__WIDTH_SCALE_DEFAULT); return; }
+            let i = __WIDTH_SCALE_STEPS.indexOf(widthScale);
+            if (i < 0) i = __WIDTH_SCALE_STEPS.indexOf(__WIDTH_SCALE_DEFAULT);
+            const j = Math.max(0, Math.min(__WIDTH_SCALE_STEPS.length - 1, i + dir));
+            setWidthScale(__WIDTH_SCALE_STEPS[j]);
         }
 
         // Stamp the overrides into a dedicated <style>. Same mechanism, and the
@@ -3830,9 +3941,11 @@
         }
         applyDarkMode(darkMode);
         applyUserStyle(currentStyle);
-        // One call for the life of the page: the rule is scoped `body:not(.marp)`,
-        // so it needs no re-application on a style swap or a Marp entry/exit.
+        // One call each for the life of the page: both rules are scoped
+        // `body:not(.marp)`, so they need no re-application on a style swap or a
+        // Marp entry/exit.
         applyFontScale();
+        applyWidthScale();
         // Expose the current calendar year to CSS as a *string* custom property so
         // themes can print an auto-updating year (e.g. a copyright line) without any
         // JS of their own:  content: "© " var(--current-year) " …";
@@ -5078,15 +5191,24 @@
             });
         }
 
+        // The one writer of a body-class flag and its localStorage key, so a second
+        // caller (setWidthScale clears `wide`) can never let the two drift apart.
+        function __setBodyClassFlag(cls, storeKey, on) {
+            document.body.classList.toggle(cls, !!on);
+            localStorage.setItem(storeKey, !!on);
+        }
         // Restore a persisted body-class flag and bind `key` to toggle + persist it
-        // (optionally announcing the new state via a toast).
-        function bindBodyClassToggle(key, cls, storeKey, toastLabelKey) {
+        // (optionally announcing the new state via a toast). `after` runs once the
+        // flag has settled — the S modal's width row reads body.wide, and W is not
+        // modal-guarded, so it can be toggled while that row is on screen.
+        function bindBodyClassToggle(key, cls, storeKey, toastLabelKey, after) {
             if (localStorage.getItem(storeKey) === 'true') document.body.classList.add(cls);
             onPlainKey(key, () => {
-                const on = document.body.classList.toggle(cls);
-                localStorage.setItem(storeKey, on);
+                const on = !document.body.classList.contains(cls);
+                __setBodyClassFlag(cls, storeKey, on);
                 if (toastLabelKey) showToast(t('toast.toggle', {
                     label: t(toastLabelKey), state: t(on ? 'common.on' : 'common.off') }));
+                if (after) after();
             });
         }
 
@@ -5096,7 +5218,9 @@
         // Full-width layout toggle (W key). Same pattern as L/N; pure body-class
         // toggle, persisted in localStorage. CSS scoped to body.wide #preview;
         // no-op in Marp mode (the later body.marp #preview rule wins).
-        bindBodyClassToggle('w', 'wide', 'wide', 'toggle.wide');
+        // `max-width: none` outranks the 本文の幅 multiplier, so the S modal's width
+        // row has to re-read this flag whenever it changes (no-op while hidden).
+        bindBodyClassToggle('w', 'wide', 'wide', 'toggle.wide', __updateWidthScaleUI);
 
         // Auto-shrink Marp slides to fit (A key). When on (default), slides whose
         // content overflows the 1280x720 box are scaled down uniformly to fit;
@@ -5220,29 +5344,35 @@
             if (pane) { pane.hidden = true; pane.innerHTML = ''; }
             const tbl = document.querySelector('#style-modal table');
             if (tbl) tbl.hidden = false;
-            __setFontScaleRowHidden(false);
+            __setScaleRowsHidden(false);
             const title = document.getElementById('style-modal-title');
             if (title) title.textContent = t('style.title');
             __styleVarsState = null;
         }
-        // The scale row shares the list's visibility: it belongs to the document,
-        // not to the style being configured in the pane.
-        // Showing it always re-reads the state, because the active style can have
-        // changed while the row was hidden: the ⚙ activates the style it configures,
+        // Both scale rows share the list's visibility: they belong to the document,
+        // not to the style being configured in the pane — so one function, not a
+        // twin per row.
+        // Showing them always re-reads the state, because the active style can have
+        // changed while they were hidden: the ⚙ activates the style it configures,
         // so 「← 一覧へ」 can land on a theme whose 版面 is fixed (bunko) when the
-        // row was last drawn under one whose isn't.
-        function __setFontScaleRowHidden(hidden) {
-            const row = document.getElementById('font-scale-row');
-            if (!row) return;
-            row.hidden = hidden;
-            if (!hidden) __updateFontScaleUI();
+        // rows were last drawn under one whose isn't.
+        function __setScaleRowsHidden(hidden) {
+            const rows = [['font-scale-row', __updateFontScaleUI],
+                          ['content-width-row', __updateWidthScaleUI]];
+            for (const [id, update] of rows) {
+                const row = document.getElementById(id);
+                if (!row) continue;
+                row.hidden = hidden;
+                if (!hidden) update();
+            }
         }
+        function __updateScaleRowsUI() { __updateFontScaleUI(); __updateWidthScaleUI(); }
         function __updateFontScaleUI() {
             const val = document.getElementById('font-scale-value');
             if (val) val.textContent = Math.round(fontScale * 100) + '%';
             const row = document.getElementById('font-scale-row');
             if (!row) return;
-            const fixed = __fontScaleIsFixedLayout();
+            const fixed = __previewIsFixedLayout();
             const note = row.querySelector('.fs-fixed');
             if (note) note.hidden = !fixed;
             const i = __FONT_SCALE_STEPS.indexOf(fontScale);
@@ -5253,6 +5383,30 @@
             dis('font-scale-down', i === 0);
             dis('font-scale-up', i === __FONT_SCALE_STEPS.length - 1);
             dis('font-scale-reset', fontScale === __FONT_SCALE_DEFAULT);
+        }
+        // Twin of the above, with one deliberate difference: body.wide only WARNS.
+        // The buttons stay live because pressing one is what clears 全幅表示 — a dead
+        // control whose only fix (press W first) is invisible from inside the modal
+        // would be worse than a note saying what the press will do.
+        function __updateWidthScaleUI() {
+            const val = document.getElementById('width-scale-value');
+            if (val) val.textContent = Math.round(widthScale * 100) + '%';
+            const row = document.getElementById('content-width-row');
+            if (!row) return;
+            const fixed = __previewIsFixedLayout();
+            const wide = document.body.classList.contains('wide');
+            const fixedNote = row.querySelector('.cw-fixed');
+            if (fixedNote) fixedNote.hidden = !fixed;
+            const wideNote = row.querySelector('.cw-wide');
+            if (wideNote) wideNote.hidden = fixed || !wide;
+            const i = __WIDTH_SCALE_STEPS.indexOf(widthScale);
+            const dis = (act, off) => {
+                const b = row.querySelector('[data-act="' + act + '"]');
+                if (b) b.disabled = fixed || off;
+            };
+            dis('width-scale-down', i === 0);
+            dis('width-scale-up', i === __WIDTH_SCALE_STEPS.length - 1);
+            dis('width-scale-reset', widthScale === __WIDTH_SCALE_DEFAULT && !wide);
         }
         // `name` is the spec / storage key (a user style's file, or `marp/<file>`
         // for a Marp theme — see __marpThemeVarsKey). `opts.display` is the label
@@ -5280,7 +5434,7 @@
             __styleVarsState = { name, spec, values: __readStyleVars(name), anchor: capturePreviewAnchor() };
             const tbl = document.querySelector('#style-modal table');
             if (tbl) tbl.hidden = true;
-            __setFontScaleRowHidden(true);
+            __setScaleRowsHidden(true);
             const title = document.getElementById('style-modal-title');
             if (title) title.textContent = t('style.settingsFor', { name: opts.display || name });
             pane.hidden = false;
@@ -5424,11 +5578,11 @@
             closeStyleVarsPane();
             const marp = document.body.classList.contains('marp');
             if (open) __renderStyleRows(marp);
-            // In Marp mode the modal lists slide themes and the scale does not apply
-            // (the slide box is fixed) — closeStyleVarsPane() above has just shown
-            // the row, so hide it again here rather than duplicating the test there.
-            if (marp) __setFontScaleRowHidden(true);
-            else __updateFontScaleUI();
+            // In Marp mode the modal lists slide themes and neither scale applies
+            // (the slide box is fixed) — closeStyleVarsPane() above has just shown the rows, so hide them again here
+            // rather than duplicating the test there.
+            if (marp) __setScaleRowsHidden(true);
+            else __updateScaleRowsUI();
             m.classList.toggle('visible', open);
         }
         onPlainKey('s', (e) => {
@@ -5490,6 +5644,17 @@
                 // toast on top of it would just cover the modal.
                 if (act === 'font-scale-reset') setFontScale(__FONT_SCALE_DEFAULT, { quiet: true });
                 else stepFontScale(act === 'font-scale-up' ? 1 : -1, { quiet: true });
+                return;
+            }
+            // Content width row. A sibling branch rather than a merged selector, so
+            // each row's acts stay independently greppable. setWidthScale() never
+            // toasts (there is no shortcut, so the modal readout is the only caller
+            // and the only feedback needed).
+            const cwBtn = target.closest('#content-width-row button[data-act]');
+            if (cwBtn) {
+                const act = cwBtn.dataset.act;
+                if (act === 'width-scale-reset') setWidthScale(__WIDTH_SCALE_DEFAULT);
+                else stepWidthScale(act === 'width-scale-up' ? 1 : -1);
                 return;
             }
             if (target.closest('#style-vars-pane .sv-back')) {
@@ -5699,6 +5864,58 @@
             }
             return cssText;
         }
+
+        // Read a Blob as a `data:` URL. Shared by the export's image/font inlining
+        // and by the figure-save serializer.
+        function __blobToDataUrl(blob) {
+            return new Promise((resolve, reject) => {
+                const fr = new FileReader();
+                fr.onload = () => resolve(fr.result);
+                fr.onerror = () => reject(fr.error);
+                fr.readAsDataURL(blob);
+            });
+        }
+
+        // Build `@font-face` rules with the woff2 payload inlined as a data: URI, one
+        // per family. `urlFor(family)` maps a family name to its bundled woff2 path;
+        // a family whose file is missing is dropped silently (the glyphs then fall
+        // back, which beats failing the whole artifact).
+        //
+        // Shared by buildExportArtifact() — where a tikz SVG without the matching
+        // Computer-Modern face renders as blank tofu, since TikZJax emits
+        // <text font-family="cmmi10"> pointing at Private-Use-Area codepoints — and
+        // by the right-click figure save, which has exactly the same problem in a
+        // standalone .svg file. One implementation, two callers (CLAUDE.md #2).
+        async function __inlineFontFaceCss(families, urlFor) {
+            const faces = await Promise.all([...families].map(async (fam) => {
+                try {
+                    const href = urlFor(fam);
+                    if (!href) return '';
+                    const resp = await fetch(href);
+                    if (!resp.ok) return '';
+                    const dataUrl = await __blobToDataUrl(await resp.blob());
+                    return '@font-face{font-family:"' + fam + '";src:url(' + dataUrl
+                        + ') format("woff2");font-display:block;}';
+                } catch (e) {
+                    console.warn('failed to inline font', fam, e);
+                    return '';
+                }
+            }));
+            return faces.filter(Boolean).join('\n');
+        }
+
+        // The Computer-Modern families a set of tikz SVGs actually reference, and
+        // where their woff2 lives. fonts.css maps family → same-named file
+        // (font-family: cmmi10 → fonts/cmmi10.woff2).
+        function __tikzFontFamilies(svgs) {
+            const fams = new Set();
+            svgs.forEach(svg => svg.querySelectorAll('[font-family]').forEach(t => {
+                const f = (t.getAttribute('font-family') || '').trim().replace(/['"]/g, '');
+                if (f && /^[A-Za-z0-9_-]+$/.test(f)) fams.add(f);
+            }));
+            return fams;
+        }
+        function __tikzFontUrl(fam) { return 'libs/tikzjax/dist/fonts/' + fam + '.woff2'; }
 
         async function buildExportArtifact({ pageRelPath = null } = {}) {
             // Marp: the export reflects scroll-mode layout, so drop deck/list first
@@ -5937,17 +6154,11 @@
                     .filter(img => isUserfile(img.getAttribute('src') || ''));
                 const bySrc = new Map(); // src -> dataURL
                 const uniques = [...new Set(cloneImgs.map(img => img.getAttribute('src')))];
-                const toDataUrl = (blob) => new Promise((resolve, reject) => {
-                    const fr = new FileReader();
-                    fr.onload = () => resolve(fr.result);
-                    fr.onerror = () => reject(fr.error);
-                    fr.readAsDataURL(blob);
-                });
                 await Promise.all(uniques.map(async (src) => {
                     try {
                         const resp = await fetch(src);
                         if (!resp.ok) return;
-                        bySrc.set(src, await toDataUrl(await resp.blob()));
+                        bySrc.set(src, await __blobToDataUrl(await resp.blob()));
                     } catch (e) {
                         console.warn('export: failed to inline image', src, e);
                     }
@@ -5969,29 +6180,7 @@
             {
                 const tikzSvgs = previewClone.querySelectorAll('.tikzcd-diagram svg, .tikz-diagram svg');
                 if (tikzSvgs.length) {
-                    const fams = new Set();
-                    tikzSvgs.forEach(svg => svg.querySelectorAll('[font-family]').forEach(t => {
-                        const f = (t.getAttribute('font-family') || '').trim().replace(/['"]/g, '');
-                        if (f && /^[A-Za-z0-9_-]+$/.test(f)) fams.add(f);
-                    }));
-                    const toDataUrl = (blob) => new Promise((resolve, reject) => {
-                        const fr = new FileReader();
-                        fr.onload = () => resolve(fr.result);
-                        fr.onerror = () => reject(fr.error);
-                        fr.readAsDataURL(blob);
-                    });
-                    const faces = await Promise.all([...fams].map(async (fam) => {
-                        try {
-                            const resp = await fetch('libs/tikzjax/dist/fonts/' + fam + '.woff2');
-                            if (!resp.ok) return '';
-                            const dataUrl = await toDataUrl(await resp.blob());
-                            return '@font-face{font-family:"' + fam + '";src:url(' + dataUrl + ') format("woff2");font-display:block;}';
-                        } catch (e) {
-                            console.warn('export: failed to inline tikz font', fam, e);
-                            return '';
-                        }
-                    }));
-                    tikzFontCss = faces.filter(Boolean).join('\n');
+                    tikzFontCss = await __inlineFontFaceCss(__tikzFontFamilies(tikzSvgs), __tikzFontUrl);
                 }
             }
 
@@ -6102,6 +6291,10 @@
             // default, so an unscaled document exports exactly as it always did.
             const fsStyleEl = document.getElementById('font-scale-style');
             const fsCss = fsStyleEl && fsStyleEl.textContent ? fsStyleEl.textContent : '';
+            // And the content width (the S modal's 本文の幅 row) — third time, same
+            // reason: #width-scale-style is not the first <style> either.
+            const cwStyleEl = document.getElementById('width-scale-style');
+            const cwCss = cwStyleEl && cwStyleEl.textContent ? cwStyleEl.textContent : '';
             // Title: prefer the source filename basename (without .md/.markdown) so browser tabs and
             // bookmarks identify the document. Falls back to document.title for files opened via
             // drag-drop where we somehow don't have a path.
@@ -6317,6 +6510,7 @@ ${userCssText ? '\n/* user style */\n' + userCssText : ''}
 ${wmCss ? '\n/* watermark label override */\n' + wmCss : ''}
 ${svCss ? '\n/* @user-vars overrides (⚙) */\n' + svCss : ''}
 ${fsCss ? '\n/* body text scale (Ctrl +/-/0) */\n' + fsCss : ''}
+${cwCss ? '\n/* content width scale (S modal) */\n' + cwCss : ''}
 ${tikzFontCss ? '\n/* tikz Computer-Modern fonts (inlined) */\n' + tikzFontCss : ''}
 /* export overrides: artifact is always visible (no splash / drop-zone gating) */
 #app-container { display: flex !important; }
@@ -8438,7 +8632,7 @@ ${previewClone.outerHTML}
                         // 'htmlAndMathml' emits a hidden <span class="katex-mathml"><math>…</math></span>
                         // (whose <semantics> carries an <annotation encoding="application/x-tex"> with the
                         // original LaTeX) alongside the visual HTML layer — this is what powers the
-                        // right-click "Copy MathML / Copy LaTeX" menu (see setupMathContextMenu).
+                        // right-click "Copy MathML / Copy LaTeX" menu (see setupPreviewContextMenu).
                         output: 'htmlAndMathml'
                     });
                     html = html.replace(placeholder, rendered);
@@ -12723,10 +12917,306 @@ ${previewClone.outerHTML}
             return { addItem, show, hide };
         }
 
-        let __mathMenuWired = false;
-        function setupMathContextMenu() {
-            if (__mathMenuWired) return;
-            __mathMenuWired = true;
+        // ===== Save a rendered figure (right-click) ==================================
+        // Every figure engine leaves either an inline <svg> or a <canvas> under a
+        // per-fence wrapper div; this lifts the one under the cursor out as a file.
+        // WebView2 here has no download plumbing at all (nothing in src/ handles a
+        // download, and `<a download>` is inert), so the bytes go to the host over a
+        // new `savefigure:` IPC which runs the native Save dialog — the same shape
+        // `exporthtml:` already uses.
+        //
+        // The wrapper list is the set isFigureChild() centres in Marp, minus the
+        // tables (a GFM / csv table is HTML, not a figure). ⚠ closest('.kataskeve')
+        // does NOT match .kataskeve3d: class tokens are matched whole, the same
+        // guarantee the fence regexes rely on (preview-blocks.md). Do not "simplify"
+        // either selector to a prefix match.
+        const __SVG_NS = 'http://www.w3.org/2000/svg';
+        const __FIGURE_KINDS = [
+            { sel: '.mermaid',           kind: 'mermaid',     svg: 'svg' },
+            // ⚠ scoped to .abc-staff: the playback bar is a sibling under the block.
+            { sel: '.abc-notation',      kind: 'abc',         svg: '.abc-staff svg' },
+            { sel: '.markwhen-timeline', kind: 'markwhen',    svg: 'svg.mw-svg' },
+            { sel: '.tikzcd-diagram',    kind: 'tikzcd',      svg: '.tikzjax-wrapper > svg', tikz: true },
+            { sel: '.tikz-diagram',      kind: 'tikz',        svg: '.tikzjax-wrapper > svg', tikz: true },
+            { sel: '.kataskeve',         kind: 'kataskeve',   svg: 'svg' },
+            { sel: '.feynman-block',     kind: 'feynman',     svg: 'svg' },
+            { sel: '.kataskeve3d',       kind: 'kataskeve3d', canvas: 'canvas' },
+            // ⚠ model3d's backing store is __MODEL3D_SS (=2) × the logical size, so
+            // its PNG comes out at twice the on-screen pixels. That is wanted here.
+            { sel: '.model3d',           kind: 'model3d',     canvas: 'canvas' },
+            { sel: '.plotly-block',      kind: 'plotly',      plotly: true },
+        ];
+        const __FIGURE_SEL = __FIGURE_KINDS.map(f => f.sel).join(', ');
+
+        // Resolve a right-click target to a saveable figure, or null. Returning null
+        // is the "no items" signal: the caller then leaves the event alone so
+        // WebView2's own menu shows. That one rule is what keeps error boxes, a
+        // still-compiling tikz placeholder and csv/GFM tables out of the menu — none
+        // of them owns an <svg> or a <canvas>.
+        function __figureAt(target) {
+            const host = target.closest ? target.closest(__FIGURE_SEL) : null;
+            if (!host) return null;
+            const spec = __FIGURE_KINDS.find(f => host.matches(f.sel));
+            if (!spec) return null;
+            if (spec.plotly) {
+                return (window.Plotly && host.classList.contains('js-plotly-plot'))
+                    ? { host, spec } : null;
+            }
+            if (spec.canvas) {
+                const canvas = host.querySelector(spec.canvas);
+                return canvas ? { host, spec, canvas } : null;
+            }
+            // Prefer the OUTERMOST <svg> between the click and the wrapper: dvisvgm
+            // nests an <svg> inside a tikz figure, and one feynman fence can hold
+            // several diagrams side by side.
+            let svg = null;
+            for (let n = target; n && n !== host; n = n.parentElement) {
+                if (n.localName === 'svg') svg = n;
+            }
+            if (!svg) svg = host.querySelector(spec.svg);
+            return svg ? { host, spec, svg } : null;
+        }
+
+        // `<base>-<kind><n>.<ext>`, n being this block's 1-based position among the
+        // blocks of its own kind. ⚠ `kind` is data, not UI text — never localize it.
+        function __figureFileName(fig, ext) {
+            const all = Array.from(preview.querySelectorAll(fig.spec.sel));
+            const n = all.indexOf(fig.host) + 1;
+            let base = 'figure';
+            if (currentFilePath) {
+                const stem = (currentFilePath.split(/[\\/]/).pop() || '')
+                    .replace(/\.(md|markdown|mdx)$/i, '');
+                if (stem) base = stem;
+            }
+            return base + '-' + fig.spec.kind + (n > 0 ? n : 1) + '.' + ext;
+        }
+
+        // The first opaque background behind the figure — the same "walk up for the
+        // paper colour" move kataskeve's penrose_triangle makes. A saved figure gets
+        // it as a real <rect>, or a dark-mode render (light ink, transparent ground)
+        // would be invisible the moment it is opened anywhere else.
+        function __figureBackdrop(el) {
+            for (let n = el; n && n.nodeType === 1; n = n.parentElement) {
+                const bg = getComputedStyle(n).backgroundColor;
+                if (bg && bg !== 'transparent' && !/^rgba\(\s*0,\s*0,\s*0,\s*0\s*\)$/.test(bg)) return bg;
+            }
+            return darkMode ? '#0d1117' : '#ffffff';
+        }
+
+        // Intrinsic geometry. viewBox first: it is the only source that is correct
+        // for a figure inside a display:none Marp slide, where every measured box is
+        // 0×0 (the reason model3d takes its size from the fence spec).
+        function __figureSvgBox(svg) {
+            const vb = svg.viewBox && svg.viewBox.baseVal;
+            if (vb && vb.width > 0 && vb.height > 0) {
+                return { x: vb.x, y: vb.y, w: vb.width, h: vb.height };
+            }
+            const w = parseFloat(svg.getAttribute('width'));
+            const h = parseFloat(svg.getAttribute('height'));
+            if (w > 0 && h > 0) return { x: 0, y: 0, w: w, h: h };
+            const r = svg.getBoundingClientRect();
+            return { x: 0, y: 0, w: Math.max(1, Math.round(r.width)), h: Math.max(1, Math.round(r.height)) };
+        }
+
+        // katex.min.css, fetched once. Its leading @font-face run points at relative
+        // `fonts/*.woff2`, which resolve against the SAVED FILE's location — i.e.
+        // nowhere. Rebuild just the faces the figure actually uses with the woff2
+        // inlined, drop the rest, and keep the layout rules verbatim (the
+        // foreignObject markup is styled entirely by them).
+        let __katexCssText = null;
+        async function __katexInlineCss(svg) {
+            const fams = new Set();
+            svg.querySelectorAll('.katex, .katex *').forEach(n => {
+                (getComputedStyle(n).fontFamily || '').split(',').forEach(part => {
+                    const f = part.trim().replace(/['"]/g, '');
+                    if (/^KaTeX_[A-Za-z0-9]+$/.test(f)) fams.add(f);
+                });
+            });
+            if (!fams.size) return '';
+            if (__katexCssText === null) {
+                try {
+                    const resp = await fetch('libs/katex/katex.min.css');
+                    __katexCssText = resp.ok ? await resp.text() : '';
+                } catch (e) { __katexCssText = ''; }
+            }
+            if (!__katexCssText) return '';
+            const jobs = [];
+            const rest = __katexCssText.replace(/@font-face\{([^}]*)\}/g, (full, body) => {
+                const fam = (body.match(/font-family:\s*([A-Za-z0-9_]+)/) || [])[1];
+                const file = (body.match(/url\(fonts\/([A-Za-z0-9_-]+)\.woff2\)/) || [])[1];
+                if (!fam || !file || !fams.has(fam)) return '';
+                const style = (body.match(/font-style:\s*([a-z]+)/) || [])[1] || 'normal';
+                const weight = (body.match(/font-weight:\s*(\d+)/) || [])[1] || '400';
+                jobs.push({ fam: fam, file: file, style: style, weight: weight });
+                return '';
+            });
+            const faces = await Promise.all(jobs.map(async (j) => {
+                try {
+                    const resp = await fetch('libs/katex/fonts/' + j.file + '.woff2');
+                    if (!resp.ok) return '';
+                    const dataUrl = await __blobToDataUrl(await resp.blob());
+                    return '@font-face{font-family:' + j.fam + ';font-style:' + j.style
+                        + ';font-weight:' + j.weight + ';src:url(' + dataUrl + ') format("woff2");}';
+                } catch (e) {
+                    console.warn('figure save: failed to inline KaTeX font', j.file, e);
+                    return '';
+                }
+            }));
+            return faces.filter(Boolean).join('\n') + '\n' + rest;
+        }
+
+        // Turn a live inline <svg> into a standalone document.
+        async function __serializeFigureSvg(svg, spec) {
+            const box = __figureSvgBox(svg);
+            const clone = svg.cloneNode(true);
+            clone.setAttribute('xmlns', __SVG_NS);
+            clone.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink');
+            clone.setAttribute('viewBox', box.x + ' ' + box.y + ' ' + box.w + ' ' + box.h);
+            // Pin a real pixel size. __abcMakeResponsive() leaves width="100%" and no
+            // height at all, and applyMermaidScale() writes style="max-width:Npx" —
+            // neither means anything once the element is a file of its own.
+            clone.setAttribute('width', box.w);
+            clone.setAttribute('height', box.h);
+            clone.style.maxWidth = '';
+            clone.style.width = '';
+            clone.style.height = '';
+            // currentColor has nothing to inherit from outside the page. abc / tikz /
+            // kataskeve / feynman all paint with it — which is exactly why their memo
+            // caches need no theme salt — so bake the on-screen ink in.
+            clone.style.color = getComputedStyle(svg).color;
+
+            // ⚠ The backdrop takes the viewBox rect, NOT width="100%" height="100%":
+            // a viewBox whose origin is not 0,0 would leave part of the figure unpainted.
+            const rect = document.createElementNS(__SVG_NS, 'rect');
+            rect.setAttribute('x', box.x);
+            rect.setAttribute('y', box.y);
+            rect.setAttribute('width', box.w);
+            rect.setAttribute('height', box.h);
+            rect.setAttribute('fill', __figureBackdrop(svg));
+            clone.insertBefore(rect, clone.firstChild);
+
+            // Fonts. Both cases are best-effort: a missing file costs that figure its
+            // glyph shapes, never the save.
+            let fontCss = '';
+            if (spec && spec.tikz) {
+                fontCss = await __inlineFontFaceCss(__tikzFontFamilies([svg]), __tikzFontUrl);
+            }
+            if (svg.querySelector('.katex')) {
+                const katexCss = await __katexInlineCss(svg);
+                if (katexCss) fontCss = fontCss ? (fontCss + '\n' + katexCss) : katexCss;
+            }
+            if (fontCss) {
+                const st = document.createElementNS(__SVG_NS, 'style');
+                st.textContent = fontCss;
+                clone.insertBefore(st, clone.firstChild);
+            }
+            return '<?xml version="1.0" encoding="UTF-8"?>\n'
+                + new XMLSerializer().serializeToString(clone);
+        }
+
+        // UTF-8 safe base64. btoa() alone throws on any non-Latin-1 character, and a
+        // figure's labels are routinely Japanese.
+        function __b64FromText(s) {
+            const bytes = new TextEncoder().encode(s);
+            let bin = '';
+            const CHUNK = 0x8000;   // fromCharCode.apply blows the stack on a big array
+            for (let i = 0; i < bytes.length; i += CHUNK) {
+                bin += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
+            }
+            return btoa(bin);
+        }
+        function __b64FromDataUrl(url) {
+            const comma = url.indexOf(',');
+            if (comma < 0) return '';
+            const meta = url.slice(0, comma);
+            const body = url.slice(comma + 1);
+            return /;base64/i.test(meta) ? body : __b64FromText(decodeURIComponent(body));
+        }
+
+        // Rasterize a standalone SVG document at 2×. ⚠ A literal 2, not
+        // devicePixelRatio — the same reasoning as __MODEL3D_SS: real DPR would make
+        // the emitted bytes depend on the reader's display scaling.
+        const __FIGURE_PNG_SS = 2;
+        function __figureSvgToPng(svgText, box) {
+            return new Promise((resolve, reject) => {
+                const img = new Image();
+                img.onload = () => {
+                    try {
+                        const c = document.createElement('canvas');
+                        c.width = Math.max(1, Math.round(box.w * __FIGURE_PNG_SS));
+                        c.height = Math.max(1, Math.round(box.h * __FIGURE_PNG_SS));
+                        const ctx = c.getContext('2d');
+                        ctx.drawImage(img, 0, 0, c.width, c.height);
+                        resolve(c.toDataURL('image/png'));
+                    } catch (err) { reject(err); }
+                };
+                img.onerror = () => reject(new Error('could not rasterize the figure'));
+                img.src = 'data:image/svg+xml;base64,' + __b64FromText(svgText);
+            });
+        }
+
+        // Produce the bytes for one figure in one format, as base64.
+        async function __figureBytes(fig, ext) {
+            if (fig.spec.plotly) {
+                // Plotly owns its own serializer; it handles the modebar, the WebGL
+                // traces and its own colours, none of which the generic path sees.
+                const box = fig.host.getBoundingClientRect();
+                const url = await window.Plotly.toImage(fig.host, {
+                    format: ext,
+                    width: Math.max(1, Math.round(box.width || 700)),
+                    height: Math.max(1, Math.round(box.height || 450)),
+                    scale: ext === 'png' ? __FIGURE_PNG_SS : 1,
+                });
+                return __b64FromDataUrl(url);
+            }
+            if (fig.canvas) {
+                // A 2D canvas whose bitmap reads back — the path HTML export already
+                // proves for both kataskeve3d and model3d.
+                return __b64FromDataUrl(fig.canvas.toDataURL('image/png'));
+            }
+            const svgText = await __serializeFigureSvg(fig.svg, fig.spec);
+            if (ext === 'svg') return __b64FromText(svgText);
+            return __b64FromDataUrl(await __figureSvgToPng(svgText, __figureSvgBox(fig.svg)));
+        }
+
+        // Hand the bytes to the host, which runs the Save dialog and writes the file.
+        async function __figureSave(fig, ext) {
+            try {
+                const data = await __figureBytes(fig, ext);
+                if (!data) throw new Error('empty figure payload');
+                if (window.ipc && typeof window.ipc.postMessage === 'function') {
+                    window.ipc.postMessage('savefigure:' + JSON.stringify({
+                        suggestedName: __figureFileName(fig, ext),
+                        ext: ext,
+                        data: data,
+                    }));
+                }
+            } catch (err) {
+                console.error('figure save failed', err);
+                showToast(t('toast.figureSaveFail'));
+            }
+        }
+
+        // Called by the Rust host once the file is written. A cancelled dialog sends
+        // nothing at all, so silence means "the user changed their mind".
+        // See CustomEvent::FigureSaveDone in src/main.rs.
+        window.__figureSaveDone = function (ok, name) {
+            showToast(ok ? t('toast.figureSaved', { name: name || '' }) : t('toast.figureSaveFail'));
+        };
+
+        // ONE contextmenu listener for both the KaTeX copy items and the figure save
+        // items. They are not independent: a feynman `equation{}` draws KaTeX inside
+        // a <foreignObject>, so a click there matches `.katex` AND `.feynman-block` —
+        // two separate __createContextMenu() instances would both open, side by side.
+        // Merged, that click simply offers all four items.
+        //
+        // The table edit menu stays separate: a `.table-editing` cell shows markdown
+        // SOURCE text, so it can contain neither a .katex nor a figure
+        // (preview-tables.md).
+        let __previewMenuWired = false;
+        function setupPreviewContextMenu() {
+            if (__previewMenuWired) return;
+            __previewMenuWired = true;
             const { addItem, show, hide } = __createContextMenu();
 
             // A copy item: `value` null/empty → disabled; on click, flash the result.
@@ -12737,20 +13227,32 @@ ${previewClone.outerHTML}
 
             preview.addEventListener('contextmenu', (e) => {
                 const k = e.target.closest('.katex');
-                if (!k) { hide(); return; } // let WebView2's native menu show elsewhere
+                const fig = __figureAt(e.target);
+                // Nothing to offer → let WebView2's native menu show (back/forward).
+                if (!k && !fig) { hide(); return; }
                 e.preventDefault();
 
-                const mathEl = k.querySelector('.katex-mathml math');
-                const mathml = mathEl ? new XMLSerializer().serializeToString(mathEl) : '';
-                const latex = (k.querySelector('annotation[encoding="application/x-tex"]')?.textContent || '').trim();
+                let mathml = '', latex = '';
+                if (k) {
+                    const mathEl = k.querySelector('.katex-mathml math');
+                    mathml = mathEl ? new XMLSerializer().serializeToString(mathEl) : '';
+                    latex = (k.querySelector('annotation[encoding="application/x-tex"]')?.textContent || '').trim();
+                }
 
                 show(e, () => {
-                    addCopyItem(t('menu.copyMathML'), mathml);
-                    addCopyItem(t('menu.copyLatex'), latex);
+                    if (k) {
+                        addCopyItem(t('menu.copyMathML'), mathml);
+                        addCopyItem(t('menu.copyLatex'), latex);
+                    }
+                    if (fig) {
+                        // A canvas figure has no vector form to offer.
+                        if (!fig.canvas) addItem(t('menu.saveSvg'), () => { __figureSave(fig, 'svg'); });
+                        addItem(t('menu.savePng'), () => { __figureSave(fig, 'png'); });
+                    }
                 });
             });
         }
-        setupMathContextMenu();
+        setupPreviewContextMenu();
 
         // Right-click menu on the workspace file tree: collapse / expand every
         // folder & file sub-tree at once. Listener lives on the stable #file-tree
@@ -12974,7 +13476,7 @@ ${previewClone.outerHTML}
         }
 
         // Right-click menu, active only inside a table that is in edit mode. Scoping it
-        // that way also avoids colliding with setupMathContextMenu(): an editing cell
+        // that way also avoids colliding with setupPreviewContextMenu(): an editing cell
         // shows source text, so it never contains a .katex for both menus to match.
         let __tableMenuWired = false;
         function setupTableContextMenu() {
@@ -13722,7 +14224,7 @@ ${previewClone.outerHTML}
                 <tbody>
                     <tr><td class="keys"><kbd>H</kbd></td><td data-i18n="help.key.h">このヘルプの表示 / 非表示</td></tr>
                     <tr><td class="keys"><kbd>M</kbd></td><td data-i18n="help.key.m">ダーク / ライト表示の切り替え</td></tr>
-                    <tr><td class="keys"><kbd>S</kbd></td><td data-i18n="help.key.s">スタイルの選択（行末の ⚙ でそのスタイル固有の設定。Marpモードでは Marpテーマ。フロントマターを書き換え）</td></tr>
+                    <tr><td class="keys"><kbd>S</kbd></td><td data-i18n="help.key.s">スタイルの選択（行末の ⚙ でそのスタイル固有の設定。下端の行で本文の文字サイズと幅。Marpモードでは Marpテーマ。フロントマターを書き換え）</td></tr>
                     <tr><td class="keys"><kbd>N</kbd></td><td data-i18n="help.key.n">セクション自動番号の切り替え</td></tr>
                     <tr><td class="keys"><kbd>L</kbd></td><td data-i18n="help.key.l">行番号の表示切り替え</td></tr>
                     <tr><td class="keys"><kbd>W</kbd></td><td data-i18n="help.key.w">全幅レイアウトの切り替え</td></tr>
@@ -13764,21 +14266,39 @@ ${previewClone.outerHTML}
             <table>
                 <tbody id="style-modal-rows"></tbody>
             </table>
-            <!-- The body text scale is style-INDEPENDENT (one value for every
-                 style), so it sits outside the table __renderStyleRows() rebuilds
-                 and outside the per-style #style-vars-pane. -->
-            <div id="font-scale-row">
+            <!-- Both scale rows are style-INDEPENDENT (one value for every style),
+                 so they sit outside the table __renderStyleRows() rebuilds and
+                 outside the per-style #style-vars-pane. Type size first — it is what
+                 readers reach for most — then the measure. -->
+            <div id="font-scale-row" class="scale-row">
                 <div class="fs-head">
                     <span class="fs-label" data-i18n="style.fontScale">本文の文字サイズ（倍率）</span>
                     <span class="fs-hint" data-i18n="style.fontScaleHint">PDF / HTML 出力にも反映されます</span>
                 </div>
                 <div class="fs-control">
                     <button type="button" data-act="font-scale-down" data-i18n-attr="title:style.fontScaleDown" title="小さく">−</button>
-                    <span id="font-scale-value">100%</span>
+                    <span id="font-scale-value" class="sc-value">100%</span>
                     <button type="button" data-act="font-scale-up" data-i18n-attr="title:style.fontScaleUp" title="大きく">＋</button>
                     <button type="button" class="fs-reset" data-act="font-scale-reset" data-i18n="style.resetDefaults">既定に戻す</button>
                 </div>
                 <div class="fs-fixed" hidden data-i18n="style.fontScaleFixed">このスタイルは版面を字数で決めるため倍率は効きません。⚙ の「文字サイズ」で変更してください</div>
+            </div>
+            <div id="content-width-row" class="scale-row">
+                <div class="fs-head">
+                    <span class="fs-label" data-i18n="style.widthScale">本文の幅（倍率）</span>
+                    <span class="fs-hint" data-i18n="style.widthScaleHint">PDF / HTML 出力にも反映されます（縦書きテーマの PDF を除く）</span>
+                </div>
+                <div class="fs-control">
+                    <button type="button" data-act="width-scale-down" data-i18n-attr="title:style.widthScaleDown" title="狭く">−</button>
+                    <span id="width-scale-value" class="sc-value">100%</span>
+                    <button type="button" data-act="width-scale-up" data-i18n-attr="title:style.widthScaleUp" title="広く">＋</button>
+                    <button type="button" class="fs-reset" data-act="width-scale-reset" data-i18n="style.resetDefaults">既定に戻す</button>
+                </div>
+                <!-- Two notes, not one: the buttons stay ENABLED under .cw-wide
+                     (pressing one clears 全幅表示 and the multiplier takes effect),
+                     and are disabled under .cw-fixed (bunko's ⚙ is the control). -->
+                <div class="cw-wide fs-fixed" hidden data-i18n="style.widthScaleWide">全幅表示（W）が有効です。幅を変えると全幅表示は解除されます</div>
+                <div class="cw-fixed fs-fixed" hidden data-i18n="style.widthScaleFixed">このスタイルは版面を字数で決めるため倍率は効きません。⚙ の「1行の文字数」で変更してください</div>
             </div>
             <div id="style-vars-pane" hidden></div>
         </div>

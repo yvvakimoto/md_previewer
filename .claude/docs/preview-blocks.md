@@ -53,3 +53,104 @@
 - **KaTeX math** — `$...$` and `$$...$$` are extracted via `extractMathInto` placeholder pass *before* `marked.parse` and rendered as pre-rendered spans afterward. Same placeholder pass runs on footnote bodies so footnote math, tooltips, and exported artifacts all share the same KaTeX output. `renderMathExpressions()` renders with **`output: 'htmlAndMathml'`** (not html-only) so each expression carries a hidden `<span class="katex-mathml"><math>…</math></span>` whose `<semantics>` includes an `<annotation encoding="application/x-tex">` with the original LaTeX. This powers **`setupMathContextMenu()`** in `assets/index.html`: a single delegated `contextmenu` listener on the stable `#preview` element (wired once, guarded by `__mathMenuWired`, so it survives the per-render `innerHTML` rebuild) shows a right-click **"Copy MathML / Copy LaTeX"** menu on any `.katex` element — MathML via `XMLSerializer` on the `<math>`, LaTeX from the `x-tex` annotation; a format absent from the DOM (e.g. an html-only `.katex`) is shown disabled. Right-clicking outside math falls through to WebView2's native menu (back/forward navigation). Works in both pipelines (Marp's marp-core KaTeX also emits MathML). Copy uses the shared **`copyTextViaTextarea()`** helper (the WebView2-safe `execCommand('copy')` fallback, also used by the code-block copy button). The MathML now also rides into exported HTML, harmlessly improving accessibility.
 
 - **Syntax highlighting** — `highlight.js` colors code blocks; every block gets a copy button. The bundled `highlight.min.js` is the **common** build, so a language outside that set needs its own grammar module loaded after it. **Modelica** (` ```modelica `, aliases `mo` / `mos`) is provided that way by **`assets/libs/hljs-modelica.js`**, an **in-house, hand-written, git-tracked** definition (a `<script>` in `index.html` right after `highlight.min.js`; it self-registers via `hljs.registerLanguage`). It is hand-written rather than fetched by `tools/fetch-libs.ps1` for two reasons: highlight.js core ships **no** Modelica grammar (absent from the cdnjs / jsdelivr `languages/` set for 11.x), and the npm plugin `highlightjs-modelica` targets hljs v9/v10 — its `contains` ends in `hljs.METHOD_GUARD`, which **v11 removed**, so compiling it against the bundled 11.9.0 throws; it also treats `'...'` as a string when in Modelica single quotes delimit a **quoted identifier (Q-IDENT)**, and files `extends` / `partial` / `within` under built-ins. Two details of the grammar are load-bearing: the string mode is **not** `hljs.QUOTE_STRING_MODE` (that sets `illegal: \n`, but a Modelica documentation / annotation string may span lines), and the two multi-class `begin: [...]` rules that name a class carry negative lookaheads in their third group — `(?!(?:record|function)\b)` so `operator record Complex` names `Complex` rather than `record`, and `(?!(?:if|for|when|while)\b)` so `end when;` stays two keywords instead of tagging `when` as a class name. Being in-house it needs **no `THIRD_PARTY_LICENSES.txt` entry**, and it is **not** covered by the `.gitignore` enumeration of generated `assets/libs/` artifacts, so it is tracked by default. Registration is global, so it serves the normal pipeline and the Marp code-block re-highlight pass alike; HTML export needs nothing (the spans are already in the serialized DOM). Sample: the *Modelica* section in `samples/syntax.md`.
+
+
+---
+
+## Saving one rendered figure (right-click → SVG / PNG)
+
+Right-clicking a rendered figure offers **「SVG として保存」/「PNG として保存」**, writing that
+one figure to a file through a native Save dialog. It is the per-figure counterpart to the
+whole-document `X` export, and it exists because there was no other way out: this WebView2
+host wires up **no download plumbing at all** (nothing in `src/` handles a download and
+`<a download>` is inert), so the bytes have to go to the host over IPC.
+
+**Menu.** Built by `setupPreviewContextMenu()` in `assets/index.html`, which is the former
+`setupMathContextMenu()` — the two are **deliberately one listener and one menu**. A
+feynmark `equation{}` draws KaTeX inside a `<foreignObject>`, so a click there matches
+`.katex` **and** `.feynman-block`; as two separate `__createContextMenu()` instances they
+would both open, side by side. Merged, that click simply offers all four items. The table
+edit-mode menu stays separate, for the reason `preview-tables.md` already gives (an editing
+cell shows markdown *source*, so it can contain neither). Net: `keycheck.py`.
+
+**Which blocks, and where the output lives.** `__FIGURE_KINDS` — the set `isFigureChild()`
+centres in Marp, minus the tables:
+
+| wrapper | kind | taken from |
+|---|---|---|
+| `.mermaid` | `mermaid` | `svg` |
+| `.abc-notation` | `abc` | `.abc-staff svg` — ⚠ scoped, or the playback bar is a candidate |
+| `.markwhen-timeline` | `markwhen` | `svg.mw-svg` (the calendar view is an SVG too, so it saves) |
+| `.tikzcd-diagram` / `.tikz-diagram` | `tikzcd` / `tikz` | `.tikzjax-wrapper > svg` |
+| `.kataskeve` | `kataskeve` | `svg` |
+| `.feynman-block` | `feynman` | `svg` (one fence can hold several) |
+| `.kataskeve3d` / `.model3d` | — | `canvas` → **PNG only** |
+| `.plotly-block` | `plotly` | `Plotly.toImage()` |
+
+⚠ `closest('.kataskeve')` does **not** match `.kataskeve3d`: class tokens are matched whole,
+the same guarantee the fence regexes rely on. Do not "simplify" either selector to a prefix
+match. Where a fence can hold several diagrams, or where dvisvgm nests an `<svg>` inside a
+tikz figure, the **outermost `<svg>` between the click and the wrapper** wins.
+
+**The menu appears only when an `<svg>` or a `<canvas>` is actually present**, and that one
+rule is load-bearing: it is what keeps the renderers' error boxes, a still-compiling tikz
+placeholder, and `csv` / GFM tables out of the menu without a single special case. With no
+items the event is left alone, so the WebView2 native menu (back / forward) still shows —
+the same contract `setupFileTreeContextMenu()` keeps.
+
+**`__serializeFigureSvg()` is not `outerHTML`.** Four things have to be repaired, because
+each is something the live page was supplying from outside the element:
+
+- **Size.** `__abcMakeResponsive()` leaves `width="100%"` and no `height` at all, and
+  `applyMermaidScale()` writes `style="max-width:Npx"`. Neither means anything in a file, so
+  the real box is recovered from the `viewBox` and pinned as `width`/`height`.
+  ⚠ The `viewBox` is consulted **before** any measured box: `getBoundingClientRect()` is 0×0
+  for a figure on a `display:none` deck slide — the same fact that makes model3d take its
+  size from the fence spec.
+- **Ink.** abc / tikz / kataskeve / feynman all paint in `currentColor` (which is exactly why
+  their memo caches need no theme salt), and there is nothing to inherit from once the
+  element is a file. The computed `color` is baked onto the root.
+- **Paper.** A `<rect>` of the first opaque ancestor background — the "walk up for the paper
+  colour" move `penrose_triangle` already makes — so a dark-mode save is not invisible in a
+  white viewer. In Marp this resolves to the slide theme's own background, not white.
+  ⚠ It takes the **viewBox rect**, never `width="100%" height="100%"`: mermaid's viewBox
+  starts at `-8 -8`, and a 0-origin rect would leave the figure's own margin unpainted.
+- **Fonts**, below.
+
+**Font inlining is shared with the HTML export.** `__inlineFontFaceCss(families, urlFor)`
+was lifted out of `buildExportArtifact()` and now serves both callers — the problem is
+identical, so there is no second copy (CLAUDE.md #2).
+- **tikz**: TikZJax emits `<text font-family="cmmi10">` pointing at Private-Use-Area
+  codepoints, so without the matching Computer-Modern `@font-face` every label is blank tofu.
+- **KaTeX in a `<foreignObject>`** (a feynmark `equation{}`): needs its *stylesheet* as well
+  as its faces — the foreignObject markup is styled entirely by `katex.min.css`, which
+  travels no better than the fonts do. `__katexInlineCss()` fetches it once, rebuilds only
+  the `@font-face` rules for the families the figure's computed styles actually name (with
+  the woff2 as a `data:` URI), drops the rest, and keeps the layout rules verbatim. Measured:
+  a two-diagram feynman equation saves at ~190KB and renders identically standalone.
+- Both are best-effort. A file that will not fetch costs that figure its glyph shapes, never
+  the save.
+
+**PNG.** A canvas block is `canvas.toDataURL('image/png')` — the readback path HTML export
+already proves for both kataskeve3d and model3d, and model3d's 2× backing store means its
+PNG is 2× the on-screen size, which is wanted. An SVG block is rasterized by handing the
+serialized document to an `<img>` and drawing it into a canvas at **`__FIGURE_PNG_SS = 2`**;
+⚠ a literal 2, not `devicePixelRatio`, for the reason `__MODEL3D_SS` carries — real DPR would
+make the saved bytes depend on the reader's display scaling. The inlined `data:` faces do
+resolve inside an `<img>`-rendered SVG (verified: the tikz PNG keeps its CM glyphs).
+Plotly is the exception at every step and uses `Plotly.toImage()`, which owns the modebar,
+the WebGL traces and its own colours.
+
+**Host side.** `savefigure:` → `src/main.rs`; the payload is always **base64**, so one shape
+carries the SVG text and the PNG bytes alike. Details, including why no watcher suppression
+is needed, in `rust-host.md`. The result comes back as `FigureSaveDone` → a toast; unlike the
+document exports it deliberately does **not** `open_with_default()`, since saving several
+figures in a row would launch the image viewer each time. Cancelling the dialog posts
+nothing, so the user gets no message for their own cancel.
+
+**Exports need nothing.** `__createContextMenu()` appends its menu to `document.body`, and
+both `buildExportArtifact()` and `--export-png` work from `#preview` — so there is no strip
+pass, no `body.capturing` entry and no `@media print` rule, unlike `.abc-audio-bar`, which
+needed all three precisely because it lives *inside* `#preview`. The DOM digest is unchanged
+by this feature in all 12 `gate.sh` modes, which is the assertion to re-run if that ever
+stops being true.

@@ -79,7 +79,8 @@
     'use2.p5':    { ja: '2 カラム / 図・数式', en: 'Two columns, figures & math' },
     'use2.alt1':  { ja: 'グラデーションの章扉スライド', en: 'A gradient section-divider slide' },
     'use2.alt2':  { ja: 'Mermaid のフローチャートを載せたスライド', en: 'A slide carrying a Mermaid flowchart' },
-    'use2.alt3':  { ja: '2 カラムに数式と Plotly の 3D サーフェスを並べたスライド', en: 'A two-column slide pairing math with a Plotly 3D surface' },
+    'use2.alt3':  { ja: '2 カラムに数式と Plotly の 3D サーフェスを並べたスライド。マウスカーソルがサーフェスをドラッグして視点を回している',
+                    en: 'A two-column slide pairing math with a Plotly 3D surface, with a mouse pointer dragging the surface to turn the view' },
 
     'use3.chip':  { ja: '研究する人へ', en: 'for researchers' },
     'use3.title': { ja: '数式を、書く速さで。', en: 'Math at the speed of writing.' },
@@ -176,8 +177,8 @@
     'gal.title':  { ja: '書き方と、出てくるもの。', en: 'The syntax, and what it makes.' },
     'gal.lead':   { ja: 'それぞれ、書く Markdown と、プレビューでの見え方です。どれも追加の設定なしで、そのまま出ます。',
                     en: 'For each one: the Markdown you write, and how the preview renders it. Nothing to configure.' },
-    'gal.note':   { ja: '画像はどれも、添えたソースをこのプレビューアで実際に描画したものです。カレンダーの祝日はオンラインのときだけ取得します（取れなければ祝日なしで描きます）。縦書き・文庫組みの例は上の「文庫のかたちで、書く。」を、スライドの例は「Markdown のまま、発表する。」をご覧ください。',
-                    en: 'Every picture here is the snippet shown with it, actually rendered by this previewer. Calendar holidays are fetched only when online (without a connection it simply draws none). For vertical paperback typesetting see “Write it like a paperback” above, and for slides see “Present straight from Markdown”.' },
+    'gal.note':   { ja: '画像はどれも、添えたソースをこのプレビューアで実際に描画したものです。動いているものも作り物ではなく、実際にマウスでドラッグして回したところを撮ったものです。カレンダーの祝日はオンラインのときだけ取得します（取れなければ祝日なしで描きます）。縦書き・文庫組みの例は上の「文庫のかたちで、書く。」を、スライドの例は「Markdown のまま、発表する。」をご覧ください。',
+                    en: 'Every picture here is the snippet shown with it, actually rendered by this previewer. The moving ones are not mock-ups either: they were captured while the figure was really being dragged around with the mouse. Calendar holidays are fetched only when online (without a connection it simply draws none). For vertical paperback typesetting see “Write it like a paperback” above, and for slides see “Present straight from Markdown”.' },
 
     'gal.rubyT':     { ja: 'ルビ', en: 'Ruby' },
     'gal.rubyTag':   { ja: 'でんでん記法', en: 'Denden syntax' },
@@ -224,8 +225,8 @@
     'gal.feyAlt':    { ja: '電子と陽電子が光子を介してミューオン対になるツリーレベルの図',
                        en: 'A tree-level diagram: an electron and a positron annihilating into a muon pair through a photon' },
     'gal.m3dT':      { ja: '3D モデル', en: '3D model' },
-    'gal.m3dAlt':    { ja: 'STL ファイルから読み込んだ L 字ブラケットを、稜線と床グリッドつきで立体表示した図',
-                       en: 'An L-bracket loaded from an STL file, shown in 3D with its edges and a floor grid' },
+    'gal.m3dAlt':    { ja: 'STL ファイルから読み込んだ L 字ブラケットを、稜線と床グリッドつきで立体表示した図。マウスカーソルがドラッグして左右に回している',
+                       en: 'An L-bracket loaded from an STL file, shown in 3D with its edges and a floor grid, with a mouse pointer dragging it back and forth' },
 
     /* Shortcuts section. The 21 preview rows mirror the app's OWN help-modal
        strings (__I18N 'help.key.*' in assets/index.html) and 19 of them are
@@ -262,8 +263,8 @@
 
     /* --- these 18 are byte-for-byte copies of the app's help.key.* --- */
     'keys.m':         { ja: 'ダーク / ライト表示の切り替え', en: 'Toggle dark / light appearance' },
-    'keys.s':         { ja: 'スタイルの選択（行末の ⚙ でそのスタイル固有の設定。Marpモードでは Marpテーマ。フロントマターを書き換え）',
-                        en: 'Choose a style (⚙ opens that style’s own settings; in Marp mode it picks the Marp theme and rewrites the front matter)' },
+    'keys.s':         { ja: 'スタイルの選択（行末の ⚙ でそのスタイル固有の設定。下端の行で本文の文字サイズと幅。Marpモードでは Marpテーマ。フロントマターを書き換え）',
+                        en: 'Choose a style (⚙ opens that style’s own settings; the rows at the bottom set the body text size and width; in Marp mode it picks the Marp theme and rewrites the front matter)' },
     'keys.n':         { ja: 'セクション自動番号の切り替え', en: 'Toggle automatic section numbering' },
     'keys.l':         { ja: '行番号の表示切り替え', en: 'Toggle line numbers' },
     'keys.w':         { ja: '全幅レイアウトの切り替え', en: 'Toggle full-width layout' },
