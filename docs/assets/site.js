@@ -262,8 +262,8 @@
 
     /* --- these 18 are byte-for-byte copies of the app's help.key.* --- */
     'keys.m':         { ja: 'ダーク / ライト表示の切り替え', en: 'Toggle dark / light appearance' },
-    'keys.s':         { ja: 'スタイルの選択（行末の ⚙ でそのスタイル固有の設定。Marpモードでは Marpテーマ。フロントマターを書き換え）',
-                        en: 'Choose a style (⚙ opens that style’s own settings; in Marp mode it picks the Marp theme and rewrites the front matter)' },
+    'keys.s':         { ja: 'スタイルの選択（行末の ⚙ でそのスタイル固有の設定。下端の行で本文の文字サイズと幅。Marpモードでは Marpテーマ。フロントマターを書き換え）',
+                        en: 'Choose a style (⚙ opens that style’s own settings; the rows at the bottom set the body text size and width; in Marp mode it picks the Marp theme and rewrites the front matter)' },
     'keys.n':         { ja: 'セクション自動番号の切り替え', en: 'Toggle automatic section numbering' },
     'keys.l':         { ja: '行番号の表示切り替え', en: 'Toggle line numbers' },
     'keys.w':         { ja: '全幅レイアウトの切り替え', en: 'Toggle full-width layout' },

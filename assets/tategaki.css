@@ -19,8 +19,12 @@
     writing-mode: vertical-rl;
     text-orientation: mixed;
 
-    /* 横スクロールで読み進めるため、ビューポートいっぱいに高さを取る */
-    height: calc(100vh - 40px);
+    /* 横スクロールで読み進めるため、ビューポートいっぱいに高さを取る。
+     * 縦組みでは height が「行長」= 版面なので、S キーの「本文の幅」倍率
+     * (--md-width-scale) はここに掛かる。⚠ 短くはできるが長くはできない ――
+     * コンテナは overflow-y: hidden の横スクロールなので、ビューポートを
+     * 超えた分はスクロールで到達できずに切れる。1.0 超は min() で頭打ち。 */
+    height: min(calc(100vh - 40px), calc((100vh - 40px) * var(--md-width-scale, 1)));
     max-width: none;
     max-height: none;
     width: auto;

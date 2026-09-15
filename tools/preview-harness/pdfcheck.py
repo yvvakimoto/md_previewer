@@ -184,16 +184,21 @@ def open_styled(browser, style):
     return ctx, page, ctx.new_cdp_session(page)
 
 
-def open_scaled(browser, scale):
-    """A fresh context whose localStorage carries a body text scale, as a returning
-    reader's would. Same shape (and same reason) as open_styled: add_init_script
-    only runs on navigation, and a per-case context keeps the value from leaking."""
+def open_scaled(browser, scale, width_scale=None):
+    """A fresh context whose localStorage carries a body text scale (and optionally a
+    content width), as a returning reader's would. Same shape (and same reason) as
+    open_styled: add_init_script only runs on navigation, and a per-case context keeps
+    the value from leaking."""
     ctx = browser.new_context(viewport={"width": 1440, "height": 900})
     page = ctx.new_page()
     page.set_default_timeout(20000)
     page.add_init_script(
         "(() => { try { localStorage.setItem('fontScale', %s); } catch (e) {} })()"
         % json.dumps(str(scale)))
+    if width_scale is not None:
+        page.add_init_script(
+            "(() => { try { localStorage.setItem('widthScale', %s); } catch (e) {} })()"
+            % json.dumps(str(width_scale)))
     return ctx, page, ctx.new_cdp_session(page)
 
 
@@ -207,6 +212,25 @@ def body_font_pt(doc, page_index=0):
                 if n:
                     sizes[round(span["size"], 2)] = sizes.get(round(span["size"], 2), 0) + n
     return max(sizes.items(), key=lambda kv: kv[1])[0] if sizes else None
+
+
+def body_text_extent(doc, page_index=0):
+    """(x0, x1) of every non-blank span on a page, in points — the printed 版面 width.
+
+    Japanese body text justifies to the measure, so the widest line reaches both
+    edges of the column; taking the extreme over all spans is therefore the measure
+    itself and not a per-line accident.
+    """
+    x0 = x1 = None
+    for block in doc[page_index].get_text("dict")["blocks"]:
+        for line in block.get("lines", []):
+            for span in line.get("spans", []):
+                if not span.get("text", "").strip():
+                    continue
+                bx0, _, bx1, _ = span["bbox"]
+                x0 = bx0 if x0 is None else min(x0, bx0)
+                x1 = bx1 if x1 is None else max(x1, bx1)
+    return (x0, x1)
 
 
 def load_vertical(page, url):
@@ -520,6 +544,33 @@ def main():
                   sizes)
             check("...and the same text therefore needs more sheets",
                   pages[1.5] > pages[1.0], pages)
+
+            # ---- the content width reaches the paper too ----------------------
+            # Same argument as the block above, one axis over: every other assertion
+            # in this file runs at the default width, where the feature is a no-op by
+            # construction. A vertical theme is the documented exception —
+            # __verticalPrepareForPdf() forces max-width:none so the text can flow
+            # across the sheet — so this case is horizontal on purpose.
+            print("\n[本文の幅倍率 — PDF に届くか]")
+            extents, sheet_w = {}, None
+            for w in (1.0, 0.7):
+                wctx, wpage, wclient = open_scaled(browser, 1.0, width_scale=w)
+                load(wpage, base + scaled, marp=False)
+                out = os.path.join(tmp, "width-%s.pdf" % w)
+                run_export(wpage, wclient, out)
+                doc = fitz.open(out)
+                extents[w] = body_text_extent(doc)
+                sheet_w = doc[0].rect.width
+                doc.close()
+                wctx.close()
+            full = extents[1.0][1] - extents[1.0][0]
+            narrow = extents[0.7][1] - extents[0.7][0]
+            check("a default-width export still fills the page box",
+                  full is not None and full > sheet_w * 0.7, (full, sheet_w))
+            check("a 0.7x reader gets a 0.7x measure on paper",
+                  approx(narrow / full, 0.7, 0.06), (narrow, full))
+            check("...and it is still centred on the sheet",
+                  approx(extents[0.7][0], sheet_w - extents[0.7][1], 4.0), extents[0.7])
 
             # A toast is on screen for 1400 ms, so whether it lands in the PDF is purely
             # a race between the reader and the timer -- and it WAS landing there: the
