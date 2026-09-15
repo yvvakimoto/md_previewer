@@ -353,6 +353,8 @@ unless noted.
 | `__DIAGRAM_CACHE_MAX` | 200 | FIFO cap bounding diagram memory across long sessions |
 | `__TIKZ_SCALE` / `__TIKZ_RENDER_TIMEOUT_MS` | 1.6 / 30000 | tikz renders small; a bad diagram must not wait forever |
 | `_TIKZ_WAIT_MS` (`shoot.py`) | 45000 | must exceed the 30 s in-page timeout so a failure resolves |
+| `SPIN_FRAMES` / `SPIN_DURATION_MS` / `SPIN_AMPLITUDE_DEG` (`shoot-docs.py`) | 20 / 90 / 50° | the landing page's two looping "a mouse is doing this" figures (`model3d`, Marp slide 12's Plotly surface). An **oscillation**, not a revolution: loops with no repeated closing frame and keeps the union ink box — and therefore `--g-cap` — where the still already put it. ⚠ The animation is **exactly** half the still, or the `<picture>` swap shifts the layout |
+| `SPIN_ENCODE['kmax']` (`shoot-docs.py`) | 0 | ⚠ the one animated-WebP flag that matters. libwebp already emits per-frame rectangles, but its periodic **keyframes** cost 282 KB vs 182 KB on the 1600×900 slide. With them off, animating a whole slide costs the changed rectangle + ~1 keyframe, which is what removes the need for a hand-aligned overlay |
 | `__MARP_FIT_MIN` | 0.5 | autofit shrink floor; below it the body scrolls instead |
 | `__MARP_ZOOM_MIN` / `MAX` | 1 / 8 | deck-mode `Ctrl`+wheel zoom range |
 | `__FONT_SCALE_STEPS` | `[0.6 … 2.5]` | body-text `--md-font-scale` ladder (`Ctrl` `+`/`-`/`0`). A fixed list, not a range: it makes reset exact and a stored value trivially validatable. ⚠ Pinned to 1 under `--export-png`, or the PNG depends on the operator's localStorage |
