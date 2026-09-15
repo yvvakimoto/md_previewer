@@ -98,6 +98,12 @@ body {
 }
 
 img { max-width: 100%; height: auto; display: block; }
+/* <picture> exists here only to hand a reduced-motion reader the still instead
+   of the looping animation; it must not become a box of its own. display:contents
+   keeps the <img> the grid item in .g-out and the in-flow card in .deck, so every
+   `... img` rule below still applies unchanged -- and <picture> carries no ARIA
+   role, so removing its box costs nothing to assistive tech. */
+picture { display: contents; }
 a { color: inherit; }
 
 code, kbd {

@@ -174,8 +174,15 @@
            data-i18n-attr="alt:use2.alt1" alt="グラデーションの章扉スライド">
       <img loading="lazy" class="deck-b" src="assets/img/marp/slide-08.webp" width="1600" height="900"
            data-i18n-attr="alt:use2.alt2" alt="Mermaid のフローチャートを載せたスライド">
-      <img loading="lazy" class="deck-a" src="assets/img/marp/slide-12.webp" width="1600" height="900"
-           data-i18n-attr="alt:use2.alt3" alt="2 カラムに数式と Plotly の 3D サーフェスを並べたスライド">
+      <!-- The front card loops: the Plotly surface on it is genuinely drag-rotatable
+           in the app, and a still said the opposite. <source> hands a reduced-motion
+           reader the ordinary frame; both files are emitted by the same
+           shoot-docs.py pass (`--only spin`), so they cannot differ in size. -->
+      <picture>
+        <source media="(prefers-reduced-motion: reduce)" srcset="assets/img/marp/slide-12.webp">
+        <img loading="lazy" decoding="async" class="deck-a" src="assets/img/marp/slide-12-spin.webp"
+             width="1600" height="900"
+             data-i18n-attr="alt:use2.alt3" alt="2 カラムに数式と Plotly の 3D サーフェスを並べたスライド。マウスカーソルがサーフェスをドラッグして視点を回している"></picture>
     </figure>
   </article>
 
@@ -646,8 +653,14 @@ edges: true
 grid: true
 ```</code></pre>
         <figure class="g-out">
-          <img loading="lazy" src="assets/img/gallery/model3d.webp" style="--g-cap: 504px" width="1008" height="510"
-               data-i18n-attr="alt:gal.m3dAlt" alt="STL ファイルから読み込んだ L 字ブラケットを、稜線と床グリッドつきで立体表示した図">
+          <!-- The one gallery picture that moves. See the deck card above for why,
+               and .claude/docs/docs-site.md for what owns the two files. -->
+          <picture>
+            <source media="(prefers-reduced-motion: reduce)" srcset="assets/img/gallery/model3d.webp">
+            <img loading="lazy" decoding="async" src="assets/img/gallery/model3d-spin.webp"
+                 style="--g-cap: 504px" width="1008" height="510"
+                 data-i18n-attr="alt:gal.m3dAlt" alt="STL ファイルから読み込んだ L 字ブラケットを、稜線と床グリッドつきで立体表示した図。マウスカーソルがドラッグして左右に回している">
+          </picture>
         </figure>
       </div>
     </article>
