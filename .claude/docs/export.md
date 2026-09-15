@@ -36,6 +36,8 @@ Opens a native Save-As dialog (via the `rfd` crate) offering **two filters — H
   - **Ordering**: unlike the Marp prep (which must run *before* the image downscale), this runs **after** the image/video swaps, because it measures page extents and a video swapped for a still can change them. A throw inside it restores and returns null, so a half-applied layout is never printed.
   - **Known limits**: a page whose figure makes it wider than a whole sheet is clipped (same class as the existing "figures break 行取り" limit); the leftover slack on a sheet sits at the block-end (left) edge rather than being centred, since a fragmented flow cannot be centred per sheet.
 
+- **The tikz font inlining is now shared with the right-click figure save.** It became `__inlineFontFaceCss(families, urlFor)` + `__tikzFontFamilies()` / `__tikzFontUrl()`, and `__blobToDataUrl()` replaced the two hand-rolled `FileReader` wrappers in this function. The saved-figure serializer has the identical problem — a standalone `.svg` is exactly as far from `fonts.css` as an artifact is — so it calls the same helper rather than growing a copy (CLAUDE.md #2). Detail: *Saving one rendered figure* (`preview-blocks.md`).
+
 **Not covered**: workspace-mode `X` (still exports an HTML folder) and styles that ship a per-style `_export.js` (those short-circuit before `exporthtml:` is posted, so PDF isn't offered). `generateDocumentOutline` needs a reasonably recent evergreen WebView2 runtime; older runtimes ignore the unknown param (degrades to no-bookmarks, never crashes) — clickable links are runtime-version-independent.
 
 ## The reader's body text size reaches the paper

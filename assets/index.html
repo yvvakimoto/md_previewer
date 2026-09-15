@@ -432,8 +432,9 @@
         }
 
         /* Floating right-click menu, shared by every in-app context menu built with
-           __createContextMenu(): the KaTeX "Copy MathML / Copy LaTeX" menu and the
-           workspace file tree's collapse/expand menu. */
+           __createContextMenu(): the preview menu (KaTeX "Copy MathML / Copy LaTeX"
+           plus "Save as SVG / PNG" on a rendered figure), the table edit-mode menu
+           and the workspace file tree's collapse/expand menu. */
         .app-context-menu {
             position: fixed;
             z-index: 10000;
@@ -3091,6 +3092,8 @@
             'menu.copyLatex':      { ja: 'LaTeX をコピー',  en: 'Copy LaTeX' },
             'menu.collapseAll':    { ja: 'すべて閉じる', en: 'Collapse all' },
             'menu.expandAll':      { ja: 'すべて開く',   en: 'Expand all' },
+            'menu.saveSvg':        { ja: 'SVG として保存', en: 'Save as SVG' },
+            'menu.savePng':        { ja: 'PNG として保存', en: 'Save as PNG' },
             'fn.backToRef':        { ja: '参照元に戻る', en: 'Back to reference' },
 
             // ABC playback bar. NOT translatable and deliberately absent: the ♩=
@@ -3230,6 +3233,8 @@
             'toast.fontScale':     { ja: '本文の文字サイズ {pct}%', en: 'Body text size {pct}%' },
             'toast.pdfExport':     { ja: 'PDF出力: {name}',  en: 'Exported PDF: {name}' },
             'toast.pdfExportFail': { ja: 'PDF出力に失敗しました', en: 'PDF export failed' },
+            'toast.figureSaved':   { ja: '保存しました: {name}', en: 'Saved: {name}' },
+            'toast.figureSaveFail':{ ja: '図の保存に失敗しました', en: 'Could not save the figure' },
             'toast.renderFail':    { ja: 'プレビューの描画に失敗しました', en: 'Preview rendering failed' },
             'toast.openingWindow': { ja: '新しいウィンドウで開いています…', en: 'Opening in a new window…' },
             'toast.noFile':        { ja: '更新するファイルがありません', en: 'There is no file to update' },
@@ -5860,6 +5865,58 @@
             return cssText;
         }
 
+        // Read a Blob as a `data:` URL. Shared by the export's image/font inlining
+        // and by the figure-save serializer.
+        function __blobToDataUrl(blob) {
+            return new Promise((resolve, reject) => {
+                const fr = new FileReader();
+                fr.onload = () => resolve(fr.result);
+                fr.onerror = () => reject(fr.error);
+                fr.readAsDataURL(blob);
+            });
+        }
+
+        // Build `@font-face` rules with the woff2 payload inlined as a data: URI, one
+        // per family. `urlFor(family)` maps a family name to its bundled woff2 path;
+        // a family whose file is missing is dropped silently (the glyphs then fall
+        // back, which beats failing the whole artifact).
+        //
+        // Shared by buildExportArtifact() — where a tikz SVG without the matching
+        // Computer-Modern face renders as blank tofu, since TikZJax emits
+        // <text font-family="cmmi10"> pointing at Private-Use-Area codepoints — and
+        // by the right-click figure save, which has exactly the same problem in a
+        // standalone .svg file. One implementation, two callers (CLAUDE.md #2).
+        async function __inlineFontFaceCss(families, urlFor) {
+            const faces = await Promise.all([...families].map(async (fam) => {
+                try {
+                    const href = urlFor(fam);
+                    if (!href) return '';
+                    const resp = await fetch(href);
+                    if (!resp.ok) return '';
+                    const dataUrl = await __blobToDataUrl(await resp.blob());
+                    return '@font-face{font-family:"' + fam + '";src:url(' + dataUrl
+                        + ') format("woff2");font-display:block;}';
+                } catch (e) {
+                    console.warn('failed to inline font', fam, e);
+                    return '';
+                }
+            }));
+            return faces.filter(Boolean).join('\n');
+        }
+
+        // The Computer-Modern families a set of tikz SVGs actually reference, and
+        // where their woff2 lives. fonts.css maps family → same-named file
+        // (font-family: cmmi10 → fonts/cmmi10.woff2).
+        function __tikzFontFamilies(svgs) {
+            const fams = new Set();
+            svgs.forEach(svg => svg.querySelectorAll('[font-family]').forEach(t => {
+                const f = (t.getAttribute('font-family') || '').trim().replace(/['"]/g, '');
+                if (f && /^[A-Za-z0-9_-]+$/.test(f)) fams.add(f);
+            }));
+            return fams;
+        }
+        function __tikzFontUrl(fam) { return 'libs/tikzjax/dist/fonts/' + fam + '.woff2'; }
+
         async function buildExportArtifact({ pageRelPath = null } = {}) {
             // Marp: the export reflects scroll-mode layout, so drop deck/list first
             // (see __marpEnterScrollLayout for why hidden slides must be un-hidden
@@ -6097,17 +6154,11 @@
                     .filter(img => isUserfile(img.getAttribute('src') || ''));
                 const bySrc = new Map(); // src -> dataURL
                 const uniques = [...new Set(cloneImgs.map(img => img.getAttribute('src')))];
-                const toDataUrl = (blob) => new Promise((resolve, reject) => {
-                    const fr = new FileReader();
-                    fr.onload = () => resolve(fr.result);
-                    fr.onerror = () => reject(fr.error);
-                    fr.readAsDataURL(blob);
-                });
                 await Promise.all(uniques.map(async (src) => {
                     try {
                         const resp = await fetch(src);
                         if (!resp.ok) return;
-                        bySrc.set(src, await toDataUrl(await resp.blob()));
+                        bySrc.set(src, await __blobToDataUrl(await resp.blob()));
                     } catch (e) {
                         console.warn('export: failed to inline image', src, e);
                     }
@@ -6129,29 +6180,7 @@
             {
                 const tikzSvgs = previewClone.querySelectorAll('.tikzcd-diagram svg, .tikz-diagram svg');
                 if (tikzSvgs.length) {
-                    const fams = new Set();
-                    tikzSvgs.forEach(svg => svg.querySelectorAll('[font-family]').forEach(t => {
-                        const f = (t.getAttribute('font-family') || '').trim().replace(/['"]/g, '');
-                        if (f && /^[A-Za-z0-9_-]+$/.test(f)) fams.add(f);
-                    }));
-                    const toDataUrl = (blob) => new Promise((resolve, reject) => {
-                        const fr = new FileReader();
-                        fr.onload = () => resolve(fr.result);
-                        fr.onerror = () => reject(fr.error);
-                        fr.readAsDataURL(blob);
-                    });
-                    const faces = await Promise.all([...fams].map(async (fam) => {
-                        try {
-                            const resp = await fetch('libs/tikzjax/dist/fonts/' + fam + '.woff2');
-                            if (!resp.ok) return '';
-                            const dataUrl = await toDataUrl(await resp.blob());
-                            return '@font-face{font-family:"' + fam + '";src:url(' + dataUrl + ') format("woff2");font-display:block;}';
-                        } catch (e) {
-                            console.warn('export: failed to inline tikz font', fam, e);
-                            return '';
-                        }
-                    }));
-                    tikzFontCss = faces.filter(Boolean).join('\n');
+                    tikzFontCss = await __inlineFontFaceCss(__tikzFontFamilies(tikzSvgs), __tikzFontUrl);
                 }
             }
 
@@ -8603,7 +8632,7 @@ ${previewClone.outerHTML}
                         // 'htmlAndMathml' emits a hidden <span class="katex-mathml"><math>…</math></span>
                         // (whose <semantics> carries an <annotation encoding="application/x-tex"> with the
                         // original LaTeX) alongside the visual HTML layer — this is what powers the
-                        // right-click "Copy MathML / Copy LaTeX" menu (see setupMathContextMenu).
+                        // right-click "Copy MathML / Copy LaTeX" menu (see setupPreviewContextMenu).
                         output: 'htmlAndMathml'
                     });
                     html = html.replace(placeholder, rendered);
@@ -12888,10 +12917,306 @@ ${previewClone.outerHTML}
             return { addItem, show, hide };
         }
 
-        let __mathMenuWired = false;
-        function setupMathContextMenu() {
-            if (__mathMenuWired) return;
-            __mathMenuWired = true;
+        // ===== Save a rendered figure (right-click) ==================================
+        // Every figure engine leaves either an inline <svg> or a <canvas> under a
+        // per-fence wrapper div; this lifts the one under the cursor out as a file.
+        // WebView2 here has no download plumbing at all (nothing in src/ handles a
+        // download, and `<a download>` is inert), so the bytes go to the host over a
+        // new `savefigure:` IPC which runs the native Save dialog — the same shape
+        // `exporthtml:` already uses.
+        //
+        // The wrapper list is the set isFigureChild() centres in Marp, minus the
+        // tables (a GFM / csv table is HTML, not a figure). ⚠ closest('.kataskeve')
+        // does NOT match .kataskeve3d: class tokens are matched whole, the same
+        // guarantee the fence regexes rely on (preview-blocks.md). Do not "simplify"
+        // either selector to a prefix match.
+        const __SVG_NS = 'http://www.w3.org/2000/svg';
+        const __FIGURE_KINDS = [
+            { sel: '.mermaid',           kind: 'mermaid',     svg: 'svg' },
+            // ⚠ scoped to .abc-staff: the playback bar is a sibling under the block.
+            { sel: '.abc-notation',      kind: 'abc',         svg: '.abc-staff svg' },
+            { sel: '.markwhen-timeline', kind: 'markwhen',    svg: 'svg.mw-svg' },
+            { sel: '.tikzcd-diagram',    kind: 'tikzcd',      svg: '.tikzjax-wrapper > svg', tikz: true },
+            { sel: '.tikz-diagram',      kind: 'tikz',        svg: '.tikzjax-wrapper > svg', tikz: true },
+            { sel: '.kataskeve',         kind: 'kataskeve',   svg: 'svg' },
+            { sel: '.feynman-block',     kind: 'feynman',     svg: 'svg' },
+            { sel: '.kataskeve3d',       kind: 'kataskeve3d', canvas: 'canvas' },
+            // ⚠ model3d's backing store is __MODEL3D_SS (=2) × the logical size, so
+            // its PNG comes out at twice the on-screen pixels. That is wanted here.
+            { sel: '.model3d',           kind: 'model3d',     canvas: 'canvas' },
+            { sel: '.plotly-block',      kind: 'plotly',      plotly: true },
+        ];
+        const __FIGURE_SEL = __FIGURE_KINDS.map(f => f.sel).join(', ');
+
+        // Resolve a right-click target to a saveable figure, or null. Returning null
+        // is the "no items" signal: the caller then leaves the event alone so
+        // WebView2's own menu shows. That one rule is what keeps error boxes, a
+        // still-compiling tikz placeholder and csv/GFM tables out of the menu — none
+        // of them owns an <svg> or a <canvas>.
+        function __figureAt(target) {
+            const host = target.closest ? target.closest(__FIGURE_SEL) : null;
+            if (!host) return null;
+            const spec = __FIGURE_KINDS.find(f => host.matches(f.sel));
+            if (!spec) return null;
+            if (spec.plotly) {
+                return (window.Plotly && host.classList.contains('js-plotly-plot'))
+                    ? { host, spec } : null;
+            }
+            if (spec.canvas) {
+                const canvas = host.querySelector(spec.canvas);
+                return canvas ? { host, spec, canvas } : null;
+            }
+            // Prefer the OUTERMOST <svg> between the click and the wrapper: dvisvgm
+            // nests an <svg> inside a tikz figure, and one feynman fence can hold
+            // several diagrams side by side.
+            let svg = null;
+            for (let n = target; n && n !== host; n = n.parentElement) {
+                if (n.localName === 'svg') svg = n;
+            }
+            if (!svg) svg = host.querySelector(spec.svg);
+            return svg ? { host, spec, svg } : null;
+        }
+
+        // `<base>-<kind><n>.<ext>`, n being this block's 1-based position among the
+        // blocks of its own kind. ⚠ `kind` is data, not UI text — never localize it.
+        function __figureFileName(fig, ext) {
+            const all = Array.from(preview.querySelectorAll(fig.spec.sel));
+            const n = all.indexOf(fig.host) + 1;
+            let base = 'figure';
+            if (currentFilePath) {
+                const stem = (currentFilePath.split(/[\\/]/).pop() || '')
+                    .replace(/\.(md|markdown|mdx)$/i, '');
+                if (stem) base = stem;
+            }
+            return base + '-' + fig.spec.kind + (n > 0 ? n : 1) + '.' + ext;
+        }
+
+        // The first opaque background behind the figure — the same "walk up for the
+        // paper colour" move kataskeve's penrose_triangle makes. A saved figure gets
+        // it as a real <rect>, or a dark-mode render (light ink, transparent ground)
+        // would be invisible the moment it is opened anywhere else.
+        function __figureBackdrop(el) {
+            for (let n = el; n && n.nodeType === 1; n = n.parentElement) {
+                const bg = getComputedStyle(n).backgroundColor;
+                if (bg && bg !== 'transparent' && !/^rgba\(\s*0,\s*0,\s*0,\s*0\s*\)$/.test(bg)) return bg;
+            }
+            return darkMode ? '#0d1117' : '#ffffff';
+        }
+
+        // Intrinsic geometry. viewBox first: it is the only source that is correct
+        // for a figure inside a display:none Marp slide, where every measured box is
+        // 0×0 (the reason model3d takes its size from the fence spec).
+        function __figureSvgBox(svg) {
+            const vb = svg.viewBox && svg.viewBox.baseVal;
+            if (vb && vb.width > 0 && vb.height > 0) {
+                return { x: vb.x, y: vb.y, w: vb.width, h: vb.height };
+            }
+            const w = parseFloat(svg.getAttribute('width'));
+            const h = parseFloat(svg.getAttribute('height'));
+            if (w > 0 && h > 0) return { x: 0, y: 0, w: w, h: h };
+            const r = svg.getBoundingClientRect();
+            return { x: 0, y: 0, w: Math.max(1, Math.round(r.width)), h: Math.max(1, Math.round(r.height)) };
+        }
+
+        // katex.min.css, fetched once. Its leading @font-face run points at relative
+        // `fonts/*.woff2`, which resolve against the SAVED FILE's location — i.e.
+        // nowhere. Rebuild just the faces the figure actually uses with the woff2
+        // inlined, drop the rest, and keep the layout rules verbatim (the
+        // foreignObject markup is styled entirely by them).
+        let __katexCssText = null;
+        async function __katexInlineCss(svg) {
+            const fams = new Set();
+            svg.querySelectorAll('.katex, .katex *').forEach(n => {
+                (getComputedStyle(n).fontFamily || '').split(',').forEach(part => {
+                    const f = part.trim().replace(/['"]/g, '');
+                    if (/^KaTeX_[A-Za-z0-9]+$/.test(f)) fams.add(f);
+                });
+            });
+            if (!fams.size) return '';
+            if (__katexCssText === null) {
+                try {
+                    const resp = await fetch('libs/katex/katex.min.css');
+                    __katexCssText = resp.ok ? await resp.text() : '';
+                } catch (e) { __katexCssText = ''; }
+            }
+            if (!__katexCssText) return '';
+            const jobs = [];
+            const rest = __katexCssText.replace(/@font-face\{([^}]*)\}/g, (full, body) => {
+                const fam = (body.match(/font-family:\s*([A-Za-z0-9_]+)/) || [])[1];
+                const file = (body.match(/url\(fonts\/([A-Za-z0-9_-]+)\.woff2\)/) || [])[1];
+                if (!fam || !file || !fams.has(fam)) return '';
+                const style = (body.match(/font-style:\s*([a-z]+)/) || [])[1] || 'normal';
+                const weight = (body.match(/font-weight:\s*(\d+)/) || [])[1] || '400';
+                jobs.push({ fam: fam, file: file, style: style, weight: weight });
+                return '';
+            });
+            const faces = await Promise.all(jobs.map(async (j) => {
+                try {
+                    const resp = await fetch('libs/katex/fonts/' + j.file + '.woff2');
+                    if (!resp.ok) return '';
+                    const dataUrl = await __blobToDataUrl(await resp.blob());
+                    return '@font-face{font-family:' + j.fam + ';font-style:' + j.style
+                        + ';font-weight:' + j.weight + ';src:url(' + dataUrl + ') format("woff2");}';
+                } catch (e) {
+                    console.warn('figure save: failed to inline KaTeX font', j.file, e);
+                    return '';
+                }
+            }));
+            return faces.filter(Boolean).join('\n') + '\n' + rest;
+        }
+
+        // Turn a live inline <svg> into a standalone document.
+        async function __serializeFigureSvg(svg, spec) {
+            const box = __figureSvgBox(svg);
+            const clone = svg.cloneNode(true);
+            clone.setAttribute('xmlns', __SVG_NS);
+            clone.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink');
+            clone.setAttribute('viewBox', box.x + ' ' + box.y + ' ' + box.w + ' ' + box.h);
+            // Pin a real pixel size. __abcMakeResponsive() leaves width="100%" and no
+            // height at all, and applyMermaidScale() writes style="max-width:Npx" —
+            // neither means anything once the element is a file of its own.
+            clone.setAttribute('width', box.w);
+            clone.setAttribute('height', box.h);
+            clone.style.maxWidth = '';
+            clone.style.width = '';
+            clone.style.height = '';
+            // currentColor has nothing to inherit from outside the page. abc / tikz /
+            // kataskeve / feynman all paint with it — which is exactly why their memo
+            // caches need no theme salt — so bake the on-screen ink in.
+            clone.style.color = getComputedStyle(svg).color;
+
+            // ⚠ The backdrop takes the viewBox rect, NOT width="100%" height="100%":
+            // a viewBox whose origin is not 0,0 would leave part of the figure unpainted.
+            const rect = document.createElementNS(__SVG_NS, 'rect');
+            rect.setAttribute('x', box.x);
+            rect.setAttribute('y', box.y);
+            rect.setAttribute('width', box.w);
+            rect.setAttribute('height', box.h);
+            rect.setAttribute('fill', __figureBackdrop(svg));
+            clone.insertBefore(rect, clone.firstChild);
+
+            // Fonts. Both cases are best-effort: a missing file costs that figure its
+            // glyph shapes, never the save.
+            let fontCss = '';
+            if (spec && spec.tikz) {
+                fontCss = await __inlineFontFaceCss(__tikzFontFamilies([svg]), __tikzFontUrl);
+            }
+            if (svg.querySelector('.katex')) {
+                const katexCss = await __katexInlineCss(svg);
+                if (katexCss) fontCss = fontCss ? (fontCss + '\n' + katexCss) : katexCss;
+            }
+            if (fontCss) {
+                const st = document.createElementNS(__SVG_NS, 'style');
+                st.textContent = fontCss;
+                clone.insertBefore(st, clone.firstChild);
+            }
+            return '<?xml version="1.0" encoding="UTF-8"?>\n'
+                + new XMLSerializer().serializeToString(clone);
+        }
+
+        // UTF-8 safe base64. btoa() alone throws on any non-Latin-1 character, and a
+        // figure's labels are routinely Japanese.
+        function __b64FromText(s) {
+            const bytes = new TextEncoder().encode(s);
+            let bin = '';
+            const CHUNK = 0x8000;   // fromCharCode.apply blows the stack on a big array
+            for (let i = 0; i < bytes.length; i += CHUNK) {
+                bin += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
+            }
+            return btoa(bin);
+        }
+        function __b64FromDataUrl(url) {
+            const comma = url.indexOf(',');
+            if (comma < 0) return '';
+            const meta = url.slice(0, comma);
+            const body = url.slice(comma + 1);
+            return /;base64/i.test(meta) ? body : __b64FromText(decodeURIComponent(body));
+        }
+
+        // Rasterize a standalone SVG document at 2×. ⚠ A literal 2, not
+        // devicePixelRatio — the same reasoning as __MODEL3D_SS: real DPR would make
+        // the emitted bytes depend on the reader's display scaling.
+        const __FIGURE_PNG_SS = 2;
+        function __figureSvgToPng(svgText, box) {
+            return new Promise((resolve, reject) => {
+                const img = new Image();
+                img.onload = () => {
+                    try {
+                        const c = document.createElement('canvas');
+                        c.width = Math.max(1, Math.round(box.w * __FIGURE_PNG_SS));
+                        c.height = Math.max(1, Math.round(box.h * __FIGURE_PNG_SS));
+                        const ctx = c.getContext('2d');
+                        ctx.drawImage(img, 0, 0, c.width, c.height);
+                        resolve(c.toDataURL('image/png'));
+                    } catch (err) { reject(err); }
+                };
+                img.onerror = () => reject(new Error('could not rasterize the figure'));
+                img.src = 'data:image/svg+xml;base64,' + __b64FromText(svgText);
+            });
+        }
+
+        // Produce the bytes for one figure in one format, as base64.
+        async function __figureBytes(fig, ext) {
+            if (fig.spec.plotly) {
+                // Plotly owns its own serializer; it handles the modebar, the WebGL
+                // traces and its own colours, none of which the generic path sees.
+                const box = fig.host.getBoundingClientRect();
+                const url = await window.Plotly.toImage(fig.host, {
+                    format: ext,
+                    width: Math.max(1, Math.round(box.width || 700)),
+                    height: Math.max(1, Math.round(box.height || 450)),
+                    scale: ext === 'png' ? __FIGURE_PNG_SS : 1,
+                });
+                return __b64FromDataUrl(url);
+            }
+            if (fig.canvas) {
+                // A 2D canvas whose bitmap reads back — the path HTML export already
+                // proves for both kataskeve3d and model3d.
+                return __b64FromDataUrl(fig.canvas.toDataURL('image/png'));
+            }
+            const svgText = await __serializeFigureSvg(fig.svg, fig.spec);
+            if (ext === 'svg') return __b64FromText(svgText);
+            return __b64FromDataUrl(await __figureSvgToPng(svgText, __figureSvgBox(fig.svg)));
+        }
+
+        // Hand the bytes to the host, which runs the Save dialog and writes the file.
+        async function __figureSave(fig, ext) {
+            try {
+                const data = await __figureBytes(fig, ext);
+                if (!data) throw new Error('empty figure payload');
+                if (window.ipc && typeof window.ipc.postMessage === 'function') {
+                    window.ipc.postMessage('savefigure:' + JSON.stringify({
+                        suggestedName: __figureFileName(fig, ext),
+                        ext: ext,
+                        data: data,
+                    }));
+                }
+            } catch (err) {
+                console.error('figure save failed', err);
+                showToast(t('toast.figureSaveFail'));
+            }
+        }
+
+        // Called by the Rust host once the file is written. A cancelled dialog sends
+        // nothing at all, so silence means "the user changed their mind".
+        // See CustomEvent::FigureSaveDone in src/main.rs.
+        window.__figureSaveDone = function (ok, name) {
+            showToast(ok ? t('toast.figureSaved', { name: name || '' }) : t('toast.figureSaveFail'));
+        };
+
+        // ONE contextmenu listener for both the KaTeX copy items and the figure save
+        // items. They are not independent: a feynman `equation{}` draws KaTeX inside
+        // a <foreignObject>, so a click there matches `.katex` AND `.feynman-block` —
+        // two separate __createContextMenu() instances would both open, side by side.
+        // Merged, that click simply offers all four items.
+        //
+        // The table edit menu stays separate: a `.table-editing` cell shows markdown
+        // SOURCE text, so it can contain neither a .katex nor a figure
+        // (preview-tables.md).
+        let __previewMenuWired = false;
+        function setupPreviewContextMenu() {
+            if (__previewMenuWired) return;
+            __previewMenuWired = true;
             const { addItem, show, hide } = __createContextMenu();
 
             // A copy item: `value` null/empty → disabled; on click, flash the result.
@@ -12902,20 +13227,32 @@ ${previewClone.outerHTML}
 
             preview.addEventListener('contextmenu', (e) => {
                 const k = e.target.closest('.katex');
-                if (!k) { hide(); return; } // let WebView2's native menu show elsewhere
+                const fig = __figureAt(e.target);
+                // Nothing to offer → let WebView2's native menu show (back/forward).
+                if (!k && !fig) { hide(); return; }
                 e.preventDefault();
 
-                const mathEl = k.querySelector('.katex-mathml math');
-                const mathml = mathEl ? new XMLSerializer().serializeToString(mathEl) : '';
-                const latex = (k.querySelector('annotation[encoding="application/x-tex"]')?.textContent || '').trim();
+                let mathml = '', latex = '';
+                if (k) {
+                    const mathEl = k.querySelector('.katex-mathml math');
+                    mathml = mathEl ? new XMLSerializer().serializeToString(mathEl) : '';
+                    latex = (k.querySelector('annotation[encoding="application/x-tex"]')?.textContent || '').trim();
+                }
 
                 show(e, () => {
-                    addCopyItem(t('menu.copyMathML'), mathml);
-                    addCopyItem(t('menu.copyLatex'), latex);
+                    if (k) {
+                        addCopyItem(t('menu.copyMathML'), mathml);
+                        addCopyItem(t('menu.copyLatex'), latex);
+                    }
+                    if (fig) {
+                        // A canvas figure has no vector form to offer.
+                        if (!fig.canvas) addItem(t('menu.saveSvg'), () => { __figureSave(fig, 'svg'); });
+                        addItem(t('menu.savePng'), () => { __figureSave(fig, 'png'); });
+                    }
                 });
             });
         }
-        setupMathContextMenu();
+        setupPreviewContextMenu();
 
         // Right-click menu on the workspace file tree: collapse / expand every
         // folder & file sub-tree at once. Listener lives on the stable #file-tree
@@ -13139,7 +13476,7 @@ ${previewClone.outerHTML}
         }
 
         // Right-click menu, active only inside a table that is in edit mode. Scoping it
-        // that way also avoids colliding with setupMathContextMenu(): an editing cell
+        // that way also avoids colliding with setupPreviewContextMenu(): an editing cell
         // shows source text, so it never contains a .katex for both menus to match.
         let __tableMenuWired = false;
         function setupTableContextMenu() {

@@ -72,6 +72,7 @@ README.md 「対応している記法・機能」.
 | Diagram / figure fences: `mermaid`, `plotly`, `abc` (+ playback), `markwhen`, `tikz`/`tikzcd`, `kataskeve`/`kataskeve3d`, `feynman`, `model3d` (3D mesh files, interactive), `csv`/`tsv`, KaTeX math, highlight.js (+ in-house Modelica grammar) | `preview-blocks.md` |
 | Footnotes, `::: center/right/left/message/vcenter/columns` fenced divs, `[text]{color=…}` inline spans, definition lists, ruby (`｜猫《ねこ》`), task lists, CJK soft-break join | `preview-markdown-ext.md` |
 | Copy table for PowerPoint (rich-HTML clipboard); Edit table (writes back to the `.md`) | `preview-tables.md` |
+| Right-click a rendered figure → save it alone as SVG / PNG (canvas engines: PNG only) | `preview-blocks.md` |
 | Clickable task-list checkboxes — a click rewrites that one `- [ ]` line in the `.md` (both pipelines; inert in every export) | `preview-markdown-ext.md` |
 | Images via the `/userfile/` route with `\|WxH` sizing and `../` paths; video + YouTube embeds; cross-file `.md` links with back/forward history; `Ctrl`+click opens a new window; drag & drop; `Ctrl+N` new file; `Ctrl+D` install dir | `preview-files-media.md` |
 | Marp slides (`marp: true`), 3 views (`P`), autofit (`A`), laser pointer (`Z`), 8-colour theme family, selection highlighter | `marp.md` |
@@ -142,7 +143,9 @@ than in a detail doc, so that a missed pointer is not fatal.
    `buildSpanStyle`, `scanDefList`, `buildRubyHtml`, `__isTypingTarget` / `onPlainKey` /
    `onCtrlKey` / `onShortcutKey` / `bindBodyClassToggle` (the text-entry guard was retyped 12
    times), `__createContextMenu`, `__diagKey` / `__diagCacheSet` / `__diagCacheHit`,
-   `copyTextViaTextarea`, `toUserfileUrl` / `encodePathForUserfile`. In Rust:
+   `copyTextViaTextarea`, `toUserfileUrl` / `encodePathForUserfile`,
+   `__blobToDataUrl` / `__inlineFontFaceCss` (the HTML export and the right-click figure
+   save both need a bundled woff2 as a `data:` URI — one helper, two callers). In Rust:
    `write_suppressed` / `suppress_watcher`, `js_call` / `eval_js_fn`, `build_load_file_script`.
    Fenced-div keywords go in `ALIGN_KW_SRC` **only**.
 
@@ -310,6 +313,7 @@ that are checked (or partly checked) can rely on the harness remembering.
 |---|---|
 | the render pipeline, any preprocessing pass | `python tools/preview-harness/domdump.py` (+ `gate.sh <label> <files…>` to diff against `_dom/base`) |
 | shortcuts, context menus, Marp autofit, `@user-vars` | `python tools/preview-harness/keycheck.py` |
+| the right-click figure save (`__FIGURE_KINDS`, `__serializeFigureSvg`, `savefigure:`) | `keycheck.py` (it decodes the payload — the DOM digest cannot see any of this) |
 | `--md-font-scale` / `--md-width-scale`, a theme's base `font-size` or `max-width`, `with_hotkeys_zoom` | `keycheck.py` + `exportcheck.py` + `pdfcheck.py` (the scaled cases are the only ones that can see either) |
 | preview table edit mode | `python tools/preview-harness/tablecheck.py` + `node tools/preview-harness/table-model.test.cjs` |
 | task-list checkboxes, `applyTaskLists()`, `__isTypingTarget()` | `python tools/preview-harness/taskcheck.py` (+ `keycheck.py` for the focus case) |

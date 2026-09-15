@@ -129,6 +129,12 @@ enum CustomEvent {
     PrintPdf(PathBuf),
     PrintPdfNow { page_px: Option<(f64, f64)> },
     PdfExportDone { ok: bool, path: PathBuf },
+    // A single rendered figure (mermaid / tikz / kataskeve / model3d / …) was
+    // right-clicked and saved via the `savefigure:` IPC. The worker thread runs
+    // the Save dialog and writes the bytes; this comes back so the preview can
+    // toast. Only posted once a path was actually chosen — cancelling the dialog
+    // sends nothing, so the user sees no message for their own cancel.
+    FigureSaveDone { ok: bool, name: String },
     // PNG capture (headless `--export-png` mode). The preview JS posts
     // `renderdone:` once the initial render (incl. async Marp/mermaid/KaTeX)
     // settles → CaptureStart initializes the capture loop. For each target
@@ -546,6 +552,33 @@ fn parse_pdf_page_size(payload: &str) -> Option<(f64, f64)> {
     } else {
         None
     }
+}
+
+/// One right-clicked figure, ready to be written: the file extension the webview
+/// asked for and the decoded bytes. See the `savefigure:` IPC arm.
+struct FigurePayload {
+    ext: String,
+    bytes: Vec<u8>,
+}
+
+/// Validate and decode a `savefigure:` payload.
+///
+/// The extension decides the Save dialog's filter and therefore the file the user
+/// ends up with, so it is checked against a closed list rather than trusted — the
+/// webview is our own code, but this is the one field that reaches the filesystem.
+/// `data` is always base64 (SVG text and PNG bytes alike), so one shape carries both.
+fn parse_figure_payload(ext: &str, data: &str) -> Result<FigurePayload, String> {
+    use base64::Engine as _;
+    if ext != "svg" && ext != "png" {
+        return Err(format!("unsupported extension {:?}", ext));
+    }
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(data.as_bytes())
+        .map_err(|e| format!("base64 decode failed: {}", e))?;
+    if bytes.is_empty() {
+        return Err("empty figure payload".to_string());
+    }
+    Ok(FigurePayload { ext: ext.to_string(), bytes })
 }
 
 /// Parse a single HTTP `Range` header value into an inclusive `(start, end)`
@@ -2086,6 +2119,71 @@ fn main() -> wry::Result<()> {
                 }
                 Err(e) => eprintln!("export: bad payload: {}", e),
             }
+        } else if let Some(payload) = message.strip_prefix("savefigure:") {
+            // Right-click → "Save as SVG / PNG" on one rendered figure. The webview
+            // has already produced the bytes (XMLSerializer for an inline <svg>,
+            // canvas.toDataURL for kataskeve3d / model3d, Plotly.toImage for a
+            // chart) and hands them over base64-encoded, so one payload shape covers
+            // both the text and the binary format.
+            #[derive(Deserialize)]
+            struct SaveFigurePayload {
+                #[serde(rename = "suggestedName")] suggested_name: String,
+                ext: String,
+                data: String,
+            }
+            match serde_json::from_str::<SaveFigurePayload>(payload)
+                .map_err(|e| format!("bad payload: {}", e))
+                .and_then(|p| {
+                    // Decode up front, so a malformed payload never gets as far as
+                    // showing the user a dialog it cannot honour.
+                    parse_figure_payload(&p.ext, &p.data).map(|f| (p.suggested_name, f))
+                })
+            {
+                Ok((suggested_name, fig)) => {
+                    // Read the window-owned state HERE; the worker gets values only.
+                    let initial_dir = current_file_dir(&ipc_current_file);
+                    let fig_proxy = ipc_event_proxy.clone();
+                    // rfd's save_file() blocks — same worker-thread pattern as the
+                    // `exporthtml:` / `newfile:` handlers.
+                    std::thread::spawn(move || {
+                        let filter = fig.ext.to_ascii_uppercase();
+                        let dialog = with_initial_dir(
+                            rfd::FileDialog::new()
+                                .add_filter(&filter, &[fig.ext.as_str()])
+                                .set_file_name(&suggested_name),
+                            initial_dir,
+                        );
+                        // No path chosen: the user cancelled. Post nothing, so they
+                        // get no message about their own cancel.
+                        let mut path = match dialog.save_file() { Some(x) => x, None => return };
+                        // The format was chosen by the menu item, not by the typed
+                        // name, so make the name agree (same guard as `newfile:`).
+                        let has_ext = path
+                            .extension()
+                            .map(|e| e.eq_ignore_ascii_case(&fig.ext))
+                            .unwrap_or(false);
+                        if !has_ext {
+                            path.set_extension(&fig.ext);
+                        }
+                        let name = path
+                            .file_name()
+                            .map(|n| n.to_string_lossy().to_string())
+                            .unwrap_or_default();
+                        // No watcher suppression is needed: a non-.md Create is
+                        // ignored in workspace mode, and single-file mode only fires
+                        // for the watched path itself.
+                        let ok = match std::fs::write(&path, &fig.bytes) {
+                            Ok(()) => true,
+                            Err(e) => {
+                                eprintln!("savefigure: failed to write {}: {}", path.display(), e);
+                                false
+                            }
+                        };
+                        let _ = fig_proxy.send_event(CustomEvent::FigureSaveDone { ok, name });
+                    });
+                }
+                Err(e) => eprintln!("savefigure: {}", e),
+            }
         } else if message == "fullscreen:toggle" {
             if let Err(e) = ipc_event_proxy.send_event(CustomEvent::ToggleFullscreen) {
                 eprintln!("Failed to dispatch ToggleFullscreen: {}", e);
@@ -2710,6 +2808,16 @@ fn main() -> wry::Result<()> {
                     open_with_default(&path);
                 }
             }
+            Event::UserEvent(CustomEvent::FigureSaveDone { ok, name }) => {
+                // Toast only — unlike the document exports this deliberately does NOT
+                // open_with_default(): saving several figures in a row would launch
+                // the image viewer each time.
+                if let Ok(wv) = webview.lock() {
+                    let name_js =
+                        serde_json::to_string(&name).unwrap_or_else(|_| "\"\"".to_string());
+                    eval_js_fn(&wv, "__figureSaveDone", &[&ok.to_string(), &name_js]);
+                }
+            }
             Event::UserEvent(CustomEvent::UpdateAvailable { version, notes }) => {
                 // Background startup check found a newer version → show the
                 // preview's update banner (the JS gates on its own opt-out flag).
@@ -3264,6 +3372,33 @@ fn main() -> wry::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ---- parse_figure_payload ----------------------------------------------
+
+    #[test]
+    fn figure_payload_round_trips_both_formats() {
+        // "<svg/>" and the 8-byte PNG signature, base64 as the webview sends them.
+        let svg = parse_figure_payload("svg", "PHN2Zy8+").unwrap();
+        assert_eq!(svg.ext, "svg");
+        assert_eq!(svg.bytes, b"<svg/>");
+        let png = parse_figure_payload("png", "iVBORw0KGgo=").unwrap();
+        assert_eq!(png.bytes, vec![0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a]);
+    }
+
+    #[test]
+    fn figure_payload_rejects_anything_but_svg_or_png() {
+        // The extension picks the dialog filter and thus the file on disk, so it is
+        // checked rather than trusted — including a path-ish value.
+        for ext in ["exe", "SVG", "", "svg.exe", "../x"] {
+            assert!(parse_figure_payload(ext, "PHN2Zy8+").is_err(), "accepted {:?}", ext);
+        }
+    }
+
+    #[test]
+    fn figure_payload_rejects_undecodable_or_empty_data() {
+        assert!(parse_figure_payload("png", "not base64!!").is_err());
+        assert!(parse_figure_payload("svg", "").is_err());
+    }
 
     // ---- parse_slides_spec -------------------------------------------------
 
