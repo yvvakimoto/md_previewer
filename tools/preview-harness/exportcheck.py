@@ -72,6 +72,7 @@ PROBE = """() => {
     fontSize: cs.fontSize,
     lineHeight: cs.lineHeight,
     height: cs.height,
+    maxWidth: cs.maxWidth,
     textOrientation: cs.textOrientation,
     pageLines: (cs.getPropertyValue('--md-page-lines') || '').trim(),
     pages: p.querySelectorAll(':scope > .md-page').length,
@@ -114,14 +115,16 @@ def start_harness(port, repo_root, assets_dir):
     return httpd
 
 
-def run_style(browser, base_url, doc, style, vertical, font_scale=None):
+def run_style(browser, base_url, doc, style, vertical, font_scale=None, width_scale=None):
     """Build the artifact under `style`, load it back, and diff the two.
 
-    `font_scale` seeds the body text multiplier (Ctrl +/-/0). It matters here
-    because buildExportArtifact() snapshots only the document's FIRST <style>,
-    so #font-scale-style has to be carried out explicitly the way the @user-vars
-    overrides are -- and at the default scale that element is empty, which means
-    every other case in this file would pass with the carry missing entirely.
+    `font_scale` seeds the body text multiplier (Ctrl +/-/0) and `width_scale`
+    the content width one (the S modal's 本文の幅 row). They matter here because
+    buildExportArtifact() snapshots only the document's FIRST <style>, so
+    #font-scale-style / #width-scale-style have to be carried out explicitly the
+    way the @user-vars overrides are -- and at the default each of those elements
+    is empty, which means every other case in this file would pass with the carry
+    missing entirely.
     """
     ctx = browser.new_context(viewport={"width": 1440, "height": 900})
     page = ctx.new_page()
@@ -131,6 +134,10 @@ def run_style(browser, base_url, doc, style, vertical, font_scale=None):
         page.add_init_script(
             "(() => { try { localStorage.setItem('fontScale', %s); } catch (e) {} })()"
             % json.dumps(str(font_scale)))
+    if width_scale is not None:
+        page.add_init_script(
+            "(() => { try { localStorage.setItem('widthScale', %s); } catch (e) {} })()"
+            % json.dumps(str(width_scale)))
     page.goto(base_url + doc, wait_until="domcontentloaded")
     page.wait_for_function(
         "() => { const p=document.getElementById('preview'); return p && p.children.length>0; }")
@@ -156,13 +163,15 @@ def run_style(browser, base_url, doc, style, vertical, font_scale=None):
     label = style or "既定"
     if font_scale is not None:
         label += " @ %sx" % font_scale
+    if width_scale is not None:
+        label += " @ width %sx" % width_scale
     print("\n[%s]" % label)
     check("the artifact renders a #preview", art is not None, art)
     if art is None:
         ctx.close()
         return
     for key in ("writingMode", "textOrientation", "fontFamily", "fontSize",
-                "lineHeight", "height", "pageLines", "pages", "breaks", "nombre",
+                "lineHeight", "height", "maxWidth", "pageLines", "pages", "breaks", "nombre",
                 "rubyCount", "rtCount", "rtFontSize", "rtPosition", "rtMarginBlockStart"):
         check("%s survives the export (%s)" % (key, json.dumps(live[key], ensure_ascii=False)),
               art[key] == live[key], "artifact=%s" % json.dumps(art[key], ensure_ascii=False))
@@ -323,6 +332,12 @@ def main():
             # product of two variables rather than one literal.
             run_style(browser, base, plain, None, False, font_scale=1.5)
             run_style(browser, base, vertical, "tategaki.css", True, font_scale=1.25)
+            # The same argument for the width multiplier: #width-scale-style is empty
+            # at the default, so only a case that sets it can catch a dropped cwCss.
+            # tategaki again, because there the multiplier lands on `height` (the
+            # inline axis under vertical-rl) rather than on max-width.
+            run_style(browser, base, plain, None, False, width_scale=0.8)
+            run_style(browser, base, vertical, "tategaki.css", True, width_scale=0.8)
             # samples/model3d.md rather than a synthetic doc: it is the file that
             # already exercises every option and every error path, and it keeps this
             # check honest about what ships.

@@ -317,6 +317,118 @@ def main():
             page.evaluate("() => applyUserStyle(null)")
             shoot.wait_for_render(page)
 
+            # ---------- content width (S modal 本文の幅) ----------
+            # MUST come after the two blocks above for the same reason they are
+            # ordered: one context for the whole run, so a width left in
+            # localStorage would move the 900px / 510px / 663px 版面 assertions.
+            def cw_max():
+                return page.evaluate(
+                    "() => getComputedStyle(document.getElementById('preview')).maxWidth")
+            def cw_stored():
+                return page.evaluate("() => localStorage.getItem('widthScale')")
+
+            check("the baseline column starts at its authored width", cw_max(), "900px")
+            check("...with nothing persisted", cw_stored(), None)
+            press(page, "s")
+            check("the style modal carries a content-width row",
+                  page.evaluate("() => !document.getElementById('content-width-row').hidden"), True)
+            page.evaluate(
+                "() => document.querySelector('#content-width-row [data-act=\"width-scale-down\"]').click()")
+            page.wait_for_timeout(150)
+            check("its − button narrows the column", cw_max(), "810px")   # 0.9 x 900
+            check("...and persists the multiplier, not a px width", cw_stored(), "0.9")
+            check("...and the readout follows",
+                  page.evaluate("() => document.getElementById('width-scale-value').textContent"),
+                  "90%")
+            # ONLY the measure moves. The gutter between the 版面 and the edge of the
+            # paper-white is a constant reading margin, so it stays put under BOTH
+            # multipliers — scaling it would make the narrow end unreadable.
+            check("...while the padding stays put",
+                  page.evaluate(
+                      "() => getComputedStyle(document.getElementById('preview')).padding"),
+                  "40px 20px")
+            check("the width is declared in a carryable <style>",
+                  page.evaluate(
+                      "() => (document.getElementById('width-scale-style')||{}).textContent"),
+                  "body:not(.marp) #preview{--md-width-scale:0.9 !important;}")
+            check("...and the artifact carries it",
+                  page.evaluate(
+                      "async () => { const a = await buildExportArtifact();"
+                      " const h = typeof a === 'string' ? a : a.html;"
+                      " return h.includes('--md-width-scale:0.9'); }"), True)
+            page.evaluate(
+                "() => document.querySelector('#content-width-row [data-act=\"width-scale-reset\"]').click()")
+            page.wait_for_timeout(150)
+            check("its reset button restores the authored width", cw_max(), "900px")
+            check("...clearing the stored value", cw_stored(), None)
+            check("...and stamping nothing at all",
+                  page.evaluate(
+                      "() => (document.getElementById('width-scale-style')||{}).textContent"), "")
+            # body.wide is `max-width: none` at (1,1,0) and outranks every theme's own
+            # cap, so the two are controls of the same quantity. Adjusting the width
+            # therefore CLEARS 全幅表示 rather than storing a value that does nothing.
+            press(page, "w")
+            check("W turns on the full-width layout",
+                  page.evaluate("() => document.body.classList.contains('wide')"), True)
+            check("...and the width row says so",
+                  page.evaluate(
+                      "() => !document.querySelector('#content-width-row .cw-wide').hidden"), True)
+            check("...without disabling its stepper",
+                  page.evaluate(
+                      "() => document.querySelector('#content-width-row [data-act=\"width-scale-down\"]').disabled"),
+                  False)
+            page.evaluate(
+                "() => document.querySelector('#content-width-row [data-act=\"width-scale-down\"]').click()")
+            page.wait_for_timeout(150)
+            check("...and pressing it releases the full-width layout",
+                  page.evaluate("() => document.body.classList.contains('wide')"), False)
+            check("...persisting that release too",
+                  page.evaluate("() => localStorage.getItem('wide')"), "false")
+            check("...so the multiplier actually reaches the column", cw_max(), "810px")
+            page.evaluate(
+                "() => document.querySelector('#content-width-row [data-act=\"width-scale-reset\"]').click()")
+            page.wait_for_timeout(150)
+            press(page, "Escape")
+            # A vertical theme's inline axis is `height`, and the container scrolls
+            # horizontally with overflow-y: hidden — so the 版面 can be shortened but
+            # never lengthened past the viewport, where it would be unreachable.
+            page.evaluate("async () => { await applyUserStyle('tategaki.css'); }")
+            shoot.wait_for_render(page)
+            page.wait_for_timeout(200)
+            def cw_height():
+                return page.evaluate(
+                    "() => getComputedStyle(document.getElementById('preview')).height")
+            check("a vertical theme starts at the full viewport line length",
+                  cw_height(), "860px")   # 900 viewport - 40
+            page.evaluate("() => setWidthScale(0.8)")
+            page.wait_for_timeout(150)
+            check("...and the multiplier shortens the line", cw_height(), "688px")
+            page.evaluate("() => setWidthScale(1.5)")
+            page.wait_for_timeout(150)
+            check("...but is clamped at 1.0 on the way up", cw_height(), "860px")
+            page.evaluate("() => setWidthScale(1)")
+            page.wait_for_timeout(150)
+            # bunko defines its 版面 in CHARACTERS, so it refuses the width multiplier
+            # for exactly the reason it refuses the font one — its ⚙ is the control.
+            page.evaluate("async () => { await applyUserStyle('bunko.css'); }")
+            shoot.wait_for_render(page)
+            page.wait_for_timeout(200)
+            press(page, "s")
+            check("under a character-defined 版面 the width row reports itself inactive",
+                  page.evaluate(
+                      "() => !document.querySelector('#content-width-row .cw-fixed').hidden"), True)
+            check("...with its stepper disabled",
+                  page.evaluate(
+                      "() => document.querySelector('#content-width-row [data-act=\"width-scale-down\"]').disabled"),
+                  True)
+            press(page, "Escape")
+            page.evaluate("() => setWidthScale(0.8)")
+            page.wait_for_timeout(150)
+            check("...storing nothing there either", cw_stored(), None)
+            check("...leaving the 版面 exactly as the theme set it", cw_height(), "663px")
+            page.evaluate("() => applyUserStyle(null)")
+            shoot.wait_for_render(page)
+
             press(page, "h")
             check("H opens the help modal",
                   page.evaluate("() => !!document.querySelector('#help-modal.visible')"), True)

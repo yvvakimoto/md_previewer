@@ -76,6 +76,7 @@ README.md 「対応している記法・機能」.
 | Images via the `/userfile/` route with `\|WxH` sizing and `../` paths; video + YouTube embeds; cross-file `.md` links with back/forward history; `Ctrl`+click opens a new window; drag & drop; `Ctrl+N` new file; `Ctrl+D` install dir | `preview-files-media.md` |
 | Marp slides (`marp: true`), 3 views (`P`), autofit (`A`), laser pointer (`Z`), 8-colour theme family, selection highlighter | `marp.md` |
 | Body text size (`Ctrl` `+`/`-`/`0`, `Ctrl`+wheel, and an `S`-modal row) — a layout multiplier, so it reaches the PDF / HTML export | `styles-theming.md` |
+| Content width (an `S`-modal row) — the second layout multiplier; `W` full-width is released when it is used | `styles-theming.md` |
 | Dark/light (`M`), style picker (`S`) with a per-style ⚙ `@user-vars` pane, `bunko.css` 文庫本 / `tategaki.css` 縦書き, section numbering (`N`), wide layout (`W`), `confidential:` / `watermark:` overlay | `styles-theming.md` |
 | Companion editor (`E`): CodeMirror 6, Vim, live preview, cell mode, Office-table paste, autocomplete, font zoom, ⚙ settings | `editor-*.md` |
 | UI language toggle (ja / en), one shared `uiLang` key across both windows | `i18n.md` |
@@ -163,7 +164,7 @@ than in a detail doc, so that a missed pointer is not fatal.
    **never stamp `data-line` on a wrapper** (`__tableLocate()`'s `lineEl.contains(tableEl)`
    would then match every table and refuse to edit any of them).
 
-5b. **A theme that wants the reader's body-text scale must route its own `font-size` through `var(--md-font-scale, 1)`** — the same "theme declares, the app implements" shape as `--md-page-lines`, and the same multiplier trick as `--md-print-scale`. A theme that does not is simply never scaled, which is a deliberate choice for `bunko.css` (its 版面 is defined in characters, and the PDF rescale would cancel the multiplier out exactly). ⚠ **Scale the type only** — a theme must NOT route `max-width` / `padding` through the variable: the 版面 holds its width and a larger size fits fewer characters per line. Scaling the cap too just reproduces the browser zoom this replaced. Detail: `styles-theming.md`.
+5b. **A theme that wants the reader's body-text scale must route its own `font-size` through `var(--md-font-scale, 1)`** — the same "theme declares, the app implements" shape as `--md-page-lines`, and the same multiplier trick as `--md-print-scale`. A theme that does not is simply never scaled, which is a deliberate choice for `bunko.css` (its 版面 is defined in characters, and the PDF rescale would cancel the multiplier out exactly). ⚠ **Scale the type only** — a theme must NOT route `max-width` / `padding` through the variable: the 版面 holds its width and a larger size fits fewer characters per line. Scaling the cap too just reproduces the browser zoom this replaced — the reader who wants a different measure has the SECOND multiplier instead. **`--md-width-scale`** is that one: a theme opts in by routing its own `max-width` (or, under `vertical-rl`, its `height`) through it, `padding` follows neither, and `bunko` refuses both through the shared `__previewIsFixedLayout()`. Detail: `styles-theming.md`.
 
 ### Adding a figure engine — the three-part checklist
 
@@ -295,6 +296,7 @@ that are checked (or partly checked) can rely on the harness remembering.
 | kataskeve / kataskeve3d / model3d container + error CSS | hand-carried into `assets/index.html`'s first `<style>` | ❌ |
 | `SS` — `tools/build-three/entry.js` | `__MODEL3D_SS` — `assets/index.html` (the export pass pins the `<img>` width against it) | ✅ `exportcheck.py` asserts the PNG is intrinsically 2× the pinned width |
 | baseline `#preview { font-size: calc(var(--md-font-scale,1) * 16px) }` — `assets/index.html` | each bundled theme's own `font-size` (`classical` / `hakuro-modern` / `tategaki`; `bunko` opts out on purpose) | partial (`exportcheck.py` runs two scaled cases; a theme that silently stopped consuming the variable would not be caught) |
+| baseline `#preview { max-width: calc(var(--md-width-scale,1) * 900px) }` + its `@media print` twin — `assets/index.html` | `hakuro-modern.css`'s `40rem` cap and `tategaki.css`'s clamped `height` (`parchment` / `classical` inherit the baseline; `bunko` opts out on purpose) | partial (`keycheck.py` + `exportcheck.py`'s two `width_scale` cases + `pdfcheck.py`'s x-extent; a theme that silently stopped consuming the variable would not be caught) |
 | `_FIGURES_READY_JS` — `tools/preview-harness/shoot.py` | the set of async figure kinds — `assets/index.html` | ❌ silent |
 | `CELL_HELP` — `tools/build-editor/cells.js` | the newest-first Esc chain — `entry.js` | ❌ |
 | `$libsSentinels` — `build.ps1` | the library set fetched by `tools/fetch-libs.ps1` | ❌ |
@@ -308,7 +310,7 @@ that are checked (or partly checked) can rely on the harness remembering.
 |---|---|
 | the render pipeline, any preprocessing pass | `python tools/preview-harness/domdump.py` (+ `gate.sh <label> <files…>` to diff against `_dom/base`) |
 | shortcuts, context menus, Marp autofit, `@user-vars` | `python tools/preview-harness/keycheck.py` |
-| `--md-font-scale`, a theme's base `font-size`, `with_hotkeys_zoom` | `keycheck.py` + `exportcheck.py` + `pdfcheck.py` (the scaled cases are the only ones that can see it) |
+| `--md-font-scale` / `--md-width-scale`, a theme's base `font-size` or `max-width`, `with_hotkeys_zoom` | `keycheck.py` + `exportcheck.py` + `pdfcheck.py` (the scaled cases are the only ones that can see either) |
 | preview table edit mode | `python tools/preview-harness/tablecheck.py` + `node tools/preview-harness/table-model.test.cjs` |
 | task-list checkboxes, `applyTaskLists()`, `__isTypingTarget()` | `python tools/preview-harness/taskcheck.py` (+ `keycheck.py` for the focus case) |
 | `model3d` / `tools/build-three/` | `python tools/preview-harness/keycheck.py` (pixels, theme salt, **and the leak nets: one WebGL context, flat shader-program count**) + `exportcheck.py` + `pdfcheck.py` |
@@ -350,6 +352,7 @@ unless noted.
 | `__MARP_FIT_MIN` | 0.5 | autofit shrink floor; below it the body scrolls instead |
 | `__MARP_ZOOM_MIN` / `MAX` | 1 / 8 | deck-mode `Ctrl`+wheel zoom range |
 | `__FONT_SCALE_STEPS` | `[0.6 … 2.5]` | body-text `--md-font-scale` ladder (`Ctrl` `+`/`-`/`0`). A fixed list, not a range: it makes reset exact and a stored value trivially validatable. ⚠ Pinned to 1 under `--export-png`, or the PNG depends on the operator's localStorage |
+| `__WIDTH_SCALE_STEPS` | `[0.6 … 2.0]` | content-width `--md-width-scale` ladder (`S`-modal row only). The font ladder minus its top rung: 2.5 × 900px is off screen on every realistic window. Same validate-and-reset rationale, same ⚠ pin to 1 under `--export-png` — more load-bearing there, since this one moves the emitted PNG's pixel width. `tategaki` clamps it at 1.0 in CSS |
 | `__MARKER_LIFE_MS` / `FADE_MS` / `ALPHA` | 2000 / 500 / 0.55 | Marp selection highlighter |
 | `__LASER_TRAIL_MS` / `HEAD_R` | 260 / 7 | laser pointer comet trail |
 | `__ABC_RESUME_TIMEOUT_MS` | 1500 | ⚠ `AudioContext.resume()` settles only once the autoplay policy is satisfied — an unbounded await hangs the play button on 「音源を読み込み中」 forever |
