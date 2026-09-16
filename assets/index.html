@@ -2481,12 +2481,25 @@
         .scale-row button:hover:not(:disabled) { background: #f6f8fa; }
         .scale-row button:disabled { opacity: 0.4; cursor: default; }
         .scale-row .fs-reset { margin-left: auto; min-width: 0; }
+        /* The readout is a typable <input>: with no upper bound to step to, a
+           reader who wants 400% has to be able to say so. 4.5em was sized for a
+           3-digit "100%"; the percent sign is its own element now and four digits
+           are reachable, so the box is wider. */
         .scale-row .sc-value {
-            flex: 0 0 4.5em;
-            text-align: center;
+            flex: 0 0 5em;
+            width: 5em;
+            min-width: 0;
+            text-align: right;
+            font: inherit;
             font-variant-numeric: tabular-nums;
             color: #24292e;
+            background: transparent;
+            border: 1px solid #d0d7de;
+            border-radius: 6px;
+            padding: 4px 6px;
         }
+        .scale-row .sc-value:disabled { opacity: 0.4; }
+        .scale-row .sc-unit { color: #57606a; margin-left: -4px; }
         .scale-row .fs-fixed {
             margin-top: 8px;
             font-size: 11px;
@@ -2496,7 +2509,9 @@
         body.dark-mode .scale-row { border-top-color: #30363d; }
         body.dark-mode .scale-row .fs-label,
         body.dark-mode .scale-row .sc-value { color: #c9d1d9; }
-        body.dark-mode .scale-row .fs-hint { color: #8b949e; }
+        body.dark-mode .scale-row .sc-value { border-color: #30363d; }
+        body.dark-mode .scale-row .fs-hint,
+        body.dark-mode .scale-row .sc-unit { color: #8b949e; }
         body.dark-mode .scale-row button { border-color: #30363d; color: #c9d1d9; }
         body.dark-mode .scale-row button:hover:not(:disabled) { background: #21262d; }
         body.dark-mode .scale-row .fs-fixed { color: #d6a95f; }
@@ -3078,6 +3093,10 @@
                                       en: 'Full-width layout (W) is on — changing the width turns it off' },
             'style.widthScaleDown': { ja: '狭く', en: 'Narrower' },
             'style.widthScaleUp':   { ja: '広く', en: 'Wider' },
+            // One key for BOTH readout fields: they are the same control on two
+            // quantities, and the row's own label already says which. The `%` next
+            // to the box is a symbol and stays out of this table.
+            'style.scaleInput':    { ja: '倍率（%）を直接入力', en: 'Type a scale (%)' },
 
             'lic.loadFailed':      { ja: 'THIRD_PARTY_LICENSES.txt の読み込みに失敗しました ({error})',
                                      en: 'Could not load THIRD_PARTY_LICENSES.txt ({error})' },
@@ -3678,9 +3697,58 @@
         // multiplier, which the PDF and --export-png paths inherit for free because
         // both print the LIVE DOM. See styles-theming.md for the theme contract.
         //
-        // A discrete ladder rather than a continuous value: these are the familiar
-        // browser-zoom ratios, and a fixed list makes "reset" exact and a stored
-        // value trivially validatable.
+        // ---- The shared scale stepper -----------------------------------------
+        // Both multipliers travel the same way, so this is ONE implementation with
+        // the anchor list passed in (CLAUDE.md invariant 2 — no sixth copy).
+        //
+        // The anchor lists below are NOT a range: they are the familiar browser-zoom
+        // ratios, and travel CONTINUES past both ends forever. Up, by a fixed
+        // additive rung; down, by a geometric one, which approaches 0 without ever
+        // reaching it — a 0x or negative multiplier is not a size, so __SCALE_MIN is
+        // a positivity guard rather than a lower limit.
+        const __SCALE_MIN = 0.01;
+        const __SCALE_COARSE = 0.25;   // additive rung above the top anchor
+        const __SCALE_SHRINK = 0.9;    // multiplicative rung below the bottom anchor
+        // Three decimals: enough to keep the geometric rungs distinct at every
+        // magnitude a reader can reach, and it keeps the float noise (0.9 ** 7) out
+        // of both the stamped CSS and the localStorage string.
+        function __scaleQuantize(n) { return Math.round(n * 1000) / 1000; }
+        // The validator that replaced ladder membership. Anything finite and
+        // positive is now a legitimate value (the reader can type one), so the
+        // "unproven values go back to the default" rule applies only to what is not
+        // a usable multiplier at all.
+        function __scaleSanitize(n, def) {
+            return Number.isFinite(n) && n >= __SCALE_MIN ? __scaleQuantize(n) : def;
+        }
+        // Inside the anchors, step to the next one strictly beyond `cur` — which is
+        // also what makes a TYPED off-anchor value (137%) move sensibly. Outside
+        // them travel is unbounded, and coming back inward SNAPS onto the anchor
+        // list so the reader lands back on the familiar rungs.
+        function __scaleStep(anchors, cur, dir) {
+            const lo = anchors[0], hi = anchors[anchors.length - 1];
+            const EPS = 1e-9;
+            // Inclusive on both ends, so the outermost anchor is walked FROM rather
+            // than treated as already-outside — the version that tested `cur < hi`
+            // sat at the top anchor forever on the way back down.
+            if (cur >= lo - EPS && cur <= hi + EPS) {
+                if (dir > 0) { for (const s of anchors) if (s > cur + EPS) return s; }
+                else { for (let k = anchors.length - 1; k >= 0; k--) if (anchors[k] < cur - EPS) return anchors[k]; }
+                // Standing on an end with no anchor left in that direction: leave.
+                return dir > 0 ? __scaleQuantize(hi + __SCALE_COARSE)
+                               : Math.max(__SCALE_MIN, __scaleQuantize(lo * __SCALE_SHRINK));
+            }
+            // Outside: unbounded outward, and snapping back onto the anchor list on
+            // the way in, so the reader lands on the familiar rungs again.
+            if (cur > hi) {
+                return dir > 0 ? __scaleQuantize(cur + __SCALE_COARSE)
+                               : Math.max(hi, __scaleQuantize(cur - __SCALE_COARSE));
+            }
+            return dir > 0 ? Math.min(lo, __scaleQuantize(cur / __SCALE_SHRINK))
+                           : Math.max(__SCALE_MIN, __scaleQuantize(cur * __SCALE_SHRINK));
+        }
+
+        // The ANCHOR rungs, not a range — see __scaleStep above. Reset is exact
+        // because 1 is one of them.
         const __FONT_SCALE_STEPS = [0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.25, 1.5, 1.75, 2.0, 2.5];
         const __FONT_SCALE_DEFAULT = 1;
         // Pinned to 1 under --export-png. The capture process shares this origin's
@@ -3691,10 +3759,12 @@
         function __readFontScale() {
             if (window.__captureConfig) return __FONT_SCALE_DEFAULT;
             const n = parseFloat(localStorage.getItem('fontScale'));
-            // Anything unproven falls back to the default — the same rule
-            // __styleVarCssValue() applies to a stored @user-vars value, so a ladder
-            // that changes in a future version can never leave a stale scale behind.
-            return __FONT_SCALE_STEPS.indexOf(n) >= 0 ? n : __FONT_SCALE_DEFAULT;
+            // Anything that is not a usable multiplier falls back to the default —
+            // the same rule __styleVarCssValue() applies to a stored @user-vars
+            // value. This used to be ladder MEMBERSHIP; it is a finiteness and
+            // positivity test now that travel is unbounded and the reader can type
+            // an arbitrary percentage, so an off-anchor value is legitimately kept.
+            return __scaleSanitize(n, __FONT_SCALE_DEFAULT);
         }
         let fontScale = __readFontScale();
         // Plotly sizes a chart to its container at render time and does not track a
@@ -3727,7 +3797,7 @@
                 : 'body:not(.marp) #preview{--md-font-scale:' + fontScale + ' !important;}';
         }
         function setFontScale(v, opts) {
-            const next = __FONT_SCALE_STEPS.indexOf(v) >= 0 ? v : __FONT_SCALE_DEFAULT;
+            const next = __scaleSanitize(Number(v), __FONT_SCALE_DEFAULT);
             const quiet = !!(opts && opts.quiet);
             // Under a character-defined 版面 the multiplier is genuinely inert (the
             // theme does not consume it), so storing a new value would silently arm
@@ -3756,14 +3826,11 @@
         function __toastFontScale() {
             showToast(t('toast.fontScale', { pct: String(Math.round(fontScale * 100)) }));
         }
-        // dir: +1 / -1 to step the ladder, 0 to reset. An unknown current value (a
-        // ladder that shrank between versions) steps from the default.
+        // dir: +1 / -1 to step, 0 to reset. There is no end to hit: __scaleStep
+        // walks the anchors while inside them and keeps going past either one.
         function stepFontScale(dir, opts) {
             if (!dir) { setFontScale(__FONT_SCALE_DEFAULT, opts); return; }
-            let i = __FONT_SCALE_STEPS.indexOf(fontScale);
-            if (i < 0) i = __FONT_SCALE_STEPS.indexOf(__FONT_SCALE_DEFAULT);
-            const j = Math.max(0, Math.min(__FONT_SCALE_STEPS.length - 1, i + dir));
-            setFontScale(__FONT_SCALE_STEPS[j], opts);
+            setFontScale(__scaleStep(__FONT_SCALE_STEPS, fontScale, dir), opts);
         }
         // A theme whose 版面 is defined in CHARACTERS rather than pixels (bunko.css,
         // via --md-page-lines) deliberately does not route its font size OR its
@@ -3787,8 +3854,10 @@
         // routing its own length through the variable" contract. It exists because
         // the font scale deliberately does NOT move the 版面, so a reader who wants a
         // different measure had only the all-or-nothing W key.
-        // The ladder is the font one minus its top rung: 2.5 x 900px = 2250px is off
-        // screen on every realistic window, so it would not differ from 2.0.
+        // The ANCHOR list is the font one minus its top rung: 2.5 x 900px = 2250px is
+        // already off screen on every realistic window, so it need not be a familiar
+        // rung — a reader who wants it steps (or types) past the end, which is where
+        // travel continues. See __scaleStep.
         const __WIDTH_SCALE_STEPS = [0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.25, 1.5, 1.75, 2.0];
         const __WIDTH_SCALE_DEFAULT = 1;
         // Pinned to 1 under --export-png for the same reason __readFontScale() is, and
@@ -3796,7 +3865,7 @@
         function __readWidthScale() {
             if (window.__captureConfig) return __WIDTH_SCALE_DEFAULT;
             const n = parseFloat(localStorage.getItem('widthScale'));
-            return __WIDTH_SCALE_STEPS.indexOf(n) >= 0 ? n : __WIDTH_SCALE_DEFAULT;
+            return __scaleSanitize(n, __WIDTH_SCALE_DEFAULT);
         }
         let widthScale = __readWidthScale();
         function applyWidthScale() {
@@ -3812,7 +3881,7 @@
                 : 'body:not(.marp) #preview{--md-width-scale:' + widthScale + ' !important;}';
         }
         function setWidthScale(v) {
-            const next = __WIDTH_SCALE_STEPS.indexOf(v) >= 0 ? v : __WIDTH_SCALE_DEFAULT;
+            const next = __scaleSanitize(Number(v), __WIDTH_SCALE_DEFAULT);
             // Under a character-defined 版面 the multiplier is inert (the theme does
             // not consume it), so storing a value would silently arm a change the
             // reader only sees on some other style later. Same refusal as setFontScale.
@@ -3844,13 +3913,11 @@
             requestAnimationFrame(() => restorePreviewAnchor(anchor));
             __updateWidthScaleUI();
         }
-        // dir: +1 / -1 to step the ladder, 0 to reset. Mirrors stepFontScale().
+        // dir: +1 / -1 to step, 0 to reset. Mirrors stepFontScale(), same unbounded
+        // travel through the same shared __scaleStep().
         function stepWidthScale(dir) {
             if (!dir) { setWidthScale(__WIDTH_SCALE_DEFAULT); return; }
-            let i = __WIDTH_SCALE_STEPS.indexOf(widthScale);
-            if (i < 0) i = __WIDTH_SCALE_STEPS.indexOf(__WIDTH_SCALE_DEFAULT);
-            const j = Math.max(0, Math.min(__WIDTH_SCALE_STEPS.length - 1, i + dir));
-            setWidthScale(__WIDTH_SCALE_STEPS[j]);
+            setWidthScale(__scaleStep(__WIDTH_SCALE_STEPS, widthScale, dir));
         }
 
         // Stamp the overrides into a dedicated <style>. Same mechanism, and the
@@ -5367,21 +5434,42 @@
             }
         }
         function __updateScaleRowsUI() { __updateFontScaleUI(); __updateWidthScaleUI(); }
+        // The readout is an <input>, so a reader can type a percentage instead of
+        // stepping to it. ⚠ Never written while it holds focus — that would fight
+        // the keystrokes mid-entry — and it takes the same `disabled` as the buttons.
+        // `force` overrides the focus guard — the one caller that needs it is the
+        // rejected-entry path, where the entry is already over.
+        function __paintScaleField(id, scale, disabled, force) {
+            const el = document.getElementById(id);
+            if (!el) return;
+            if (force || el !== document.activeElement) el.value = String(Math.round(scale * 100));
+            el.disabled = disabled;
+        }
+        // Read a percentage back out of that field. Anything that is not a usable
+        // multiplier yields null and the caller repaints — the same "unproven values
+        // go back to a proven one" rule __styleVarCssValue() applies.
+        function __readScaleField(el) {
+            const pct = parseFloat(el && el.value);
+            if (!Number.isFinite(pct)) return null;
+            const n = __scaleQuantize(pct / 100);
+            return n >= __SCALE_MIN ? n : null;
+        }
         function __updateFontScaleUI() {
-            const val = document.getElementById('font-scale-value');
-            if (val) val.textContent = Math.round(fontScale * 100) + '%';
+            const fixed = __previewIsFixedLayout();
+            __paintScaleField('font-scale-value', fontScale, fixed);
             const row = document.getElementById('font-scale-row');
             if (!row) return;
-            const fixed = __previewIsFixedLayout();
             const note = row.querySelector('.fs-fixed');
             if (note) note.hidden = !fixed;
-            const i = __FONT_SCALE_STEPS.indexOf(fontScale);
             const dis = (act, off) => {
                 const b = row.querySelector('[data-act="' + act + '"]');
                 if (b) b.disabled = fixed || off;
             };
-            dis('font-scale-down', i === 0);
-            dis('font-scale-up', i === __FONT_SCALE_STEPS.length - 1);
+            // There is no end to disable at any more: __scaleStep travels past both
+            // anchor ends forever, so `fixed` (bunko defines its 版面 in characters
+            // and its ⚙ is the control) is the only thing that can turn a stepper off.
+            dis('font-scale-down', false);
+            dis('font-scale-up', false);
             dis('font-scale-reset', fontScale === __FONT_SCALE_DEFAULT);
         }
         // Twin of the above, with one deliberate difference: body.wide only WARNS.
@@ -5389,23 +5477,22 @@
         // control whose only fix (press W first) is invisible from inside the modal
         // would be worse than a note saying what the press will do.
         function __updateWidthScaleUI() {
-            const val = document.getElementById('width-scale-value');
-            if (val) val.textContent = Math.round(widthScale * 100) + '%';
+            const fixed = __previewIsFixedLayout();
+            __paintScaleField('width-scale-value', widthScale, fixed);
             const row = document.getElementById('content-width-row');
             if (!row) return;
-            const fixed = __previewIsFixedLayout();
             const wide = document.body.classList.contains('wide');
             const fixedNote = row.querySelector('.cw-fixed');
             if (fixedNote) fixedNote.hidden = !fixed;
             const wideNote = row.querySelector('.cw-wide');
             if (wideNote) wideNote.hidden = fixed || !wide;
-            const i = __WIDTH_SCALE_STEPS.indexOf(widthScale);
             const dis = (act, off) => {
                 const b = row.querySelector('[data-act="' + act + '"]');
                 if (b) b.disabled = fixed || off;
             };
-            dis('width-scale-down', i === 0);
-            dis('width-scale-up', i === __WIDTH_SCALE_STEPS.length - 1);
+            // Same as the size row: no end to disable at, only `fixed`.
+            dis('width-scale-down', false);
+            dis('width-scale-up', false);
             dis('width-scale-reset', widthScale === __WIDTH_SCALE_DEFAULT && !wide);
         }
         // `name` is the spec / storage key (a user style's file, or `marp/<file>`
@@ -5598,6 +5685,34 @@
                 e.preventDefault();
                 setStyleModalOpen(false);
             }
+        });
+        // The two scale readouts are typable, so they need a commit event of their
+        // own. `change` (Enter / blur), not `input`: a per-keystroke commit would
+        // re-render the document for every digit — and "4" on the way to "400" is a
+        // scale the reader never asked for. A delegate on document, guarded by the
+        // modal's visibility, mirrors the click handler below rather than inventing
+        // a second registration shape.
+        document.addEventListener('change', (e) => {
+            const m = __styleModal();
+            if (!m || !m.classList.contains('visible')) return;
+            const target = e.target instanceof Element ? e.target : null;
+            if (!target || !target.matches('.sc-value')) return;
+            const font = target.id === 'font-scale-value';
+            if (!font && target.id !== 'width-scale-value') return;
+            const n = __readScaleField(target);
+            if (n === null) {
+                // A blank / non-numeric / sub-minimum entry is not a value to store.
+                // ⚠ Forced: the field still holds focus on an Enter-driven change, so
+                // __paintScaleField's "don't clobber mid-entry" guard would skip it
+                // and leave the rejected text on screen.
+                __paintScaleField(target.id, font ? fontScale : widthScale,
+                                  __previewIsFixedLayout(), true);
+                return;
+            }
+            // Quiet for the same reason the row's buttons are: the readout in front
+            // of the reader IS the feedback.
+            if (font) setFontScale(n, { quiet: true });
+            else setWidthScale(n);
         });
         document.addEventListener('click', async (e) => {
             const m = __styleModal();
@@ -14277,7 +14392,12 @@ ${previewClone.outerHTML}
                 </div>
                 <div class="fs-control">
                     <button type="button" data-act="font-scale-down" data-i18n-attr="title:style.fontScaleDown" title="小さく">−</button>
-                    <span id="font-scale-value" class="sc-value">100%</span>
+                    <!-- The readout is the input: there is no upper or lower bound to
+                         step to any more, so typing a percentage has to be possible.
+                         Committed on `change` (Enter / blur) by the #style-modal
+                         delegate; `%` is a symbol and stays out of the i18n table. -->
+                    <input type="number" id="font-scale-value" class="sc-value" min="1" step="1"
+                           inputmode="numeric" data-i18n-attr="title:style.scaleInput" title="倍率（%）を直接入力" value="100"><span class="sc-unit">%</span>
                     <button type="button" data-act="font-scale-up" data-i18n-attr="title:style.fontScaleUp" title="大きく">＋</button>
                     <button type="button" class="fs-reset" data-act="font-scale-reset" data-i18n="style.resetDefaults">既定に戻す</button>
                 </div>
@@ -14290,7 +14410,8 @@ ${previewClone.outerHTML}
                 </div>
                 <div class="fs-control">
                     <button type="button" data-act="width-scale-down" data-i18n-attr="title:style.widthScaleDown" title="狭く">−</button>
-                    <span id="width-scale-value" class="sc-value">100%</span>
+                    <input type="number" id="width-scale-value" class="sc-value" min="1" step="1"
+                           inputmode="numeric" data-i18n-attr="title:style.scaleInput" title="倍率（%）を直接入力" value="100"><span class="sc-unit">%</span>
                     <button type="button" data-act="width-scale-up" data-i18n-attr="title:style.widthScaleUp" title="広く">＋</button>
                     <button type="button" class="fs-reset" data-act="width-scale-reset" data-i18n="style.resetDefaults">既定に戻す</button>
                 </div>
