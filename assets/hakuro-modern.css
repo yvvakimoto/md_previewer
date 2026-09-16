@@ -702,7 +702,17 @@ body.marp #preview > div.marpit > svg[data-marpit-svg] {
 /* ---------- Print ---------- */
 @media print {
     body { background: #fff; }
-    #preview { background: #fff; padding: 0; max-width: 100%; }
+    /* The 40rem screen cap is released on paper — the measure there is the page
+       box — but this rule sits later than the baseline's print rule at equal
+       specificity, so a bare `max-width: 100%` would discard the reader's
+       --md-width-scale entirely and print a 0.7x 版面 full width. Mirror the
+       baseline's min() form instead: byte-identical at the default and at every
+       rung above 1.0, and a narrowed measure still prints narrow. */
+    #preview {
+        background: #fff;
+        padding: 0;
+        max-width: min(100%, calc(var(--md-width-scale, 1) * 100%));
+    }
     #preview h1::before { display: none; }
     #preview pre {
         background: #f4f4f5 !important;
