@@ -283,9 +283,78 @@ def main():
                 "() => document.querySelector('#font-scale-row [data-act=\"font-scale-up\"]').click()")
             page.wait_for_timeout(150)
             check("its + button drives the same value", fs_px(), "17.6px")
+            # The readout is an <input> now, not a <span>: with no bound to step to,
+            # typing a percentage has to be possible, so the field IS the readout.
             check("...and the readout follows",
-                  page.evaluate("() => document.getElementById('font-scale-value').textContent"),
-                  "110%")
+                  page.evaluate("() => document.getElementById('font-scale-value').value"),
+                  "110")
+            # ---- no upper / lower bound -------------------------------------------
+            # The anchors are a familiar-rungs list, not a range. Travel continues
+            # past both ends forever, so neither stepper may ever disable itself at
+            # an end — only bunko's fixed 版面 can turn one off (checked below).
+            def fs_click(act):
+                page.evaluate(
+                    "() => document.querySelector('#font-scale-row [data-act=\"%s\"]').click()" % act)
+                page.wait_for_timeout(150)
+            page.evaluate("() => setFontScale(2.5, { quiet: true })")
+            page.wait_for_timeout(150)
+            check("the top anchor does not disable the + button",
+                  page.evaluate(
+                      "() => document.querySelector('#font-scale-row [data-act=\"font-scale-up\"]').disabled"),
+                  False)
+            fs_click('font-scale-up')
+            check("...and pressing it goes past the old 250% ceiling", fs_stored(), "2.75")
+            fs_click('font-scale-up')
+            check("...by a fixed rung, without end", fs_stored(), "3")
+            fs_click('font-scale-down')
+            check("...and coming back down snaps onto the anchors", fs_stored(), "2.75")
+            fs_click('font-scale-down')
+            check("...landing on the top anchor itself", fs_stored(), "2.5")
+            fs_click('font-scale-down')
+            check("...which then keeps walking the anchors inward", fs_stored(), "2")
+            page.evaluate("() => setFontScale(0.6, { quiet: true })")
+            page.wait_for_timeout(150)
+            check("the bottom anchor does not disable the − button",
+                  page.evaluate(
+                      "() => document.querySelector('#font-scale-row [data-act=\"font-scale-down\"]').disabled"),
+                  False)
+            fs_click('font-scale-down')
+            # Geometric below the bottom anchor, not additive: it approaches 0
+            # without ever reaching it, because a 0x multiplier is not a size.
+            check("...and pressing it goes below the old 60% floor", fs_stored(), "0.54")
+            fs_click('font-scale-down')
+            check("...shrinking geometrically", fs_stored(), "0.486")
+            # An off-anchor value is legitimate now, so it must SURVIVE the read-back
+            # validator instead of being coerced to 1 as ladder membership did.
+            page.evaluate("() => setFontScale(3.7, { quiet: true })")
+            page.wait_for_timeout(150)
+            check("an off-anchor scale is stored as itself", fs_stored(), "3.7")
+            check("...and reaches the document",
+                  page.evaluate(
+                      "() => (document.getElementById('font-scale-style')||{}).textContent"),
+                  "body:not(.marp) #preview{--md-font-scale:3.7 !important;}")
+            # The typable readout: the only way to reach an arbitrary scale in one go.
+            def fs_type(text):
+                page.evaluate(
+                    "() => { const el = document.getElementById('font-scale-value');"
+                    " el.value = %s; el.dispatchEvent(new Event('change', { bubbles: true })); }"
+                    % json.dumps(text))
+                page.wait_for_timeout(150)
+            fs_type("400")
+            check("typing a percentage sets the scale", fs_stored(), "4")
+            check("...and it reaches the document", fs_px(), "64px")
+            fs_type("35")
+            check("...in the shrinking direction too", fs_stored(), "0.35")
+            # Not a value to store — the field goes back to the live scale rather
+            # than arming something the reader cannot see.
+            fs_type("0")
+            check("a sub-minimum entry is refused", fs_stored(), "0.35")
+            check("...and the field is repainted from the live scale",
+                  page.evaluate("() => document.getElementById('font-scale-value').value"), "35")
+            fs_type("")
+            check("a blank entry is refused too", fs_stored(), "0.35")
+            check("...and repainted as well",
+                  page.evaluate("() => document.getElementById('font-scale-value').value"), "35")
             page.evaluate(
                 "() => document.querySelector('#font-scale-row [data-act=\"font-scale-reset\"]').click()")
             page.wait_for_timeout(150)
@@ -311,6 +380,11 @@ def main():
                   page.evaluate(
                       "() => document.querySelector('#font-scale-row [data-act=\"font-scale-up\"]').disabled"),
                   True)
+            # The typable readout is the third way into the same setting, so the
+            # refusal has to reach it too — an enabled field there would invite an
+            # entry that silently does nothing.
+            check("...and its readout field disabled with them",
+                  page.evaluate("() => document.getElementById('font-scale-value').disabled"), True)
             press(page, "Escape")
             press(page, "=", ctrl=True)
             check("...and the shortcut stores nothing there either", fs_stored(), None)
@@ -341,8 +415,8 @@ def main():
             check("its − button narrows the column", cw_max(), "810px")   # 0.9 x 900
             check("...and persists the multiplier, not a px width", cw_stored(), "0.9")
             check("...and the readout follows",
-                  page.evaluate("() => document.getElementById('width-scale-value').textContent"),
-                  "90%")
+                  page.evaluate("() => document.getElementById('width-scale-value').value"),
+                  "90")
             # ONLY the measure moves. The gutter between the 版面 and the edge of the
             # paper-white is a constant reading margin, so it stays put under BOTH
             # multipliers — scaling it would make the narrow end unreadable.
@@ -359,6 +433,36 @@ def main():
                       "async () => { const a = await buildExportArtifact();"
                       " const h = typeof a === 'string' ? a : a.html;"
                       " return h.includes('--md-width-scale:0.9'); }"), True)
+            # ---- no upper / lower bound (twin of the font block above) ------------
+            def cw_click(act):
+                page.evaluate(
+                    "() => document.querySelector('#content-width-row [data-act=\"%s\"]').click()" % act)
+                page.wait_for_timeout(150)
+            page.evaluate("() => setWidthScale(2.0)")
+            page.wait_for_timeout(150)
+            check("the top anchor does not disable the + button",
+                  page.evaluate(
+                      "() => document.querySelector('#content-width-row [data-act=\"width-scale-up\"]').disabled"),
+                  False)
+            cw_click('width-scale-up')
+            check("...and pressing it goes past the old 200% ceiling", cw_stored(), "2.25")
+            check("...widening the column past it too", cw_max(), "2025px")   # 2.25 x 900
+            cw_click('width-scale-down')
+            check("...and coming back down lands on the top anchor", cw_stored(), "2")
+            page.evaluate("() => setWidthScale(0.6)")
+            page.wait_for_timeout(150)
+            check("the bottom anchor does not disable the − button",
+                  page.evaluate(
+                      "() => document.querySelector('#content-width-row [data-act=\"width-scale-down\"]').disabled"),
+                  False)
+            cw_click('width-scale-down')
+            check("...and pressing it goes below the old 60% floor", cw_stored(), "0.54")
+            page.evaluate(
+                "() => { const el = document.getElementById('width-scale-value');"
+                " el.value = '300'; el.dispatchEvent(new Event('change', { bubbles: true })); }")
+            page.wait_for_timeout(150)
+            check("typing a percentage sets the width", cw_stored(), "3")
+            check("...and it reaches the column", cw_max(), "2700px")
             page.evaluate(
                 "() => document.querySelector('#content-width-row [data-act=\"width-scale-reset\"]').click()")
             page.wait_for_timeout(150)
@@ -424,6 +528,8 @@ def main():
                   page.evaluate(
                       "() => document.querySelector('#content-width-row [data-act=\"width-scale-down\"]').disabled"),
                   True)
+            check("...and its readout field disabled with them",
+                  page.evaluate("() => document.getElementById('width-scale-value').disabled"), True)
             press(page, "Escape")
             page.evaluate("() => setWidthScale(0.8)")
             page.wait_for_timeout(150)

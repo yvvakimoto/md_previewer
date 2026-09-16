@@ -184,11 +184,17 @@ def open_styled(browser, style):
     return ctx, page, ctx.new_cdp_session(page)
 
 
-def open_scaled(browser, scale, width_scale=None):
+def open_scaled(browser, scale, width_scale=None, style=None):
     """A fresh context whose localStorage carries a body text scale (and optionally a
-    content width), as a returning reader's would. Same shape (and same reason) as
-    open_styled: add_init_script only runs on navigation, and a per-case context keeps
-    the value from leaking."""
+    content width and a user style), as a returning reader's would. Same shape (and
+    same reason) as open_styled: add_init_script only runs on navigation, and a
+    per-case context keeps the value from leaking.
+
+    `style` is here because a theme's own @media print block sits LATER than the
+    baseline's at equal specificity, so whether the width multiplier survives to
+    paper is a per-theme fact, not a global one — hakuro-modern.css discarded it
+    for months behind a bare `max-width: 100%`.
+    """
     ctx = browser.new_context(viewport={"width": 1440, "height": 900})
     page = ctx.new_page()
     page.set_default_timeout(20000)
@@ -199,6 +205,10 @@ def open_scaled(browser, scale, width_scale=None):
         page.add_init_script(
             "(() => { try { localStorage.setItem('widthScale', %s); } catch (e) {} })()"
             % json.dumps(str(width_scale)))
+    if style is not None:
+        page.add_init_script(
+            "(() => { try { localStorage.setItem('styleName', %s); } catch (e) {} })()"
+            % json.dumps(style))
     return ctx, page, ctx.new_cdp_session(page)
 
 
@@ -248,11 +258,20 @@ def flat_text(doc):
     return ["".join(doc[i].get_text().split()) for i in range(doc.page_count)]
 
 
-def load(page, url, marp):
+def load(page, url, marp, style=None):
     page.goto(url, wait_until="domcontentloaded")
     page.wait_for_function(
         "() => { const p=document.getElementById('preview'); return p && p.children.length>0; }"
     )
+    if style:
+        # The theme arrives as a separate <link id="user-style"> fetch, which the
+        # render wait above says nothing about. Printing before it parses would
+        # silently measure the BASELINE and pass every per-theme assertion.
+        page.wait_for_function(
+            "() => { const l = document.getElementById('user-style');"
+            " try { return !!(l && l.sheet && l.sheet.cssRules.length); }"
+            " catch (e) { return false; } }"
+        )
     if marp:
         page.wait_for_function(
             "() => document.querySelectorAll('div.marpit > svg[data-marpit-svg]').length > 0"
@@ -551,26 +570,35 @@ def main():
             # construction. A vertical theme is the documented exception —
             # __verticalPrepareForPdf() forces max-width:none so the text can flow
             # across the sheet — so this case is horizontal on purpose.
+            # It has to run PER THEME, not once. A theme's own @media print block
+            # is later in the cascade than the baseline's at equal specificity, so
+            # any theme that re-declares #preview's max-width on paper decides for
+            # itself whether the multiplier survives — and hakuro-modern.css, the
+            # only bundled theme that does, discarded it behind a bare
+            # `max-width: 100%` until its print rule was given the same min() form.
+            # parchment / classical declare no print cap and are covered by 既定.
             print("\n[本文の幅倍率 — PDF に届くか]")
-            extents, sheet_w = {}, None
-            for w in (1.0, 0.7):
-                wctx, wpage, wclient = open_scaled(browser, 1.0, width_scale=w)
-                load(wpage, base + scaled, marp=False)
-                out = os.path.join(tmp, "width-%s.pdf" % w)
-                run_export(wpage, wclient, out)
-                doc = fitz.open(out)
-                extents[w] = body_text_extent(doc)
-                sheet_w = doc[0].rect.width
-                doc.close()
-                wctx.close()
-            full = extents[1.0][1] - extents[1.0][0]
-            narrow = extents[0.7][1] - extents[0.7][0]
-            check("a default-width export still fills the page box",
-                  full is not None and full > sheet_w * 0.7, (full, sheet_w))
-            check("a 0.7x reader gets a 0.7x measure on paper",
-                  approx(narrow / full, 0.7, 0.06), (narrow, full))
-            check("...and it is still centred on the sheet",
-                  approx(extents[0.7][0], sheet_w - extents[0.7][1], 4.0), extents[0.7])
+            for style, label in ((None, "既定"), ("hakuro-modern.css", "hakuro-modern")):
+                extents, sheet_w = {}, None
+                for w in (1.0, 0.7):
+                    wctx, wpage, wclient = open_scaled(
+                        browser, 1.0, width_scale=w, style=style)
+                    load(wpage, base + scaled, marp=False, style=style)
+                    out = os.path.join(tmp, "width-%s-%s.pdf" % (label, w))
+                    run_export(wpage, wclient, out)
+                    doc = fitz.open(out)
+                    extents[w] = body_text_extent(doc)
+                    sheet_w = doc[0].rect.width
+                    doc.close()
+                    wctx.close()
+                full = extents[1.0][1] - extents[1.0][0]
+                narrow = extents[0.7][1] - extents[0.7][0]
+                check("%s: a default-width export still fills the page box" % label,
+                      full is not None and full > sheet_w * 0.7, (full, sheet_w))
+                check("%s: a 0.7x reader gets a 0.7x measure on paper" % label,
+                      approx(narrow / full, 0.7, 0.06), (narrow, full))
+                check("%s: ...and it is still centred on the sheet" % label,
+                      approx(extents[0.7][0], sheet_w - extents[0.7][1], 4.0), extents[0.7])
 
             # A toast is on screen for 1400 ms, so whether it lands in the PDF is purely
             # a race between the reader and the timer -- and it WAS landing there: the
