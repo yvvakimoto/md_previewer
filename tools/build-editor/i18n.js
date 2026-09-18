@@ -87,6 +87,19 @@ export const I18N = {
   'ed.table.hint':           { ja: '<kbd>Enter</kbd> で挿入 · <kbd>Esc</kbd> で取消 · 任意のサイズは <kbd>:table 3 4</kbd>',
                                en: '<kbd>Enter</kbd> to insert · <kbd>Esc</kbd> to cancel · <kbd>:table 3 4</kbd> for any size' },
 
+  // ---- unsaved-changes confirm on close ----
+  // The file name is NOT interpolated into `ed.quit.body`: applyI18n rewrites a
+  // data-i18n element's whole textContent, so an interpolated name would vanish
+  // on the next language switch. It lives in its own `.quit-file` element.
+  'ed.quit.title':           { ja: '未保存の変更があります', en: 'Unsaved changes' },
+  'ed.quit.body':            { ja: 'このファイルの変更は保存されていません。',
+                               en: 'This file has changes that have not been saved.' },
+  'ed.quit.save':            { ja: '保存して閉じる',   en: 'Save & Close' },
+  'ed.quit.discard':         { ja: '保存せずに閉じる', en: "Don't Save" },
+  'ed.quit.cancel':          { ja: 'キャンセル',       en: 'Cancel' },
+  'ed.quit.hint':            { ja: '<kbd>Esc</kbd> で取消 · <kbd>:q!</kbd> で破棄して閉じる',
+                               en: '<kbd>Esc</kbd> to cancel · <kbd>:q!</kbd> discards and closes' },
+
   // ---- cell mode key list ----
   'ed.cells.title':          { ja: 'セルモード キー一覧', en: 'Cell Mode Keys' },
   'ed.cells.hint':           { ja: '<kbd>Esc</kbd> で閉じる · セル区切りは <kbd>---</kbd> 行',

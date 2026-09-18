@@ -4,10 +4,12 @@
 //   window.__initialFile = { path, content }   (injected by Rust)
 //   window.__loadFile({path, content})         (called by Rust on switch / save echo)
 //   window.__previewScrolledTo(line)           (preview→editor cursor sync)
+//   window.__confirmClose(quitApp)             (Rust asks before closing/quitting)
 //   window.ipc.postMessage('editor:ready')
 //   window.ipc.postMessage('editor:save:' + JSON.stringify({path, content}))
 //   window.ipc.postMessage('editor:cursor:' + line)
 //   window.ipc.postMessage('editor:close:')
+//   window.ipc.postMessage('editor:closeconfirm:<save|discard|cancel>:<editor|app>')
 
 import { EditorState, Compartment, StateEffect, Transaction, Prec } from '@codemirror/state';
 import {
@@ -583,11 +585,94 @@ export function create(root, opts = {}) {
     setTimeout(() => view.focus(), 0);
   }
 
+  // ---------- Unsaved-changes confirm on close (reuses the cc-modal shell) ----
+  //
+  // The ONLY place that decides what a close does while the buffer is dirty.
+  // Rust owns the three close gestures but not the answer: the editor window's
+  // X button and the preview window's X both stop in the Rust event loop, call
+  // `__confirmClose(quitApp)` below and destroy nothing until the answer comes
+  // back as `editor:closeconfirm:<action>:<scope>`. Vim `:q` never reaches Rust
+  // at all and opens this modal directly; `:q!` bypasses it.
+  //
+  // Why the decision lives here and not in a native Rust dialog: the strings
+  // belong to the `ed.*` i18n table (CLAUDE.md invariant 14), and `dirty` is
+  // owned by this file — Rust's mirror flips true on `editor:change:` and is
+  // only corrected on transitions, so it can be spuriously dirty. The re-check
+  // in `__confirmClose` is what absorbs that skew.
+  const quitModal = document.createElement('div');
+  quitModal.className = 'cc-modal';
+  quitModal.style.display = 'none';
+  quitModal.innerHTML = `
+    <div class="cc-panel" role="dialog" aria-modal="true">
+      <button class="cc-close" type="button" data-i18n-attr="aria-label:common.close">&times;</button>
+      <h2 data-i18n="ed.quit.title"></h2>
+      <p class="quit-body"><span class="quit-file"></span></p>
+      <p class="quit-body" data-i18n="ed.quit.body"></p>
+      <div class="cc-actions">
+        <button class="cc-btn quit-cancel" type="button" data-i18n="ed.quit.cancel"></button>
+        <button class="cc-btn quit-discard" type="button" data-i18n="ed.quit.discard"></button>
+        <button class="cc-btn primary quit-save" type="button" data-i18n="ed.quit.save"></button>
+      </div>
+      <div class="cc-hint" data-i18n-html="ed.quit.hint"></div>
+    </div>`;
+  document.body.appendChild(quitModal);
+  // 'editor' = close just the editor window, 'app' = quit the whole app. Rust
+  // needs it back so the answer lands on the gesture that asked the question.
+  let quitScope = 'editor';
+  quitModal.querySelector('.cc-close').addEventListener('click', () => answerQuit('cancel'));
+  quitModal.addEventListener('click', (e) => { if (e.target === quitModal) answerQuit('cancel'); });
+  quitModal.querySelector('.quit-cancel').addEventListener('click', () => answerQuit('cancel'));
+  quitModal.querySelector('.quit-discard').addEventListener('click', () => answerQuit('discard'));
+  quitModal.querySelector('.quit-save').addEventListener('click', () => answerQuit('save'));
+  function openQuitConfirm(scope) {
+    quitScope = scope === 'app' ? 'app' : 'editor';
+    quitModal.querySelector('.quit-file').textContent =
+      currentPath.split(/[\\/]/).pop() || t('ed.status.untitled');
+    document.body.classList.add('status-pinned');
+    quitModal.style.display = 'flex';
+    setTimeout(() => quitModal.querySelector('.quit-save').focus(), 0);
+  }
+  // Unlike every other modal here, this one can be STACKED: Rust asks whenever
+  // the user reaches for a close, which may be while the settings modal is up.
+  // So the pin and the focus hand-back are conditional — an unconditional
+  // remove() would unpin the status bar out from under the modal still on screen.
+  function closeQuitConfirm() {
+    quitModal.style.display = 'none';
+    if (isModalOpen()) return;
+    document.body.classList.remove('status-pinned');
+    setTimeout(() => view.focus(), 0);
+  }
+  // `doSave()` is fire-and-forget, but `editor:save:` and the message below
+  // travel the same IPC channel in order and Rust's save arm writes the file
+  // synchronously before it returns — the same ordering `:wq` already relies on.
+  function answerQuit(action) {
+    closeQuitConfirm();
+    if (action === 'save') doSave();
+    ipcSend('editor:closeconfirm:' + action + ':' + quitScope);
+  }
+
+  // Rust asks before tearing the window (or the app) down. Never destroys
+  // anything by itself — every exit from here is one `editor:closeconfirm:`.
+  window.__confirmClose = (quitApp) => {
+    const scope = quitApp ? 'app' : 'editor';
+    if (!dirty) {
+      // Rust's mirror of `dirty` can be stale-true (see the comment above);
+      // correct it first so the close does not trigger a pointless revert.
+      ipcSend('editor:dirty:false');
+      lastDirtyPushed = false;
+      quitScope = scope;
+      ipcSend('editor:closeconfirm:discard:' + scope);
+      return;
+    }
+    openQuitConfirm(scope);
+  };
+
   // The cell-mode key gate must stand down while any of these owns the keyboard:
   // openModal() does not move focus, so contentDOM keeps it and the gate would
   // otherwise fire in parallel with the Esc chain below.
   function isModalOpen() {
-    return settingsModal.style.display === 'flex'
+    return quitModal.style.display === 'flex'
+      || settingsModal.style.display === 'flex'
       || cellHelpModal.style.display === 'flex'
       || tableModal.style.display === 'flex'
       || slideModal.style.display === 'flex'
@@ -597,6 +682,13 @@ export function create(root, opts = {}) {
   document.addEventListener('keydown', (e) => {
     // Newest modal first (same ordering rule that put slideModal ahead of the
     // char-count modal). This chain is hard-coded, so a new modal must be added.
+    // The close confirm is deliberately ahead of everything: it is the only one
+    // Rust is blocking on, and Esc there means "cancel the close".
+    if (e.key === 'Escape' && quitModal.style.display === 'flex') {
+      e.preventDefault();
+      answerQuit('cancel');
+      return;
+    }
     if (e.key === 'Escape' && settingsModal.style.display === 'flex') {
       e.preventDefault();
       closeSettings();
@@ -1160,7 +1252,15 @@ export function create(root, opts = {}) {
   try {
     Vim.defineEx('write', 'w', doSave);
     Vim.defineEx('wq', undefined, () => { doSave(); ipcSend('editor:close:'); });
-    Vim.defineEx('quit', 'q', () => ipcSend('editor:close:'));
+    // `:q` asks when the buffer is dirty; `:q!` keeps the old unconditional
+    // discard. The bang is not part of the command name — parseInput_ matches
+    // the name with /^\w+/ and parseCommandArgs_ drops the rest into argString,
+    // so `:q!` arrives here as argString === '!'.
+    Vim.defineEx('quit', 'q', (_cm, params) => {
+      const bang = String((params && params.argString) || '').trim().startsWith('!');
+      if (bang || !dirty) { ipcSend('editor:close:'); return; }
+      openQuitConfirm('editor');
+    });
     Vim.defineEx('set', undefined, (_cm, params) => {
       const arg = (params && params.args && params.args[0]) || '';
       switch (arg) {
@@ -1594,7 +1694,10 @@ export function create(root, opts = {}) {
     }
   }
 
-  // Warn before closing if dirty.
+  // Last-resort dirty guard for an actual document unload (a reload in the
+  // harness / devtools). It does NOT cover the real close gestures: the window
+  // is destroyed by Rust dropping the WebView, not by a navigation, so WebView2
+  // never runs beforeunload for it. Those go through `__confirmClose` above.
   window.addEventListener('beforeunload', (e) => {
     if (dirty) {
       e.preventDefault();

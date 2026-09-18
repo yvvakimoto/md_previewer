@@ -99,6 +99,11 @@ enum CustomEvent {
     // Editor window lifecycle.
     OpenEditorWindow { line: u32 },
     EditorCloseRequested,
+    // The editor JS answered the "save before closing?" dialog that a close
+    // gesture put up (`EditorRegistry::request_close_confirm`). `close` is false
+    // for Cancel; `quit_app` is true when the gesture was the preview window's
+    // own close, i.e. the whole app was on its way out.
+    EditorCloseDecision { close: bool, quit_app: bool },
     // Editor → preview: cursor moved to line.
     EditorCursorMoved { line: u32 },
     // Editor saved file → tell preview to re-render from in-memory content
@@ -2670,13 +2675,27 @@ fn main() -> wry::Result<()> {
             } => {
                 // If the editor window was closed, just drop it. If the preview
                 // (main) window was closed, exit.
+                //
+                // Either way, an editor holding unsaved edits gets to ask first
+                // — `request_close_confirm` returning true means the answer is
+                // still coming, and nothing here may destroy anything until it
+                // arrives as `CustomEvent::EditorCloseDecision`. tao does not
+                // close the window by itself, so simply returning is the veto.
                 if editor_registry.is_editor_window(window_id) {
+                    if editor_registry.is_dirty() && editor_registry.request_close_confirm(false) {
+                        return;
+                    }
                     if let Some(path) = editor_registry.close_take_dirty_path() {
                         if path.exists() {
                             load_and_render(&path, &webview, &current_dir, &current_file, &editor_registry);
                         }
                     }
                 } else {
+                    // Closing the preview takes the editor's unsaved buffer down
+                    // with the process, so it is the same question.
+                    if editor_registry.is_dirty() && editor_registry.request_close_confirm(true) {
+                        return;
+                    }
                     // "終了後に更新" was chosen earlier: this is the only
                     // user-initiated quit, so run the reserved install here.
                     #[cfg(windows)]
@@ -3138,6 +3157,28 @@ fn main() -> wry::Result<()> {
                     if path.exists() {
                         load_and_render(&path, &webview, &current_dir, &current_file, &editor_registry);
                     }
+                }
+            }
+            Event::UserEvent(CustomEvent::EditorCloseDecision { close, quit_app }) => {
+                editor_registry.clear_close_pending();
+                if !close {
+                    // Cancel: the window the user was closing simply stays.
+                    return;
+                }
+                // "Save & close" already wrote the file over `editor:save:`, so
+                // the buffer is clean here and this yields None — the preview was
+                // re-rendered by `EditorSavedContent` and needs no revert. Only
+                // "close without saving" reaches the reload below, and only when
+                // the app is staying up to see it.
+                if let Some(path) = editor_registry.close_take_dirty_path() {
+                    if !quit_app && path.exists() {
+                        load_and_render(&path, &webview, &current_dir, &current_file, &editor_registry);
+                    }
+                }
+                if quit_app {
+                    #[cfg(windows)]
+                    run_deferred_update(&install_on_exit, &update_ready);
+                    *control_flow = ControlFlow::Exit;
                 }
             }
             Event::UserEvent(CustomEvent::EditorImeStatus(open)) => {

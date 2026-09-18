@@ -337,6 +337,7 @@ body.theme-dark .cm-editor .cm-md-table-col-head {
 .cc-actions {
     display: flex;
     justify-content: flex-end;
+    gap: 8px;
     margin-top: 12px;
 }
 .cc-btn {
@@ -354,6 +355,23 @@ body.theme-dark .cm-editor .cm-md-table-col-head {
     background: var(--panel-bg);
     border-color: var(--fg);
     outline: none;
+}
+/* Default action of a confirm dialog (reuses .cc-btn; no new color token, so
+ * body.theme-dark is inherited for free). */
+.cc-btn.primary {
+    border-color: var(--fg);
+    font-weight: 600;
+}
+
+/* Unsaved-changes confirm (reuses the .cc-modal / .cc-panel shell). The file
+ * name is a separate element so applyI18n never overwrites it. */
+.quit-file {
+    font-weight: 600;
+    word-break: break-all;
+}
+.quit-body {
+    margin: 0 0 4px;
+    font-size: 13px;
 }
 
 /* ── Jupyter-style cell chrome ──────────────────────────────────────────────
