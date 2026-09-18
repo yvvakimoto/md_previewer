@@ -15,7 +15,7 @@ Opened by pressing `E` in the preview. Paired editor window (`assets/editor.html
 
 ### Spawning & pairing
 
-1:1 paired with the preview window via `EditorRegistry` in `src/editor_registry.rs` — no broadcast, no WebSocket, so multiple preview/editor pairs cannot cross-talk. `spawn_editor_window` is called once on the first `E` keypress; the editor window registers `editor:save:` / `editor:cursor:` / `editor:change:` / `editor:close:` / `editor:listdir:` IPC handlers that dispatch `CustomEvent`s back to the main event loop. Strict path filter on `editor:cursor:` and `push_jump_to_editor` so messages can only flow between the matched pair. The editor follows the preview: switching files in the preview reloads the editor (with a confirm dialog if the buffer is dirty). `editor.css` is excluded from the preview's `M`-key style cycle by name.
+1:1 paired with the preview window via `EditorRegistry` in `src/editor_registry.rs` — no broadcast, no WebSocket, so multiple preview/editor pairs cannot cross-talk. `spawn_editor_window` is called once on the first `E` keypress; the editor window registers `editor:save:` / `editor:cursor:` / `editor:change:` / `editor:close:` / `editor:closeconfirm:` / `editor:listdir:` IPC handlers that dispatch `CustomEvent`s back to the main event loop. Strict path filter on `editor:cursor:` and `push_jump_to_editor` so messages can only flow between the matched pair. The editor follows the preview: switching files in the preview reloads the editor (with a confirm dialog if the buffer is dirty). `editor.css` is excluded from the preview's `M`-key style cycle by name.
 
 **Cursor lands where the preview is looking** — the `E` keypress carries the source line currently shown at the top of the preview viewport: `window.currentPreviewLine()` (the inverse of `applyEditorScroll`, in `assets/index.html`) returns the `data-line` of the block ~25% in from the viewport's reading-start edge (the top, or the **right** edge under a vertical-writing theme — see *Live preview channel* below) — or, in Marp deck/list mode, the boundary line of the active slide (`__marpDeckIndex`); Marp scroll mode falls through to the generic nearest-block scan over the slide SVGs' `data-line`. The preview posts `openeditor:<line>`; `CustomEvent::OpenEditorWindow { line }` carries it to `spawn_editor_window(..., initial_line)`, which injects it into the `__initialFile` payload (`{path, content, line}`). The editor (`tools/build-editor/entry.js`) calls `window.__previewScrolledTo(line)` on next frame after the initial `loadFile`, reusing the same cursor-jump path as a preview click. When `E` is pressed while the editor is **already open**, the handler additionally calls `push_jump_to_editor(&path, line)` so the open editor re-syncs its cursor instead of only focusing.
 
@@ -35,7 +35,32 @@ The live channel can be disabled via the **ライブプレビュー** toggle in 
 
 ### Dirty close handling
 
-When the editor window is closed while the buffer is dirty (Vim `:q!`, the window X button, etc.), the preview reverts to the on-disk version. Rust tracks a `dirty: bool` on the editor registry state — flipped to `true` in the `editor:change:` IPC branch and back to `false` on save / file-switch. Both close paths (`EditorCloseRequested` for Vim `:q`, `WindowEvent::CloseRequested` for the X button) call `EditorRegistry::close_take_dirty_path()`, which `take()`s the state and returns the paired path only when dirty; the main loop then calls `load_and_render` to re-render the preview from disk. Clean closes return `None` and skip the re-render to avoid flicker.
+Rust tracks a `dirty: bool` on the editor registry state — flipped to `true` in the `editor:change:` IPC branch and back to `false` on save / file-switch. Closing the editor while dirty reverts the preview to the on-disk version: `EditorRegistry::close_take_dirty_path()` `take()`s the state (which drops the `WebView`, and with it the `tao::Window` it owns — **that `take()` is the only thing that destroys the editor window anywhere in the codebase**) and returns the paired path only when dirty, and the main loop then calls `load_and_render`. Clean closes return `None` and skip the re-render to avoid flicker.
+
+That discard is no longer silent: **every close gesture asks first when the buffer is dirty.** The question is one 3-button modal in the editor window (`quitModal` in `entry.js`, `ed.quit.*` in `i18n.js`) — 保存して閉じる / 保存せずに閉じる / キャンセル.
+
+Three gestures, one answer path:
+
+| Gesture | Gated in | How |
+|---|---|---|
+| editor window X / Alt+F4 | `WindowEvent::CloseRequested`, editor branch | `is_dirty() && request_close_confirm(false)` → `return` (see below) |
+| preview window X (the app is quitting, and the unsaved buffer goes with the process) | `WindowEvent::CloseRequested`, else branch | `is_dirty() && request_close_confirm(true)` → `return` |
+| Vim `:q` | `entry.js` — never reaches Rust | opens the modal directly; `:q!` and `:wq` unchanged |
+
+⚠ **tao does not close a window on `CloseRequested`** — only that `take()` does. So the veto is free: returning early from the event-loop arm leaves the window standing, and nothing needs a `set_close_requested(false)` equivalent.
+
+`EditorRegistry::request_close_confirm(quit_app)` focuses the editor window (the gesture may have come from the preview one) and calls `__confirmClose(quitApp)`. It returns `false` — *close now, do not ask* — when there is no editor **or a dialog is already pending**. That second case is the escape hatch: nothing in Rust destroys the window while it waits, so an unanswered ask would otherwise make the window unclosable if the JS side ever wedged. A repeat gesture forces the old unconditional close. Verified end-to-end on the real app by sending `WM_CLOSE` twice.
+
+The answer comes back as `editor:closeconfirm:<save|discard|cancel>:<editor|app>` → `parse_close_confirm()` (pure, unit-tested) → `CustomEvent::EditorCloseDecision { close, quit_app }`, whose arm clears the pending flag, closes (reverting the preview only when the app is staying up to see it) and exits the loop when `quit_app`. `editor:close:` stays the *unconditional* close used by `:q!` / `:wq` and is never gated.
+
+Two JS-side subtleties:
+
+- **`__confirmClose` re-checks the JS `dirty` flag and answers `discard` immediately when clean.** Rust's mirror flips true on every `editor:change:` and JS only pushes `editor:dirty:` on *transitions*, so Rust can be spuriously dirty; without the re-check that skew becomes a dialog about a buffer nobody edited. It pushes `editor:dirty:false` first to correct the mirror.
+- **"Save & Close" relies on ordering, not on an ack.** `doSave()` is fire-and-forget, but `editor:save:` and the answer travel the same IPC channel in order and Rust's save arm writes synchronously before returning — the same assumption `:wq` has always made.
+
+`quitModal` is the **only stackable modal** here (Rust can ask while the settings modal is up), so `closeQuitConfirm()` returns early when `isModalOpen()` is still true instead of unconditionally dropping `status-pinned` and yanking focus back to the editor.
+
+Net: `tools/preview-harness/quitcheck.py` (JS side, all three gestures) + `cargo test` (the parser).
 
 The editor JS also pushes every dirty-flag transition over the `editor:dirty:<true|false>` IPC; the Rust handler calls `window().set_title("• <name> — Editor")` (or without the bullet when clean) so the OS window title bar and taskbar entry advertise the unsaved state — the auto-hiding status bar would otherwise be the only indicator while the cursor is in the editing area.
 
@@ -82,7 +107,7 @@ Reuses the `.cc-modal` / `.cc-panel` shell, in three sections:
 
 **It only ever calls the existing setters** (`setVim` / `setLineNo` / `setTheme` / `setLive` / `setTableCol` / `setTablePaste` / `setCells` / `setFontSize` / `setFontFamily`), so the Vim `:set` / `gtc` / `gmc` paths keep working untouched and each pref still has exactly one owner. `updateToolbar()` became **`updateSettingsUI()`**: every setter calls it, so a pref changed from anywhere — an ex-command, a mapping, a `Ctrl+=` — is reflected the next time the modal opens.
 
-Three things a new modal must register, and **omitting any one is a bug**: `isModalOpen()` (so cell mode's key gate stands down), the hard-coded newest-first Esc chain (the settings modal goes **first**), and `body.status-pinned` on open/close.
+Three things a new modal must register, and **omitting any one is a bug**: `isModalOpen()` (so cell mode's key gate stands down), the hard-coded newest-first Esc chain (the close confirm goes **first**, the settings modal second), and `body.status-pinned` on open/close. ⚠ The close confirm is the one modal that can be **stacked on top of another** (see *Dirty close handling*), which is why its close is the only one that checks `isModalOpen()` before dropping the pin — copy that shape for any future modal that Rust can raise unprompted.
 
 Two non-obvious details:
 

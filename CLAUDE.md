@@ -318,6 +318,7 @@ that are checked (or partly checked) can rely on the harness remembering.
 | preview table edit mode | `python tools/preview-harness/tablecheck.py` + `node tools/preview-harness/table-model.test.cjs` |
 | task-list checkboxes, `applyTaskLists()`, `__isTypingTarget()` | `python tools/preview-harness/taskcheck.py` (+ `keycheck.py` for the focus case) |
 | `model3d` / `tools/build-three/` | `python tools/preview-harness/keycheck.py` (pixels, theme salt, **and the leak nets: one WebGL context, flat shader-program count**) + `exportcheck.py` + `pdfcheck.py` |
+| the editor's close paths (`__confirmClose`, `editor:closeconfirm:`, `WindowEvent::CloseRequested`, Vim `:q`) | `python tools/preview-harness/quitcheck.py` + `cargo test` (the Rust veto itself is invisible to both — drive the real app and send it a `WM_CLOSE`) |
 | cell mode | `python tools/preview-harness/cellcheck.py` + `cd tools/build-editor && node cells.test.mjs` |
 | editor↔preview scroll sync (either axis) | `python tools/preview-harness/synccheck.py` |
 | Office-table paste | `python tools/preview-harness/pastecheck.py` + `cd tools/build-editor && node tablePaste.test.mjs` |

@@ -79,6 +79,29 @@ fn scan_marp_theme_names(marp_dir: &Path) -> Vec<String> {
     names
 }
 
+/// Parse the payload of `editor:closeconfirm:<action>:<scope>` into
+/// `(close, quit_app)`.
+///
+/// `save` and `discard` both close — the difference between them is the disk
+/// write, which has already happened over `editor:save:` by the time this
+/// arrives — and `cancel` does not. Unknown input returns `None` and is dropped
+/// rather than guessed at: guessing would either close over unsaved work or
+/// leave the window stuck.
+fn parse_close_confirm(rest: &str) -> Option<(bool, bool)> {
+    let (action, scope) = rest.split_once(':')?;
+    let close = match action {
+        "save" | "discard" => true,
+        "cancel" => false,
+        _ => return None,
+    };
+    let quit_app = match scope {
+        "app" => true,
+        "editor" => false,
+        _ => return None,
+    };
+    Some((close, quit_app))
+}
+
 struct State {
     window_id: WindowId,
     webview: WebView,
@@ -91,6 +114,11 @@ struct State {
     /// file-switch). Maintained by the IPC handlers so the close paths can
     /// decide whether to revert the preview from disk.
     dirty: bool,
+    /// True between asking the editor JS "save before closing?" and its answer.
+    /// Two jobs: it keeps a second close gesture from stacking a second dialog,
+    /// and it is the escape hatch — a repeat gesture while one is pending closes
+    /// unconditionally, so a wedged JS side can never make the window unclosable.
+    close_pending: bool,
 }
 
 #[derive(Clone)]
@@ -117,11 +145,47 @@ impl EditorRegistry {
         }
     }
 
+    pub fn is_dirty(&self) -> bool {
+        self.inner.lock().unwrap().as_ref().map(|s| s.dirty).unwrap_or(false)
+    }
+
     /// Drop the editor window and, if the buffer was dirty, return the path
     /// of the file it was editing so the caller can revert the preview from
     /// disk. Returns `None` when there was no editor or it was already clean.
     pub fn close_take_dirty_path(&self) -> Option<PathBuf> {
         self.inner.lock().unwrap().take().and_then(|s| if s.dirty { Some(s.file) } else { None })
+    }
+
+    /// Ask the editor JS to run its "save before closing?" dialog and return
+    /// `true` when the caller must therefore hold off closing.
+    ///
+    /// Returns `false` — meaning *close now, do not ask* — when there is no
+    /// editor, or when a dialog is already pending: the second gesture is the
+    /// user insisting, and it is also the only way out if the JS side is wedged
+    /// (nothing here destroys the window, so an unanswered ask would otherwise
+    /// leave it unclosable). `quit_app` distinguishes the preview window's close
+    /// (the whole app is going away) from the editor window's own.
+    pub fn request_close_confirm(&self, quit_app: bool) -> bool {
+        let mut guard = self.inner.lock().unwrap();
+        let state = match guard.as_mut() {
+            Some(s) => s,
+            None => return false,
+        };
+        if state.close_pending {
+            return false;
+        }
+        state.close_pending = true;
+        // The dialog lives in the editor window; the gesture may have come from
+        // the preview one, so bring it forward before it asks.
+        state.webview.window().set_focus();
+        crate::eval_js_fn(&state.webview, "__confirmClose", &[&quit_app.to_string()]);
+        true
+    }
+
+    pub fn clear_close_pending(&self) {
+        if let Some(s) = self.inner.lock().unwrap().as_mut() {
+            s.close_pending = false;
+        }
     }
 
     pub fn mark_dirty(&self) {
@@ -455,6 +519,18 @@ pub fn spawn_editor_window(
             }
             if message == "editor:close:" {
                 let _ = proxy_for_ipc.send_event(CustomEvent::EditorCloseRequested);
+                return;
+            }
+            // The answer to `__confirmClose`. Deliberately a separate channel
+            // from `editor:close:` above, which stays the unconditional close
+            // (`:q!` / `:wq`) and must never be gated.
+            if let Some(rest) = message.strip_prefix("editor:closeconfirm:") {
+                if let Some((close, quit_app)) = parse_close_confirm(rest) {
+                    let _ = proxy_for_ipc
+                        .send_event(CustomEvent::EditorCloseDecision { close, quit_app });
+                } else {
+                    eprintln!("editor:closeconfirm: unparsable: {}", rest);
+                }
             }
         })
         .build()?;
@@ -464,6 +540,7 @@ pub fn spawn_editor_window(
         webview,
         file: initial_file.to_path_buf(),
         dirty: false,
+        close_pending: false,
     });
 
     // IME open-status poller. Runs on a background thread; sends state-change
@@ -501,4 +578,39 @@ pub fn spawn_editor_window(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_close_confirm;
+
+    #[test]
+    fn close_confirm_actions_map_to_close_and_cancel() {
+        // save / discard both close; only the disk write (already done over
+        // `editor:save:`) differs between them.
+        assert_eq!(parse_close_confirm("save:editor"), Some((true, false)));
+        assert_eq!(parse_close_confirm("discard:editor"), Some((true, false)));
+        assert_eq!(parse_close_confirm("cancel:editor"), Some((false, false)));
+    }
+
+    #[test]
+    fn close_confirm_scope_app_sets_quit_app() {
+        assert_eq!(parse_close_confirm("save:app"), Some((true, true)));
+        assert_eq!(parse_close_confirm("discard:app"), Some((true, true)));
+        // Cancelling the app-quit gesture must not quit, and must not close.
+        assert_eq!(parse_close_confirm("cancel:app"), Some((false, true)));
+    }
+
+    #[test]
+    fn close_confirm_rejects_anything_it_does_not_recognize() {
+        // Never guessed at: a guess either closes over unsaved work or leaves
+        // the window stuck waiting for an answer that already came.
+        assert_eq!(parse_close_confirm(""), None);
+        assert_eq!(parse_close_confirm("save"), None);
+        assert_eq!(parse_close_confirm("save:"), None);
+        assert_eq!(parse_close_confirm(":editor"), None);
+        assert_eq!(parse_close_confirm("quit:editor"), None);
+        assert_eq!(parse_close_confirm("save:window"), None);
+        assert_eq!(parse_close_confirm("SAVE:EDITOR"), None);
+    }
 }
