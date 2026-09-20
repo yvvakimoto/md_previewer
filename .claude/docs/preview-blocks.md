@@ -157,6 +157,55 @@ document exports it deliberately does **not** `open_with_default()`, since savin
 figures in a row would launch the image viewer each time. Cancelling the dialog posts
 nothing, so the user gets no message for their own cancel.
 
+## Saving every figure at once (right-click empty space → 一括保存)
+
+Right-clicking **empty preview space** offers 「すべての図を保存…」: one folder dialog, then
+every figure of the document written into it. `preview-core.md` covers what that did to the
+context menu's fall-through rule; this is the save itself.
+
+**Formats, and why nothing is skipped.** SVG where a vector form exists, PNG for the canvas
+engines — keyed on **`fig.canvas`**, the same test the per-figure menu uses to decide whether
+to offer 「SVG として保存」. ⚠ Not on `spec.svg`: `plotly` has neither key and serializes both
+ways through `Plotly.toImage()`.
+
+**Names.** `__figureBatchName()` is built **on top of** `__figureFileName()`, so a block's
+first (usually only) figure gets the byte-identical name the right-click save would have
+produced. A second numbering scheme would agree with itself right up until a reader used both
+paths on one document. `__figureFileName()` recomputes `n` from
+`preview.querySelectorAll(fig.spec.sel).indexOf(fig.host)`, so it is independent of iteration
+order and needs nothing from the batch. A fence that draws several diagrams side by side
+(feynman) takes a `-2`, `-3`, … before the extension. `keycheck.py` pins item 0's name against
+the single save's.
+
+**Order and enumeration.** `__allFigures()` walks `preview.querySelectorAll(__FIGURE_SEL)`,
+which a comma-joined selector already returns in **document order** — do not add a sort, and
+do not group by kind: the saved set is read next to the source. `__figureFromHost(host)` is
+the one resolver both paths share (CLAUDE.md #2); `__figureAt()` is now a thin wrapper that
+adds only "prefer the `<svg>` under the cursor", which the batch has no cursor for.
+
+**Hidden Marp slides need no special case — with one exception.** SVG geometry comes from
+`__figureSvgBox()`, which reads `viewBox` first precisely because a measured box is 0×0 on a
+`display:none` slide; a canvas keeps its bitmap (the HTML export already relies on this). ⚠
+**Plotly was the gap**: `__figureBytes()` sized it from `getBoundingClientRect()`, so a hidden
+chart silently fell back to 700×450. It now asks `host._fullLayout` in between. Only the batch
+can reach this — a hidden figure cannot be right-clicked. Net: `keycheck.py` batch-saves
+`samples/marp.md` in scroll mode and again in deck mode and compares.
+
+**One figure's failure costs that figure only** — the same discipline `awaitLib()` enforces for
+a missing engine (CLAUDE.md #6). `__figuresSaveAll()` catches per figure, counts, and sends the
+count to the host, which adds its own name rejections and write errors to it, so one toast
+covers all three kinds of failure.
+
+**One IPC, one dialog.** The whole batch goes over in a single `savefigures:` message and the
+host runs one `pick_folder()` — the `exportdir:` shape (`rust-host.md`), not a streamed
+session, which would need host-side state with a lifetime and would have to break the "a
+cancelled dialog says nothing" contract. ⚠ The consequence to know is **ordering**:
+serialization happens *before* the dialog, so the menu item flashes a
+「図を書き出しています…」 label rather than leaving the click unacknowledged. Payload size is
+dominated not by the model3d PNGs but by **tikz**: each tikz/tikzcd SVG inlines its own copy of
+the Computer Modern woff2 (`__inlineFontFaceCss` memoizes only the CSS text, not the faces), so
+five tikz figures carry five copies.
+
 **Exports need nothing.** `__createContextMenu()` appends its menu to `document.body`, and
 both `buildExportArtifact()` and `--export-png` work from `#preview` — so there is no strip
 pass, no `body.capturing` entry and no `@media print` rule, unlike `.abc-audio-bar`, which

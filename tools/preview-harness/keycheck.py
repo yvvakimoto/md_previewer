@@ -109,6 +109,20 @@ def main():
                 page.evaluate(_TAP_IPC)
                 page.evaluate("() => document.body.focus()")
 
+            def load_in_page(doc):
+                """Open a second document WITHOUT a page.goto — the only way to make
+                the app push a history entry (a goto would reset the document, and
+                with it the index the back/forward menu items read)."""
+                path = os.path.join(repo_root, doc).replace("\\", "/")
+                page.evaluate("""async (p) => {
+                  const r = await fetch('/__doc?path=' + encodeURIComponent(p));
+                  const text = await r.text();
+                  window.loadFileFromRust({
+                    filename: p.slice(p.lastIndexOf('/') + 1),
+                    filepath: p, content: text, raw: text });
+                }""", path)
+                shoot.wait_for_render(page)
+
             # ---------- plain body-class toggles (L / W / N) ----------
             load(args.doc)
             for key, cls, store in [("l", "show-line-numbers", "showLineNumbers"),
@@ -822,6 +836,17 @@ def main():
                     out.append(p)
                 return out
 
+            def saved_figure_batches():
+                """Every `savefigures:` payload the IPC tap recorded, decoded."""
+                out = []
+                for msg in page.evaluate(
+                        "() => window.__sentIpc.filter(m => m.startsWith('savefigures:'))"):
+                    p = json.loads(msg[len("savefigures:"):])
+                    for it in p["items"]:
+                        it["bytes"] = base64.b64decode(it["data"])
+                    out.append(p)
+                return out
+
             # Right-clicking rendered math opens the copy menu...
             right_click_center("#preview .katex")
             check("right-click on KaTeX opens the menu", page.evaluate(VISIBLE), True)
@@ -842,9 +867,22 @@ def main():
             press(page, "Escape")
             check("Escape dismisses the context menu", page.evaluate(VISIBLE), False)
 
-            # ...but right-clicking plain prose must fall through to the native menu.
+            # ⚠ INVERTED ON PURPOSE. Plain prose used to fall through to WebView2's
+            # native menu; empty preview space is now the app's own menu, because it
+            # is where "save every figure" lives. The fall-through survives only for
+            # the targets the native menu still does better — asserted further down,
+            # next to the batch save that motivated the change.
             right_click_center("#preview p:not(:has(.katex))")
-            check("right-click on prose shows no in-app menu", page.evaluate(VISIBLE), False)
+            check("right-click on prose opens the app menu", page.evaluate(VISIBLE), True)
+            check("...offering save-all / back / forward", menu_labels(),
+                  i18n_ja("menu.saveAllFigures", "menu.historyBack", "menu.historyForward"))
+            # math.md carries no figure at all, so all three items are inert here.
+            check("...all inert in a figureless document with one history entry",
+                  page.evaluate("() => [...document.querySelectorAll("
+                                "'.app-context-menu .app-menu-item')].map("
+                                "i => i.classList.contains('disabled'))"),
+                  [True, True, True])
+            press(page, "Escape")
 
             # Clamped inside the viewport even when opened at the far corner.
             box = page.evaluate("() => { const k = document.querySelector('#preview .katex');"
@@ -871,6 +909,27 @@ def main():
             want_svg, want_png = i18n_ja("menu.saveSvg", "menu.savePng")
 
             load(args.doc)          # samples/sample.md carries mermaid
+
+            # The fall-through cases the empty-area menu deliberately does NOT take.
+            # A selection keeps native Copy and an <img> keeps 「画像を保存」; this
+            # menu offers neither, so swallowing the event would remove the only way.
+            page.evaluate("() => { const p = document.querySelector("
+                          "'#preview p:not(:has(.katex))');"
+                          " const r = document.createRange(); r.selectNodeContents(p);"
+                          " const s = getSelection(); s.removeAllRanges(); s.addRange(r); }")
+            right_click_center("#preview p:not(:has(.katex))")
+            check("right-click on a text selection stays native", page.evaluate(VISIBLE), False)
+            page.evaluate("() => getSelection().removeAllRanges()")
+            right_click_center("#preview img")
+            check("right-click on an image stays native", page.evaluate(VISIBLE), False)
+            # ...while empty space in a document that HAS figures offers the batch.
+            right_click_center("#preview p:not(:has(.katex))")
+            check("save-all is enabled where there are figures to save",
+                  page.evaluate("() => document.querySelector("
+                                "'.app-context-menu .app-menu-item').classList"
+                                ".contains('disabled')"), False)
+            press(page, "Escape")
+
             right_click_center("#preview .mermaid svg")
             check("right-click on a mermaid figure opens the menu",
                   page.evaluate(VISIBLE), True)
@@ -943,12 +1002,138 @@ def main():
                 ".filter(m => m.style.display !== 'none').length"), 1)
             press(page, "Escape")
 
-            # A table is not a figure: no <svg>, no <canvas>, no menu — the rule that
-            # also keeps error boxes and a still-compiling tikz placeholder out.
+            # A table is not a figure: no <svg>, no <canvas>, so no save items — the
+            # rule that also keeps error boxes and a still-compiling tikz placeholder
+            # out. What opens is the plain empty-area menu, and since this document
+            # has no figures at all, its save-all item is greyed out too.
             load("samples/csv-tsv.md")
             right_click_center("#preview .csv-table td")
-            check("right-click on a csv table shows no figure menu",
-                  page.evaluate(VISIBLE), False)
+            check("right-click on a csv table offers no per-figure save",
+                  menu_labels(),
+                  i18n_ja("menu.saveAllFigures", "menu.historyBack", "menu.historyForward"))
+            check("...and save-all is disabled in a figureless document",
+                  page.evaluate("() => document.querySelector("
+                                "'.app-context-menu .app-menu-item').classList"
+                                ".contains('disabled')"), True)
+            press(page, "Escape")
+
+            # ---------- save EVERY figure (savefigures:) ----------
+            # One folder dialog, N files. The harness IPC only logs, so the payload
+            # is the whole observable — and the only place the per-kind numbering of
+            # the batch can be compared against the single save's.
+            load(args.doc)
+            right_click_center("#preview p:not(:has(.katex))")
+            click_menu_item(0)
+            page.wait_for_function("() => window.__sentIpc.some("
+                                   "m => m.startsWith('savefigures:'))", timeout=30000)
+            batch = saved_figure_batches()[0]
+            want_n = page.evaluate("() => document.querySelectorAll(__FIGURE_SEL).length")
+            check("one savefigures: carries every figure", len(batch["items"]), want_n)
+            check("...with nothing reported as failed", batch["failed"], 0)
+            names = [it["name"] for it in batch["items"]]
+            check("...named in document order, numbered per kind",
+                  [n for n in names if "mermaid" in n],
+                  ["sample-mermaid%d.svg" % i for i in range(1, 1 + len(
+                      [n for n in names if "mermaid" in n]))])
+            # ⚠ byte-identical to the name the single save produced above. Two
+            # numbering schemes would disagree the moment a reader used both.
+            check("...and the first name matches the single save exactly",
+                  names[0], svg_fig["suggestedName"])
+            first = xml.dom.minidom.parseString(batch["items"][0]["bytes"]).documentElement
+            check("every batched .svg is a standalone document", first.tagName, "svg")
+            check("...carrying a backdrop <rect>",
+                  any(n.nodeType == n.ELEMENT_NODE and n.tagName == "rect"
+                      for n in first.childNodes), True)
+
+            # Format policy: a canvas engine is saved as PNG rather than skipped.
+            load("samples/kataskeve3d.md")
+            right_click_center("#preview p:not(:has(.katex))")
+            click_menu_item(0)
+            page.wait_for_function("() => window.__sentIpc.some("
+                                   "m => m.startsWith('savefigures:'))", timeout=30000)
+            canvas_batch = saved_figure_batches()[0]
+            check("a canvas-only document batches as PNG",
+                  sorted({it["ext"] for it in canvas_batch["items"]}), ["png"])
+            check("...with real PNG bytes",
+                  [it["bytes"][:8] for it in canvas_batch["items"]],
+                  [b"\x89PNG\r\n\x1a\n"] * len(canvas_batch["items"]))
+
+            # ⚠ Figures inside a display:none Marp slide. The batch is the only path
+            # that reaches them (a hidden figure cannot be right-clicked), and a
+            # measured box is 0x0 there — viewBox / the canvas bitmap / Plotly's own
+            # _fullLayout are what keep the bytes alive.
+            load(args.marp_doc)
+            right_click_center("#preview p:not(:has(.katex))")
+            click_menu_item(0)
+            page.wait_for_function("() => window.__sentIpc.some("
+                                   "m => m.startsWith('savefigures:'))", timeout=30000)
+            scroll_batch = saved_figure_batches()[0]
+            # Into deck mode regardless of where the persisted cycle starts.
+            for _ in range(3):
+                if page.evaluate("() => document.body.classList.contains('deck-mode')"):
+                    break
+                press(page, "p")
+                page.wait_for_timeout(400)
+            check("deck mode hides all but the current slide",
+                  page.evaluate("() => document.body.classList.contains('deck-mode')"), True)
+            right_click_center("#preview-container")
+            click_menu_item(0)
+            page.wait_for_function("() => window.__sentIpc.filter("
+                                   "m => m.startsWith('savefigures:')).length > 1", timeout=30000)
+            deck_batch = saved_figure_batches()[1]
+            check("a hidden slide's figures are batched all the same",
+                  [it["name"] for it in deck_batch["items"]],
+                  [it["name"] for it in scroll_batch["items"]])
+            check("...with non-empty bytes for every one",
+                  all(len(it["bytes"]) > 0 for it in deck_batch["items"]), True)
+            # Back to scroll — one context serves the whole run.
+            for _ in range(3):
+                if page.evaluate("() => !document.body.classList.contains('deck-mode')"
+                                 " && !document.body.classList.contains('list-mode')"):
+                    break
+                press(page, "p")
+                page.wait_for_timeout(400)
+
+            # The result toast. Asserts the wiring, not the wording (CLAUDE.md #26).
+            load(args.doc)
+            for saved, failed, key in [(3, 0, "toast.figuresSaved"),
+                                       (2, 1, "toast.figuresSavedPartial"),
+                                       (0, 4, "toast.figuresSaveFail")]:
+                page.evaluate("([s, f]) => window.__figuresSaveDone(s, f)", [saved, failed])
+                want = page.evaluate(
+                    "([k, s, f]) => window.__I18N[k].ja.replace('{count}', s)"
+                    ".replace('{failed}', f)", [key, saved, failed])
+                check("__figuresSaveDone(%d, %d) toasts %s" % (saved, failed, key),
+                      page.evaluate("() => document.getElementById('toast').textContent"), want)
+
+            # ---------- the menu's back / forward (history.state.idx) ----------
+            # These replace the WebView2 items the empty-area menu displaced, so
+            # "greyed out at the ends of the chain" is the whole contract.
+            def history_disabled():
+                right_click_center("#preview p:not(:has(.katex))")
+                out = page.evaluate("() => [...document.querySelectorAll("
+                                    "'.app-context-menu .app-menu-item')].slice(1)"
+                                    ".map(i => i.classList.contains('disabled'))")
+                press(page, "Escape")
+                return out
+
+            load(args.doc)
+            check("one entry: neither back nor forward", history_disabled(), [True, True])
+            load_in_page("samples/csv-tsv.md")
+            check("after a second document: back only", history_disabled(), [False, True])
+            right_click_center("#preview p:not(:has(.katex))")
+            click_menu_item(1)                      # 戻る
+            page.wait_for_function("() => window.__sentIpc.some("
+                                   "m => m.startsWith('openmd:'))", timeout=15000)
+            back_to = page.evaluate("() => window.__sentIpc.filter("
+                                    "m => m.startsWith('openmd:')).pop().slice('openmd:'.length)")
+            check("戻る routes the FIRST document back to the host",
+                  back_to.replace("\\", "/").endswith(args.doc), True)
+            # The host would answer with a load; the harness has no host, so replay
+            # it. The index already moved on popstate, so the ends have swapped.
+            load_in_page(args.doc)
+            check("...leaving forward offered and back exhausted",
+                  history_disabled(), [True, False])
 
             # ---------- diagram memoization (__diagCacheHit / __diagSource) ----------
             # The DOM digest only proves the FIRST render. These caches are keyed by

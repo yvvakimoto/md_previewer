@@ -140,6 +140,12 @@ enum CustomEvent {
     // toast. Only posted once a path was actually chosen — cancelling the dialog
     // sends nothing, so the user sees no message for their own cancel.
     FigureSaveDone { ok: bool, name: String },
+    // Every figure in the document was saved at once via the `savefigures:` IPC
+    // (right-click on empty preview space). One folder dialog, N files, one
+    // result: `failed` already carries the figures the webview could not
+    // serialize, so a single toast can report the whole batch. Cancelling the
+    // folder dialog sends nothing, exactly like `FigureSaveDone`.
+    FiguresSaveDone { saved: usize, failed: usize },
     // PNG capture (headless `--export-png` mode). The preview JS posts
     // `renderdone:` once the initial render (incl. async Marp/mermaid/KaTeX)
     // settles → CaptureStart initializes the capture loop. For each target
@@ -584,6 +590,66 @@ fn parse_figure_payload(ext: &str, data: &str) -> Result<FigurePayload, String> 
         return Err("empty figure payload".to_string());
     }
     Ok(FigurePayload { ext: ext.to_string(), bytes })
+}
+
+/// One item of a `savefigures:` batch: a validated file name and its bytes.
+struct FigureFile {
+    name: String,
+    bytes: Vec<u8>,
+}
+
+/// Reduce a batch item's file name to one proven-safe path component.
+///
+/// ⚠ This is the one place the single-figure save has no counterpart for. There,
+/// the user sees the name in a Save dialog and can correct it; here the name goes
+/// straight into the folder they picked. So it is validated, and **refused rather
+/// than repaired** — every name comes from `__figureFileName()`, which builds it
+/// from the document stem and a `kind` literal, so anything surprising is a bug on
+/// our side, not user input to be salvaged.
+fn sanitize_figure_name(name: &str, ext: &str) -> Result<String, String> {
+    // Windows silently drops trailing spaces, which would make the written file
+    // name differ from the one we report back.
+    if name != name.trim_end_matches(' ') {
+        return Err("trailing space".to_string());
+    }
+    if name.is_empty() || name.chars().count() > 120 {
+        return Err(format!("bad length ({} chars)", name.chars().count()));
+    }
+    if name
+        .chars()
+        .any(|c| c.is_control() || matches!(c, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|'))
+    {
+        return Err("illegal character".to_string());
+    }
+    // Kills `.` and `..` outright, and the hidden-file / trailing-dot forms with them.
+    if name.starts_with('.') || name.ends_with('.') {
+        return Err("leading or trailing dot".to_string());
+    }
+    let suffix = format!(".{}", ext);
+    if !name.to_ascii_lowercase().ends_with(&suffix) {
+        return Err(format!("name does not end in {:?}", suffix));
+    }
+    let stem = &name[..name.len() - suffix.len()];
+    if stem.is_empty() {
+        return Err("empty stem".to_string());
+    }
+    // A reserved DOS device name is reserved with ANY extension (`CON.svg` too).
+    let dev = stem.split('.').next().unwrap_or("").to_ascii_uppercase();
+    let is_numbered_device = dev.len() == 4
+        && (dev.starts_with("COM") || dev.starts_with("LPT"))
+        && dev.as_bytes()[3].is_ascii_digit()
+        && dev.as_bytes()[3] != b'0';
+    if matches!(dev.as_str(), "CON" | "PRN" | "AUX" | "NUL") || is_numbered_device {
+        return Err(format!("reserved device name {:?}", dev));
+    }
+    Ok(name.to_string())
+}
+
+/// Validate one `savefigures:` batch item. Layered on `parse_figure_payload` so
+/// the closed `svg`/`png` list, the base64 decode and the empty check keep one home.
+fn parse_figure_batch_item(name: &str, ext: &str, data: &str) -> Result<FigureFile, String> {
+    let fig = parse_figure_payload(ext, data)?;
+    Ok(FigureFile { name: sanitize_figure_name(name, &fig.ext)?, bytes: fig.bytes })
 }
 
 /// Parse a single HTTP `Range` header value into an inclusive `(start, end)`
@@ -2189,6 +2255,76 @@ fn main() -> wry::Result<()> {
                 }
                 Err(e) => eprintln!("savefigure: {}", e),
             }
+        } else if let Some(payload) = message.strip_prefix("savefigures:") {
+            // Right-click on empty preview space → "save every figure". The whole
+            // batch arrives in ONE payload and the host runs ONE folder dialog —
+            // the `exportdir:` shape, not a streamed session. A session would need
+            // host-side state with a lifetime (what if the document reloads between
+            // the pick and the writes?) and would have to break the "a cancelled
+            // dialog says nothing" contract to report the cancel back.
+            #[derive(Deserialize)]
+            struct BatchItem { name: String, ext: String, data: String }
+            #[derive(Deserialize)]
+            struct SaveFiguresPayload {
+                items: Vec<BatchItem>,
+                // Figures the webview itself could not serialize. Carried through
+                // so one toast covers serialization, validation and write failures.
+                #[serde(default)]
+                failed: usize,
+            }
+            match serde_json::from_str::<SaveFiguresPayload>(payload) {
+                Ok(p) => {
+                    // Decode and validate every item up front, same as the single
+                    // save: a dialog we cannot honour is never shown.
+                    let mut files: Vec<FigureFile> = Vec::with_capacity(p.items.len());
+                    let mut failed = p.failed;
+                    for it in &p.items {
+                        match parse_figure_batch_item(&it.name, &it.ext, &it.data) {
+                            Ok(f) => files.push(f),
+                            Err(e) => {
+                                eprintln!("savefigures: dropped {:?}: {}", it.name, e);
+                                failed += 1;
+                            }
+                        }
+                    }
+                    if files.is_empty() {
+                        // Nothing to write: report instead of opening a picker, or
+                        // the preview would sit waiting on an ack that never comes.
+                        let _ = ipc_event_proxy
+                            .send_event(CustomEvent::FiguresSaveDone { saved: 0, failed });
+                    } else {
+                        // Window-owned state read HERE; the worker gets values only.
+                        let initial_dir = current_file_dir(&ipc_current_file);
+                        let figs_proxy = ipc_event_proxy.clone();
+                        std::thread::spawn(move || {
+                            let dialog = with_initial_dir(
+                                rfd::FileDialog::new().set_title("Choose a folder for the figures"),
+                                initial_dir,
+                            );
+                            // Cancelled: post nothing (the `savefigure:` contract).
+                            let dir = match dialog.pick_folder() { Some(d) => d, None => return };
+                            let mut saved = 0usize;
+                            for f in &files {
+                                // One path component, proven by sanitize_figure_name —
+                                // so no create_dir_all, and no escape from `dir`.
+                                // An existing file is overwritten: the names are
+                                // deterministic, so re-running is a refresh, not litter.
+                                let target = dir.join(&f.name);
+                                match std::fs::write(&target, &f.bytes) {
+                                    Ok(()) => saved += 1,
+                                    Err(e) => {
+                                        eprintln!("savefigures: failed to write {}: {}", target.display(), e);
+                                        failed += 1;
+                                    }
+                                }
+                            }
+                            let _ = figs_proxy
+                                .send_event(CustomEvent::FiguresSaveDone { saved, failed });
+                        });
+                    }
+                }
+                Err(e) => eprintln!("savefigures: bad payload ({} bytes): {}", payload.len(), e),
+            }
         } else if message == "fullscreen:toggle" {
             if let Err(e) = ipc_event_proxy.send_event(CustomEvent::ToggleFullscreen) {
                 eprintln!("Failed to dispatch ToggleFullscreen: {}", e);
@@ -2837,6 +2973,18 @@ fn main() -> wry::Result<()> {
                     eval_js_fn(&wv, "__figureSaveDone", &[&ok.to_string(), &name_js]);
                 }
             }
+            Event::UserEvent(CustomEvent::FiguresSaveDone { saved, failed }) => {
+                // Toast only, for the same reason FigureSaveDone opens nothing: a
+                // batch save would otherwise launch an Explorer window the reader
+                // did not ask for.
+                if let Ok(wv) = webview.lock() {
+                    eval_js_fn(
+                        &wv,
+                        "__figuresSaveDone",
+                        &[&saved.to_string(), &failed.to_string()],
+                    );
+                }
+            }
             Event::UserEvent(CustomEvent::UpdateAvailable { version, notes }) => {
                 // Background startup check found a newer version → show the
                 // preview's update banner (the JS gates on its own opt-out flag).
@@ -3439,6 +3587,80 @@ mod tests {
     fn figure_payload_rejects_undecodable_or_empty_data() {
         assert!(parse_figure_payload("png", "not base64!!").is_err());
         assert!(parse_figure_payload("svg", "").is_err());
+    }
+
+    // ---- sanitize_figure_name / parse_figure_batch_item ---------------------
+
+    #[test]
+    fn figure_name_accepts_what_figure_file_name_produces() {
+        // `<stem>-<kind><n>.<ext>`, including the Japanese stems this app is for.
+        for name in [
+            "sample-mermaid1.svg",
+            "sample-tikzcd12.svg",
+            "kataskeve3d-model3d1.png",
+            "日本語ファイル-tikz1.svg",
+            "a.b-feynman1-2.svg",
+        ] {
+            let ext = if name.ends_with(".png") { "png" } else { "svg" };
+            assert_eq!(sanitize_figure_name(name, ext).unwrap(), name);
+        }
+    }
+
+    #[test]
+    fn figure_name_refuses_anything_that_is_not_one_path_component() {
+        // The name reaches the filesystem without a dialog the user could correct,
+        // so traversal and the Windows-specific traps are refused, not repaired.
+        for name in [
+            "../evil.svg",
+            "..\\evil.svg",
+            "sub/evil.svg",
+            "C:\\evil.svg",
+            "..",
+            ".",
+            ".hidden.svg",
+            "trailing.svg.",
+            "star*.svg",
+            "quote\".svg",
+            "pipe|.svg",
+            "nul\u{0}.svg",
+            "",
+            ".svg",
+            "spaced.svg ",
+        ] {
+            assert!(sanitize_figure_name(name, "svg").is_err(), "accepted {:?}", name);
+        }
+        assert!(sanitize_figure_name(&"x".repeat(200), "svg").is_err());
+    }
+
+    #[test]
+    fn figure_name_refuses_reserved_device_names_with_any_extension() {
+        for name in ["CON.svg", "con.svg", "nul.svg", "com1.png", "LPT9.svg", "aux.tar.svg"] {
+            let ext = if name.ends_with(".png") { "png" } else { "svg" };
+            assert!(sanitize_figure_name(name, ext).is_err(), "accepted {:?}", name);
+        }
+        // COM0 is not a device, and a device name is only reserved on its own.
+        assert!(sanitize_figure_name("com0.svg", "svg").is_ok());
+        assert!(sanitize_figure_name("console.svg", "svg").is_ok());
+    }
+
+    #[test]
+    fn figure_name_must_agree_with_the_declared_extension() {
+        assert!(sanitize_figure_name("figure.png", "svg").is_err());
+        assert!(sanitize_figure_name("figure", "svg").is_err());
+        // The extension's own case does not matter; the name is kept verbatim.
+        assert_eq!(sanitize_figure_name("figure.SVG", "svg").unwrap(), "figure.SVG");
+    }
+
+    #[test]
+    fn figure_batch_item_inherits_the_payload_rules() {
+        let f = parse_figure_batch_item("sample-mermaid1.svg", "svg", "PHN2Zy8+").unwrap();
+        assert_eq!(f.name, "sample-mermaid1.svg");
+        assert_eq!(f.bytes, b"<svg/>");
+        // Bad extension, bad base64, empty data and a bad name all fail the item.
+        assert!(parse_figure_batch_item("x.exe", "exe", "PHN2Zy8+").is_err());
+        assert!(parse_figure_batch_item("x.svg", "svg", "not base64!!").is_err());
+        assert!(parse_figure_batch_item("x.svg", "svg", "").is_err());
+        assert!(parse_figure_batch_item("../x.svg", "svg", "PHN2Zy8+").is_err());
     }
 
     // ---- parse_slides_spec -------------------------------------------------
