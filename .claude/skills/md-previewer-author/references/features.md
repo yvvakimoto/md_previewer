@@ -244,6 +244,11 @@ raw `\begin{tikzpicture}`. Both compile through a bundled WASM TeX engine to inl
 they survive HTML/PDF export and follow the theme colour. An optional first line
 `scale: <factor>` overrides the default 1.6× enlargement.
 
+**Japanese labels work** — in cells and in arrow labels alike; the app reserves the box in TeX
+and draws the glyph as SVG text, tracking tikz-cd's smaller arrow-label size and any rotation.
+The glyphs come from the reader's system Japanese font, so say so if the document is destined
+for another machine. Greek and Cyrillic are NOT supported — use `\alpha`-style commands.
+
 ````markdown
 ```tikzcd
 A \arrow[r, "f"] \arrow[d, "g"'] & B \arrow[d, "h"] \\

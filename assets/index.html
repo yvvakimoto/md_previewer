@@ -3200,6 +3200,8 @@
                                      en: 'TikZ: rendering timed out' },
             'err.tikzCompile':     { ja: 'TikZ: コンパイルに失敗しました（TeX 構文を確認してください）',
                                      en: 'TikZ: compilation failed (check the TeX syntax)' },
+            'err.tikzJaCompile':   { ja: 'TikZ: コンパイルに失敗しました。TeX 構文のほか、日本語を含むラベルもご確認ください（ギリシャ文字・キリル文字などは未対応です。\\alpha のようなコマンドに書き換えてください）',
+                                     en: 'TikZ: compilation failed. Check the TeX syntax, and also any label containing Japanese (Greek and Cyrillic are not supported — use a command such as \\alpha instead)' },
             'tikz.compiling':      { ja: 'TikZ をコンパイル中…', en: 'Compiling TikZ…' },
 
             // Calendar. One message keeps the seven weekdays in order, so a
@@ -10899,6 +10901,111 @@ ${previewClone.outerHTML}
             });
         }
 
+        // Japanese (and CJK generally) inside a tikz body: the bundled engine
+        // CANNOT typeset it. inputenc's utf8 layer raises UTFviii@undefined@err
+        // for any undeclared codepoint, so no input.dvi is produced and the whole
+        // block fails — and even with the character declared there is no CJK glyph
+        // to set it with (dist/fonts is Computer Modern + AMS only, and tex_files
+        // carries no CJK TFM). So TeX is asked only to RESERVE A BOX, and the glyph
+        // is drawn by the browser as a real SVG <text>:
+        //
+        //   \DeclareUnicodeCharacter maps each codepoint that actually occurs onto
+        //   \mdpJp, an \hbox of the right width holding a `dvisvgm:raw` special.
+        //   run-tex.js's putSVG() writes that string into the SVG verbatim, with
+        //   {?x} / {?y} replaced by the current DVI position in points — i.e. the
+        //   same coordinate space the engine's own glyphs use.
+        //
+        // Because the box is reserved in TeX, tikz's own node sizing, arrow
+        // anchoring and the standalone crop all come out right. And because the
+        // <text> lands at the same stream position a real glyph would, it inherits
+        // the identical ancestor <g> transform chain — so rotated and scaled
+        // scopes work with no extra handling (verified against the cmr10 glyphs of
+        // the same label).
+        //
+        // ⚠ The actual character is NOT sent to TeX. The special carries only the
+        // hex codepoint in a data- attribute and the <text> is emitted EMPTY;
+        // __tikzFillJpText() fills it in afterwards. That keeps the TeX source pure
+        // ASCII, so no catcode-active byte, `&` or `#` can ever reach \special.
+        const __TIKZ_JP_RE = /[\u3000-\u30FF\u31F0-\u31FF\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF\uFF00-\uFFEF]|[\u{20000}-\u{2FA1F}]/u;
+        // Halfwidth katakana / hangul / symbols advance a half em; everything else
+        // in the set above is a full-width square.
+        const __TIKZ_JP_HALF_RE = /[\uFF61-\uFFDC\uFFE8-\uFFEE]/;
+        // Variation selectors and IVS are DROPPED rather than boxed. They only pick
+        // a glyph variant of the preceding kanji, so losing them costs a shape, not
+        // a character \u2014 whereas leaving them in would fail the compile for something
+        // the author cannot see, and boxing them is not an option either: a selector
+        // is zero-width, and a zero advance is exactly what lets two dvisvgm:raw
+        // specials merge onto one {?x} (see __tikzJpPreamble's box rule).
+        const __TIKZ_JP_VS_RE = /[\uFE00-\uFE0F]|[\u{E0100}-\u{E01EF}]/gu;
+        function __tikzJpPreamble(src) {
+            const seen = new Set();
+            const decls = [];
+            for (const ch of src) {
+                if (!__TIKZ_JP_RE.test(ch)) continue;
+                const hex = ch.codePointAt(0).toString(16).toUpperCase();
+                if (seen.has(hex)) continue;
+                seen.add(hex);
+                decls.push('\\DeclareUnicodeCharacter{' + hex + '}{\\mdpJp{' + hex + '}{'
+                    + (__TIKZ_JP_HALF_RE.test(ch) ? '0.5' : '1') + '}}');
+            }
+            if (!decls.length) return null;
+            // The whole preamble travels in a SINGLE-quoted HTML attribute (like
+            // data-tex-packages), and the SVG attributes inside it need double
+            // quotes — so the font stack must carry NO apostrophes. Dropping them
+            // is safe: a multi-word CSS font name is valid unquoted.
+            // ⚠ The stack goes in `style=`, NOT `font-family=`: buildExportArtifact()
+            // walks `[font-family]` to decide which Computer-Modern woff2 to inline
+            // (__tikzFontFamilies), and a family that is not one of the engine's own
+            // would send it after a fonts/<name>.woff2 that cannot exist.
+            const fam = SPAN_FONT_STACK.serif.replace(/'/g, '');
+            // ⚠ The size must follow the MATH STYLE, not just the font. tikz-cd
+            // sets arrow labels in \scriptstyle (its `every label` style appends
+            // \scriptstyle to \everymath), and a subscript does the same — but
+            // \font, and therefore `1em`, is NOT switched by math style. A flat 1em
+            // puts a 10pt Japanese label next to 7pt Latin, ~43% oversized.
+            // \mathchoice picks the branch; TeX ships only the selected one, so this
+            // still emits exactly ONE \special (measured, not assumed).
+            // Family 0 is the roman math family, whose quad is its design size.
+            const macro = '\\makeatletter\n'
+                + '\\def\\mdp@box#1#2#3{\\begingroup\\dimen@=#3\\relax\n'
+                + '\\hbox to #2\\dimen@{%\n'
+                + '\\vrule height0.88\\dimen@ depth0.12\\dimen@ width\\z@\n'
+                + '\\special{dvisvgm:raw <text data-mdp-jp="#1" x="{?x}" y="{?y}"'
+                + ' font-size="\\the\\dimen@" fill="currentColor"'
+                + ' style="font-family:' + fam + '"></text>}%\n'
+                + '\\hss}\\endgroup}\n'
+                // \leavevmode must be guarded: LaTeX defines it as \unhbox\voidb@x,
+                // which is an error in math mode. \ifvmode is false there, and true
+                // exactly where an unboxed \hbox would otherwise start its own line
+                // (the first thing in a `text width=` node).
+                + '\\def\\mdpJp#1#2{\\ifvmode\\leavevmode\\fi\n'
+                + '\\ifmmode\\mathchoice{\\mdp@box{#1}{#2}{\\fontdimen6\\textfont0 }}%\n'
+                + '{\\mdp@box{#1}{#2}{\\fontdimen6\\textfont0 }}%\n'
+                + '{\\mdp@box{#1}{#2}{\\fontdimen6\\scriptfont0 }}%\n'
+                + '{\\mdp@box{#1}{#2}{\\fontdimen6\\scriptscriptfont0 }}%\n'
+                + '\\else\\mdp@box{#1}{#2}{1em}\\fi}\n'
+                + '\\makeatother\n';
+            return macro + decls.join('\n') + '\n';
+        }
+        // Fill the placeholders the preamble above emitted. Runs before the result
+        // is memoized, so the cached innerHTML — and therefore every cache hit, the
+        // HTML export and the right-click figure save — already carries the text.
+        function __tikzFillJpText(el) {
+            el.querySelectorAll('text[data-mdp-jp]').forEach((node) => {
+                const cp = parseInt(node.getAttribute('data-mdp-jp'), 16);
+                if (!(cp > 0)) return;
+                node.textContent = String.fromCodePoint(cp);
+                // ⚠ The font-size MUST end up unitless. The engine's viewBox numbers
+                // one user unit as one TeX point, but SVG resolves a `pt` font-size
+                // through CSS (1pt = 4/3 px = 4/3 user units) — so the `10.00002pt`
+                // that `\the\dimen@` produces would draw the glyph 1.333x wider than
+                // the box TeX reserved for it. Measured: 13.333 vs 10.004 user units
+                // for 日 at 10pt.
+                const fs = String(node.getAttribute('font-size') || '').replace(/pt$/, '');
+                if (fs) node.setAttribute('font-size', fs);
+            });
+        }
+
         // Wait until `el` holds a finished tikzjax render (an <svg> that isn't the
         // loading placeholder) or a `.tikzjax-error`; resolves 'ok' / 'error', or
         // 'timeout' if neither appears. Uses a MutationObserver plus a fallback
@@ -10972,7 +11079,15 @@ ${previewClone.outerHTML}
                 // tikzjax reads the parsed script and the DOM-built variant reaches
                 // it with an empty body (TeX then compiles nothing).
                 const pkgAttr = pkgs ? " data-tex-packages='" + pkgs + "'" : '';
-                el.innerHTML = '<script type="text/tikz"' + pkgAttr + '>'
+                // CJK needs a generated preamble (see __tikzJpPreamble). It is
+                // built from `body`, not `source`, so the tikzcd wrapper is covered
+                // too. Both attributes are single-quoted, and neither payload may
+                // contain an apostrophe — pkgs is JSON with double quotes, and the
+                // preamble's font stack is stripped of them deliberately.
+                body = body.replace(__TIKZ_JP_VS_RE, '');
+                const jpPre = __tikzJpPreamble(body);
+                const preAttr = jpPre ? " data-add-to-preamble='" + jpPre + "'" : '';
+                el.innerHTML = '<script type="text/tikz"' + pkgAttr + preAttr + '>'
                     + body.replace(/<\/script/gi, '<\\/script')
                     + '</scr' + 'ipt>';
                 const outcome = await __tikzAwait(el);
@@ -10986,8 +11101,14 @@ ${previewClone.outerHTML}
                 // surface it as our own styled error instead so the failure reads
                 // clearly and matches the rest of the diagram error blocks.
                 if (outcome === 'error' || el.querySelector('.tikzjax-broken-wrapper, .tikzjax-broken-image')) {
-                    el.innerHTML = __tikzErrorHtml('err.tikzCompile');
+                    // A block carrying CJK has a second way to fail, and blaming the
+                    // author's TeX syntax for it would send them hunting for a bug
+                    // that isn't theirs.
+                    el.innerHTML = __tikzErrorHtml(jpPre ? 'err.tikzJaCompile' : 'err.tikzCompile');
                 } else {
+                    // Draw the reserved CJK boxes before scaling/caching, so the
+                    // memoized innerHTML already carries the glyphs.
+                    if (jpPre) __tikzFillJpText(el);
                     // Enlarge the (intrinsically small) diagram before caching so the
                     // scaled SVG is what gets memoized / exported.
                     __applyTikzScale(el, scale);
