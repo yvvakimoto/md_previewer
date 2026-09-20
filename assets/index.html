@@ -3113,6 +3113,9 @@
             'menu.expandAll':      { ja: 'すべて開く',   en: 'Expand all' },
             'menu.saveSvg':        { ja: 'SVG として保存', en: 'Save as SVG' },
             'menu.savePng':        { ja: 'PNG として保存', en: 'Save as PNG' },
+            'menu.saveAllFigures': { ja: 'すべての図を保存…', en: 'Save all figures…' },
+            'menu.historyBack':    { ja: '戻る',         en: 'Back' },
+            'menu.historyForward': { ja: '進む',         en: 'Forward' },
             'fn.backToRef':        { ja: '参照元に戻る', en: 'Back to reference' },
 
             // ABC playback bar. NOT translatable and deliberately absent: the ♩=
@@ -3200,6 +3203,8 @@
                                      en: 'TikZ: rendering timed out' },
             'err.tikzCompile':     { ja: 'TikZ: コンパイルに失敗しました（TeX 構文を確認してください）',
                                      en: 'TikZ: compilation failed (check the TeX syntax)' },
+            'err.tikzJaCompile':   { ja: 'TikZ: コンパイルに失敗しました。TeX 構文のほか、日本語を含むラベルもご確認ください（ギリシャ文字・キリル文字などは未対応です。\\alpha のようなコマンドに書き換えてください）',
+                                     en: 'TikZ: compilation failed. Check the TeX syntax, and also any label containing Japanese (Greek and Cyrillic are not supported — use a command such as \\alpha instead)' },
             'tikz.compiling':      { ja: 'TikZ をコンパイル中…', en: 'Compiling TikZ…' },
 
             // Calendar. One message keeps the seven weekdays in order, so a
@@ -3254,6 +3259,11 @@
             'toast.pdfExportFail': { ja: 'PDF出力に失敗しました', en: 'PDF export failed' },
             'toast.figureSaved':   { ja: '保存しました: {name}', en: 'Saved: {name}' },
             'toast.figureSaveFail':{ ja: '図の保存に失敗しました', en: 'Could not save the figure' },
+            'toast.figuresSaving': { ja: '図を書き出しています…', en: 'Exporting figures…' },
+            'toast.figuresSaved':  { ja: '{count} 個の図を保存しました', en: 'Saved {count} figures' },
+            'toast.figuresSavedPartial': { ja: '{count} 個を保存しました（{failed} 個は失敗）',
+                                     en: 'Saved {count} figures, {failed} failed' },
+            'toast.figuresSaveFail':{ ja: '図の一括保存に失敗しました', en: 'Could not save the figures' },
             'toast.renderFail':    { ja: 'プレビューの描画に失敗しました', en: 'Preview rendering failed' },
             'toast.openingWindow': { ja: '新しいウィンドウで開いています…', en: 'Opening in a new window…' },
             'toast.noFile':        { ja: '更新するファイルがありません', en: 'There is no file to update' },
@@ -5067,6 +5077,15 @@
         // finishes. See the latch at the top of window.applyEditorScroll.
         let __pendingEditorScrollLine = null;
         let __histSyncTimer = null;   // debounce timer for scroll-driven history sync
+        // Our own position in the history chain, so the right-click menu's 戻る /
+        // 進む items can grey themselves out. ⚠ The History API cannot be asked,
+        // and history.length is no substitute: it counts every entry the embedder
+        // ever made (the harness's own page.goto among them), so it would report
+        // "forward is available" and then navigate somewhere that is not a document.
+        // The index rides along in history.state — see the four sites that touch it.
+        let __histIdx = 0;            // this entry's position in OUR chain
+        let __histMax = 0;            // highest index currently reachable forward
+        function __histCanGo(dir) { return dir < 0 ? __histIdx > 0 : __histIdx < __histMax; }
         let tocCollapsed = localStorage.getItem('tocCollapsed') === 'true';
         let scrollSpyObserver = null;
 
@@ -9094,6 +9113,9 @@ ${previewClone.outerHTML}
             if (appContainer.style.display !== 'flex') return;
             const line = window.currentPreviewLine();
             if (line == null) return;
+            // ⚠ Object.assign, not a fresh literal: this entry's `idx` (and anything
+            // else added to the state later) has to survive the line update, or the
+            // menu's 戻る / 進む lose their place in the chain.
             history.replaceState(Object.assign({}, history.state, { line }), '', location.hash);
         }
         function __marpUpdateDeck() {
@@ -10899,6 +10921,111 @@ ${previewClone.outerHTML}
             });
         }
 
+        // Japanese (and CJK generally) inside a tikz body: the bundled engine
+        // CANNOT typeset it. inputenc's utf8 layer raises UTFviii@undefined@err
+        // for any undeclared codepoint, so no input.dvi is produced and the whole
+        // block fails — and even with the character declared there is no CJK glyph
+        // to set it with (dist/fonts is Computer Modern + AMS only, and tex_files
+        // carries no CJK TFM). So TeX is asked only to RESERVE A BOX, and the glyph
+        // is drawn by the browser as a real SVG <text>:
+        //
+        //   \DeclareUnicodeCharacter maps each codepoint that actually occurs onto
+        //   \mdpJp, an \hbox of the right width holding a `dvisvgm:raw` special.
+        //   run-tex.js's putSVG() writes that string into the SVG verbatim, with
+        //   {?x} / {?y} replaced by the current DVI position in points — i.e. the
+        //   same coordinate space the engine's own glyphs use.
+        //
+        // Because the box is reserved in TeX, tikz's own node sizing, arrow
+        // anchoring and the standalone crop all come out right. And because the
+        // <text> lands at the same stream position a real glyph would, it inherits
+        // the identical ancestor <g> transform chain — so rotated and scaled
+        // scopes work with no extra handling (verified against the cmr10 glyphs of
+        // the same label).
+        //
+        // ⚠ The actual character is NOT sent to TeX. The special carries only the
+        // hex codepoint in a data- attribute and the <text> is emitted EMPTY;
+        // __tikzFillJpText() fills it in afterwards. That keeps the TeX source pure
+        // ASCII, so no catcode-active byte, `&` or `#` can ever reach \special.
+        const __TIKZ_JP_RE = /[\u3000-\u30FF\u31F0-\u31FF\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF\uFF00-\uFFEF]|[\u{20000}-\u{2FA1F}]/u;
+        // Halfwidth katakana / hangul / symbols advance a half em; everything else
+        // in the set above is a full-width square.
+        const __TIKZ_JP_HALF_RE = /[\uFF61-\uFFDC\uFFE8-\uFFEE]/;
+        // Variation selectors and IVS are DROPPED rather than boxed. They only pick
+        // a glyph variant of the preceding kanji, so losing them costs a shape, not
+        // a character \u2014 whereas leaving them in would fail the compile for something
+        // the author cannot see, and boxing them is not an option either: a selector
+        // is zero-width, and a zero advance is exactly what lets two dvisvgm:raw
+        // specials merge onto one {?x} (see __tikzJpPreamble's box rule).
+        const __TIKZ_JP_VS_RE = /[\uFE00-\uFE0F]|[\u{E0100}-\u{E01EF}]/gu;
+        function __tikzJpPreamble(src) {
+            const seen = new Set();
+            const decls = [];
+            for (const ch of src) {
+                if (!__TIKZ_JP_RE.test(ch)) continue;
+                const hex = ch.codePointAt(0).toString(16).toUpperCase();
+                if (seen.has(hex)) continue;
+                seen.add(hex);
+                decls.push('\\DeclareUnicodeCharacter{' + hex + '}{\\mdpJp{' + hex + '}{'
+                    + (__TIKZ_JP_HALF_RE.test(ch) ? '0.5' : '1') + '}}');
+            }
+            if (!decls.length) return null;
+            // The whole preamble travels in a SINGLE-quoted HTML attribute (like
+            // data-tex-packages), and the SVG attributes inside it need double
+            // quotes — so the font stack must carry NO apostrophes. Dropping them
+            // is safe: a multi-word CSS font name is valid unquoted.
+            // ⚠ The stack goes in `style=`, NOT `font-family=`: buildExportArtifact()
+            // walks `[font-family]` to decide which Computer-Modern woff2 to inline
+            // (__tikzFontFamilies), and a family that is not one of the engine's own
+            // would send it after a fonts/<name>.woff2 that cannot exist.
+            const fam = SPAN_FONT_STACK.serif.replace(/'/g, '');
+            // ⚠ The size must follow the MATH STYLE, not just the font. tikz-cd
+            // sets arrow labels in \scriptstyle (its `every label` style appends
+            // \scriptstyle to \everymath), and a subscript does the same — but
+            // \font, and therefore `1em`, is NOT switched by math style. A flat 1em
+            // puts a 10pt Japanese label next to 7pt Latin, ~43% oversized.
+            // \mathchoice picks the branch; TeX ships only the selected one, so this
+            // still emits exactly ONE \special (measured, not assumed).
+            // Family 0 is the roman math family, whose quad is its design size.
+            const macro = '\\makeatletter\n'
+                + '\\def\\mdp@box#1#2#3{\\begingroup\\dimen@=#3\\relax\n'
+                + '\\hbox to #2\\dimen@{%\n'
+                + '\\vrule height0.88\\dimen@ depth0.12\\dimen@ width\\z@\n'
+                + '\\special{dvisvgm:raw <text data-mdp-jp="#1" x="{?x}" y="{?y}"'
+                + ' font-size="\\the\\dimen@" fill="currentColor"'
+                + ' style="font-family:' + fam + '"></text>}%\n'
+                + '\\hss}\\endgroup}\n'
+                // \leavevmode must be guarded: LaTeX defines it as \unhbox\voidb@x,
+                // which is an error in math mode. \ifvmode is false there, and true
+                // exactly where an unboxed \hbox would otherwise start its own line
+                // (the first thing in a `text width=` node).
+                + '\\def\\mdpJp#1#2{\\ifvmode\\leavevmode\\fi\n'
+                + '\\ifmmode\\mathchoice{\\mdp@box{#1}{#2}{\\fontdimen6\\textfont0 }}%\n'
+                + '{\\mdp@box{#1}{#2}{\\fontdimen6\\textfont0 }}%\n'
+                + '{\\mdp@box{#1}{#2}{\\fontdimen6\\scriptfont0 }}%\n'
+                + '{\\mdp@box{#1}{#2}{\\fontdimen6\\scriptscriptfont0 }}%\n'
+                + '\\else\\mdp@box{#1}{#2}{1em}\\fi}\n'
+                + '\\makeatother\n';
+            return macro + decls.join('\n') + '\n';
+        }
+        // Fill the placeholders the preamble above emitted. Runs before the result
+        // is memoized, so the cached innerHTML — and therefore every cache hit, the
+        // HTML export and the right-click figure save — already carries the text.
+        function __tikzFillJpText(el) {
+            el.querySelectorAll('text[data-mdp-jp]').forEach((node) => {
+                const cp = parseInt(node.getAttribute('data-mdp-jp'), 16);
+                if (!(cp > 0)) return;
+                node.textContent = String.fromCodePoint(cp);
+                // ⚠ The font-size MUST end up unitless. The engine's viewBox numbers
+                // one user unit as one TeX point, but SVG resolves a `pt` font-size
+                // through CSS (1pt = 4/3 px = 4/3 user units) — so the `10.00002pt`
+                // that `\the\dimen@` produces would draw the glyph 1.333x wider than
+                // the box TeX reserved for it. Measured: 13.333 vs 10.004 user units
+                // for 日 at 10pt.
+                const fs = String(node.getAttribute('font-size') || '').replace(/pt$/, '');
+                if (fs) node.setAttribute('font-size', fs);
+            });
+        }
+
         // Wait until `el` holds a finished tikzjax render (an <svg> that isn't the
         // loading placeholder) or a `.tikzjax-error`; resolves 'ok' / 'error', or
         // 'timeout' if neither appears. Uses a MutationObserver plus a fallback
@@ -10972,7 +11099,15 @@ ${previewClone.outerHTML}
                 // tikzjax reads the parsed script and the DOM-built variant reaches
                 // it with an empty body (TeX then compiles nothing).
                 const pkgAttr = pkgs ? " data-tex-packages='" + pkgs + "'" : '';
-                el.innerHTML = '<script type="text/tikz"' + pkgAttr + '>'
+                // CJK needs a generated preamble (see __tikzJpPreamble). It is
+                // built from `body`, not `source`, so the tikzcd wrapper is covered
+                // too. Both attributes are single-quoted, and neither payload may
+                // contain an apostrophe — pkgs is JSON with double quotes, and the
+                // preamble's font stack is stripped of them deliberately.
+                body = body.replace(__TIKZ_JP_VS_RE, '');
+                const jpPre = __tikzJpPreamble(body);
+                const preAttr = jpPre ? " data-add-to-preamble='" + jpPre + "'" : '';
+                el.innerHTML = '<script type="text/tikz"' + pkgAttr + preAttr + '>'
                     + body.replace(/<\/script/gi, '<\\/script')
                     + '</scr' + 'ipt>';
                 const outcome = await __tikzAwait(el);
@@ -10986,8 +11121,14 @@ ${previewClone.outerHTML}
                 // surface it as our own styled error instead so the failure reads
                 // clearly and matches the rest of the diagram error blocks.
                 if (outcome === 'error' || el.querySelector('.tikzjax-broken-wrapper, .tikzjax-broken-image')) {
-                    el.innerHTML = __tikzErrorHtml('err.tikzCompile');
+                    // A block carrying CJK has a second way to fail, and blaming the
+                    // author's TeX syntax for it would send them hunting for a bug
+                    // that isn't theirs.
+                    el.innerHTML = __tikzErrorHtml(jpPre ? 'err.tikzJaCompile' : 'err.tikzCompile');
                 } else {
+                    // Draw the reserved CJK boxes before scaling/caching, so the
+                    // memoized innerHTML already carries the glyphs.
+                    if (jpPre) __tikzFillJpText(el);
                     // Enlarge the (intrinsically small) diagram before caching so the
                     // scaled SVG is what gets memoized / exported.
                     __applyTikzScale(el, scale);
@@ -13071,25 +13212,61 @@ ${previewClone.outerHTML}
         function __figureAt(target) {
             const host = target.closest ? target.closest(__FIGURE_SEL) : null;
             if (!host) return null;
+            const figs = __figureFromHost(host);
+            if (!figs.length) return null;
+            // Prefer the OUTERMOST <svg> between the click and the wrapper: dvisvgm
+            // nests an <svg> inside a tikz figure, and one feynman fence can hold
+            // several diagrams side by side — the click says which one is meant.
+            if (figs[0].svg) {
+                let svg = null;
+                for (let n = target; n && n !== host; n = n.parentElement) {
+                    if (n.localName === 'svg') svg = n;
+                }
+                if (svg) return { host, spec: figs[0].spec, svg };
+            }
+            return figs[0];
+        }
+
+        // Every saveable figure under one wrapper, in document order. The batch save
+        // has no cursor to disambiguate with, so a fence that draws several diagrams
+        // side by side yields several entries here where __figureAt() yields one.
+        // ⚠ ONE resolver for both paths (CLAUDE.md #2) — the spec dispatch, the
+        // Plotly readiness test and the canvas lookup must not grow a second copy.
+        function __figureFromHost(host) {
             const spec = __FIGURE_KINDS.find(f => host.matches(f.sel));
-            if (!spec) return null;
+            if (!spec) return [];
             if (spec.plotly) {
                 return (window.Plotly && host.classList.contains('js-plotly-plot'))
-                    ? { host, spec } : null;
+                    ? [{ host, spec }] : [];
             }
             if (spec.canvas) {
                 const canvas = host.querySelector(spec.canvas);
-                return canvas ? { host, spec, canvas } : null;
+                return canvas ? [{ host, spec, canvas }] : [];
             }
-            // Prefer the OUTERMOST <svg> between the click and the wrapper: dvisvgm
-            // nests an <svg> inside a tikz figure, and one feynman fence can hold
-            // several diagrams side by side.
-            let svg = null;
-            for (let n = target; n && n !== host; n = n.parentElement) {
-                if (n.localName === 'svg') svg = n;
-            }
-            if (!svg) svg = host.querySelector(spec.svg);
-            return svg ? { host, spec, svg } : null;
+            // Outermost only, for the dvisvgm nesting above.
+            return Array.from(host.querySelectorAll(spec.svg))
+                .filter(svg => {
+                    for (let n = svg.parentElement; n && n !== host; n = n.parentElement) {
+                        if (n.localName === 'svg') return false;
+                    }
+                    return true;
+                })
+                .map(svg => ({ host, spec, svg }));
+        }
+
+        // Every figure in the document, in DOCUMENT order — a comma-joined selector
+        // already returns tree order, so no sort is needed and none must be added
+        // (a per-kind order would make the saved set unreadable next to the source).
+        // `sub` is the figure's 0-based position inside its own wrapper.
+        function __allFigures() {
+            const out = [];
+            preview.querySelectorAll(__FIGURE_SEL).forEach(host => {
+                __figureFromHost(host).forEach((fig, j) => {
+                    fig.sub = j;
+                    out.push(fig);
+                });
+            });
+            return out;
         }
 
         // `<base>-<kind><n>.<ext>`, n being this block's 1-based position among the
@@ -13104,6 +13281,16 @@ ${previewClone.outerHTML}
                 if (stem) base = stem;
             }
             return base + '-' + fig.spec.kind + (n > 0 ? n : 1) + '.' + ext;
+        }
+
+        // The batch's name for one figure. ⚠ Built ON TOP of __figureFileName() so
+        // the first (usually only) figure of a block gets the byte-identical name
+        // the right-click save would have produced — a second numbering scheme
+        // would silently disagree with itself the moment a reader used both.
+        // A block's 2nd+ diagram takes a `-2`, `-3`, … before the extension.
+        function __figureBatchName(fig, ext) {
+            const name = __figureFileName(fig, ext);
+            return fig.sub ? name.replace(/\.([^.]+)$/, '-' + (fig.sub + 1) + '.$1') : name;
         }
 
         // The first opaque background behind the figure — the same "walk up for the
@@ -13275,11 +13462,16 @@ ${previewClone.outerHTML}
             if (fig.spec.plotly) {
                 // Plotly owns its own serializer; it handles the modebar, the WebGL
                 // traces and its own colours, none of which the generic path sees.
+                // ⚠ A measured box is 0×0 inside a display:none Marp slide, which
+                // only the batch save can reach (a hidden figure cannot be
+                // right-clicked). Plotly's own _fullLayout keeps the size it laid
+                // out for, so ask it before falling back to the generic default.
                 const box = fig.host.getBoundingClientRect();
+                const fl = fig.host._fullLayout || {};
                 const url = await window.Plotly.toImage(fig.host, {
                     format: ext,
-                    width: Math.max(1, Math.round(box.width || 700)),
-                    height: Math.max(1, Math.round(box.height || 450)),
+                    width: Math.max(1, Math.round(box.width || fl.width || 700)),
+                    height: Math.max(1, Math.round(box.height || fl.height || 450)),
                     scale: ext === 'png' ? __FIGURE_PNG_SS : 1,
                 });
                 return __b64FromDataUrl(url);
@@ -13319,6 +13511,50 @@ ${previewClone.outerHTML}
             showToast(ok ? t('toast.figureSaved', { name: name || '' }) : t('toast.figureSaveFail'));
         };
 
+        // Save EVERY figure of the document into one folder. SVG where a vector
+        // form exists, PNG for the canvas engines — the same `fig.canvas` test the
+        // right-click menu uses, so no figure is ever skipped for want of a format.
+        //
+        // One IPC carries the whole batch and the host runs ONE folder dialog (the
+        // `exportdir:` shape). The consequence to know: serialization happens
+        // BEFORE the dialog, so the caller flashes a 「書き出しています…」 label on
+        // the menu item rather than leaving the click unacknowledged.
+        //
+        // ⚠ One figure's failure costs that figure only — the same rule awaitLib()
+        // enforces for a missing engine (CLAUDE.md #6). The count travels to the
+        // host so a single toast can report serialization, validation and write
+        // failures together.
+        async function __figuresSaveAll() {
+            const figs = __allFigures();
+            const items = [];
+            let failed = 0;
+            await __nextPaint();        // ⚠ never a bare rAF (CLAUDE.md #7)
+            for (const fig of figs) {
+                const ext = fig.canvas ? 'png' : 'svg';
+                try {
+                    const data = await __figureBytes(fig, ext);
+                    if (!data) throw new Error('empty figure payload');
+                    items.push({ name: __figureBatchName(fig, ext), ext: ext, data: data });
+                } catch (err) {
+                    console.error('figure batch save failed', fig.spec.kind, err);
+                    failed++;
+                }
+            }
+            if (window.ipc && typeof window.ipc.postMessage === 'function') {
+                window.ipc.postMessage('savefigures:' + JSON.stringify({ items: items, failed: failed }));
+            }
+        }
+
+        // Called by the Rust host once the batch is written. A cancelled folder
+        // dialog sends nothing, so silence still means "the user changed their mind".
+        // See CustomEvent::FiguresSaveDone in src/main.rs.
+        window.__figuresSaveDone = function (saved, failed) {
+            if (!saved) { showToast(t('toast.figuresSaveFail')); return; }
+            showToast(failed
+                ? t('toast.figuresSavedPartial', { count: saved, failed: failed })
+                : t('toast.figuresSaved', { count: saved }));
+        };
+
         // ONE contextmenu listener for both the KaTeX copy items and the figure save
         // items. They are not independent: a feynman `equation{}` draws KaTeX inside
         // a <foreignObject>, so a click there matches `.katex` AND `.feynman-block` —
@@ -13328,6 +13564,19 @@ ${previewClone.outerHTML}
         // The table edit menu stays separate: a `.table-editing` cell shows markdown
         // SOURCE text, so it can contain neither a .katex nor a figure
         // (preview-tables.md).
+        // A right-click WebView2 should keep. Deliberately narrow and deliberately
+        // explicit: anything NOT listed here now gets the app's menu instead of the
+        // native one, so a new native affordance worth keeping has to be added.
+        function __nativeMenuWins(e) {
+            if (e.target.closest('img, video, audio, a[href], input, textarea, [contenteditable]')) {
+                return true;
+            }
+            // A live selection keeps native Copy — the menu below has no copy item
+            // for prose, so swallowing the event would strip the only way to do it.
+            const sel = window.getSelection();
+            return !!(sel && !sel.isCollapsed && sel.rangeCount && sel.containsNode(e.target, true));
+        }
+
         let __previewMenuWired = false;
         function setupPreviewContextMenu() {
             if (__previewMenuWired) return;
@@ -13340,12 +13589,33 @@ ${previewClone.outerHTML}
                 return { label: t(ok ? 'copy.copied' : 'copy.failed'), copied: ok, delay: ok ? 600 : 800 };
             }, { disabled: !value });
 
-            preview.addEventListener('contextmenu', (e) => {
+            // ⚠ The listener sits on #preview-container, not #preview. The
+            // letterbox around a Marp deck is the most natural "empty preview
+            // space" there is, and it belongs to the container — a listener on
+            // #preview never sees it. Events inside #preview still bubble up and
+            // e.target does not change on the way, so every target test below
+            // behaves exactly as it did. setupTableContextMenu() stays on #preview.
+            previewContainer.addEventListener('contextmenu', (e) => {
+                // An editing table cell belongs to setupTableContextMenu(), which
+                // has its own menu instance — without this guard both would open.
+                if (__tableEdit && e.target.closest('.table-editing th, .table-editing td')) {
+                    hide();
+                    return;
+                }
                 const k = e.target.closest('.katex');
                 const fig = __figureAt(e.target);
-                // Nothing to offer → let WebView2's native menu show (back/forward).
-                if (!k && !fig) { hide(); return; }
+                // ⚠ What is left of the old "no items → fall through" rule. The
+                // empty-area case moved to us (it is where 「すべての図を保存」
+                // lives), but these did not: WebView2's own menu is the ONLY way
+                // to copy a selection, save an image or copy a link, and this menu
+                // offers none of them — taking the event would remove the ability.
+                if (!k && !fig && __nativeMenuWins(e)) { hide(); return; }
                 e.preventDefault();
+
+                // The empty-area menu. Resolved before show() so the save item can
+                // grey itself out; this is a DOM walk only, nothing is serialized.
+                const bare = !k && !fig;
+                const figCount = bare ? __allFigures().length : 0;
 
                 let mathml = '', latex = '';
                 if (k) {
@@ -13363,6 +13633,20 @@ ${previewClone.outerHTML}
                         // A canvas figure has no vector form to offer.
                         if (!fig.canvas) addItem(t('menu.saveSvg'), () => { __figureSave(fig, 'svg'); });
                         addItem(t('menu.savePng'), () => { __figureSave(fig, 'png'); });
+                    }
+                    if (bare) {
+                        // Serialization runs before the folder dialog, so flash a
+                        // label instead of leaving the click unacknowledged.
+                        addItem(t('menu.saveAllFigures'), () => {
+                            __figuresSaveAll();
+                            return { label: t('toast.figuresSaving'), delay: 1200 };
+                        }, { disabled: figCount === 0 });
+                        // Back/forward, which this menu displaced. Greyed out at the
+                        // ends of the chain, the way the native menu greyed them.
+                        addItem(t('menu.historyBack'), () => { history.back(); },
+                                { disabled: !__histCanGo(-1) });
+                        addItem(t('menu.historyForward'), () => { history.forward(); },
+                                { disabled: !__histCanGo(1) });
                     }
                 });
             });
@@ -14015,6 +14299,11 @@ ${previewClone.outerHTML}
         window.addEventListener('popstate', (e) => {
             const target = e.state && e.state.filepath;
             if (!target) return;
+            // Follow our own index so the context menu knows which way it can go.
+            if (e.state && Number.isFinite(e.state.idx)) {
+                __histIdx = e.state.idx;
+                if (__histIdx > __histMax) __histMax = __histIdx;
+            }
             if (window.ipc && typeof window.ipc.postMessage === 'function') {
                 suppressHistoryPush = true;
                 // Remember where to restore the view once the file re-renders.
@@ -14289,13 +14578,20 @@ ${previewClone.outerHTML}
             const hashUrl = '#' + encodeURIComponent(fileData.filename);
             if (suppressHistoryPush) {
                 // Keep the restored view line on this entry for future navigations.
-                const st = { filepath: fileData.filepath };
+                // ⚠ `st` is rebuilt from scratch, so `idx` has to be re-stated here
+                // or the entry loses its place in the chain (see __histCanGo).
+                const st = { filepath: fileData.filepath, idx: __histIdx };
                 if (restoreLine != null) st.line = restoreLine;
                 history.replaceState(st, '', hashUrl);
             } else if (!history.state || !history.state.filepath) {
-                history.replaceState({ filepath: fileData.filepath }, '', hashUrl);
+                __histIdx = 0;
+                __histMax = 0;
+                history.replaceState({ filepath: fileData.filepath, idx: 0 }, '', hashUrl);
             } else if (!isReload && history.state.filepath !== fileData.filepath) {
-                history.pushState({ filepath: fileData.filepath }, '', hashUrl);
+                // A push truncates everything ahead, so the new entry IS the end.
+                __histIdx += 1;
+                __histMax = __histIdx;
+                history.pushState({ filepath: fileData.filepath, idx: __histIdx }, '', hashUrl);
             }
             suppressHistoryPush = false;
 

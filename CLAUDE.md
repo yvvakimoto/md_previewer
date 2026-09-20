@@ -72,7 +72,7 @@ README.md 「対応している記法・機能」.
 | Diagram / figure fences: `mermaid`, `plotly`, `abc` (+ playback), `markwhen`, `tikz`/`tikzcd`, `kataskeve`/`kataskeve3d`, `feynman`, `model3d` (3D mesh files, interactive), `csv`/`tsv`, KaTeX math, highlight.js (+ in-house Modelica grammar) | `preview-blocks.md` |
 | Footnotes, `::: center/right/left/message/vcenter/columns` fenced divs, `[text]{color=…}` inline spans, definition lists, ruby (`｜猫《ねこ》`), task lists, CJK soft-break join | `preview-markdown-ext.md` |
 | Copy table for PowerPoint (rich-HTML clipboard); Edit table (writes back to the `.md`) | `preview-tables.md` |
-| Right-click a rendered figure → save it alone as SVG / PNG (canvas engines: PNG only) | `preview-blocks.md` |
+| Right-click a rendered figure → save it alone as SVG / PNG (canvas engines: PNG only); right-click **empty** preview space → save every figure into one picked folder, plus the app's own back / forward (which that menu displaced) | `preview-blocks.md`, `preview-files-media.md` |
 | Clickable task-list checkboxes — a click rewrites that one `- [ ]` line in the `.md` (both pipelines; inert in every export) | `preview-markdown-ext.md` |
 | Images via the `/userfile/` route with `\|WxH` sizing and `../` paths; video + YouTube embeds; cross-file `.md` links with back/forward history; `Ctrl`+click opens a new window; drag & drop; `Ctrl+N` new file; `Ctrl+D` install dir | `preview-files-media.md` |
 | Marp slides (`marp: true`), 3 views (`P`), autofit (`A`), laser pointer (`Z`), 8-colour theme family, selection highlighter | `marp.md` |
@@ -313,7 +313,8 @@ that are checked (or partly checked) can rely on the harness remembering.
 |---|---|
 | the render pipeline, any preprocessing pass | `python tools/preview-harness/domdump.py` (+ `gate.sh <label> <files…>` to diff against `_dom/base`) |
 | shortcuts, context menus, Marp autofit, `@user-vars` | `python tools/preview-harness/keycheck.py` |
-| the right-click figure save (`__FIGURE_KINDS`, `__serializeFigureSvg`, `savefigure:`) | `keycheck.py` (it decodes the payload — the DOM digest cannot see any of this) |
+| the figure save — `__FIGURE_KINDS`, `__serializeFigureSvg`, `savefigure:`, and the batch (`__allFigures`, `savefigures:`) | `keycheck.py` (it decodes both payloads — the DOM digest cannot see any of this) |
+| the preview context menu's reach (`__nativeMenuWins`) or the history index (`__histCanGo`, `history.state.idx`) | `keycheck.py` (+ `tablecheck.py` for the `.table-editing` guard) |
 | `--md-font-scale` / `--md-width-scale`, a theme's base `font-size` or `max-width`, `with_hotkeys_zoom` | `keycheck.py` + `exportcheck.py` + `pdfcheck.py` (the scaled cases are the only ones that can see either) |
 | preview table edit mode | `python tools/preview-harness/tablecheck.py` + `node tools/preview-harness/table-model.test.cjs` |
 | task-list checkboxes, `applyTaskLists()`, `__isTypingTarget()` | `python tools/preview-harness/taskcheck.py` (+ `keycheck.py` for the focus case) |
@@ -354,6 +355,8 @@ unless noted.
 | `__DIAGRAM_CACHE_MAX` | 200 | FIFO cap bounding diagram memory across long sessions |
 | `__TIKZ_SCALE` / `__TIKZ_RENDER_TIMEOUT_MS` | 1.6 / 30000 | tikz renders small; a bad diagram must not wait forever |
 | `_TIKZ_WAIT_MS` (`shoot.py`) | 45000 | must exceed the 30 s in-page timeout so a failure resolves |
+| `__TIKZ_JP_RE` / `__TIKZ_JP_HALF_RE` | CJK ranges / halfwidth forms | which codepoints the app takes over from LaTeX, and which advance 0.5em instead of 1em. ⚠ **Not "all non-ASCII"**: `inputenc` already sets é / ü with real Computer Modern glyphs, so rerouting Latin-1 through an SVG `<text>` would be a regression. ⚠ **Never yields a zero-width box** — a zero advance lets two `dvisvgm:raw` specials merge and land at one x (`preview-blocks.md`) |
+| `\mdpJp`'s 0.88 / 0.12 em (`__tikzJpPreamble`) | ascent / depth | the ideographic em box's split about the baseline. This is what tikzcd row spacing and arrow anchors are computed from, so it is layout, not looks — a strut of the wrong height mis-spaces the whole diagram |
 | `SPIN_FRAMES` / `SPIN_DURATION_MS` / `SPIN_AMPLITUDE_DEG` (`shoot-docs.py`) | 20 / 90 / 50° | the landing page's two looping "a mouse is doing this" figures (`model3d`, Marp slide 12's Plotly surface). An **oscillation**, not a revolution: loops with no repeated closing frame and keeps the union ink box — and therefore `--g-cap` — where the still already put it. ⚠ The animation is **exactly** half the still, or the `<picture>` swap shifts the layout |
 | `SPIN_ENCODE['kmax']` (`shoot-docs.py`) | 0 | ⚠ the one animated-WebP flag that matters. libwebp already emits per-frame rectangles, but its periodic **keyframes** cost 282 KB vs 182 KB on the 1600×900 slide. With them off, animating a whole slide costs the changed rectangle + ~1 keyframe, which is what removes the need for a hand-aligned overlay |
 | `__MARP_FIT_MIN` | 0.5 | autofit shrink floor; below it the body scrolls instead |
