@@ -28,6 +28,7 @@ Requires: playwright (module) + a system Chromium (Edge/Chrome).
 
 import argparse
 import json
+import re
 import os
 import sys
 import threading
@@ -181,6 +182,71 @@ def run_style(browser, base_url, doc, style, vertical, font_scale=None, width_sc
           "@import" not in html or "url(\"tategaki.css\")" not in html,
           "found a bare relative @import")
     check("the artifact requests nothing that fails", not failed, failed[:3])
+    ctx.close()
+
+
+def run_cursor_block(browser, base_url, doc):
+    """The editor's cursor-block tint must not reach paper or an artifact.
+
+    Two independent kills, because they fail independently:
+
+      * the HTML artifact strips the CLASS from the clone. Required, not
+        belt-and-braces: buildExportArtifact() inlines the document's FIRST
+        <style>, which is the one carrying the .md-cursor-line rule, so leaving
+        the class ships the tint. It matters most in the workspace multi-file
+        loop, which renders OTHER files while the reader's cursor line is still
+        remembered and would stamp a tint into every exported page.
+      * the PDF is killed by a rule in the existing @media print block, not by
+        JS in __beforePdfPrint(). Asserted here with emulate_media rather than
+        in pdfcheck.py because a computed background is a fact and a faint tint
+        in a rendered PDF is a guess.
+    """
+    ctx = browser.new_context(viewport={"width": 1440, "height": 900})
+    page = ctx.new_page()
+    page.set_default_timeout(20000)
+    page.goto(base_url + doc, wait_until="domcontentloaded")
+    page.wait_for_function(
+        "() => { const p=document.getElementById('preview'); return p && p.children.length>0; }")
+    page.wait_for_timeout(300)
+
+    line = page.evaluate(
+        "() => { const e = document.querySelectorAll('#preview [data-line]');"
+        " return e.length ? parseInt(e[e.length-1].getAttribute('data-line'),10) : 0; }")
+    page.evaluate("() => localStorage.setItem('cursorBlock', 'on')")
+    page.evaluate("(l) => window.applyEditorCursor(l)", line)
+    page.wait_for_timeout(80)
+
+    print("\n[cursor block]")
+    tinted = page.evaluate("() => document.querySelectorAll('#preview .md-cursor-line').length")
+    check("the live preview is tinted to begin with", tinted == 1, "got %d" % tinted)
+
+    # @media print must neutralize it on the live DOM (the PDF path).
+    page.emulate_media(media="print")
+    page.wait_for_timeout(60)
+    bg = page.evaluate(
+        "() => { const el = document.querySelector('#preview .md-cursor-line');"
+        " return el ? getComputedStyle(el).backgroundColor : null; }")
+    check("@media print neutralizes the tint (%s)" % bg,
+          bg in ("rgba(0, 0, 0, 0)", "transparent"), bg)
+    page.emulate_media(media="screen")
+
+    html = page.evaluate("async () => (await buildExportArtifact({})).html")
+    # The RULE is expected in the artifact -- the first <style> is inlined
+    # wholesale and carries it, inert, along with the @media print twin. What
+    # must not survive is the class on an ELEMENT, so match the attribute rather
+    # than the bare substring.
+    worn = re.findall(r'class="[^"]*\bmd-cursor-line\b', html)
+    check("no element in the artifact wears md-cursor-line",
+          not worn, "%d element(s) kept the class" % len(worn))
+
+    page2 = ctx.new_page()
+    page2.set_default_timeout(20000)
+    page2.route("**" + ARTIFACT_PATH,
+                lambda route: route.fulfill(status=200, content_type="text/html; charset=utf-8", body=html))
+    page2.goto(base_url.split("/index.html")[0] + ARTIFACT_PATH, wait_until="load")
+    page2.wait_for_timeout(200)
+    n = page2.evaluate("() => document.querySelectorAll('.md-cursor-line').length")
+    check("the reloaded artifact tints nothing", n == 0, "got %d" % n)
     ctx.close()
 
 
@@ -338,6 +404,8 @@ def main():
             # inline axis under vertical-rl) rather than on max-width.
             run_style(browser, base, plain, None, False, width_scale=0.8)
             run_style(browser, base, vertical, "tategaki.css", True, width_scale=0.8)
+            # The editor's cursor tint: absent from the artifact, dead on paper.
+            run_cursor_block(browser, base, plain)
             # samples/model3d.md rather than a synthetic doc: it is the file that
             # already exercises every option and every error path, and it keeps this
             # check honest about what ships.

@@ -181,9 +181,17 @@ export const I18N = {
   'ed.settings.live':        { ja: 'ライブプレビュー', en: 'Live preview' },
   'ed.settings.liveHint':    { ja: 'OFF なら保存時のみプレビュー更新（重い文書向け）',
                                en: 'Off refreshes the preview only on save (for heavy documents)' },
+  'ed.settings.cursorBlock': { ja: 'カーソル行をプレビューで強調',
+                               en: 'Highlight the cursor block in the preview' },
+  // The copy says ブロック / "block" on purpose: data-line is stamped per block,
+  // so the tint covers the whole paragraph the cursor sits in, not one line of
+  // it. Promising a line would be a promise the render pipeline cannot keep.
+  'ed.settings.cursorBlockHint': { ja: 'カーソルのある段落をプレビュー側で淡く強調 · <code>:set cursorblock</code> / <code>nocursorblock</code>',
+                               en: 'Faintly tints the block the cursor sits in, over in the preview · <code>:set cursorblock</code> / <code>nocursorblock</code>' },
 
   // ---- hints / ex-command feedback ----
   'ed.hint.tablePaste':      { ja: '表の貼り付け変換: {state}', en: 'Convert pasted tables: {state}' },
+  'ed.hint.cursorBlock':     { ja: 'カーソル行の強調: {state}', en: 'Cursor block highlight: {state}' },
   'ed.hint.keyLayout':       { ja: 'キー配列: {name}', en: 'Key layout: {name}' },
   'ed.hint.fontSize':        { ja: '文字サイズ {size}px', en: 'Font size {size}px' },
   'ed.hint.fontSizeLimit':   { ja: '文字サイズ {size}px（下限/上限）', en: 'Font size {size}px (at the limit)' },

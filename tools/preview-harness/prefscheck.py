@@ -364,6 +364,18 @@ def main():
             check("table paste is now reachable from the UI",
                   ls("editor:tablePaste"), "off")
 
+            # The cursor-block tint. ⚠ Its key is UNPREFIXED (`cursorBlock`,
+            # not `editor:cursorBlock`) because the PREVIEW reads it out of the
+            # shared same-origin localStorage -- the same break with the
+            # `editor:*` convention the `uiLang` key makes. Asserting the exact
+            # key here is the only thing standing between a rename and a toggle
+            # that silently controls nothing.
+            page.evaluate("() => document.querySelector('[data-el=\"cursor-block\"]').click()")
+            page.wait_for_timeout(120)
+            check("cursor block toggles from the modal", ls("cursorBlock"), "on")
+            check("cursor block does NOT use an editor:-prefixed key",
+                  ls("editor:cursorBlock"), None)
+
             # Toggles round-trip through the same setters Vim's `:set` uses.
             page.evaluate("() => document.querySelector('[data-el=\"cells\"]').click()")
             page.wait_for_timeout(150)
@@ -399,6 +411,26 @@ def main():
             page.keyboard.type(":set nonumber")
             press("Enter")
             check(":set is still unambiguous", ls("editor:lineNumbers"), "off")
+            # `:set cursorblock` -- deliberately NOT `cursorline`, which this
+            # editor's own highlightActiveLine() already owns by meaning.
+            page.keyboard.type(":set cursorblock")
+            press("Enter")
+            check(":set cursorblock turns the tint on", ls("cursorBlock"), "on")
+            page.keyboard.type(":set nocursorblock")
+            press("Enter")
+            check(":set nocursorblock turns it off", ls("cursorBlock"), "off")
+            # updateSettingsUI() is the easy half to forget: a pref changed from
+            # an ex-command must be reflected the next time the modal opens.
+            page.keyboard.type(":set cursorblock")
+            press("Enter")
+            page.keyboard.type(":pref")
+            press("Enter")
+            page.wait_for_timeout(150)
+            check("the modal checkbox reflects the ex-command",
+                  page.evaluate(
+                      "() => document.querySelector('[data-el=\"cursor-block\"]').checked"),
+                  True)
+            press("Escape")
             check("no error from the Vim path", errors, [])
 
             ctx.close()

@@ -522,6 +522,12 @@ export function create(root, opts = {}) {
             </span>
             <span class="settings-control"><input type="checkbox" data-el="live" data-i18n-attr="aria-label:ed.settings.live"></span>
           </div>
+          <div class="settings-row">
+            <span class="settings-label"><span data-i18n="ed.settings.cursorBlock"></span>
+              <span class="settings-hint" data-i18n-html="ed.settings.cursorBlockHint"></span>
+            </span>
+            <span class="settings-control"><input type="checkbox" data-el="cursor-block" data-i18n-attr="aria-label:ed.settings.cursorBlock"></span>
+          </div>
         </div>
       </div>
       <div class="cc-hint" data-i18n-html="ed.settings.hint"></div>
@@ -546,6 +552,7 @@ export function create(root, opts = {}) {
       tableCol: q('[data-el="table-col"]'),
       tablePaste: q('[data-el="table-paste"]'),
       live: q('[data-el="live"]'),
+      cursorBlock: q('[data-el="cursor-block"]'),
       setSeg: (name, val) => {
         segButtons(name).forEach((b) => b.classList.toggle('active', b.dataset.val === val));
       },
@@ -567,6 +574,7 @@ export function create(root, opts = {}) {
     settingsCtl.tablePaste.addEventListener('change', (e) => setTablePaste(e.target.checked));
     settingsCtl.keyLayout.addEventListener('change', (e) => setKeyLayout(e.target.value));
     settingsCtl.live.addEventListener('change', (e) => setLive(e.target.checked));
+    settingsCtl.cursorBlock.addEventListener('change', (e) => setCursorBlock(e.target.checked));
     segButtons('uiLang').forEach((b) =>
       b.addEventListener('click', () => setUiLangPref(b.dataset.val === 'auto' ? null : b.dataset.val)));
   }
@@ -767,6 +775,14 @@ export function create(root, opts = {}) {
   const LS_FONTSIZE = 'editor:fontSize';
   const LS_FONTFAMILY = 'editor:fontFamily';
   const LS_KEYLAYOUT = 'editor:keyLayout';
+  // ⚠ UNPREFIXED, deliberately — the same break with the `editor:*` convention
+  // the shared `uiLang` key makes, and for the same reason. Every key above is
+  // read only by this window; this one is WRITTEN here and READ by the preview
+  // (assets/index.html, __cursorLineEnabled), which is the same origin in the
+  // same WebView2 user-data folder and therefore shares localStorage. Renaming
+  // it to `editor:cursorBlock` would silently disconnect the toggle from the
+  // thing it toggles.
+  const LS_CURSORBLOCK = 'cursorBlock';
   function readPref(key, valid, fallback) {
     try {
       const v = localStorage.getItem(key);
@@ -788,6 +804,9 @@ export function create(root, opts = {}) {
   let lineNoState = readPref(LS_LN, ['absolute', 'relative', 'off'], 'absolute');
   let themeState = readPref(LS_THEME, ['light', 'dark'], 'light');
   let liveState = readPref(LS_LIVE, ['on', 'off'], 'on') === 'on';
+  // Default OFF: it tints the reader's document, so an existing install must
+  // look exactly as it did until someone asks for it.
+  let cursorBlockState = readPref(LS_CURSORBLOCK, ['on', 'off'], 'off') === 'on';
   let tableColState = readPref(LS_TABLECOL, ['on', 'off'], 'on') === 'on';
   // No status-bar button, deliberately: the bar already carries seven controls,
   // and this behaviour is right almost always. The per-paste escape hatch is
@@ -874,6 +893,7 @@ export function create(root, opts = {}) {
     settingsCtl.tableCol.checked = tableColState;
     settingsCtl.tablePaste.checked = tablePasteState;
     settingsCtl.live.checked = liveState;
+    settingsCtl.cursorBlock.checked = cursorBlockState;
     settingsCtl.setSeg('uiLang', readLangPref() || 'auto');
   }
   function setVim(on) {
@@ -920,6 +940,23 @@ export function create(root, opts = {}) {
     } else if (liveTimer) {
       clearTimeout(liveTimer);
       liveTimer = 0;
+    }
+    updateSettingsUI();
+    refocusEditor();
+  }
+  // Cursor-block highlight in the PREVIEW. The only setter here with no effect
+  // step: the localStorage write IS the effect. The preview is the same origin
+  // in the same user-data folder, so it sees the write as a `storage` event and
+  // re-applies itself (assets/index.html, __applyCursorLineHighlight) — no IPC,
+  // no Rust, nothing to reconfigure on this side.
+  function setCursorBlock(on) {
+    cursorBlockState = !!on;
+    try { localStorage.setItem(LS_CURSORBLOCK, cursorBlockState ? 'on' : 'off'); } catch (_) {}
+    // Same modal-aware hint as setTablePaste: `:set nocursorblock` needs
+    // feedback, but inside the modal the checkbox is the feedback and the hint
+    // would render behind the backdrop.
+    if (settingsModal.style.display !== 'flex') {
+      showHint(t('ed.hint.cursorBlock', { state: t(cursorBlockState ? 'common.on' : 'common.off') }));
     }
     updateSettingsUI();
     refocusEditor();
@@ -1276,6 +1313,13 @@ export function create(root, opts = {}) {
         case 'nocellmode': case 'nocells':     setCells(false);       break;
         case 'dvorak':                         setKeyLayout('dvorak'); break;
         case 'nodvorak':                       setKeyLayout('qwerty'); break;
+        // ⚠ NOT `cursorline`. That name is already taken by meaning: this
+        // editor runs @codemirror/view's highlightActiveLine(), so a Vim user
+        // typing `:set nocursorline` means "stop highlighting MY current line",
+        // not "stop tinting the preview". Named for what it does, like every
+        // other option in this switch.
+        case 'cursorblock': case 'cblock':     setCursorBlock(true);   break;
+        case 'nocursorblock': case 'nocblock': setCursorBlock(false);  break;
         default: break;
       }
     });

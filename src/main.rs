@@ -402,6 +402,20 @@ pub(crate) fn eval_js_fn(webview: &wry::webview::WebView, f: &str, args: &[&str]
     let _ = webview.evaluate_script(&js_call(f, args));
 }
 
+/// Tell the preview there is no longer an editor cursor, so the opt-in
+/// cursor-block tint clears. `applyEditorCursor(0)` is that contract — line 0 is
+/// not a line, so it clears without scrolling.
+///
+/// Called from every gesture that destroys the editor window. ⚠ It takes the
+/// `Arc<Mutex<…>>` and scopes the guard itself: every call site goes on to call
+/// `load_and_render`, which locks internally, and a guard still held there would
+/// deadlock the single-threaded event loop.
+fn clear_editor_cursor(webview: &Arc<Mutex<wry::webview::WebView>>) {
+    if let Ok(wv) = webview.lock() {
+        eval_js_fn(&wv, "applyEditorCursor", &["0"]);
+    }
+}
+
 /// Serialize a [`FileData`] and wrap it in the guarded `loadFileFromRust(...)`
 /// call — the one step every render path shares. `raw` is set equal to
 /// `content`; the two stay distinct fields so the webview's save channel
@@ -2821,6 +2835,11 @@ fn main() -> wry::Result<()> {
                     if editor_registry.is_dirty() && editor_registry.request_close_confirm(false) {
                         return;
                     }
+                    // The editor is going away for real now (the veto above is
+                    // the only thing that could have stopped it). Clear before
+                    // the possible re-render below, so that render already sees
+                    // no cursor and stamps no tint.
+                    clear_editor_cursor(&webview);
                     if let Some(path) = editor_registry.close_take_dirty_path() {
                         if path.exists() {
                             load_and_render(&path, &webview, &current_dir, &current_file, &editor_registry);
@@ -3301,6 +3320,7 @@ fn main() -> wry::Result<()> {
                 }
             }
             Event::UserEvent(CustomEvent::EditorCloseRequested) => {
+                clear_editor_cursor(&webview);
                 if let Some(path) = editor_registry.close_take_dirty_path() {
                     if path.exists() {
                         load_and_render(&path, &webview, &current_dir, &current_file, &editor_registry);
@@ -3312,6 +3332,12 @@ fn main() -> wry::Result<()> {
                 if !close {
                     // Cancel: the window the user was closing simply stays.
                     return;
+                }
+                // Past the cancel guard above, so the editor really is closing.
+                // Skipped when quitting: the whole process is going away, and
+                // the preview webview with it.
+                if !quit_app {
+                    clear_editor_cursor(&webview);
                 }
                 // "Save & close" already wrote the file over `editor:save:`, so
                 // the buffer is clean here and this yields None — the preview was
@@ -3333,9 +3359,15 @@ fn main() -> wry::Result<()> {
                 editor_registry.push_ime_status(open);
             }
             Event::UserEvent(CustomEvent::EditorCursorMoved { line }) => {
-                // Editor → preview: scroll preview to mirror cursor line.
+                // Editor → preview: scroll preview to mirror cursor line, and
+                // move the opt-in cursor-block tint with it.
+                //
+                // ⚠ `applyEditorCursor`, NOT `applyEditorScroll`. The latter is
+                // also the preview's own Back/Forward view restore, which has no
+                // editor cursor behind it — see the comment on applyEditorCursor
+                // in assets/index.html.
                 if let Ok(wv) = webview.lock() {
-                    eval_js_fn(&wv, "applyEditorScroll", &[&line.to_string()]);
+                    eval_js_fn(&wv, "applyEditorCursor", &[&line.to_string()]);
                 }
             }
             Event::UserEvent(CustomEvent::EditorSavedContent { path, content }) => {
@@ -3381,7 +3413,7 @@ fn main() -> wry::Result<()> {
                 let script = format!(
                     "{} {}",
                     build_load_file_script(&filename, &path.to_string_lossy(), &content),
-                    js_call("applyEditorScroll", &[&line.to_string()]),
+                    js_call("applyEditorCursor", &[&line.to_string()]),
                 );
                 if let Ok(wv) = webview.lock() {
                     let _ = wv.evaluate_script(&script);

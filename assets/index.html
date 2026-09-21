@@ -1550,6 +1550,21 @@
             list-style-position: inside;
         }
 
+        /* The block the companion editor's cursor is on (opt-in; see
+           __applyCursorLineHighlight). Wrapped in :where() so it has ZERO
+           specificity and can never out-rank a theme — a baseline must never
+           out-specify a theme. A theme opts out, or retunes the tint, by
+           declaring --md-cursor-line-bg; the same "theme declares, the app
+           implements" shape as --md-dl-accent.
+
+           BACKGROUND ONLY, deliberately. A border or padding would move the
+           text as the cursor travels, and an inline-start accent bar changes
+           axis under vertical-rl — a background is correct in every writing
+           mode with no branch. */
+        #preview :where(.md-cursor-line) {
+            background-color: var(--md-cursor-line-bg, rgba(255, 213, 79, 0.20));
+        }
+
         /* Dark mode */
         body.dark-mode {
             background: #0d1117;
@@ -1719,6 +1734,13 @@
 
         body.dark-mode [data-line]::before {
             color: #484f58;
+        }
+
+        /* Dark needs its own tint, not the same rgba: the light value reads as
+           a wash on white and as mud on #0d1117. Set on the VARIABLE, so a
+           theme overriding --md-cursor-line-bg still wins in both modes. */
+        body.dark-mode {
+            --md-cursor-line-bg: rgba(255, 213, 79, 0.13);
         }
 
         /* Highlight.js dark token overrides (GitHub Dark palette). Scoped off
@@ -1892,6 +1914,15 @@
         @media print {
             body.show-line-numbers #preview [data-line]::before {
                 display: none;
+            }
+            /* The editor's cursor tint marks a live editing session and has no
+               meaning on paper. Killed here rather than in __beforePdfPrint()
+               for the same reason the line numbers above are: CSS can express
+               it, so it needs no stash-and-restore entry, it cannot be missed
+               by that function's error path, and it covers Ctrl+P as well as
+               the CDP print handshake. */
+            #preview .md-cursor-line {
+                background: none;
             }
 
             body {
@@ -6113,6 +6144,12 @@
             // reach — drop the bar and ship the staff as the plain SVG it already is.
             previewClone.querySelectorAll('.abc-audio-bar').forEach(el => el.remove());
             previewClone.querySelectorAll('.abc-playing').forEach(el => el.classList.remove('abc-playing'));
+            // The editor's cursor tint marks a live editing session; a frozen
+            // artifact has none. ⚠ Stripping the class is required, not tidiness:
+            // this function inlines the document's FIRST <style>, which is the one
+            // carrying the .md-cursor-line rule — leave the class and the tint
+            // ships. Net: the artifact case in exportcheck.py.
+            previewClone.querySelectorAll('.md-cursor-line').forEach(el => el.classList.remove('md-cursor-line'));
             // Task-list checkboxes are interactive in the live preview (the click writes
             // back to the source .md); an artifact has no host to write to, so re-disable
             // them — which also keeps the artifact looking exactly like it always has.
@@ -12571,6 +12608,16 @@ ${previewClone.outerHTML}
             await __userStyleReady;
             paginatePreview();
 
+            // #preview was just rebuilt wholesale, so the cursor tint went with
+            // it. Re-stamping here is what carries it through a re-render the
+            // editor did NOT cause (M dark, N numbering, S style, a language
+            // switch, a font/width scale change).
+            // ⚠ It MUST come after paginatePreview(): a paginating theme splits
+            // a straddling paragraph with a shallow cloneNode, which copies the
+            // class onto the head AND leaves it on the tail. Stamping afterwards
+            // puts it on exactly one block.
+            window.__applyCursorLineHighlight();
+
             // Generate table of contents
             generateTOC();
 
@@ -14066,6 +14113,132 @@ ${previewClone.outerHTML}
             }
         });
 
+        // A source line -> the rendered block it falls in, plus the source line
+        // of the block AFTER it (null at the end of the document; the caller
+        // uses it to interpolate within the block).
+        //
+        // THE single resolver for "which block is this line in?". Both
+        // applyEditorScroll's nearest-block scroll and the cursor-line highlight
+        // read it, so the two can never disagree about which block the cursor is
+        // on — a disagreement would tint one block while scrolling to another.
+        // CLAUDE.md invariant 2: use the shared helper, do not write a second copy.
+        //
+        // Returns `{target: null}` only when nothing is stamped at all.
+        function __blockForLine(line) {
+            const blocks = preview.querySelectorAll('[data-line]');
+            if (!blocks.length) return { target: null, nextLine: null };
+            let target = null;
+            let nextLine = null;
+            for (const el of blocks) {
+                const elLine = parseInt(el.getAttribute('data-line'), 10);
+                if (!Number.isFinite(elLine)) continue;
+                if (elLine <= line) {
+                    target = el;
+                } else {
+                    nextLine = elLine;
+                    break;
+                }
+            }
+            return { target: target || blocks[0], nextLine };
+        }
+
+        // ---- Cursor-line highlight (opt-in) ------------------------------
+        // Faintly tints the block the editor's cursor is currently on, so the
+        // reader can see which paragraph of the preview they are editing.
+        //
+        // The line arrives through the EXISTING channel: the editor posts
+        // `editor:cursor:<line>` on every cursor move and carries `line` inside
+        // `editor:change:` on every edit, and Rust turns both into a call to
+        // window.applyEditorCursor (src/main.rs). So this feature adds no IPC.
+        //
+        // Granularity is a BLOCK, not a line: data-line is stamped on top-level
+        // children of #preview and on `:scope > li` (stampLineNumbers), so a
+        // cursor anywhere in a three-line paragraph tints that whole paragraph.
+        // That is the finest grain the render pipeline offers.
+        let __editorCursorLine = 0;
+
+        // The pref is SHARED, not editor-scoped: it is written by the editor's
+        // settings modal and read here. The two windows are the same origin in
+        // the same WebView2 user-data folder, so they share localStorage — the
+        // same fact the unprefixed `uiLang` key relies on, hence the unprefixed
+        // key here too. Read fresh on every call: there is no cached copy that
+        // could go stale, and no write from this side that could ping-pong.
+        // ⚠ 'on' / 'off', NOT 'true' / 'false'. The preview's own body-class
+        // flags store booleans, the editor's prefs store this enum, and this key
+        // is written by the editor — so it follows the writer's convention and
+        // the reader adapts. Getting this wrong reads as "the toggle does
+        // nothing", with no error anywhere.
+        //
+        // ⚠ And the key is `cursorBlock` while everything on this side is named
+        // "cursor line" — the one place the feature uses two words for one
+        // thing. The pref is named after its Vim ex-command, and that could not
+        // be `:set cursorline`: the EDITOR runs @codemirror/view's
+        // highlightActiveLine(), so a Vim user typing `:set nocursorline` means
+        // their own caret line, not this. See the switch in entry.js.
+        function __cursorLineEnabled() {
+            try { return localStorage.getItem('cursorBlock') === 'on'; } catch (e) { return false; }
+        }
+
+        // Remove from all, add to one — the shape the TOC's `.toc-item.active`
+        // already uses. Clearing first is what makes this idempotent, which in
+        // turn is what lets every caller below just call it unconditionally.
+        // ⚠ There is deliberately NO `if (__loadingFile) return` guard here, and
+        // adding one back breaks the live-edit path in a way no harness sees.
+        // Both re-apply sites run INSIDE loadFileFromRust — renderMarkdown()'s
+        // tail is awaited by it, and its own paginatePreview() is earlier still
+        // — so the flag is still set when they fire. Guarding on it makes every
+        // keystroke's re-render drop the tint for good, because the drain that
+        // follows calls applyEditorScroll, which by design does not stamp.
+        // Scanning a DOM that is about to be replaced is the cheap half of the
+        // trade; losing the tint on every keystroke is the expensive one.
+        window.__applyCursorLineHighlight = function() {
+            preview.querySelectorAll('.md-cursor-line')
+                .forEach((el) => el.classList.remove('md-cursor-line'));
+            if (!(__editorCursorLine >= 1)) return;
+            // Marp is deliberately excluded: there, data-line is stamped on the
+            // slide's whole <svg>, so a "line" highlight would tint an entire
+            // slide. In deck mode that is every visible pixel.
+            if (document.body.classList.contains('marp')) return;
+            if (!__cursorLineEnabled()) return;
+            const { target } = __blockForLine(__editorCursorLine);
+            if (target) target.classList.add('md-cursor-line');
+        };
+
+        // THE editor-cursor entry point, and the only writer of
+        // __editorCursorLine. Rust calls this for `editor:cursor:` and for the
+        // `line` riding on `editor:change:`.
+        //
+        // ⚠ It is deliberately NOT applyEditorScroll, even though it is little
+        // more than a wrapper. applyEditorScroll has a second caller that has
+        // nothing to do with the editor — the history restore below replays a
+        // stored view line on Back/Forward — so folding the highlight into it
+        // would tint a block on Alt+← with no editor open at all, and leave it
+        // tinted. The two intents are separate, so the two functions are.
+        //
+        // `line === 0` means "there is no editor cursor": it clears without
+        // scrolling, which is the contract the editor-close arms in
+        // src/main.rs use.
+        window.applyEditorCursor = function(line) {
+            const n = +line;
+            __editorCursorLine = (Number.isFinite(n) && n > 0) ? n : 0;
+            if (__editorCursorLine > 0) window.applyEditorScroll(__editorCursorLine);
+            window.__applyCursorLineHighlight();
+        };
+
+        // The toggle lives in the EDITOR's settings modal, and this is how the
+        // flip reaches the preview: the same shared-origin localStorage the
+        // unprefixed `uiLang` key uses. `storage` fires only in OTHER documents,
+        // and this window never writes the key, so there is no loop and no
+        // `persist` flag is needed. Re-applying is enough for both directions —
+        // the function re-reads the pref and clears when it is off.
+        window.addEventListener('storage', (e) => {
+            if (e.key !== 'cursorBlock' && e.key !== null) return;   // null === clear()
+            window.__applyCursorLineHighlight();
+        });
+        // Belt-and-braces for any environment where the storage event does not
+        // cross WebView2 windows, mirroring the uiLang pair above.
+        window.addEventListener('focus', () => window.__applyCursorLineHighlight());
+
         // Editor → preview scroll. Called from Rust when a {type:"scroll"} WS
         // message arrives. Finds the block whose source line is closest to (but
         // not after) `line` and scrolls it to the top of the viewport.
@@ -14105,21 +14278,8 @@ ${previewClone.outerHTML}
                 if (document.body.classList.contains('list-mode')) return;
                 // scroll mode: fall through to nearest-block scroller.
             }
-            const blocks = preview.querySelectorAll('[data-line]');
-            if (!blocks.length) return;
-            let target = null;
-            let nextLine = null;
-            for (const el of blocks) {
-                const elLine = parseInt(el.getAttribute('data-line'), 10);
-                if (!Number.isFinite(elLine)) continue;
-                if (elLine <= line) {
-                    target = el;
-                } else {
-                    nextLine = elLine;
-                    break;
-                }
-            }
-            if (!target) target = blocks[0];
+            const { target, nextLine } = __blockForLine(line);
+            if (!target) return;
 
             // The reader's scroll axis is measured, not inferred from the writing
             // mode (see __previewScrollsHorizontally). A vertical-writing theme
@@ -14502,6 +14662,14 @@ ${previewClone.outerHTML}
             // Inbound content is authoritative, so a checkbox toggle in flight has now
             // either landed or been superseded.
             __taskPendingRaw = null;
+            // Navigating to a DIFFERENT document invalidates the remembered
+            // cursor line: it is a line number in the file we just left, and in
+            // the new one it addresses an unrelated block. Rust's paths_equal
+            // filter stops a cursor for another file arriving, but nothing tells
+            // us the PREVIEW moved (a cross-file link, the workspace tree,
+            // Ctrl+N). A reload of the same file keeps it, which is what makes
+            // the live-edit round trip stable.
+            if (!isReload) __editorCursorLine = 0;
             currentFilePath = fileData.filepath;
             setWindowTitle(fileData.filename);
             try {
@@ -14572,6 +14740,10 @@ ${previewClone.outerHTML}
             // preview is already on screen; this one covers the first load. It
             // self-cancels if that earlier call already divided this DOM.
             paginatePreview();
+            // Same reason as the call inside renderMarkdown(): if THIS is the
+            // pass that divided the DOM, the tint stamped before it would have
+            // been duplicated across a split paragraph.
+            window.__applyCursorLineHighlight();
 
             // Maintain browser history so WebView2's Back/Forward navigate between files.
             // Skip when reloading the same file or when the load was triggered by popstate.
