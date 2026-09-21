@@ -157,6 +157,99 @@ def run_case(page, port, style, sample):
     for (a, b) in backward[:5]:
         print("       line %d -> %d : pos %.1f -> %.1f" % (a[0], b[0], a[1], b[1]))
 
+    check_cursor_block(page, targets[1])
+
+
+# Count of tinted blocks, plus the data-line of the (single) one. The COUNT is
+# the assertion that matters: under a paginating theme (bunko.css) a class
+# stamped before paginatePreview() is carried onto BOTH halves of a split
+# paragraph by __splitBlockAt's shallow cloneNode, and two tinted blocks is the
+# only visible symptom. Nothing else in the suite can see it -- the DOM digest
+# never stamps the class at all (no editor host), and the markup is otherwise
+# identical.
+TINT_JS = """
+() => {
+  const els = [...document.querySelectorAll('#preview .md-cursor-line')];
+  return { n: els.length, line: els.length ? els[0].getAttribute('data-line') : null };
+}
+"""
+
+
+def check_cursor_block(page, line):
+    # The pref is shared, unprefixed, and 'on'/'off' -- not 'true'/'false'.
+    # Read fresh on every apply, so no reload is needed here.
+    page.evaluate("() => localStorage.setItem('cursorBlock', 'on')")
+    page.evaluate("(l) => window.applyEditorCursor(l)", line)
+    page.wait_for_timeout(60)
+    t = page.evaluate(TINT_JS)
+    check(t["n"] == 1, "cursor block tints exactly one block (got %d)" % t["n"])
+
+    want = page.evaluate(
+        "(l) => { const r = window.__blockForLine(l);"
+        " return r.target ? r.target.getAttribute('data-line') : null; }", line)
+    check(t["line"] == want,
+          "the tinted block is the one applyEditorScroll targets (%s vs %s)"
+          % (t["line"], want))
+
+    # Survives a wholesale #preview rebuild that the editor did not cause.
+    # The M key re-renders from scratch, so the class is gone unless the render
+    # tail re-stamps it.
+    page.keyboard.press("m")
+    wait_for_render(page)
+    page.wait_for_timeout(120)
+    t = page.evaluate(TINT_JS)
+    check(t["n"] == 1, "cursor block survives a dark-mode re-render (got %d)" % t["n"])
+    page.keyboard.press("m")
+    wait_for_render(page)
+
+    # Turning the pref off clears it, with no re-render and no IPC -- the same
+    # path the editor's storage event takes.
+    page.evaluate("() => localStorage.setItem('cursorBlock', 'off')")
+    page.evaluate("() => window.__applyCursorLineHighlight()")
+    check(page.evaluate(TINT_JS)["n"] == 0, "pref off clears the tint")
+
+    # applyEditorScroll is NOT an editor-cursor entry point: the preview's own
+    # Back/Forward restore calls it with a stored view line. Tinting there would
+    # light a block up on Alt+<- with no editor open at all.
+    page.evaluate("() => localStorage.setItem('cursorBlock', 'on')")
+    page.evaluate("() => window.applyEditorCursor(0)")
+    page.evaluate("(l) => window.applyEditorScroll(l)", line)
+    page.wait_for_timeout(60)
+    check(page.evaluate(TINT_JS)["n"] == 0,
+          "applyEditorScroll() alone never tints (the history-restore caller)")
+
+    # applyEditorCursor(0) is the "no editor cursor" contract the three
+    # editor-close arms in src/main.rs use.
+    page.evaluate("(l) => window.applyEditorCursor(l)", line)
+    page.wait_for_timeout(60)
+    page.evaluate("() => window.applyEditorCursor(0)")
+    check(page.evaluate(TINT_JS)["n"] == 0, "applyEditorCursor(0) clears the tint")
+
+    # The LIVE-EDIT sequence, and the reason this case exists: on every
+    # keystroke Rust emits ONE script -- loadFileFromRust(...) then
+    # applyEditorCursor(line) -- so the cursor call lands while the render is
+    # still in flight and __loadingFile is set. Every re-apply site runs INSIDE
+    # loadFileFromRust, so an `if (__loadingFile) return` guard in the
+    # highlighter silently drops the tint on every keystroke and never restores
+    # it (the drain that follows calls applyEditorScroll, which does not stamp).
+    # Calling applyEditorCursor on a settled page -- what every case above does
+    # -- cannot see that at all; it was found by driving the real app.
+    page.evaluate("() => localStorage.setItem('cursorBlock', 'on')")
+    page.evaluate("""(l) => {
+      window.loadFileFromRust({
+        filename: 'x.md', filepath: currentFilePath,
+        content: currentMarkdown, raw: currentMarkdownRaw,
+      });
+      window.applyEditorCursor(l);
+    }""", line)
+    wait_for_render(page)
+    page.wait_for_timeout(300)
+    t = page.evaluate(TINT_JS)
+    check(t["n"] == 1, "the tint survives a live-edit re-render (got %d)" % t["n"])
+
+    page.evaluate("() => window.applyEditorCursor(0)")
+    page.evaluate("() => localStorage.removeItem('cursorBlock')")
+
 
 def main():
     ap = argparse.ArgumentParser()

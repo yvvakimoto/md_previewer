@@ -79,7 +79,7 @@ README.md 「対応している記法・機能」.
 | Body text size (`Ctrl` `+`/`-`/`0`, `Ctrl`+wheel, and an `S`-modal row) — a layout multiplier, so it reaches the PDF / HTML export | `styles-theming.md` |
 | Content width (an `S`-modal row) — the second layout multiplier; `W` full-width is released when it is used | `styles-theming.md` |
 | Dark/light (`M`), style picker (`S`) with a per-style ⚙ `@user-vars` pane, `bunko.css` 文庫本 / `tategaki.css` 縦書き, section numbering (`N`), wide layout (`W`), `confidential:` / `watermark:` overlay | `styles-theming.md` |
-| Companion editor (`E`): CodeMirror 6, Vim, live preview, cell mode, Office-table paste, autocomplete, font zoom, ⚙ settings | `editor-*.md` |
+| Companion editor (`E`): CodeMirror 6, Vim, live preview, cursor-block highlight in the preview, cell mode, Office-table paste, autocomplete, font zoom, ⚙ settings | `editor-*.md` |
 | UI language toggle (ja / en), one shared `uiLang` key across both windows | `i18n.md` |
 | Export to standalone HTML or PDF (`X`); headless `--export-png` for agents | `export.md` |
 | Workspace (directory) mode with file tree and `_toc.md`; `.mdx` ZIP bundles | `rust-host.md` |
@@ -143,7 +143,9 @@ than in a detail doc, so that a missed pointer is not fatal.
    `buildSpanStyle`, `scanDefList`, `buildRubyHtml`, `__isTypingTarget` / `onPlainKey` /
    `onCtrlKey` / `onShortcutKey` / `bindBodyClassToggle` (the text-entry guard was retyped 12
    times), `__createContextMenu`, `__diagKey` / `__diagCacheSet` / `__diagCacheHit`,
-   `copyTextViaTextarea`, `toUserfileUrl` / `encodePathForUserfile`,
+   `copyTextViaTextarea`, `__blockForLine` (source line → the block it falls in —
+   the scroll sync and the cursor-block tint must never disagree),
+   `toUserfileUrl` / `encodePathForUserfile`,
    `__blobToDataUrl` / `__inlineFontFaceCss` (the HTML export and the right-click figure
    save both need a bundled woff2 as a `data:` URI — one helper, two callers). In Rust:
    `write_suppressed` / `suppress_watcher`, `js_call` / `eval_js_fn`, `build_load_file_script`.
@@ -321,7 +323,7 @@ that are checked (or partly checked) can rely on the harness remembering.
 | `model3d` / `tools/build-three/` | `python tools/preview-harness/keycheck.py` (pixels, theme salt, **and the leak nets: one WebGL context, flat shader-program count**) + `exportcheck.py` + `pdfcheck.py` |
 | the editor's close paths (`__confirmClose`, `editor:closeconfirm:`, `WindowEvent::CloseRequested`, Vim `:q`) | `python tools/preview-harness/quitcheck.py` + `cargo test` (the Rust veto itself is invisible to both — drive the real app and send it a `WM_CLOSE`) |
 | cell mode | `python tools/preview-harness/cellcheck.py` + `cd tools/build-editor && node cells.test.mjs` |
-| editor↔preview scroll sync (either axis) | `python tools/preview-harness/synccheck.py` |
+| editor↔preview scroll sync (either axis), `applyEditorScroll` / `applyEditorCursor` / `__blockForLine`, the cursor-block tint | `python tools/preview-harness/synccheck.py` (+ `exportcheck.py` / `prefscheck.py` for the tint's export and settings halves) |
 | Office-table paste | `python tools/preview-harness/pastecheck.py` + `cd tools/build-editor && node tablePaste.test.mjs` |
 | HTML export / PDF export | `python tools/preview-harness/exportcheck.py` / `pdfcheck.py` |
 | either i18n table | `python tools/preview-harness/i18ncheck.py` |
