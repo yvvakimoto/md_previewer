@@ -244,6 +244,10 @@ raw `\begin{tikzpicture}`. Both compile through a bundled WASM TeX engine to inl
 they survive HTML/PDF export and follow the theme colour. An optional first line
 `scale: <factor>` overrides the default 1.6× enlargement.
 
+`amsmath` and `amssymb` are loaded by default in **both** fences, so `\mathbb{R}`,
+`\mathfrak{g}`, `\varnothing`, `\text{…}` and `\dfrac` are all available. Nothing else is —
+there is no way to request another package from the document.
+
 **Japanese labels work** — in cells and in arrow labels alike; the app reserves the box in TeX
 and draws the glyph as SVG text, tracking tikz-cd's smaller arrow-label size and any rotation.
 The glyphs come from the reader's system Japanese font, so say so if the document is destined

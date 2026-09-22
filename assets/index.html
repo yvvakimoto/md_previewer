@@ -10942,6 +10942,22 @@ ${previewClone.outerHTML}
         // ~150ms live-edit keystroke and a TeX compile costs seconds.
         const __tikzCache = new Map();
         const __TIKZ_RENDER_TIMEOUT_MS = 30000;
+        // Packages EVERY tikz / tikzcd block gets. The core dump preloads standalone
+        // + inputenc + tikz/pgf only — no AMS layer (grep it: zero hits for amsmath,
+        // amssymb, mathbb) — so \mathbb, \mathfrak, \varnothing, \text{}, \dfrac …
+        // are all undefined control sequences without these two. (amssymb also
+        // carries the marks diagrams lean on: \lrcorner / \ulcorner for a pullback
+        // corner, \hookrightarrow — samples/tikzcd.md's pullback figure needs it.)
+        // ⚠ Both kinds get the SAME set on purpose. The raw `tikz` fence used to get
+        // NO \usepackage at all while `tikzcd` got amssymb, so a \mathbb that
+        // compiled inside a tikzcd block failed inside a tikz one — and failed as the
+        // generic err.tikzCompile 「TeX 構文を確認してください」, which sends the author
+        // hunting for a syntax bug that isn't theirs. Do not re-split this by kind.
+        // Note tikz-cd.sty itself requires only tikz, so amsmath is new to BOTH kinds.
+        // run-tex.js's texify() maps Object.entries -> one \usepackage per key in
+        // INSERTION order, so the canonical amsmath-before-amssymb order is what
+        // reaches TeX; tikz-cd is appended after it for the `cd` kind.
+        const __TIKZ_BASE_PACKAGES = { amsmath: '', amssymb: '' };
         // TikZ / tikz-cd diagrams render at their intrinsic (small) pt size, so scale
         // them up by default. A leading `scale: <n>` directive line in the block
         // overrides this per-diagram (like mermaid's scale:). The SVG carries a
@@ -11023,13 +11039,29 @@ ${previewClone.outerHTML}
             // \mathchoice picks the branch; TeX ships only the selected one, so this
             // still emits exactly ONE \special (measured, not assumed).
             // Family 0 is the roman math family, whose quad is its design size.
+            // ⚠ The strut's width is 1sp, NOT \z@, and it sits AFTER the \special:
+            // that is the COLOUR MARKER, and it is the only way the author's colour
+            // reaches the glyph. `fill="currentColor"` below is just the fallback.
+            // TeX offers no usable "what colour am I" query here: \current@color tracks
+            // \color / \textcolor only — measured, `\node[red]`, `text=`, a path option,
+            // a `\begin{scope}[orange]` and a coloured tikz-cd arrow label ALL leave it
+            // at `gray 0`, because pgf writes its own `color push` special without going
+            // through color.sty. So instead of asking TeX, we ask the ENGINE: run-tex.js's
+            // putRule() writes EVERY rule as `<rect … fill="<this.color>">` with no
+            // size test, and `this.color` is exactly what a Latin glyph at that position
+            // would have been given. __tikzAdoptJpFill() copies that fill over and deletes
+            // the rect. ⚠ TeX does not ship empty rules (`fin_rule` needs rule_wd > 0),
+            // which is why \z@ produced no marker at all; 1sp is ~1.5e-5pt, so the rect
+            // is invisible, the box is still \hbox to <fixed>, and the rule between two
+            // consecutive specials is one more thing that cannot let them merge. Keeping
+            // it AFTER the \special leaves `{?x}` / `{?y}` bit-identical to before.
             const macro = '\\makeatletter\n'
                 + '\\def\\mdp@box#1#2#3{\\begingroup\\dimen@=#3\\relax\n'
                 + '\\hbox to #2\\dimen@{%\n'
-                + '\\vrule height0.88\\dimen@ depth0.12\\dimen@ width\\z@\n'
                 + '\\special{dvisvgm:raw <text data-mdp-jp="#1" x="{?x}" y="{?y}"'
                 + ' font-size="\\the\\dimen@" fill="currentColor"'
                 + ' style="font-family:' + fam + '"></text>}%\n'
+                + '\\vrule height0.88\\dimen@ depth0.12\\dimen@ width1sp\n'
                 + '\\hss}\\endgroup}\n'
                 // \leavevmode must be guarded: LaTeX defines it as \unhbox\voidb@x,
                 // which is an error in math mode. \ifvmode is false there, and true
@@ -11060,7 +11092,43 @@ ${previewClone.outerHTML}
                 // for 日 at 10pt.
                 const fs = String(node.getAttribute('font-size') || '').replace(/pt$/, '');
                 if (fs) node.setAttribute('font-size', fs);
+                __tikzAdoptJpFill(node);
             });
+        }
+        // The engine paints black and white as the literal strings tikzjax's own theme
+        // pass folds into currentColor. Recognizing them here too costs two regexes and
+        // makes the adoption correct even on a path where that pass did not run — a
+        // hard-black glyph would be invisible on a dark background.
+        const __TIKZ_INK_BLACK_RE = /^(?:black|#000|#000000|rgb\(\s*0\s*,\s*0\s*,\s*0\s*\))$/i;
+        const __TIKZ_INK_WHITE_RE = /^(?:white|#fff|#ffffff|rgb\(\s*255\s*,\s*255\s*,\s*255\s*\))$/i;
+        // Give `node` the colour the ENGINE would have given a Latin glyph in its place,
+        // by adopting it from the 1sp-wide marker rect \mdp@box emits right after the
+        // special (see __tikzJpPreamble). That rect is the one place the author's colour
+        // is legible from this side: nothing in the TeX source knows it, because pgf
+        // colours node text with its own `color push` special and never touches
+        // \current@color. Reading it AFTER tikzjax has normalised the SVG is deliberate —
+        // the rect went through the very same black/white → currentColor folding a
+        // sibling <text> does (its `t()` predicate counts a rect whose parent holds a
+        // text child), so what we copy is the FINAL colour, not a raw dvips spec. No
+        // marker (an engine that stopped emitting rules) simply leaves the fallback
+        // currentColor in place, i.e. today's behaviour.
+        function __tikzAdoptJpFill(node) {
+            const mark = node.nextElementSibling;
+            if (!mark || String(mark.tagName).toLowerCase() !== 'rect') return;
+            const w = parseFloat(mark.getAttribute('width'));
+            // pgf draws with paths, and TeX drops empty rules, so a rect this thin in
+            // this position can only be ours.
+            if (!(w >= 0 && w < 0.001)) return;
+            let fill = mark.getAttribute('fill') || mark.style.getPropertyValue('fill') || '';
+            mark.remove();
+            fill = fill.trim();
+            if (!fill) return;
+            if (__TIKZ_INK_BLACK_RE.test(fill) || __TIKZ_INK_WHITE_RE.test(fill)) fill = 'currentColor';
+            // ⚠ The inline style is not optional: tikzjax's theme pass already stamped
+            // `fill: currentColor !important` on this <text>, which a bare attribute
+            // cannot outrank.
+            node.setAttribute('fill', fill);
+            node.style.setProperty('fill', fill, 'important');
         }
 
         // Wait until `el` holds a finished tikzjax render (an <svg> that isn't the
@@ -11112,13 +11180,18 @@ ${previewClone.outerHTML}
                 // Build the TeX body the engine compiles. A tikzcd block is wrapped
                 // in the tikz-cd environment (unless the author already wrote it) and
                 // pulls in the tikz-cd package; a raw tikz block is passed verbatim
-                // (tikz itself is preloaded in the core dump).
+                // (tikz itself is preloaded in the core dump — the AMS layer is not,
+                // hence __TIKZ_BASE_PACKAGES below).
                 let body = source;
-                let pkgs = null;
+                // Every block gets __TIKZ_BASE_PACKAGES (amsmath + amssymb — the
+                // \mathbb / \text / \dfrac layer the core dump lacks); a tikzcd block
+                // adds tikz-cd on top. JSON.stringify keeps the payload free of
+                // apostrophes, which is required: the attribute below is
+                // single-quoted (the same constraint __tikzJpPreamble's font stack
+                // obeys by stripping its quotes).
+                const pkgObj = Object.assign({}, __TIKZ_BASE_PACKAGES);
                 if (kind === 'cd') {
-                    // amssymb gives common math symbols used in diagrams (e.g.
-                    // \lrcorner / \ulcorner pullback-corner marks, \hookrightarrow…).
-                    pkgs = '{"tikz-cd":"","amssymb":""}';
+                    pkgObj['tikz-cd'] = '';
                     // Trim surrounding whitespace before wrapping: marked's fenced-code
                     // content carries a trailing newline, and a BLANK line inside a
                     // tikzcd matrix becomes a \par — illegal, and TeX reports it as the
@@ -11135,12 +11208,13 @@ ${previewClone.outerHTML}
                 // this must be an innerHTML string, not createElement+textContent —
                 // tikzjax reads the parsed script and the DOM-built variant reaches
                 // it with an empty body (TeX then compiles nothing).
-                const pkgAttr = pkgs ? " data-tex-packages='" + pkgs + "'" : '';
+                const pkgAttr = " data-tex-packages='" + JSON.stringify(pkgObj) + "'";
                 // CJK needs a generated preamble (see __tikzJpPreamble). It is
                 // built from `body`, not `source`, so the tikzcd wrapper is covered
                 // too. Both attributes are single-quoted, and neither payload may
-                // contain an apostrophe — pkgs is JSON with double quotes, and the
-                // preamble's font stack is stripped of them deliberately.
+                // contain an apostrophe — the package list is JSON.stringify output
+                // (double quotes only), and the preamble's font stack is stripped of
+                // them deliberately.
                 body = body.replace(__TIKZ_JP_VS_RE, '');
                 const jpPre = __tikzJpPreamble(body);
                 const preAttr = jpPre ? " data-add-to-preamble='" + jpPre + "'" : '';

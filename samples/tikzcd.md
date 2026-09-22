@@ -56,6 +56,21 @@ Y \arrow[r, "g"'] & Z
 \end{tikzpicture}
 ```
 
+## AMS 数式コマンド（`\mathbb` など）
+
+`amsmath` と `amssymb` が**既定で読み込まれる**ので、`\mathbb{R}` `\mathfrak{g}`
+`\varnothing` などの AMS 記号と、`\text{…}` `\dfrac` といった amsmath のコマンドが
+`tikz` / `tikzcd` **どちらのフェンスでも同じように**使えます。
+
+```tikz
+\begin{tikzpicture}
+  \draw[thick,->] (-0.3,0) -- (3.6,0) node[right]{$x \in \mathbb{R}$};
+  \draw[thick,->] (0,-0.2) -- (0,1.9);
+  \draw[blue,thick] (0.1,0.15) .. controls (1.2,1.9) and (2.0,1.9) .. (3.3,0.15);
+  \node at (1.7,2.4) {$\dfrac{1}{\sqrt{2\pi}}\,e^{-x^{2}/2} \quad \text{(標準正規分布)}$};
+\end{tikzpicture}
+```
+
 ## 日本語ラベル
 
 セルにも矢印ラベルにも**日本語がそのまま書けます**。同梱の TeX エンジン自体は日本語を組版できない（欧文フォントしか持たない）ため、TeX には文字の**枠だけ**を確保させ、字はブラウザのフォントで SVG に描いています。矢印ラベルは tikz-cd の仕様で一段小さい文字なので、日本語もそれに追従します。
@@ -76,7 +91,18 @@ Y \arrow[r, "g"'] & Z
 \end{tikzpicture}
 ```
 
-> 文字は**閲覧している PC の日本語フォント**で描かれます。HTML エクスポートした図を日本語フォントの無い環境で開くと、この部分だけ別のフォントに置き換わります（欧文の Computer Modern は SVG に埋め込まれるので影響を受けません）。ギリシャ文字・キリル文字は未対応なので、`\alpha` のようなコマンドを使ってください。
+**色指定も日本語に効きます。** `\node[red]` / `text=` / `\begin{scope}[blue]` / `\textcolor{…}` のどれで指定しても、同じラベルの欧文と同じ色になります。
+
+```tikz
+\begin{tikzpicture}
+  \node[red] at (0,0)   {赤い日本語 red};
+  \node[text=blue] at (4,0) {青い日本語 blue};
+  \node at (8,0)        {\textcolor{green!60!black}{緑の日本語 green}};
+  \draw[orange,thick,->] (0,-1) -- (8,-1) node[midway,above]{橙の矢印ラベル};
+\end{tikzpicture}
+```
+
+> 文字は**閲覧している PC の日本語フォント**で描かれます。HTML エクスポートした図を日本語フォントの無い環境で開くと、この部分だけ別のフォントに置き換わります（欧文の Computer Modern は SVG に埋め込まれるので影響を受けません）。ギリシャ文字・キリル文字は未対応なので、`\alpha` のようなコマンドを使ってください。色は `rgb` / `gray` 系の指定のみ反映され、`cyan` `magenta` `yellow` や `\color[cmyk]{…}`・dvipsnames の色名はエンジン側の制約でテーマ色になります（これは**欧文も同じ**なので、ラベルの片側だけ色が付くことはありません）。
 
 ## エラー時の挙動
 
