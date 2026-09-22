@@ -10942,6 +10942,22 @@ ${previewClone.outerHTML}
         // ~150ms live-edit keystroke and a TeX compile costs seconds.
         const __tikzCache = new Map();
         const __TIKZ_RENDER_TIMEOUT_MS = 30000;
+        // Packages EVERY tikz / tikzcd block gets. The core dump preloads standalone
+        // + inputenc + tikz/pgf only — no AMS layer (grep it: zero hits for amsmath,
+        // amssymb, mathbb) — so \mathbb, \mathfrak, \varnothing, \text{}, \dfrac …
+        // are all undefined control sequences without these two. (amssymb also
+        // carries the marks diagrams lean on: \lrcorner / \ulcorner for a pullback
+        // corner, \hookrightarrow — samples/tikzcd.md's pullback figure needs it.)
+        // ⚠ Both kinds get the SAME set on purpose. The raw `tikz` fence used to get
+        // NO \usepackage at all while `tikzcd` got amssymb, so a \mathbb that
+        // compiled inside a tikzcd block failed inside a tikz one — and failed as the
+        // generic err.tikzCompile 「TeX 構文を確認してください」, which sends the author
+        // hunting for a syntax bug that isn't theirs. Do not re-split this by kind.
+        // Note tikz-cd.sty itself requires only tikz, so amsmath is new to BOTH kinds.
+        // run-tex.js's texify() maps Object.entries -> one \usepackage per key in
+        // INSERTION order, so the canonical amsmath-before-amssymb order is what
+        // reaches TeX; tikz-cd is appended after it for the `cd` kind.
+        const __TIKZ_BASE_PACKAGES = { amsmath: '', amssymb: '' };
         // TikZ / tikz-cd diagrams render at their intrinsic (small) pt size, so scale
         // them up by default. A leading `scale: <n>` directive line in the block
         // overrides this per-diagram (like mermaid's scale:). The SVG carries a
@@ -11112,13 +11128,18 @@ ${previewClone.outerHTML}
                 // Build the TeX body the engine compiles. A tikzcd block is wrapped
                 // in the tikz-cd environment (unless the author already wrote it) and
                 // pulls in the tikz-cd package; a raw tikz block is passed verbatim
-                // (tikz itself is preloaded in the core dump).
+                // (tikz itself is preloaded in the core dump — the AMS layer is not,
+                // hence __TIKZ_BASE_PACKAGES below).
                 let body = source;
-                let pkgs = null;
+                // Every block gets __TIKZ_BASE_PACKAGES (amsmath + amssymb — the
+                // \mathbb / \text / \dfrac layer the core dump lacks); a tikzcd block
+                // adds tikz-cd on top. JSON.stringify keeps the payload free of
+                // apostrophes, which is required: the attribute below is
+                // single-quoted (the same constraint __tikzJpPreamble's font stack
+                // obeys by stripping its quotes).
+                const pkgObj = Object.assign({}, __TIKZ_BASE_PACKAGES);
                 if (kind === 'cd') {
-                    // amssymb gives common math symbols used in diagrams (e.g.
-                    // \lrcorner / \ulcorner pullback-corner marks, \hookrightarrow…).
-                    pkgs = '{"tikz-cd":"","amssymb":""}';
+                    pkgObj['tikz-cd'] = '';
                     // Trim surrounding whitespace before wrapping: marked's fenced-code
                     // content carries a trailing newline, and a BLANK line inside a
                     // tikzcd matrix becomes a \par — illegal, and TeX reports it as the
@@ -11135,12 +11156,13 @@ ${previewClone.outerHTML}
                 // this must be an innerHTML string, not createElement+textContent —
                 // tikzjax reads the parsed script and the DOM-built variant reaches
                 // it with an empty body (TeX then compiles nothing).
-                const pkgAttr = pkgs ? " data-tex-packages='" + pkgs + "'" : '';
+                const pkgAttr = " data-tex-packages='" + JSON.stringify(pkgObj) + "'";
                 // CJK needs a generated preamble (see __tikzJpPreamble). It is
                 // built from `body`, not `source`, so the tikzcd wrapper is covered
                 // too. Both attributes are single-quoted, and neither payload may
-                // contain an apostrophe — pkgs is JSON with double quotes, and the
-                // preamble's font stack is stripped of them deliberately.
+                // contain an apostrophe — the package list is JSON.stringify output
+                // (double quotes only), and the preamble's font stack is stripped of
+                // them deliberately.
                 body = body.replace(__TIKZ_JP_VS_RE, '');
                 const jpPre = __tikzJpPreamble(body);
                 const preAttr = jpPre ? " data-add-to-preamble='" + jpPre + "'" : '';

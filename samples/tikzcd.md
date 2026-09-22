@@ -56,6 +56,21 @@ Y \arrow[r, "g"'] & Z
 \end{tikzpicture}
 ```
 
+## AMS 数式コマンド（`\mathbb` など）
+
+`amsmath` と `amssymb` が**既定で読み込まれる**ので、`\mathbb{R}` `\mathfrak{g}`
+`\varnothing` などの AMS 記号と、`\text{…}` `\dfrac` といった amsmath のコマンドが
+`tikz` / `tikzcd` **どちらのフェンスでも同じように**使えます。
+
+```tikz
+\begin{tikzpicture}
+  \draw[thick,->] (-0.3,0) -- (3.6,0) node[right]{$x \in \mathbb{R}$};
+  \draw[thick,->] (0,-0.2) -- (0,1.9);
+  \draw[blue,thick] (0.1,0.15) .. controls (1.2,1.9) and (2.0,1.9) .. (3.3,0.15);
+  \node at (1.7,2.4) {$\dfrac{1}{\sqrt{2\pi}}\,e^{-x^{2}/2} \quad \text{(標準正規分布)}$};
+\end{tikzpicture}
+```
+
 ## 日本語ラベル
 
 セルにも矢印ラベルにも**日本語がそのまま書けます**。同梱の TeX エンジン自体は日本語を組版できない（欧文フォントしか持たない）ため、TeX には文字の**枠だけ**を確保させ、字はブラウザのフォントで SVG に描いています。矢印ラベルは tikz-cd の仕様で一段小さい文字なので、日本語もそれに追従します。
