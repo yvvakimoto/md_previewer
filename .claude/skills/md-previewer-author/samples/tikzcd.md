@@ -91,7 +91,18 @@ Y \arrow[r, "g"'] & Z
 \end{tikzpicture}
 ```
 
-> 文字は**閲覧している PC の日本語フォント**で描かれます。HTML エクスポートした図を日本語フォントの無い環境で開くと、この部分だけ別のフォントに置き換わります（欧文の Computer Modern は SVG に埋め込まれるので影響を受けません）。ギリシャ文字・キリル文字は未対応なので、`\alpha` のようなコマンドを使ってください。
+**色指定も日本語に効きます。** `\node[red]` / `text=` / `\begin{scope}[blue]` / `\textcolor{…}` のどれで指定しても、同じラベルの欧文と同じ色になります。
+
+```tikz
+\begin{tikzpicture}
+  \node[red] at (0,0)   {赤い日本語 red};
+  \node[text=blue] at (4,0) {青い日本語 blue};
+  \node at (8,0)        {\textcolor{green!60!black}{緑の日本語 green}};
+  \draw[orange,thick,->] (0,-1) -- (8,-1) node[midway,above]{橙の矢印ラベル};
+\end{tikzpicture}
+```
+
+> 文字は**閲覧している PC の日本語フォント**で描かれます。HTML エクスポートした図を日本語フォントの無い環境で開くと、この部分だけ別のフォントに置き換わります（欧文の Computer Modern は SVG に埋め込まれるので影響を受けません）。ギリシャ文字・キリル文字は未対応なので、`\alpha` のようなコマンドを使ってください。色は `rgb` / `gray` 系の指定のみ反映され、`cyan` `magenta` `yellow` や `\color[cmyk]{…}`・dvipsnames の色名はエンジン側の制約でテーマ色になります（これは**欧文も同じ**なので、ラベルの片側だけ色が付くことはありません）。
 
 ## エラー時の挙動
 
