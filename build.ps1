@@ -71,7 +71,7 @@ $libsSentinels = @(
     'libs\plotly\plotly.min.js',
     'libs\js-yaml.min.js',
     'libs\abcjs\abcjs-basic-min.js',
-    'libs\abcjs\soundfont\acoustic_grand_piano-mp3\C4.mp3',
+    'libs\abcjs\soundfont\acoustic_grand_piano-mp3\C8.mp3',   # C8 is fetched LAST, so it is the real completeness marker (fetch-libs.ps1, the installer and index.html all key off it)
     'libs\feynmark\feynmark.min.js',
     'libs\tikzjax\dist\tikzjax.js',
     'libs\kataskeve\kataskeve.min.js',

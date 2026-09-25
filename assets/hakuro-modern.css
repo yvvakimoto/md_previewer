@@ -440,7 +440,7 @@ body.numbered #preview h4::before {
     overflow-x: auto;
     overflow-y: hidden;
 }
-#preview .katex-display .tag { color: var(--hk-ink-4); }
+#preview .katex-display .katex-tag { color: var(--hk-ink-4); }   /* KaTeX 0.18 prefixed its internal classes (.tag -> .katex-tag) */
 
 
 /* ---------- Footnotes ---------- */

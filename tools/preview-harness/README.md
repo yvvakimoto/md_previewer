@@ -133,6 +133,37 @@ are named in the module's `ADAPTED` set. The editor group has no counterpart in 
 excluded by its `data-sc-scope="editor"`; a group carrying **no** `data-sc-scope` is an error, so the
 exclusion is fail-closed. `shoot-docs.py` also calls it warn-only beside `check_gallery_sources()`.
 
+## Bundled-library version pins — `pincheck.py`
+
+`tools/fetch-libs.ps1` decides which version of marked / KaTeX / highlight.js / Plotly / tikzjax / …
+actually lands in `assets/libs/`. Several other files hand-copy that pin and **cannot read the script**.
+This pairs them:
+
+```powershell
+python tools/preview-harness/pincheck.py     # no browser, no network
+```
+
+Also stdlib-only and sub-second, for the same reasons as `docskeycheck.py`; nothing is executed, the
+PowerShell / HTML / Inno Setup sources are read with regexes. What is paired against `fetch-libs.ps1`:
+
+| Mirror | Why it matters |
+|---|---|
+| `tools/collect-licenses.ps1`'s `$direct` array | feeds the **shipped** `THIRD_PARTY_LICENSES.txt`; drift is a false legal notice, and re-running the script does not fix it |
+| `assets/index.html`'s `EXPORT_*_CDN` constants | baked into **every HTML export**, so a reader loads a different library than the author previewed with |
+| `installer/md-previewer.iss`'s `#define TikzjaxVersion` | the installer would download a different tikzjax than a dev build fetches |
+| `build.ps1`'s `$libsSentinels` (both directions) | a fetched tree with no sentinel is never re-fetched into an existing checkout and the built tree 404s; a sentinel nothing fetches re-runs `install-deps.ps1` every build |
+
+**Why it exists:** the first two had *already* drifted when CLAUDE.md invariant 22 was audited — KaTeX
+read `0.16.x` and Mermaid `(bundled)` in the licence notice, and `EXPORT_HLJS_CSS_CDN` read `11.10.0`
+against a fetched `11.9.0`. Neither showed up in a commit diff, because `assets/libs/**` and
+`THIRD_PARTY_LICENSES.txt` are git-ignored: **a bump commits only the pin files themselves.**
+
+`TikzjaxSha256` is deliberately **not** verified — that needs the network, and this check is offline by
+construction (a wrong digest fails loudly at install time; a wrong version does not). The maps are
+fail-closed: a `$direct` entry or `EXPORT_*_CDN` constant pincheck does not know about is a failure, so
+a new library cannot quietly dodge it — a genuinely unpinned entry goes in `UNPINNED_LICENSES` with a
+reason.
+
 ## Fidelity & intentional no-ops
 
 The Browser pane is Chromium and WebView2 is Edge/Chromium on the same machine (same system fonts), so

@@ -71,35 +71,35 @@ function Write-Section { param([string]$Title, [string]$Body)
 [void]$sb.AppendLine()
 
 $direct = @(
-  [pscustomobject]@{ Name='marked';        Version='11.1.1'; Spdx='MIT';
+  [pscustomobject]@{ Name='marked';        Version='18.0.14'; Spdx='MIT';
     Upstream='https://github.com/markedjs/marked';
     Path='assets/libs/marked.min.js';
     LicenseFile='tools/license-texts/marked.LICENSE' }
-  [pscustomobject]@{ Name='highlight.js';  Version='11.9.0'; Spdx='BSD-3-Clause';
+  [pscustomobject]@{ Name='highlight.js';  Version='11.12.0'; Spdx='BSD-3-Clause';
     Upstream='https://github.com/highlightjs/highlight.js';
     Path='assets/libs/highlight.js/';
     LicenseFile='tools/license-texts/highlight.js.LICENSE' }
-  [pscustomobject]@{ Name='KaTeX';         Version='0.16.x'; Spdx='MIT';
+  [pscustomobject]@{ Name='KaTeX';         Version='0.18.9'; Spdx='MIT';
     Upstream='https://github.com/KaTeX/KaTeX';
     Path='assets/libs/katex/';
     LicenseFile='tools/license-texts/katex.LICENSE' }
-  [pscustomobject]@{ Name='KaTeX Fonts';   Version='—';      Spdx='OFL-1.1';
+  [pscustomobject]@{ Name='KaTeX Fonts';   Version='0.18.9';      Spdx='OFL-1.1';
     Upstream='https://github.com/KaTeX/KaTeX/tree/main/src/fonts';
     Path='assets/libs/katex/fonts/';
     LicenseFile='tools/license-texts/katex-fonts.LICENSE' }
-  [pscustomobject]@{ Name='Mermaid';       Version='(bundled)'; Spdx='MIT';
+  [pscustomobject]@{ Name='Mermaid';       Version='12.0.0'; Spdx='MIT';
     Upstream='https://github.com/mermaid-js/mermaid';
     Path='assets/libs/mermaid.min.js';
     LicenseFile='tools/license-texts/mermaid.LICENSE' }
-  [pscustomobject]@{ Name='Plotly.js (dist-min)'; Version='2.35.2'; Spdx='MIT';
+  [pscustomobject]@{ Name='Plotly.js (dist-min)'; Version='4.1.1'; Spdx='MIT';
     Upstream='https://github.com/plotly/plotly.js';
     Path='assets/libs/plotly/plotly.min.js';
     LicenseFile='tools/license-texts/plotly.LICENSE' }
-  [pscustomobject]@{ Name='js-yaml';      Version='4.1.0'; Spdx='MIT';
+  [pscustomobject]@{ Name='js-yaml';      Version='5.4.2'; Spdx='MIT';
     Upstream='https://github.com/nodeca/js-yaml';
     Path='assets/libs/js-yaml.min.js';
     LicenseFile='tools/license-texts/js-yaml.LICENSE' }
-  [pscustomobject]@{ Name='abcjs';        Version='6.6.3'; Spdx='MIT';
+  [pscustomobject]@{ Name='abcjs';        Version='6.7.1'; Spdx='MIT';
     Upstream='https://github.com/paulrosen/abcjs';
     Path='assets/libs/abcjs/abcjs-basic-min.js';
     LicenseFile='tools/license-texts/abcjs.LICENSE' }
@@ -145,7 +145,7 @@ $direct = @(
   # straight from the npm registry instead (installer/md-previewer.iss). The
   # entry is kept here because the component may be present on disk, and a user
   # who has it is entitled to these terms.
-  [pscustomobject]@{ Name='@rod2ik/tikzjax (WASM TeX + TikZ/pgf/tikz-cd)'; Version='1.5.0'; Spdx='GPL-3.0-or-later';
+  [pscustomobject]@{ Name='@rod2ik/tikzjax (WASM TeX + TikZ/pgf/tikz-cd)'; Version='1.6.0'; Spdx='GPL-3.0-or-later';
     Upstream='https://www.npmjs.com/package/@rod2ik/tikzjax';
     Path='assets/libs/tikzjax/';
     Note='OPTIONAL COMPONENT - not included in the installer. Downloaded from the upstream npm registry at install time, and only when you opt in. The bundle also carries TeX/LaTeX packages under the LaTeX Project Public License 1.3c (https://www.latex-project.org/lppl/lppl-1-3c/); when present, its own LICENSE file sits next to dist/.';
