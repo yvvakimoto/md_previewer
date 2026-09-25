@@ -244,13 +244,31 @@ than in a detail doc, so that a missed pointer is not fatal.
     portable-looking abstractions for a second platform.
 21. **Assets are read at runtime, not embedded** — they must sit next to the exe. `assets/libs/`
     is git-ignored, so a fresh clone needs `install-deps.ps1` before anything runs.
-22. ⚠ **Adding or bumping a bundled library is a five-place change:** the pin in
-    `fetch-libs.ps1` → `$libsSentinels` in `build.ps1` (**one entry per library, never a
-    representative sample** — a missing entry means `install-deps.ps1` is never re-run for it on
-    an existing checkout, and the built tree 404s) → `.gitignore` (generated artifacts are
-    enumerated **explicitly**, so hand-written in-house source under `assets/libs/` stays tracked
-    by default) → re-run `collect-licenses.ps1` → for tikzjax, the independent version + SHA-256
-    pin in `installer/md-previewer.iss`.
+22. ⚠ **Adding or bumping a bundled library is a SEVEN-place change** — it was documented as
+    five until an audit found two more, both of which had already drifted:
+    (1) the pin in `fetch-libs.ps1` — and its **URL**, because upstream moves dist paths
+    (marked dropped `marked.min.js` at v16, js-yaml moved the browser build under
+    `dist/browser/` at v5; the old URL 404s and `fetch-libs.ps1` then `throw`s);
+    (2) `$libsSentinels` in `build.ps1` (**one entry per library, never a representative
+    sample** — a missing entry means `install-deps.ps1` is never re-run for it on an existing
+    checkout, and the built tree 404s; the entry must be the file fetched **last**, since it is
+    the only one that means “complete”);
+    (3) `.gitignore` (generated artifacts are enumerated **explicitly**, so hand-written
+    in-house source under `assets/libs/` stays tracked by default);
+    (4) the hard-coded `Version=` in `collect-licenses.ps1`'s `$direct` array — **re-running the
+    script is not enough**, it does not read `fetch-libs.ps1`;
+    (5) re-run `collect-licenses.ps1` to regenerate `assets/THIRD_PARTY_LICENSES.txt`;
+    (6) the `EXPORT_*_CDN` constants in `assets/index.html` — the CDN URLs **baked into every
+    HTML export**, which is a user-visible artifact, not a dev convenience;
+    (7) for tikzjax, the independent version + SHA-256 pin in `installer/md-previewer.iss`.
+    ⚠ Steps 4 and 6 **had both already gone stale** before the audit, which is why steps
+    1 / 2 / 4 / 6 / 7 now pair under `python tools/preview-harness/pincheck.py` — run it after
+    any bump. (It is offline by construction, so step 7's SHA-256 stays unverified.)
+    A bump is only observable through the harness — `assets/libs/**` and
+    `THIRD_PARTY_LICENSES.txt` are git-ignored, so the committed diff is the pin files alone.
+    ⚠ And `fetch-libs.ps1` **skips files that already exist**: re-fetch with
+    `install-deps.ps1 -Force` (or `build.ps1 -ForceDeps`). A bare `build.ps1` sees the
+    sentinels present and silently keeps the OLD library.
 23. **`docs/` is the published GitHub Pages root** (served from `main`). Never put development
     notes there — they go in `.claude/docs/`. `.claude/worktrees/` is a live git worktree; do not
     edit inside it.
@@ -278,8 +296,8 @@ than in a detail doc, so that a missed pointer is not fatal.
 
 ## Mirror implementations — change both sides
 
-Eighteen pairs. **The ten with no machine check are the real invariant surface**; the eight
-that are checked (or partly checked) can rely on the harness remembering.
+Twenty-six pairs. **The nine with no machine check are the real invariant surface**; the
+seventeen that are checked (or partly checked) can rely on the harness remembering.
 
 | A | B | Checked by |
 |---|---|---|
@@ -293,7 +311,7 @@ that are checked (or partly checked) can rely on the harness remembering.
 | Vim absolute-motion branch — `tools/build-editor/cells.js` | upstream `@replit/codemirror-vim` `dist/index.js` (5 lines copied; `Vim` exposes no `motions` getter) | partial (`cellcheck.py`) |
 | `parseLangmap` mirror — `keyLayout.test.mjs` | upstream `parseLangmap` | ✅ round-trip. ⚠ upstream builds a *different* keymap on a bad escape rather than erroring |
 | `section.invert` — `assets/marp/magenta.css` | `:root` — `assets/marp/dark.css` (byte-identical) | ❌ |
-| `$TikzjaxVersion` — `tools/fetch-libs.ps1` | `#define TikzjaxVersion` / `TikzjaxSha256` — `installer/md-previewer.iss` (the `.iss` cannot read the script) | ❌ |
+| `$TikzjaxVersion` — `tools/fetch-libs.ps1` | `#define TikzjaxVersion` / `TikzjaxSha256` — `installer/md-previewer.iss` (the `.iss` cannot read the script) | ✅ `pincheck.py` — the **version** only; the SHA-256 is unverifiable offline |
 | tikzjax tarball extraction — `installer/md-previewer.iss` `[Code]` | `tools/fetch-libs.ps1` | ❌ |
 | `$AbcSoundfontNotes` + base URL — `tools/fetch-libs.ps1` | `AbcSfNotes()` + `AbcSfBaseUrl` — `installer/md-previewer.iss` (88 note names; flats only, `C8` last) | ❌ |
 | `#keys` list — `docs/index.html` | the `<table>` in `#help-modal` — `assets/index.html`, paired by i18n-key **suffix, not position** | ✅ `docskeycheck.py` |
@@ -305,7 +323,9 @@ that are checked (or partly checked) can rely on the harness remembering.
 | the CJK colour-marker contract — `__tikzJpPreamble`'s 1sp `\vrule` + `__tikzAdoptJpFill`'s tiny-rect test and its black/white regexes — `assets/index.html` | `putRule()`'s unconditional `<rect fill="<this.color>">` — `run-tex.js`; `He()` / `Fe` / `Le` — `tikzjax.js` (both upstream, **git-ignored and re-fetched**, so they cannot be patched — that is why the marker lives in the TeX) | ✅ `tikzcheck.py` |
 | `_FIGURES_READY_JS` — `tools/preview-harness/shoot.py` | the set of async figure kinds — `assets/index.html` | ❌ silent |
 | `CELL_HELP` — `tools/build-editor/cells.js` | the newest-first Esc chain — `entry.js` | ❌ |
-| `$libsSentinels` — `build.ps1` | the library set fetched by `tools/fetch-libs.ps1` | ❌ |
+| `$libsSentinels` — `build.ps1` | the library set fetched by `tools/fetch-libs.ps1` | ✅ `pincheck.py` (both directions: a fetched tree with no sentinel, and a sentinel nothing fetches or builds) |
+| the `$XVersion` pins — `tools/fetch-libs.ps1` | the hard-coded `Version=` entries in `$direct` — `tools/collect-licenses.ps1` (it cannot read the script; this feeds the shipped `THIRD_PARTY_LICENSES.txt`, so drift is a false legal notice) | ✅ `pincheck.py` — **had already diverged**: KaTeX read `0.16.x` and Mermaid `(bundled)`, i.e. no pin at all |
+| the `$XVersion` pins — `tools/fetch-libs.ps1` | `EXPORT_KATEX_CSS_CDN` / `EXPORT_HLJS_CSS_CDN` / `EXPORT_PLOTLY_JS_CDN` — `assets/index.html` (the CDN URLs embedded in every HTML export) | ✅ `pincheck.py` — **had already diverged**: hljs read `11.10.0` against a fetched `11.9.0` |
 | `samples/` | the skill's committed snapshot — `.claude/skills/md-previewer-author/samples/` (the installer sources the repo's copy directly, so only the snapshot can drift) | ✅ `skillcheck.py` |
 
 ---
@@ -334,6 +354,7 @@ that are checked (or partly checked) can rely on the harness remembering.
 | `docs/` landing page, or the help modal | `python tools/preview-harness/docskeycheck.py` (stdlib only, sub-second) |
 | the ruby grammar | `node tools/preview-harness/ruby-model.test.cjs` |
 | `samples/`, the authoring skill, or the installer's skill task | `python tools/preview-harness/skillcheck.py` (stdlib only, sub-second) |
+| a bundled library's version — `tools/fetch-libs.ps1`, `tools/collect-licenses.ps1`, the `EXPORT_*_CDN` constants, `build.ps1`'s `$libsSentinels`, `installer/md-previewer.iss` | `python tools/preview-harness/pincheck.py` (stdlib only, offline, sub-second — it is the only check that can see invariant 22's unchecked mirrors) |
 | Rust pure helpers | `cargo test` |
 | markdown table model | `cd tools/build-editor && node mdTable.test.mjs` |
 | editor prefs model | `cd tools/build-editor && node editorPrefs.test.mjs` |

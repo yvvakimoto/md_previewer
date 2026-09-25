@@ -95,7 +95,7 @@ delete the folder first if you need that.
 For machines that cannot reach the npm registry, point the installer elsewhere.
 Highest priority first:
 
-1. `MdPreviewer-Setup-x.y.z.exe /TIKZSRC="\SERVER\share\rod2ik-tikzjax-1.5.0.tgz"`
+1. `MdPreviewer-Setup-x.y.z.exe /TIKZSRC="\\SERVER\share\rod2ik-tikzjax-1.6.0.tgz"`
    (optionally `/TIKZSHA256=<digest>`; an `http(s)` URL works too)
 2. `{app}\assets\tikz-source.ini` — the same `assets\*` overlay mechanism
    used for `update.json`. See

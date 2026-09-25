@@ -22,9 +22,9 @@
 ; To bump: change the version, then re-run
 ;   curl -sL <TikzjaxUrl> | sha256sum
 ; and paste the digest into TikzjaxSha256.
-#define TikzjaxVersion "1.5.0"
+#define TikzjaxVersion "1.6.0"
 #define TikzjaxUrl     "https://registry.npmjs.org/@rod2ik/tikzjax/-/tikzjax-" + TikzjaxVersion + ".tgz"
-#define TikzjaxSha256  "45d12756acaad80bfe8231cad4667e36cb3e908aa906cfce63496a70f074ab38"
+#define TikzjaxSha256  "ca7d979a89136910d7f149810dd83b07d68c87fe9000fbb4ed86e28b5d780eed"
 
 [Setup]
 ; Keep this AppId stable across versions so upgrades replace the old install.

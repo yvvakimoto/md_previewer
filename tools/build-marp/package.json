@@ -7,9 +7,9 @@
     "build": "node build.mjs"
   },
   "dependencies": {
-    "@marp-team/marp-core": "^4.0.1"
+    "@marp-team/marp-core": "^4.4.0"
   },
   "devDependencies": {
-    "esbuild": "^0.24.0"
+    "esbuild": "^0.28.0"
   }
 }

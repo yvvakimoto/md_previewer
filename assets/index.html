@@ -4760,6 +4760,19 @@
                 theme: document.body.classList.contains('dark-mode') ? 'dark' : 'default',
                 securityLevel: 'loose',
                 fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif",
+                // mermaid 12 made ELK the default layout engine and 'neo' the default
+                // appearance. Both are pinned back to the classic dagre look here, so a
+                // mermaid bump cannot silently re-lay-out and recolour every diagram in
+                // every sample, doc screenshot and export. A single diagram opts back in
+                // with mermaid's own front-matter block, which parseMermaidScale passes
+                // through untouched (verified: `layout: elk` switches the edge router,
+                // `look: handDrawn` brings in rough.js):
+                //     ---
+                //     config:
+                //       layout: elk
+                //     ---
+                layout: 'dagre',
+                look: 'classic',
             };
         }
         async function ensureMermaid() {
@@ -5972,9 +5985,9 @@
         //   - inlines the active stylesheet so it looks identical to the preview,
         //   - includes CDN <link>s for KaTeX / highlight.js CSS only when the document actually uses those,
         //   - inherits the TOC sidebar and a tiny inline script for the collapse toggle.
-        const EXPORT_KATEX_CSS_CDN = 'https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css';
-        const EXPORT_HLJS_CSS_CDN = 'https://cdn.jsdelivr.net/npm/highlight.js@11.10.0/styles/github.min.css';
-        const EXPORT_PLOTLY_JS_CDN = 'https://cdn.jsdelivr.net/npm/plotly.js-dist-min@2.35.2/plotly.min.js';
+        const EXPORT_KATEX_CSS_CDN = 'https://cdn.jsdelivr.net/npm/katex@0.18.9/dist/katex.min.css';
+        const EXPORT_HLJS_CSS_CDN = 'https://cdn.jsdelivr.net/npm/highlight.js@11.12.0/styles/github.min.css';
+        const EXPORT_PLOTLY_JS_CDN = 'https://cdn.jsdelivr.net/npm/plotly.js-dist-min@4.1.1/plotly.min.js';
 
         // Build the export artifact HTML for whatever is currently rendered in the
         // preview DOM. If `pageRelPath` is provided (workspace export), file-tree

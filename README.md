@@ -794,7 +794,7 @@ GitHub からクローンした直後の `assets/libs/` は空です。サード
 pwsh -File tools\install-deps.ps1
 ```
 
-これで `tools/fetch-libs.ps1`（marked / mermaid / KaTeX + フォント / highlight.js を cdnjs・jsdelivr からピン留めバージョンでダウンロード）と、`tools/build-marp/` / `tools/build-editor/` / `tools/build-markwhen/` の `npm install && npm run build` が順に走り、`assets/libs/` 配下が完成します。フラグ:
+これで `tools/fetch-libs.ps1`（marked / mermaid / KaTeX + フォント / highlight.js を cdnjs・jsdelivr からピン留めバージョンでダウンロード）と、`tools/build-marp/` / `tools/build-editor/` / `tools/build-markwhen/` / `tools/build-three/` の `npm install && npm run build` が順に走り、`assets/libs/` 配下が完成します。フラグ:
 
 - `-Force` — 静的ライブラリを再ダウンロード（既存ファイルを上書き）
 - `-SkipNode` — CDN ダウンロードのみ実行（Node がない環境用）

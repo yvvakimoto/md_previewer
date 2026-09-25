@@ -7,9 +7,9 @@
     "build": "node build.mjs"
   },
   "dependencies": {
-    "@markwhen/parser": "^1.0.1"
+    "@markwhen/parser": "^1.2.0"
   },
   "devDependencies": {
-    "esbuild": "^0.24.0"
+    "esbuild": "^0.28.0"
   }
 }

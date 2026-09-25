@@ -3,7 +3,7 @@
   Download pinned third-party static libraries into assets/libs/.
 
 .DESCRIPTION
-  Pulls marked, highlight.js (+ github theme CSS), KaTeX (JS + CSS + 22 woff2
+  Pulls marked, highlight.js (+ github theme CSS), KaTeX (JS + CSS + 20 woff2
   fonts), mermaid, the kataskeve / kataskeve3d geometry engines, and feynmark
   (Feynman diagrams) from cdnjs / jsdelivr at the versions documented in
   assets/THIRD_PARTY_LICENSES.txt. Idempotent by default (skips files that
@@ -32,14 +32,14 @@ $ProgressPreference    = 'SilentlyContinue'  # suppress Invoke-WebRequest progre
 $LibsDir = Join-Path $RepoRoot 'assets/libs'
 
 # ---- Pinned versions ----------------------------------------------------
-$MarkedVersion  = '11.1.1'
-$HljsVersion    = '11.9.0'
-$KatexVersion   = '0.16.11'
-$MermaidVersion = '10.9.0'
-$PlotlyVersion  = '2.35.2'
-$JsYamlVersion  = '4.1.0'
-$AbcjsVersion   = '6.6.3'
-$TikzjaxVersion = '1.5.0'   # @rod2ik/tikzjax — WASM TeX for tikz-cd commutative diagrams
+$MarkedVersion  = '18.0.14'
+$HljsVersion    = '11.12.0'
+$KatexVersion   = '0.18.9'
+$MermaidVersion = '12.0.0'
+$PlotlyVersion  = '4.1.1'
+$JsYamlVersion  = '5.4.2'
+$AbcjsVersion   = '6.7.1'
+$TikzjaxVersion = '1.6.0'   # @rod2ik/tikzjax — WASM TeX for tikz-cd commutative diagrams
 
 # abcjs playback sound bank. abcjs' synth fetches one MP3 per note from
 #   <soundFontUrl><instrument>-mp3/<note>.mp3
@@ -97,8 +97,8 @@ $AbcSoundfontNotes += 'C8'
 $Downloads = [System.Collections.Generic.List[object]]::new()
 
 $Downloads.Add(@{
-  Url  = "https://cdn.jsdelivr.net/npm/marked@$MarkedVersion/marked.min.js"
-  Dest = 'marked.min.js'
+  Url  = "https://cdn.jsdelivr.net/npm/marked@$MarkedVersion/lib/marked.umd.js"  # v16 removed marked.min.js; the UMD build is minified and still sets globalThis.marked
+  Dest = "marked.min.js"   # kept under the OLD name so index.html + build.ps1 sentinel need no edit
 })
 
 $Downloads.Add(@{
@@ -136,8 +136,8 @@ $Downloads.Add(@{
 })
 
 $Downloads.Add(@{
-  Url  = "https://cdn.jsdelivr.net/npm/js-yaml@$JsYamlVersion/dist/js-yaml.min.js"
-  Dest = 'js-yaml.min.js'
+  Url  = "https://cdn.jsdelivr.net/npm/js-yaml@$JsYamlVersion/dist/browser/js-yaml.umd.min.js"  # v5 moved the browser build under dist/browser/
+  Dest = "js-yaml.min.js"  # ditto: old filename retained
 })
 
 $Downloads.Add(@{
