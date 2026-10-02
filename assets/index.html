@@ -1262,9 +1262,15 @@
         }
 
         /* TOC Sidebar */
+        /* Width is user-adjustable by dragging #toc-resizer; the JS writes
+           --toc-width inline on #toc-sidebar (persisted as localStorage
+           `tocWidth`). The inline value also rides along into the HTML export
+           via tocSidebar.cloneNode(). max-width guards a width saved on a wide
+           window from swallowing a narrow one. */
         #toc-sidebar {
-            width: 280px;
-            min-width: 280px;
+            width: var(--toc-width, 280px);
+            min-width: var(--toc-width, 280px);
+            max-width: 60vw;
             background: #f8f9fa;
             border-right: 1px solid #e1e4e8;
             display: flex;
@@ -1277,6 +1283,32 @@
             width: 50px;
             min-width: 50px;
         }
+
+        #toc-resizer {
+            position: absolute;
+            top: 0;
+            right: -3px;
+            width: 6px;
+            height: 100%;
+            cursor: col-resize;
+            z-index: 20;
+        }
+        #toc-resizer::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            left: 2px;
+            width: 2px;
+            background: transparent;
+            transition: background-color 0.15s ease;
+        }
+        #toc-resizer:hover::after,
+        #toc-sidebar.resizing #toc-resizer::after { background: #0366d6; }
+        #toc-sidebar.collapsed #toc-resizer { display: none; }
+        /* The 0.3s width transition would make the drag lag behind the pointer. */
+        #toc-sidebar.resizing { transition: none; }
+        body.toc-resizing { cursor: col-resize; user-select: none; }
 
         #toc-toggle {
             position: absolute;
@@ -1706,6 +1738,9 @@
         body.dark-mode #toc-toggle:hover {
             background: #30363d;
         }
+
+        body.dark-mode #toc-resizer:hover::after,
+        body.dark-mode #toc-sidebar.resizing #toc-resizer::after { background: #58a6ff; }
 
         body.dark-mode .toggle-icon,
         body.dark-mode .toggle-icon::before,
@@ -2986,6 +3021,7 @@
             <button id="toc-toggle" title="目次の表示切り替え" data-i18n-attr="title:toc.toggle">
                 <span class="toggle-icon"></span>
             </button>
+            <div id="toc-resizer" title="ドラッグで幅を変更（ダブルクリックで元の幅に戻す）" data-i18n-attr="title:toc.resize"></div>
             <section id="file-tree" class="empty">
                 <div id="file-tree-title" data-i18n="toc.files">Files</div>
                 <ul id="file-tree-root"></ul>
@@ -3037,6 +3073,7 @@
                                      en: 'Drop a Markdown file together with its images, or an image file on its own' },
 
             'toc.toggle':          { ja: '目次の表示切り替え', en: 'Toggle the table of contents' },
+            'toc.resize':          { ja: 'ドラッグで幅を変更（ダブルクリックで元の幅に戻す）', en: 'Drag to resize (double-click to reset)' },
             'toc.files':           { ja: 'ファイル', en: 'Files' },
             'toc.contents':        { ja: '目次',     en: 'Contents' },
 
@@ -5145,6 +5182,51 @@
             localStorage.setItem('tocCollapsed', tocCollapsed);
         });
 
+        // TOC width: drag #toc-resizer, double-click to reset. Saved once per
+        // drag (on release), never per pointermove.
+        const TOC_WIDTH_MIN = 160, TOC_WIDTH_MAX = 600;
+        function __clampTocWidth(w) {
+            const max = Math.max(TOC_WIDTH_MIN, Math.min(TOC_WIDTH_MAX, window.innerWidth * 0.6));
+            return Math.round(Math.min(max, Math.max(TOC_WIDTH_MIN, w)));
+        }
+        try {
+            const w = parseFloat(localStorage.getItem('tocWidth'));
+            if (Number.isFinite(w) && w > 0) {
+                tocSidebar.style.setProperty('--toc-width', __clampTocWidth(w) + 'px');
+            }
+        } catch (e) {}
+        (() => {
+            const handle = document.getElementById('toc-resizer');
+            let dragging = false;
+            handle.addEventListener('pointerdown', (e) => {
+                if (e.button !== 0 || tocCollapsed) return;
+                e.preventDefault();
+                dragging = true;
+                handle.setPointerCapture(e.pointerId);
+                tocSidebar.classList.add('resizing');
+                document.body.classList.add('toc-resizing');
+            });
+            handle.addEventListener('pointermove', (e) => {
+                if (!dragging) return;
+                const w = __clampTocWidth(e.clientX - tocSidebar.getBoundingClientRect().left);
+                tocSidebar.style.setProperty('--toc-width', w + 'px');
+            });
+            const end = () => {
+                if (!dragging) return;
+                dragging = false;
+                tocSidebar.classList.remove('resizing');
+                document.body.classList.remove('toc-resizing');
+                const w = parseFloat(tocSidebar.style.getPropertyValue('--toc-width'));
+                try { if (Number.isFinite(w)) localStorage.setItem('tocWidth', String(w)); } catch (e) {}
+            };
+            handle.addEventListener('pointerup', end);
+            handle.addEventListener('pointercancel', end);
+            handle.addEventListener('dblclick', () => {
+                tocSidebar.style.removeProperty('--toc-width');
+                try { localStorage.removeItem('tocWidth'); } catch (e) {}
+            });
+        })();
+
         // 縦書きモード時、マウスホイールの縦方向回転を横スクロールに変換する。
         // (vertical-rl の文書では読書方向が横軸なので、自然な読み進めを可能にする)
         previewContainer.addEventListener('wheel', (e) => {
@@ -6107,6 +6189,9 @@
             const previewClone = preview.cloneNode(true);
             if (__restoreMarpExportView) __restoreMarpExportView();
             const tocClone = tocSidebar.cloneNode(true);
+            // The export's tocScript has no drag logic; keep the width, drop the handle.
+            tocClone.querySelector('#toc-resizer')?.remove();
+            tocClone.classList.remove('resizing');
 
             // Rewrite workspace-ToC anchors so they navigate the exported site.
             if (pageRelPath) {

@@ -142,6 +142,48 @@ def main():
             check("Shift+W still toggles (case-insensitive)", body_has(page, "wide"), True)
             press(page, "W")
 
+            # ---------- TOC sidebar width (drag #toc-resizer) ----------
+            def toc_w():
+                return page.evaluate(
+                    "() => Math.round(document.getElementById('toc-sidebar')"
+                    ".getBoundingClientRect().width)")
+
+            def drag_resizer_to(x):
+                box = page.locator("#toc-resizer").bounding_box()
+                page.mouse.move(box["x"] + box["width"] / 2, box["y"] + 100)
+                page.mouse.down()
+                page.mouse.move(x, box["y"] + 120, steps=5)
+                page.mouse.up()
+                page.wait_for_timeout(400)  # outlast the collapse transition
+
+            check("TOC default width is 280px", toc_w(), 280)
+            drag_resizer_to(400)
+            check("dragging the resizer widens the TOC", toc_w(), 400)
+            check("TOC width persists in localStorage.tocWidth",
+                  page.evaluate("() => localStorage.getItem('tocWidth')"), "400")
+            drag_resizer_to(20)
+            check("TOC width clamps at 160px", toc_w(), 160)
+            drag_resizer_to(1400)
+            check("TOC width clamps at 600px", toc_w(), 600)
+            check("drag leaves no resizing class behind",
+                  page.evaluate("() => document.body.classList.contains('toc-resizing')"
+                                " || document.getElementById('toc-sidebar')"
+                                ".classList.contains('resizing')"), False)
+            page.locator("#toc-toggle").click()
+            page.wait_for_timeout(400)
+            check("collapsed TOC ignores the saved width", toc_w(), 50)
+            check("resizer is hidden while collapsed",
+                  page.locator("#toc-resizer").is_visible(), False)
+            page.locator("#toc-toggle").click()
+            page.wait_for_timeout(400)
+            check("expanding restores the saved width", toc_w(), 600)
+            page.locator("#toc-resizer").dblclick()
+            page.wait_for_timeout(400)
+            check("double-click resets the TOC to 280px", toc_w(), 280)
+            check("double-click clears localStorage.tocWidth",
+                  page.evaluate("() => localStorage.getItem('tocWidth')"), None)
+            page.evaluate("() => document.body.focus()")  # the toggle clicks moved focus
+
             # ---------- dark mode (M) ----------
             before_dark = body_has(page, "dark-mode")
             press(page, "m")
