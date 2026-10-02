@@ -250,6 +250,36 @@ def run_cursor_block(browser, base_url, doc):
     ctx.close()
 
 
+def run_toc_width(browser, base_url, doc):
+    """A dragged TOC width rides into the artifact; the drag handle does not."""
+    ctx = browser.new_context(viewport={"width": 1440, "height": 900})
+    page = ctx.new_page()
+    page.set_default_timeout(20000)
+    page.add_init_script(
+        "(() => { try { localStorage.setItem('tocWidth', '360'); } catch (e) {} })()")
+    page.goto(base_url + doc, wait_until="domcontentloaded")
+    page.wait_for_function(
+        "() => { const p=document.getElementById('preview'); return p && p.children.length>0; }")
+    page.wait_for_timeout(400)
+    width_js = ("() => Math.round(document.getElementById('toc-sidebar')"
+                ".getBoundingClientRect().width)")
+    live_w = page.evaluate(width_js)
+    html = page.evaluate("async () => (await buildExportArtifact({})).html")
+
+    page2 = ctx.new_page()
+    page2.route("**" + ARTIFACT_PATH,
+                lambda route: route.fulfill(status=200, content_type="text/html; charset=utf-8", body=html))
+    page2.goto(base_url.split("/index.html")[0] + ARTIFACT_PATH, wait_until="load")
+    page2.wait_for_timeout(400)
+    print("\n[TOC width]")
+    check("the live TOC takes the saved width", live_w == 360, "got %d" % live_w)
+    art_w = page2.evaluate(width_js)
+    check("the artifact keeps the TOC width", art_w == live_w, "artifact=%d" % art_w)
+    check("the artifact has no #toc-resizer",
+          page2.evaluate("() => !document.getElementById('toc-resizer')"), "found one")
+    ctx.close()
+
+
 def run_model3d(browser, base_url, doc):
     """The ```model3d rasterization pass.
 
@@ -404,6 +434,7 @@ def main():
             # inline axis under vertical-rl) rather than on max-width.
             run_style(browser, base, plain, None, False, width_scale=0.8)
             run_style(browser, base, vertical, "tategaki.css", True, width_scale=0.8)
+            run_toc_width(browser, base, plain)
             # The editor's cursor tint: absent from the artifact, dead on paper.
             run_cursor_block(browser, base, plain)
             # samples/model3d.md rather than a synthetic doc: it is the file that
