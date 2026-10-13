@@ -119,3 +119,12 @@ operator record Complex
   Real im;
 end Complex;
 ```
+
+## 言語指定なし
+
+フェンスに言語名を書かないブロックは自動判定せず、色付けしない。
+
+```
+function add(a, b) { return a + b; }  // 色は付かない
+SELECT * FROM users WHERE id = 1;
+```
