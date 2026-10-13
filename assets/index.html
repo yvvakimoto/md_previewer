@@ -12067,7 +12067,9 @@ ${previewClone.outerHTML}
             });
 
             // Re-apply our highlight.js over marp-core's code blocks for consistent styling.
+            // No-language fences stay plain, as in the normal pipeline.
             preview.querySelectorAll('section pre code').forEach(block => {
+                if (!/\blanguage-/.test(block.className)) block.classList.add('language-plaintext');
                 try { hljs.highlightElement(block); } catch (e) { /* ignore */ }
             });
 
@@ -12648,7 +12650,10 @@ ${previewClone.outerHTML}
             stampLineNumbers(blockLineNumbers);
 
             // Apply syntax highlighting to code blocks
+            // A fence with no language stays plain: without a language-* class
+            // hljs would fall back to highlightAuto() and guess one.
             preview.querySelectorAll('pre code').forEach((block) => {
+                if (!/\blanguage-/.test(block.className)) block.classList.add('language-plaintext');
                 hljs.highlightElement(block);
             });
 
