@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>Mermaid Inspector</title>
+<!--
+  The Mermaid inspector window (src/inspector_registry.rs). One flowchart, opened
+  from the preview's right-click menu, with pan/zoom, highlighting, tracing and a
+  balance panel. Its stylesheet is inline on purpose: a top-level assets/*.css
+  would be picked up by the preview's M-key style cycle (src/main.rs only skips
+  editor.css). Detail: .claude/docs/inspector.md
+-->
+<style>
+:root {
+    --bg: #f6f7f9; --panel: #ffffff; --fg: #1f2328; --muted: #656d76; --line: #d0d7de;
+    --accent: #d6336c; --in: #1971c2; --out: #e8590c; --match: #f59f00;
+    --btn: #f0f2f5; --btn-hover: #e2e6ea; --shadow: 0 2px 10px rgba(0,0,0,.12);
+}
+body.dark {
+    --bg: #16181c; --panel: #1f2228; --fg: #e6e8eb; --muted: #9aa3ad; --line: #353a42;
+    --accent: #ff6b9a; --in: #4dabf7; --out: #ffa94d; --match: #ffd43b;
+    --btn: #2a2e35; --btn-hover: #353a42; --shadow: 0 2px 10px rgba(0,0,0,.5);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; overflow: hidden; }
+/* Pinch is ON in this WebView (touchpad → Ctrl+wheel, cancelled in JS); a
+   touchSCREEN pinch would page-scale the toolbar and panel, so allow it none. */
+html { touch-action: pan-x pan-y; }
+body {
+    background: var(--bg); color: var(--fg);
+    font: 13px/1.45 -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Yu Gothic UI', 'Meiryo', sans-serif;
+    display: grid; grid-template-rows: auto 1fr; grid-template-columns: 1fr auto;
+}
+#toolbar {
+    grid-column: 1 / -1; display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+    padding: 6px 10px; background: var(--panel); border-bottom: 1px solid var(--line);
+}
+#toolbar .sep { width: 1px; align-self: stretch; background: var(--line); margin: 0 4px; }
+#toolbar .spacer { flex: 1; }
+button {
+    font: inherit; color: inherit; background: var(--btn); border: 1px solid var(--line);
+    border-radius: 5px; padding: 3px 9px; cursor: pointer; white-space: nowrap;
+}
+button:hover:not(:disabled) { background: var(--btn-hover); }
+button:disabled { opacity: .45; cursor: default; }
+button.on { border-color: var(--accent); color: var(--accent); }
+#zoom-label { min-width: 46px; text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
+#search-wrap { position: relative; display: flex; align-items: center; gap: 4px; }
+#search {
+    font: inherit; color: inherit; background: var(--bg); border: 1px solid var(--line);
+    border-radius: 5px; padding: 3px 8px; width: 190px;
+}
+#search:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+#search-count { color: var(--muted); min-width: 42px; font-variant-numeric: tabular-nums; }
+
+#stage {
+    position: relative; overflow: hidden; cursor: grab; touch-action: none;
+    user-select: none; -webkit-user-select: none;
+}
+#stage.panning { cursor: grabbing; }
+#stage > svg.insp-diagram { position: absolute; inset: 0; width: 100%; height: 100%; max-width: none !important; }
+#stage g.node, #stage g.edgeLabel, #stage path[data-edge] { cursor: pointer; }
+#stage foreignObject { overflow: visible; }
+#stage .label foreignObject > div, #stage .label foreignObject span { box-sizing: content-box; }
+
+/* --- highlighting: everything outside the current set fades, the set is coloured --- */
+svg.has-hl g.node, svg.has-hl g.cluster, svg.has-hl path[data-edge], svg.has-hl g.edgeLabel {
+    transition: opacity .14s ease-out;
+}
+/* Only slightly faded: the rest of the diagram stays readable as context, and
+   the lit set stands out by colour and stroke weight rather than by contrast. */
+svg.has-hl g.node:not(.insp-on), svg.has-hl path[data-edge]:not(.insp-on),
+svg.has-hl g.edgeLabel:not(.insp-on) { opacity: var(--dim, .72); }
+svg.has-hl g.cluster:not(.insp-on) { opacity: .88; }
+/* Wide, invisible click target behind every edge (inspector.js indexGraph). */
+#stage path.insp-hit {
+    fill: none !important; stroke: transparent !important; stroke-width: 14px !important;
+    /* 14 SCREEN px at any zoom — scaled with the diagram it would shrink to a
+       hairline exactly when the reader has zoomed out to see the whole flow. */
+    vector-effect: non-scaling-stroke;
+    pointer-events: stroke; cursor: pointer;
+}
+#stage .cluster-label { cursor: pointer; }
+#stage path.insp-hit:hover + path[data-edge]:not(.insp-on) { stroke-width: 3px !important; }
+svg path[data-edge].insp-on { stroke-width: 3px !important; }
+svg path[data-edge].insp-in   { stroke: var(--in) !important; }
+svg path[data-edge].insp-out  { stroke: var(--out) !important; }
+svg path[data-edge].insp-path { stroke: var(--accent) !important; }
+svg g.node.insp-sel :is(rect, polygon, circle, ellipse, path),
+svg g.cluster.insp-sel > rect {
+    stroke: var(--accent) !important; stroke-width: 3.5px !important;
+}
+svg g.node.insp-sel2 :is(rect, polygon, circle, ellipse, path) {
+    stroke: var(--accent) !important; stroke-width: 3.5px !important; stroke-dasharray: 6 3;
+}
+svg g.node.insp-match :is(rect, polygon, circle, ellipse, path) {
+    stroke: var(--match) !important; stroke-width: 3px !important;
+}
+svg g.edgeLabel.insp-on .label { font-weight: 600; }
+
+#message {
+    position: absolute; inset: 0; display: none; align-items: center; justify-content: center;
+    padding: 24px; color: var(--muted); text-align: center; white-space: pre-wrap;
+}
+#message.show { display: flex; }
+#message.error { color: #e03131; font-family: Consolas, monospace; font-size: 12px; text-align: left; }
+
+#minimap {
+    position: absolute; left: 12px; bottom: 12px; background: var(--panel);
+    border: 1px solid var(--line); border-radius: 6px; box-shadow: var(--shadow);
+    overflow: hidden; cursor: crosshair; display: none;
+}
+#minimap.show { display: block; }
+#minimap svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+#minimap .mm-view { fill: rgba(214, 51, 108, .08); stroke: var(--accent); stroke-width: 1.5px; vector-effect: non-scaling-stroke; }
+
+#hint {
+    position: absolute; right: 12px; bottom: 12px; color: var(--muted); font-size: 11.5px;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
+    padding: 4px 8px; opacity: .9; pointer-events: none; max-width: calc(100% - 260px);
+}
+
+#panel {
+    width: 300px; background: var(--panel); border-left: 1px solid var(--line);
+    overflow-y: auto; padding: 12px 14px; display: flex; flex-direction: column; gap: 10px;
+}
+body.panel-hidden #panel { display: none; }
+#panel h2 { font-size: 15px; margin: 0; word-break: break-word; }
+#panel h3 { font-size: 12px; margin: 6px 0 2px; color: var(--muted); font-weight: 600; text-transform: none; }
+#panel .sub { color: var(--muted); font-size: 12px; word-break: break-all; }
+#panel .empty { color: var(--muted); }
+#panel ul { list-style: none; margin: 0; padding: 0; }
+#panel li {
+    display: grid; grid-template-columns: 14px 1fr auto; gap: 6px; align-items: baseline;
+    padding: 3px 4px; border-radius: 4px; cursor: pointer;
+}
+#panel li:hover { background: var(--btn); }
+#panel li .arrow { font-weight: 700; }
+#panel li.in .arrow { color: var(--in); }
+#panel li.out .arrow { color: var(--out); }
+#panel li .val { color: var(--muted); font-variant-numeric: tabular-nums; text-align: right; }
+#panel table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+#panel th, #panel td { padding: 3px 6px; border-bottom: 1px solid var(--line); text-align: right; }
+#panel th:first-child, #panel td:first-child { text-align: left; }
+#panel td.pos { color: var(--out); }
+#panel td.neg { color: var(--in); }
+#panel td.zero { color: var(--muted); }
+#panel .note { color: var(--muted); font-size: 11.5px; }
+#panel .legend { display: flex; gap: 10px; flex-wrap: wrap; font-size: 11.5px; color: var(--muted); }
+#panel .legend i { display: inline-block; width: 14px; height: 3px; vertical-align: middle; margin-right: 4px; }
+
+#help {
+    position: fixed; inset: 0; background: rgba(0,0,0,.45); display: none;
+    align-items: center; justify-content: center; z-index: 10;
+}
+#help.show { display: flex; }
+#help .box {
+    background: var(--panel); border-radius: 10px; padding: 18px 22px; box-shadow: var(--shadow);
+    max-width: 560px; width: calc(100% - 40px); max-height: 80vh; overflow: auto;
+}
+#help h2 { margin: 0 0 10px; font-size: 16px; }
+#help table { border-collapse: collapse; width: 100%; }
+#help td { padding: 4px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
+#help td:first-child { white-space: nowrap; width: 1%; padding-right: 14px; }
+kbd {
+    font: 11.5px Consolas, monospace; background: var(--btn); border: 1px solid var(--line);
+    border-bottom-width: 2px; border-radius: 4px; padding: 0 5px;
+}
+</style>
+</head>
+<body>
+<div id="toolbar">
+    <button id="btn-fit" data-i18n="insp.fit" data-i18n-attr="title:insp.fitTitle">Fit</button>
+    <button id="btn-zoom-out" title="Ctrl+−">−</button>
+    <span id="zoom-label">100%</span>
+    <button id="btn-zoom-in" title="Ctrl++">+</button>
+    <span class="sep"></span>
+    <button id="btn-up" data-i18n="insp.up" data-i18n-attr="title:insp.upTitle" disabled>Upstream</button>
+    <button id="btn-down" data-i18n="insp.down" data-i18n-attr="title:insp.downTitle" disabled>Downstream</button>
+    <button id="btn-clear" data-i18n="insp.clear" data-i18n-attr="title:insp.clearTitle" disabled>Clear</button>
+    <span class="sep"></span>
+    <span id="search-wrap">
+        <input id="search" type="search" autocomplete="off" spellcheck="false" data-i18n-attr="placeholder:insp.searchPh">
+        <span id="search-count"></span>
+    </span>
+    <span class="spacer"></span>
+    <button id="btn-minimap" class="on" data-i18n="insp.minimap">Minimap</button>
+    <button id="btn-panel" class="on" data-i18n="insp.panel">Panel</button>
+    <button id="btn-help" title="?">?</button>
+</div>
+<div id="stage">
+    <div id="message"></div>
+    <div id="minimap"></div>
+    <div id="hint" data-i18n="insp.hint"></div>
+</div>
+<aside id="panel"></aside>
+<div id="help"><div class="box">
+    <h2 data-i18n="insp.helpTitle">Inspector shortcuts</h2>
+    <table>
+        <tr><td><kbd>Click</kbd></td><td data-i18n="insp.help.click"></td></tr>
+        <tr><td><kbd>Shift</kbd>/<kbd>Ctrl</kbd>+<kbd>Click</kbd></td><td data-i18n="insp.help.shiftClick"></td></tr>
+        <tr><td><kbd>U</kbd> / <kbd>D</kbd></td><td data-i18n="insp.help.updown"></td></tr>
+        <tr><td><kbd>Esc</kbd></td><td data-i18n="insp.help.esc"></td></tr>
+        <tr><td><kbd>Drag</kbd></td><td data-i18n="insp.help.drag"></td></tr>
+        <tr><td><kbd>Wheel</kbd> / <kbd>Shift</kbd>+<kbd>Wheel</kbd></td><td data-i18n="insp.help.wheel"></td></tr>
+        <tr><td><kbd>Ctrl</kbd>+<kbd>Wheel</kbd></td><td data-i18n="insp.help.ctrlWheel"></td></tr>
+        <tr><td><kbd>Ctrl</kbd>+<kbd>+</kbd> / <kbd>−</kbd></td><td data-i18n="insp.help.ctrlPlus"></td></tr>
+        <tr><td><kbd>F</kbd> / <kbd>Ctrl</kbd>+<kbd>0</kbd></td><td data-i18n="insp.help.fit"></td></tr>
+        <tr><td><kbd>←</kbd><kbd>↑</kbd><kbd>↓</kbd><kbd>→</kbd></td><td data-i18n="insp.help.arrows"></td></tr>
+        <tr><td><kbd>Ctrl</kbd>+<kbd>F</kbd> / <kbd>/</kbd></td><td data-i18n="insp.help.search"></td></tr>
+        <tr><td><kbd>M</kbd> / <kbd>P</kbd></td><td data-i18n="insp.help.toggles"></td></tr>
+        <tr><td><kbd>Ctrl</kbd>+<kbd>W</kbd></td><td data-i18n="insp.help.close"></td></tr>
+    </table>
+</div></div>
+<script>
+// libs/ is git-ignored and fetched; a missing engine must show a message, not a
+// blank window (the same lesson as CLAUDE.md invariant 6 in the preview).
+window.__mermaidLoadFailed = false;
+</script>
+<script src="libs/mermaid.min.js" onerror="window.__mermaidLoadFailed = true"></script>
+<script src="inspector/graph.js"></script>
+<script src="inspector/inspector.js"></script>
+</body>
+</html>

@@ -39,6 +39,7 @@ substitute.
 | `tools/build-editor/cells.js`, `mdBlocks.js` | `.claude/docs/editor-cells.md` | Why is the gate a DOM handler and not a keymap? Why did my op become two undos? |
 | `tools/build-editor/mdTable.js`, `tablePaste.js` | `.claude/docs/editor-tables.md` | Why is the column resolver tree-based? Why does paste decline this clipboard? |
 | `tools/build-editor/*Complete.js` | `.claude/docs/editor-autocomplete.md` | Why is `completionKeymap` its own `Prec.highest` layer? |
+| `assets/inspector.html`, `assets/inspector/*`, `src/inspector_registry.rs`; the preview's `__inspector*` helpers | `.claude/docs/inspector.md` | Why does the window render mermaid itself instead of taking the preview's SVG? Why must the zoom glide be linear in s? Why is the minimap a clone, not `<use>`? |
 | ANY user-visible string; the help modal; settings labels | `.claude/docs/i18n.md` | Which table owns this key? Why did the labels go stale until restart? |
 | `buildExportArtifact()`, `__beforePdfPrint()`, `src/pdf_win.rs`, `src/png_win.rs` | `.claude/docs/export.md` | Why is my figure missing from the export? Why does a vertical theme print landscape? |
 | `src/main.rs`, `src/mdx.rs`, `src/editor_registry.rs`, `src/*_win.rs` | `.claude/docs/rust-host.md` | What does the `/userfile/` route do with `..`? How does `.mdx` repack? |
@@ -80,6 +81,7 @@ README.md 「対応している記法・機能」.
 | Content width (an `S`-modal row) — the second layout multiplier; `W` full-width is released when it is used | `styles-theming.md` |
 | Dark/light (`M`), style picker (`S`) with a per-style ⚙ `@user-vars` pane, `bunko.css` 文庫本 / `tategaki.css` 縦書き, section numbering (`N`), wide layout (`W`), `confidential:` / `watermark:` overlay | `styles-theming.md` |
 | Companion editor (`E`): CodeMirror 6, Vim, live preview, cursor-block highlight in the preview, cell mode, Office-table paste, autocomplete, font zoom, ⚙ settings | `editor-*.md` |
+| Mermaid inspector window (right-click a mermaid figure): pan/zoom, node / path / upstream-downstream highlighting, edge-label balance, search, minimap; follows live edits | `inspector.md` |
 | UI language toggle (ja / en), one shared `uiLang` key across both windows | `i18n.md` |
 | Export to standalone HTML or PDF (`X`); headless `--export-png` for agents | `export.md` |
 | Workspace (directory) mode with file tree and `_toc.md`; `.mdx` ZIP bundles | `rust-host.md` |
@@ -96,8 +98,9 @@ A file with no owning doc is an anomaly.
 
 | File / directory | Responsibility | Doc |
 |---|---|---|
-| `src/main.rs` | window + event loop (`tao`), WebView2 host (`wry`), `pulldown-cmark` initial render, `notify` watcher, `app://` protocol and the `/userfile/` route, workspace state. ⚠ `with_hotkeys_zoom(false)` + a one-shot `webview.zoom(1.0)`: WebView2 browser zoom is deliberately OFF (the preview owns `Ctrl` `+`/`-`/`0` itself) | `rust-host.md` |
+| `src/main.rs` | window + event loop (`tao`), WebView2 host (`wry`), `pulldown-cmark` initial render, `notify` watcher, `app://` protocol and the `/userfile/` route, workspace state. ⚠ `with_hotkeys_zoom(false)` + a one-shot `webview.zoom(1.0)`: WebView2 browser zoom is deliberately OFF (the preview owns `Ctrl` `+`/`-`/`0` itself) — and `enable_touchpad_pinch()` turns pinch back ON after build, because wry ties it to the same flag (`styles-theming.md`) | `rust-host.md` |
 | `src/editor_registry.rs` | the one paired editor `WebView`; preview↔editor IPC routing | `editor-core.md` |
+| `src/inspector_registry.rs` | the one read-only Mermaid inspector `WebView`; payload validation, spawn / push / close | `inspector.md` |
 | `src/mdx.rs` | `.mdx` ZIP extract-to-temp and repack | `rust-host.md` |
 | `src/updater.rs` | auto-update: provider dispatch (`github` / `share`), detect + fetch + silent install | `auto-update.md` |
 | `src/http_win.rs` | blocking HTTPS GET over WinHTTP — the GitHub provider's only transport | `auto-update.md` |
@@ -107,6 +110,7 @@ A file with no owning doc is an anomaly.
 | `src/ime_win.rs` | IMM32 bridge (auto half-width on Vim NORMAL, caret tint) | `editor-core.md` |
 | `assets/index.html` | the preview UI. ~11k lines, ONE inline `<script>` | `preview-*.md`, `marp.md`, `styles-theming.md`, `i18n.md`, `export.md` |
 | `assets/editor.html`, `assets/editor.css` | editor window shell and chrome | `editor-core.md` |
+| `assets/inspector.html`, `assets/inspector/` | the Mermaid inspector window (`graph.js` pure graph logic, `inspector.js` the window). Stylesheet inline on purpose — a top-level `assets/*.css` joins the M-key style cycle | `inspector.md` |
 | `assets/*.css` | user styles (`parchment`, `classical`, `hakuro-modern`, `tategaki`, `bunko`) | `styles-theming.md` |
 | `assets/marp/*.css` | the 8-theme Marp colour family (`magenta` is the base) | `marp.md` |
 | `assets/libs/**` | bundled third-party JS/CSS (+ the ABC sound bank's MP3s) — **git-ignored, fetched/built** | `build-and-deps.md` |
@@ -214,7 +218,8 @@ than in a detail doc, so that a missed pointer is not fatal.
 ### Strings and i18n
 
 14. **Every user-visible string** goes in the owning table — `tools/build-editor/i18n.js` owns
-    `ed.*`, `assets/index.html` owns the rest; the namespaces are disjoint by construction and
+    `ed.*`, `assets/inspector/inspector.js` owns `insp.*`, `assets/index.html` owns the rest; the
+    namespaces are disjoint by construction and
     only the six `common.*` keys must be byte-identical. Add a `data-i18n` attribute for static
     markup. `applyI18n` rewrites text and attributes, **never structure**, so cached DOM
     references and `<select>` values must survive a language switch.
@@ -296,8 +301,8 @@ than in a detail doc, so that a missed pointer is not fatal.
 
 ## Mirror implementations — change both sides
 
-Twenty-six pairs. **The nine with no machine check are the real invariant surface**; the
-seventeen that are checked (or partly checked) can rely on the harness remembering.
+Twenty-nine pairs. **The eleven with no machine check are the real invariant surface**; the
+eighteen that are checked (or partly checked) can rely on the harness remembering.
 
 | A | B | Checked by |
 |---|---|---|
@@ -326,6 +331,9 @@ seventeen that are checked (or partly checked) can rely on the harness rememberi
 | `$libsSentinels` — `build.ps1` | the library set fetched by `tools/fetch-libs.ps1` | ✅ `pincheck.py` (both directions: a fetched tree with no sentinel, and a sentinel nothing fetches or builds) |
 | the `$XVersion` pins — `tools/fetch-libs.ps1` | the hard-coded `Version=` entries in `$direct` — `tools/collect-licenses.ps1` (it cannot read the script; this feeds the shipped `THIRD_PARTY_LICENSES.txt`, so drift is a false legal notice) | ✅ `pincheck.py` — **had already diverged**: KaTeX read `0.16.x` and Mermaid `(bundled)`, i.e. no pin at all |
 | the `$XVersion` pins — `tools/fetch-libs.ps1` | `EXPORT_KATEX_CSS_CDN` / `EXPORT_HLJS_CSS_CDN` / `EXPORT_PLOTLY_JS_CDN` — `assets/index.html` (the CDN URLs embedded in every HTML export) | ✅ `pincheck.py` — **had already diverged**: hljs read `11.10.0` against a fetched `11.9.0` |
+| `mermaidBaseConfig()` + `MERMAID_FONT_STACK` / `MERMAID_LAYOUT` — `assets/index.html` | `mermaidConfig()` + its own two copies — `assets/inspector/inspector.js` (the inspector must lay out what the preview laid out; the `--md-mermaid-*` palette is deliberately preview-only) | ❌ |
+| `parseMermaidScale()` — `assets/index.html` | `stripScale()` — `assets/inspector/inspector.js` (body only; the factor is meaningless there) | ❌ |
+| `isTouchpadWheel()` — `assets/inspector/inspector.js` | `__isTouchpadWheel()` — `assets/index.html` (mouse notch vs. touchpad pinch; ⚠ a pinch reports `wheelDeltaY` 120 like a notch) | partial (`inspectorcheck.py` and `keycheck.py` each feed the measured pinch shape to their own copy) |
 | `samples/` | the skill's committed snapshot — `.claude/skills/md-previewer-author/samples/` (the installer sources the repo's copy directly, so only the snapshot can drift) | ✅ `skillcheck.py` |
 
 ---
@@ -345,6 +353,7 @@ seventeen that are checked (or partly checked) can rely on the harness rememberi
 | `model3d` / `tools/build-three/` | `python tools/preview-harness/keycheck.py` (pixels, theme salt, **and the leak nets: one WebGL context, flat shader-program count**) + `exportcheck.py` + `pdfcheck.py` |
 | the editor's close paths (`__confirmClose`, `editor:closeconfirm:`, `WindowEvent::CloseRequested`, Vim `:q`) | `python tools/preview-harness/quitcheck.py` + `cargo test` (the Rust veto itself is invisible to both — drive the real app and send it a `WM_CLOSE`) |
 | cell mode | `python tools/preview-harness/cellcheck.py` + `cd tools/build-editor && node cells.test.mjs` |
+| the Mermaid inspector (`assets/inspector*`, `renderMermaidCached`'s source stamp, the figure menu's mermaid item) | `python tools/preview-harness/inspectorcheck.py` + `node tools/preview-harness/inspector-graph.test.cjs` (+ `keycheck.py` for the menu order) |
 | editor↔preview scroll sync (either axis), `applyEditorScroll` / `applyEditorCursor` / `__blockForLine`, the cursor-block tint | `python tools/preview-harness/synccheck.py` (+ `exportcheck.py` / `prefscheck.py` for the tint's export and settings halves) |
 | Office-table paste | `python tools/preview-harness/pastecheck.py` + `cd tools/build-editor && node tablePaste.test.mjs` |
 | HTML export / PDF export | `python tools/preview-harness/exportcheck.py` / `pdfcheck.py` |

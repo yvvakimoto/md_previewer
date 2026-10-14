@@ -16,6 +16,10 @@
             padding: 0;
             box-sizing: border-box;
         }
+        /* src/main.rs switches WebView2's pinch back ON so a TOUCHPAD pinch reaches
+           the page (as Ctrl+wheel, cancelled below). A touchSCREEN pinch would then
+           page-scale the whole UI instead; pan-x pan-y leaves it no pinch to do. */
+        html { touch-action: pan-x pan-y; }
 
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
@@ -780,6 +784,21 @@
         .mermaid foreignObject { overflow: visible; }
         .mermaid foreignObject div,
         .mermaid foreignObject span { box-sizing: content-box; }
+        /* mermaid 12 wraps every HTML label in a <p>, so a theme's
+           `#preview p` rule (text-wrap: pretty, overflow-wrap: anywhere,
+           text-indent, margins …) reached the label too and re-wrapped it at
+           a width mermaid never measured — 「入力ファ/イル」 in a box sized
+           for one line. Neutralise exactly the properties that move a line
+           break or a box edge; colour and font stay the SVG's own. */
+        #preview .mermaid foreignObject p {
+            margin: 0;
+            text-indent: 0;
+            text-wrap: wrap;
+            overflow-wrap: normal;
+            word-break: normal;
+            line-break: auto;
+            letter-spacing: normal;
+        }
 
         /* KaTeX math styling */
         .katex-display {
@@ -3104,8 +3123,8 @@
             // shortcut stopped being a browser zoom and became a body-text scale.
             'help.key.zoom':       { ja: '本文の文字サイズ 拡大 / 縮小 / 既定',
                                      en: 'Body text size: larger / smaller / reset' },
-            'help.key.fontScaleWheel': { ja: '本文の文字サイズを拡大 / 縮小',
-                                     en: 'Body text size: larger / smaller' },
+            'help.key.fontScaleWheel': { ja: '本文の文字サイズを拡大 / 縮小（タッチパッドのピンチも可）',
+                                     en: 'Body text size: larger / smaller (touchpad pinch too)' },
             'help.key.history':    { ja: '開いたファイルの履歴を戻る / 進む', en: 'Go back / forward through opened files' },
             'help.key.ctrlClick':  { ja: '.md リンクを新しいプレビュアのウィンドウで開く（通常のクリックは同じウィンドウで遷移）',
                                      en: 'Open a .md link in a new previewer window (a plain click navigates in this window)' },
@@ -3182,6 +3201,7 @@
             'menu.saveSvg':        { ja: 'SVG として保存', en: 'Save as SVG' },
             'menu.savePng':        { ja: 'PNG として保存', en: 'Save as PNG' },
             'menu.saveAllFigures': { ja: 'すべての図を保存…', en: 'Save all figures…' },
+            'menu.openInspector':  { ja: 'インスペクタで開く…', en: 'Open in inspector…' },
             'menu.historyBack':    { ja: '戻る',         en: 'Back' },
             'menu.historyForward': { ja: '進む',         en: 'Forward' },
             'fn.backToRef':        { ja: '参照元に戻る', en: 'Back to reference' },
@@ -3610,11 +3630,8 @@
             darkMode = !!on;
             localStorage.setItem('darkMode', darkMode ? 'true' : 'false');
             document.body.classList.toggle('dark-mode', darkMode);
-            if (typeof mermaid !== 'undefined') {
-                // dark-mode class is already toggled above, so mermaidBaseConfig()
-                // reads the correct theme.
-                mermaid.initialize(mermaidBaseConfig());
-            }
+            // No mermaid.initialize here: the re-render that follows goes through
+            // renderMermaidCached(), which re-reads mermaidBaseConfig() itself.
         }
         // ----- Style variables (the `@user-vars` convention) -----------------
         // A user style may declare which of its own CSS custom properties are
@@ -4789,14 +4806,82 @@
         // with. Without it, foreignObject labels inherit the page's system-sans
         // stack (Segoe UI on Windows, taller than mermaid's default measuring
         // font), so mermaid sizes the node box too short and WebView2 clips the
-        // overflowing bottom of the glyphs — the "text cut off" bug. Called from
-        // both ensureMermaid() and applyDarkMode() (the M-key re-initialize).
+        // overflowing bottom of the glyphs — the "text cut off" bug. The stack is
+        // BIZ UDPGothic (a Windows 10 1809+ system font, chosen for legibility;
+        // proportional, so Latin labels stay narrow). ⚠ Several diagram types
+        // carry their OWN font settings that ignore `fontFamily` (sequence actors
+        // / notes / messages default to "Open Sans" / "trebuchet ms"), so those are
+        // pointed at the same stack in MERMAID_LAYOUT below.
+        const MERMAID_FONT_STACK = "'BIZ UDPGothic', 'BIZ UDPゴシック', 'Yu Gothic UI', Meiryo, sans-serif";
+        // Denser-than-stock layout, applied to every style. Each key was checked
+        // against mermaid 12.0.0's own defaults (in brackets); a key mermaid does
+        // not read is simply ignored, so a bump that renames one fails soft.
+        // ⚠ MIRRORED in assets/inspector/inspector.js mermaidConfig() — the
+        // inspector must lay the diagram out exactly as the preview did.
+        const MERMAID_LAYOUT = {
+            flowchart: { padding: 8 /*15*/, nodeSpacing: 30 /*50*/, rankSpacing: 36 /*50*/,
+                         diagramPadding: 4 /*8*/, minNodeWidth: 40 /*120*/, wrappingWidth: 160 /*120*/ },
+            sequence: { actorMargin: 30 /*50*/, width: 110 /*150*/, height: 44 /*65*/,
+                        boxMargin: 6 /*10*/, boxTextMargin: 3 /*5*/, noteMargin: 6 /*10*/,
+                        messageMargin: 26 /*35*/, diagramMarginX: 8 /*50*/, diagramMarginY: 8 /*10*/,
+                        actorFontFamily: MERMAID_FONT_STACK, noteFontFamily: MERMAID_FONT_STACK,
+                        messageFontFamily: MERMAID_FONT_STACK },
+            class: { dividerMargin: 6 /*10*/ },
+            state: { padding: 4 /*8*/, minNodeWidth: 40 /*120*/, noteMargin: 6 /*10*/ },
+            er: { entityPadding: 8 /*15*/, minEntityWidth: 70 /*100*/, minEntityHeight: 44 /*75*/,
+                  diagramPadding: 8 /*20*/, nodeSpacing: 60 /*140*/, rankSpacing: 50 /*80*/ },
+            mindmap: { padding: 6 /*10*/ },
+            block: { padding: 4 /*8*/ },
+            kanban: { padding: 4 /*8*/ },
+            journey: { taskFontFamily: MERMAID_FONT_STACK },
+            timeline: { taskFontFamily: MERMAID_FONT_STACK },
+        };
+        // A style harmonises mermaid's colours with its own palette by declaring
+        // these custom properties (on :root / #preview, re-pointed under
+        // body.dark-mode if the style has a dark variant). "The theme declares,
+        // the app implements" — the same shape as --md-page-lines. When at least
+        // one is declared, mermaid's 'base' theme is used and every key not
+        // declared is derived by mermaid itself; with none, the stock
+        // default / dark themes apply unchanged. ⚠ Values must be colours
+        // mermaid's parser (khroma) understands — hex / rgb() / hsl(), or a var()
+        // of one. oklch() / color-mix() do not parse.
+        const MERMAID_THEME_PROPS = [
+            ['--md-mermaid-node-bg',        ['primaryColor', 'mainBkg']],
+            ['--md-mermaid-node-border',    ['primaryBorderColor', 'nodeBorder']],
+            ['--md-mermaid-text',           ['primaryTextColor', 'textColor', 'titleColor', 'nodeTextColor',
+                                             'noteTextColor', 'labelTextColor', 'actorTextColor', 'signalTextColor']],
+            ['--md-mermaid-line',           ['lineColor']],
+            ['--md-mermaid-secondary',      ['secondaryColor']],
+            ['--md-mermaid-tertiary',       ['tertiaryColor']],
+            ['--md-mermaid-cluster-bg',     ['clusterBkg']],
+            ['--md-mermaid-cluster-border', ['clusterBorder']],
+            ['--md-mermaid-note-bg',        ['noteBkgColor']],
+            ['--md-mermaid-note-border',    ['noteBorderColor']],
+            ['--md-mermaid-edge-label-bg',  ['edgeLabelBackground']],
+        ];
+        function __mermaidThemeVars() {
+            const cs = getComputedStyle(preview);
+            let vars = null;
+            for (const [prop, keys] of MERMAID_THEME_PROPS) {
+                const v = cs.getPropertyValue(prop).trim();
+                if (!v) continue;
+                vars = vars || {};
+                for (const k of keys) vars[k] = v;
+            }
+            return vars;
+        }
+        // Called by renderMermaidCached() before every render, which re-runs
+        // mermaid.initialize only when the result differs (see __mermaidSig).
         function mermaidBaseConfig() {
-            return {
+            const dark = document.body.classList.contains('dark-mode');
+            const styleVars = __mermaidThemeVars();
+            return Object.assign({
                 startOnLoad: false,
-                theme: document.body.classList.contains('dark-mode') ? 'dark' : 'default',
+                theme: styleVars ? 'base' : (dark ? 'dark' : 'default'),
+                themeVariables: Object.assign({ fontFamily: MERMAID_FONT_STACK },
+                    styleVars ? Object.assign({ darkMode: dark }, styleVars) : null),
                 securityLevel: 'loose',
-                fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif",
+                fontFamily: MERMAID_FONT_STACK,
                 // mermaid 12 made ELK the default layout engine and 'neo' the default
                 // appearance. Both are pinned back to the classic dagre look here, so a
                 // mermaid bump cannot silently re-lay-out and recolour every diagram in
@@ -4810,12 +4895,11 @@
                 //     ---
                 layout: 'dagre',
                 look: 'classic',
-            };
+            }, MERMAID_LAYOUT);
         }
-        async function ensureMermaid() {
-            await loadLib('libs/mermaid.min.js');
-            mermaid.initialize(mermaidBaseConfig());
-        }
+        // mermaid.initialize is owned by renderMermaidCached(): the config depends
+        // on the active style's stylesheet, which may still be loading here.
+        function ensureMermaid() { return loadLib('libs/mermaid.min.js'); }
         function ensureKatex() { return loadLib('libs/katex/katex.min.js'); }
         // abcjs ships only a browser-global IIFE (window.ABCJS); lazy-load it the
         // first time an ```abc block is rendered.
@@ -5248,16 +5332,52 @@
             e.preventDefault();
         }, { passive: false });
 
-        // Ctrl+wheel outside Marp: step the body text scale. Chromium also reports a
-        // precision-touchpad pinch as wheel+ctrlKey, so this is what gives pinch-zoom
-        // back after src/main.rs turned WebView2's own zoom control off (that flag
-        // gates pinch as well as the hotkeys). Registered BEFORE the Marp deck
-        // handler below, which is why this one bails on body.marp rather than the
-        // other way round.
+        // Mouse wheel vs. touchpad — ⚠ MIRROR of isTouchpadWheel() in
+        // assets/inspector/inspector.js. Measured in the real app (WebView2, CDP):
+        //   mouse notch     deltaY  100     wheelDeltaY −120
+        //   touchpad pinch  deltaY ≈ −3.3   wheelDeltaY  120  (ctrlKey)
+        // wheelDeltaY alone cannot separate them (a pinch reports a whole 120 too);
+        // the size of deltaY can — a notch is ≥ 50 px, a pinch step a few px.
+        function __isTouchpadWheel(e) {
+            if (e.deltaMode !== 0) return false;
+            if (e.deltaX !== 0 && !e.shiftKey) return true;
+            const big = Math.abs(e.deltaY) >= 50;
+            const wd = e.wheelDeltaY;
+            if (big && typeof wd === 'number' && wd !== 0 && wd % 120 === 0) return false;
+            return !big || !Number.isInteger(e.deltaY);
+        }
+
+        // Every Ctrl+wheel is the app's — cancelled document-wide, in the capture
+        // phase so nothing can forget to. src/main.rs re-enables WebView2's pinch (or
+        // a touchpad pinch never reaches the page at all), which makes any Ctrl+wheel
+        // left uncancelled a PAGE-scale zoom of the whole UI: over the sidebar, a
+        // modal, or a Marp scroll/list view that has no zoom of its own.
+        window.addEventListener('wheel', (e) => {
+            if (e.ctrlKey || e.metaKey) e.preventDefault();
+        }, { capture: true, passive: false });
+
+        // Ctrl+wheel outside Marp: step the body text scale. A mouse notch is one
+        // rung. A touchpad pinch streams many small deltas per gesture (≈17 for a
+        // ×1.5 pinch), so they are ACCUMULATED and a rung is taken per
+        // __PINCH_RUNG_DELTA — Chromium encodes the pinch so that exp(-Σ/100) is its
+        // scale, making 18 ≈ a ×1.2 pinch per rung. Stepping per event would fly
+        // through every rung in one gesture. The remainder decays after a pause so
+        // the next gesture starts clean. Registered BEFORE the Marp deck handler
+        // below, which is why this one bails on body.marp rather than the other way.
+        const __PINCH_RUNG_DELTA = 18;
+        let __pinchAcc = 0, __pinchAccTimer = 0;
         previewContainer.addEventListener('wheel', (e) => {
             if (!e.ctrlKey || document.body.classList.contains('marp')) return;
             e.preventDefault();
-            stepFontScale(e.deltaY < 0 ? 1 : -1);
+            if (!__isTouchpadWheel(e)) { stepFontScale(e.deltaY < 0 ? 1 : -1); return; }
+            __pinchAcc -= e.deltaY;
+            clearTimeout(__pinchAccTimer);
+            __pinchAccTimer = setTimeout(() => { __pinchAcc = 0; }, 400);
+            while (Math.abs(__pinchAcc) >= __PINCH_RUNG_DELTA) {
+                const dir = __pinchAcc > 0 ? 1 : -1;
+                __pinchAcc -= dir * __PINCH_RUNG_DELTA;
+                stepFontScale(dir);
+            }
         }, { passive: false });
 
         // Marp deck-mode: Ctrl+wheel zooms the active slide centered on the cursor.
@@ -5286,7 +5406,12 @@
                 __marpZoomBase = { left: r.left, top: r.top, w: r.width, h: r.height };
             }
             const b = __marpZoomBase;
-            const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+            // A pinch follows the fingers: exp(-deltaY/100) IS its scale (Chromium's
+            // encoding), applied per event with no easing. A mouse notch keeps its
+            // fixed 1.15 rung and the glide — ×1.15 per pinch event would be ~×10
+            // for one ordinary gesture.
+            const pinch = __isTouchpadWheel(e);
+            const factor = pinch ? Math.exp(-e.deltaY / 100) : (e.deltaY < 0 ? 1.15 : 1 / 1.15);
             const next = Math.min(__MARP_ZOOM_MAX, Math.max(__MARP_ZOOM_MIN, __marpZoom.scale * factor));
             const f = next / __marpZoom.scale;          // effective ratio after clamping
             // Keep the content point under the cursor fixed. With origin 0 0 and
@@ -5297,8 +5422,9 @@
             __marpZoom.scale = next;
             if (next <= 1.0001) { __marpZoom.scale = 1; __marpZoom.tx = 0; __marpZoom.ty = 0; }
             __clampMarpPan();
-            // Animate toward the target zoom level (CSS transition on transform).
-            svg.style.transition = __MARP_ZOOM_ANIM;
+            // Animate toward the target zoom level (CSS transition on transform) —
+            // except under a pinch, whose dense stream must track with no lag.
+            svg.style.transition = pinch ? 'none' : __MARP_ZOOM_ANIM;
             __applyMarpZoom();
         }, { passive: false });
 
@@ -9830,12 +9956,30 @@ ${previewClone.outerHTML}
         // unique. Errors are not cached so a transient typing-syntax error
         // recovers on the next keystroke. The cache key is the full source
         // (incl. any `scale:` line), so changing the factor re-renders.
+        // The config last handed to mermaid.initialize, serialized. It doubles as
+        // the cache salt: the SVG bakes in the theme, its colours (dark mode AND
+        // the active style's --md-mermaid-* palette) and the font, so a key of
+        // dark/light + source alone would serve the previous style's colours
+        // after an S-key switch.
+        let __mermaidSig = null;
         async function renderMermaidCached(root) {
             const els = root.querySelectorAll('.mermaid');
             if (els.length === 0) return;
+            // The S-key picker starts this render while the new style's <link> is
+            // still loading; reading the palette before it lands would bake the
+            // PREVIOUS style's colours in (and cache them under the wrong key).
+            await __userStyleReady;
+            const cfg = mermaidBaseConfig();
+            const sig = JSON.stringify(cfg);
+            if (sig !== __mermaidSig) { mermaid.initialize(cfg); __mermaidSig = sig; }
             await Promise.all(Array.from(els).map(async (el) => {
-                const src = el.textContent;
-                const key = __diagKey(src);
+                // The source is kept on the element (both pipelines pass through
+                // here) because the render below overwrites textContent, and the
+                // Mermaid inspector window needs the text, not the SVG.
+                const src = el.hasAttribute('data-mermaid-source')
+                    ? __diagSource(el, 'data-mermaid-source') : el.textContent;
+                el.setAttribute('data-mermaid-source', encodeURIComponent(src));
+                const key = sig + '|' + src;
                 if (__diagCacheHit(__mermaidCache, key, el)) return;
                 try {
                     const { scale, body } = parseMermaidScale(src);
@@ -9847,6 +9991,59 @@ ${previewClone.outerHTML}
                     el.innerHTML = '<pre style="color: red;">Mermaid Error: ' + error.message + '</pre>';
                 }
             }));
+            __inspectorSync();
+        }
+
+        // ----- Mermaid inspector window (src/inspector_registry.rs) -----------
+        // The preview only hands over SOURCE text; the inspector renders it
+        // itself (.claude/docs/inspector.md). `__inspTarget` is the block being
+        // followed, so a re-render can push its new source: set optimistically
+        // when the menu item is used, cleared by the host via
+        // `__inspectorTarget(null)` when the inspector window closes.
+        let __inspTarget = null;
+        window.__inspectorTarget = function (t) { __inspTarget = t || null; };
+        function __mermaidBlockInfo(el, els) {
+            const lineEl = el.closest('[data-line]');
+            return {
+                src: __diagSource(el, 'data-mermaid-source'),
+                ordinal: els.indexOf(el),
+                count: els.length,
+                line: lineEl ? parseInt(lineEl.getAttribute('data-line'), 10) || 0 : 0,
+            };
+        }
+        function __inspectorPayload(kind, info) {
+            return { kind, src: info.src, ordinal: info.ordinal, line: info.line,
+                     file: currentFilePath || '', dark: !!darkMode };
+        }
+        function __openMermaidInspector(host) {
+            if (!window.ipc) return;
+            const els = Array.from(preview.querySelectorAll('.mermaid'));
+            const info = __mermaidBlockInfo(host, els);
+            __inspTarget = info;
+            window.ipc.postMessage('openinspector:' + JSON.stringify(__inspectorPayload('open', info)));
+        }
+        // Re-locate the followed block after a render. Same block count → same
+        // ordinal (the common case: typing inside it). Otherwise blocks were
+        // added or removed, so take the one nearest the old source line, with
+        // ordinal distance as the tie-break (several blocks inside one list or
+        // fenced div share their ancestor's data-line). Posts only on a change.
+        function __inspectorSync() {
+            if (!__inspTarget || !window.ipc) return;
+            const els = Array.from(preview.querySelectorAll('.mermaid'));
+            if (!els.length) return;
+            let el = els.length === __inspTarget.count ? els[__inspTarget.ordinal] : null;
+            if (!el) {
+                let best = Infinity;
+                for (const [i, cand] of els.entries()) {
+                    const c = __mermaidBlockInfo(cand, els);
+                    const d = Math.abs(c.line - __inspTarget.line) * 1000 + Math.abs(i - __inspTarget.ordinal);
+                    if (d < best) { best = d; el = cand; }
+                }
+            }
+            const info = __mermaidBlockInfo(el, els);
+            const changed = info.src !== __inspTarget.src;
+            __inspTarget = info;
+            if (changed) window.ipc.postMessage('inspector:update:' + JSON.stringify(__inspectorPayload('update', info)));
         }
 
         const __ABC_RENDER_OPTS = {
@@ -13854,6 +14051,9 @@ ${previewClone.outerHTML}
                         addCopyItem(t('menu.copyLatex'), latex);
                     }
                     if (fig) {
+                        if (fig.spec.kind === 'mermaid' && window.ipc) {
+                            addItem(t('menu.openInspector'), () => { __openMermaidInspector(fig.host); });
+                        }
                         // A canvas figure has no vector form to offer.
                         if (!fig.canvas) addItem(t('menu.saveSvg'), () => { __figureSave(fig, 'svg'); });
                         addItem(t('menu.savePng'), () => { __figureSave(fig, 'png'); });
@@ -14993,7 +15193,7 @@ ${previewClone.outerHTML}
                     <tr><td class="keys"><span class="kc"><kbd>Ctrl</kbd>+<kbd>D</kbd></span></td><td data-i18n="help.key.ctrlD">インストール先フォルダを Explorer で開く</td></tr>
                     <tr><td class="keys"><kbd>X</kbd></td><td data-i18n="help.key.x">現在の文書をエクスポート（保存ダイアログで HTML / PDF を選択。PDFはクリック可能なリンクと見出しのしおりを保持）</td></tr>
                     <tr><td class="keys"><span class="kc"><kbd>Ctrl</kbd>+<kbd>+</kbd> /</span> <span class="kc"><kbd>Ctrl</kbd>+<kbd>-</kbd> /</span> <span class="kc"><kbd>Ctrl</kbd>+<kbd>0</kbd></span></td><td data-i18n="help.key.zoom">本文の文字サイズ 拡大 / 縮小 / 既定</td></tr>
-                    <tr><td class="keys"><span class="kc"><kbd>Ctrl</kbd>+<kbd>Wheel</kbd></span></td><td data-i18n="help.key.fontScaleWheel">本文の文字サイズを拡大 / 縮小</td></tr>
+                    <tr><td class="keys"><span class="kc"><kbd>Ctrl</kbd>+<kbd>Wheel</kbd></span></td><td data-i18n="help.key.fontScaleWheel">本文の文字サイズを拡大 / 縮小（タッチパッドのピンチも可）</td></tr>
                     <tr><td class="keys"><span class="kc"><kbd>Alt</kbd>+<kbd>←</kbd> /</span> <span class="kc"><kbd>Alt</kbd>+<kbd>→</kbd></span></td><td data-i18n="help.key.history">開いたファイルの履歴を戻る / 進む</td></tr>
                     <tr><td class="keys" data-i18n-html="help.cell.ctrlClick"><span class="kc"><kbd>Ctrl</kbd>+クリック</span></td><td data-i18n="help.key.ctrlClick">.md リンクを新しいプレビュアのウィンドウで開く（通常のクリックは同じウィンドウで遷移）</td></tr>
                     <tr><td class="keys"><kbd>P</kbd></td><td data-i18n="help.key.p">Marp表示の切り替え: スクロール → デッキ → 一覧（一覧でサムネイルをクリックするとデッキで開く）</td></tr>

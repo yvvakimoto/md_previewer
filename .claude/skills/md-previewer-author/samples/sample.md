@@ -135,6 +135,28 @@ pie title Technologies
     "JavaScript" : 30
 ```
 
+### Energy flow — open it in the inspector
+
+Right-click this chart and choose **Open in inspector…**: click a node to see its
+edges and in/out balance, Shift+click a second node for every path between them,
+`U` / `D` for everything upstream / downstream.
+
+```mermaid
+flowchart LR
+    Grid[Grid] -->|120 kW| Inv(Inverter)
+    PV[Solar PV] -->|80 kW| Inv
+    Bat[(Battery)] -->|15 kW| Inv
+    Grid -->|30 kW| HP{Heat pump}
+    Inv -->|190 kW| Bus[DC bus]
+    Inv -->|25 kW| Loss1[Conversion loss]
+    Bus -->|150 kW| Load[Plant load]
+    Bus -->|40 kW| Chg[Battery charge]
+    HP -->|90 kW| Heat[Process heat]
+    Amb[Ambient air] -.->|40 kW| HP
+    Load -->|20 kW| Waste[Waste heat]
+    Waste -.->|20 kW| HP
+```
+
 ## Horizontal Rule
 
 ---
