@@ -190,10 +190,12 @@ def main():
             check("siblings: no path", state()["found"], False)
 
             # Connections are clickable: 5 screen px off a ~2px line still hits it
-            # (the wide transparent twin), and so does its label.
+            # (the wide transparent twin), and so does its label. The probe sits
+            # 15% along the path: with the denser MERMAID_LAYOUT the edges are short
+            # enough that the old 35% point landed on the edge's own label.
             page.keyboard.press("Escape")
             pt = ev("""() => { const p = window.__inspector.edgeEl('L_Inv_Loss_0').path,
-                        L = p.getTotalLength(), q = p.getPointAtLength(L * 0.35),
+                        L = p.getTotalLength(), q = p.getPointAtLength(L * 0.15),
                         m = p.getScreenCTM(); return [q.x * m.a + q.y * m.c + m.e, q.x * m.b + q.y * m.d + m.f]; }""")
             hit_at = ev("([x, y]) => { const e = document.elementFromPoint(x, y + 5); return e && e.getAttribute('class'); }", pt)
             check("5px beside an edge is still its hit area", hit_at, "insp-hit")

@@ -345,3 +345,19 @@ body.dark-mode #preview img {
 body.dark-mode {
     --confidential-color: rgba(224, 138, 160, 0.16);
 }
+
+/* Mermaid — 図の配色を紙面のパレットに寄せる (--md-mermaid-* 規約)。
+   --cl-* はダークモードで差し替わるので、この 1 ブロックで明暗両方に追従する。 */
+#preview {
+    --md-mermaid-node-bg: var(--cl-code-bg);
+    --md-mermaid-node-border: var(--cl-accent);
+    --md-mermaid-text: var(--cl-ink);
+    --md-mermaid-line: var(--cl-ink-soft);
+    --md-mermaid-secondary: var(--cl-rule-soft);
+    --md-mermaid-tertiary: var(--cl-bg);
+    --md-mermaid-cluster-bg: var(--cl-bg);
+    --md-mermaid-cluster-border: var(--cl-rule);
+    --md-mermaid-note-bg: var(--cl-rule-soft);
+    --md-mermaid-note-border: var(--cl-rule);
+    --md-mermaid-edge-label-bg: var(--cl-bg-paper);
+}

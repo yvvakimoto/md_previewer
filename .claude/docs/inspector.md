@@ -44,6 +44,10 @@ payload = `{kind: 'open'|'update', src, ordinal, line, file, dark}`, built by
 - **Mirrors:** `mermaidConfig()` mirrors `mermaidBaseConfig()` and `stripScale()` mirrors
   `parseMermaidScale()`. Both pairs are in CLAUDE.md's mirror table. The inspector must lay
   out the diagram exactly as the preview did.
+  - What is mirrored is what moves a box: `MERMAID_FONT_STACK` and `MERMAID_LAYOUT` (copied
+    verbatim). The style palette (`--md-mermaid-*`) is deliberately **not** — the highlight
+    colours here were designed against the stock `default` / `dark`, colour never changes the
+    layout, and the window follows only `darkMode` (via `storage`), not the style.
 
 ## Live follow (preview side)
 

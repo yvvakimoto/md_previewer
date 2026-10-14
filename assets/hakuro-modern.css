@@ -723,3 +723,20 @@ body.marp #preview > div.marpit > svg[data-marpit-svg] {
     #preview .katex-display { box-shadow: none; }
     #preview a { border-bottom-color: var(--hk-line); }
 }
+
+/* ---------- Mermaid ---------- */
+/* 図の配色を単一の藍アクセントに寄せる (--md-mermaid-* 規約)。 */
+/* このスタイルはライト専用なので、ダークモードでは宣言せず mermaid 標準の dark に任せる。 */
+body:not(.dark-mode) #preview {
+    --md-mermaid-node-bg: var(--hk-accent-soft);
+    --md-mermaid-node-border: var(--hk-accent);
+    --md-mermaid-text: var(--hk-ink-2);
+    --md-mermaid-line: var(--hk-ink-4);
+    --md-mermaid-secondary: var(--hk-surface-3);
+    --md-mermaid-tertiary: var(--hk-surface-2);
+    --md-mermaid-cluster-bg: var(--hk-surface-2);
+    --md-mermaid-cluster-border: var(--hk-line);
+    --md-mermaid-note-bg: #fef3c7;
+    --md-mermaid-note-border: var(--hk-amber);
+    --md-mermaid-edge-label-bg: var(--hk-surface);
+}
