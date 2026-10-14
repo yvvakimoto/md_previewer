@@ -109,3 +109,20 @@ body {
     --confidential-color: rgba(120, 70, 20, 0.14);
     --confidential-font: 'Georgia', serif;
 }
+
+/* Mermaid — 図の配色を古紙の生成り・焦茶に寄せる (--md-mermaid-* 規約)。
+   値は hex / rgb のみ (mermaid は oklch / color-mix を解釈できない)。 */
+/* このスタイルはライト専用なので、ダークモードでは宣言せず mermaid 標準の dark に任せる。 */
+body:not(.dark-mode) #preview {
+    --md-mermaid-node-bg: #f3e7cc;
+    --md-mermaid-node-border: #a0804f;
+    --md-mermaid-text: #3b2f24;
+    --md-mermaid-line: #7a5c3a;
+    --md-mermaid-secondary: #ead9b8;
+    --md-mermaid-tertiary: #f8f0dc;
+    --md-mermaid-cluster-bg: #f6eedb;
+    --md-mermaid-cluster-border: #c9b48c;
+    --md-mermaid-note-bg: #fbefc6;
+    --md-mermaid-note-border: #c9a65a;
+    --md-mermaid-edge-label-bg: #fbf6e8;
+}

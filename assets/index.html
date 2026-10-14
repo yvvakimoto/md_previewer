@@ -784,6 +784,21 @@
         .mermaid foreignObject { overflow: visible; }
         .mermaid foreignObject div,
         .mermaid foreignObject span { box-sizing: content-box; }
+        /* mermaid 12 wraps every HTML label in a <p>, so a theme's
+           `#preview p` rule (text-wrap: pretty, overflow-wrap: anywhere,
+           text-indent, margins …) reached the label too and re-wrapped it at
+           a width mermaid never measured — 「入力ファ/イル」 in a box sized
+           for one line. Neutralise exactly the properties that move a line
+           break or a box edge; colour and font stay the SVG's own. */
+        #preview .mermaid foreignObject p {
+            margin: 0;
+            text-indent: 0;
+            text-wrap: wrap;
+            overflow-wrap: normal;
+            word-break: normal;
+            line-break: auto;
+            letter-spacing: normal;
+        }
 
         /* KaTeX math styling */
         .katex-display {
@@ -3615,11 +3630,8 @@
             darkMode = !!on;
             localStorage.setItem('darkMode', darkMode ? 'true' : 'false');
             document.body.classList.toggle('dark-mode', darkMode);
-            if (typeof mermaid !== 'undefined') {
-                // dark-mode class is already toggled above, so mermaidBaseConfig()
-                // reads the correct theme.
-                mermaid.initialize(mermaidBaseConfig());
-            }
+            // No mermaid.initialize here: the re-render that follows goes through
+            // renderMermaidCached(), which re-reads mermaidBaseConfig() itself.
         }
         // ----- Style variables (the `@user-vars` convention) -----------------
         // A user style may declare which of its own CSS custom properties are
@@ -4794,14 +4806,82 @@
         // with. Without it, foreignObject labels inherit the page's system-sans
         // stack (Segoe UI on Windows, taller than mermaid's default measuring
         // font), so mermaid sizes the node box too short and WebView2 clips the
-        // overflowing bottom of the glyphs — the "text cut off" bug. Called from
-        // both ensureMermaid() and applyDarkMode() (the M-key re-initialize).
+        // overflowing bottom of the glyphs — the "text cut off" bug. The stack is
+        // BIZ UDPGothic (a Windows 10 1809+ system font, chosen for legibility;
+        // proportional, so Latin labels stay narrow). ⚠ Several diagram types
+        // carry their OWN font settings that ignore `fontFamily` (sequence actors
+        // / notes / messages default to "Open Sans" / "trebuchet ms"), so those are
+        // pointed at the same stack in MERMAID_LAYOUT below.
+        const MERMAID_FONT_STACK = "'BIZ UDPGothic', 'BIZ UDPゴシック', 'Yu Gothic UI', Meiryo, sans-serif";
+        // Denser-than-stock layout, applied to every style. Each key was checked
+        // against mermaid 12.0.0's own defaults (in brackets); a key mermaid does
+        // not read is simply ignored, so a bump that renames one fails soft.
+        // ⚠ MIRRORED in assets/inspector/inspector.js mermaidConfig() — the
+        // inspector must lay the diagram out exactly as the preview did.
+        const MERMAID_LAYOUT = {
+            flowchart: { padding: 8 /*15*/, nodeSpacing: 30 /*50*/, rankSpacing: 36 /*50*/,
+                         diagramPadding: 4 /*8*/, minNodeWidth: 40 /*120*/, wrappingWidth: 160 /*120*/ },
+            sequence: { actorMargin: 30 /*50*/, width: 110 /*150*/, height: 44 /*65*/,
+                        boxMargin: 6 /*10*/, boxTextMargin: 3 /*5*/, noteMargin: 6 /*10*/,
+                        messageMargin: 26 /*35*/, diagramMarginX: 8 /*50*/, diagramMarginY: 8 /*10*/,
+                        actorFontFamily: MERMAID_FONT_STACK, noteFontFamily: MERMAID_FONT_STACK,
+                        messageFontFamily: MERMAID_FONT_STACK },
+            class: { dividerMargin: 6 /*10*/ },
+            state: { padding: 4 /*8*/, minNodeWidth: 40 /*120*/, noteMargin: 6 /*10*/ },
+            er: { entityPadding: 8 /*15*/, minEntityWidth: 70 /*100*/, minEntityHeight: 44 /*75*/,
+                  diagramPadding: 8 /*20*/, nodeSpacing: 60 /*140*/, rankSpacing: 50 /*80*/ },
+            mindmap: { padding: 6 /*10*/ },
+            block: { padding: 4 /*8*/ },
+            kanban: { padding: 4 /*8*/ },
+            journey: { taskFontFamily: MERMAID_FONT_STACK },
+            timeline: { taskFontFamily: MERMAID_FONT_STACK },
+        };
+        // A style harmonises mermaid's colours with its own palette by declaring
+        // these custom properties (on :root / #preview, re-pointed under
+        // body.dark-mode if the style has a dark variant). "The theme declares,
+        // the app implements" — the same shape as --md-page-lines. When at least
+        // one is declared, mermaid's 'base' theme is used and every key not
+        // declared is derived by mermaid itself; with none, the stock
+        // default / dark themes apply unchanged. ⚠ Values must be colours
+        // mermaid's parser (khroma) understands — hex / rgb() / hsl(), or a var()
+        // of one. oklch() / color-mix() do not parse.
+        const MERMAID_THEME_PROPS = [
+            ['--md-mermaid-node-bg',        ['primaryColor', 'mainBkg']],
+            ['--md-mermaid-node-border',    ['primaryBorderColor', 'nodeBorder']],
+            ['--md-mermaid-text',           ['primaryTextColor', 'textColor', 'titleColor', 'nodeTextColor',
+                                             'noteTextColor', 'labelTextColor', 'actorTextColor', 'signalTextColor']],
+            ['--md-mermaid-line',           ['lineColor']],
+            ['--md-mermaid-secondary',      ['secondaryColor']],
+            ['--md-mermaid-tertiary',       ['tertiaryColor']],
+            ['--md-mermaid-cluster-bg',     ['clusterBkg']],
+            ['--md-mermaid-cluster-border', ['clusterBorder']],
+            ['--md-mermaid-note-bg',        ['noteBkgColor']],
+            ['--md-mermaid-note-border',    ['noteBorderColor']],
+            ['--md-mermaid-edge-label-bg',  ['edgeLabelBackground']],
+        ];
+        function __mermaidThemeVars() {
+            const cs = getComputedStyle(preview);
+            let vars = null;
+            for (const [prop, keys] of MERMAID_THEME_PROPS) {
+                const v = cs.getPropertyValue(prop).trim();
+                if (!v) continue;
+                vars = vars || {};
+                for (const k of keys) vars[k] = v;
+            }
+            return vars;
+        }
+        // Called by renderMermaidCached() before every render, which re-runs
+        // mermaid.initialize only when the result differs (see __mermaidSig).
         function mermaidBaseConfig() {
-            return {
+            const dark = document.body.classList.contains('dark-mode');
+            const styleVars = __mermaidThemeVars();
+            return Object.assign({
                 startOnLoad: false,
-                theme: document.body.classList.contains('dark-mode') ? 'dark' : 'default',
+                theme: styleVars ? 'base' : (dark ? 'dark' : 'default'),
+                themeVariables: Object.assign({ fontFamily: MERMAID_FONT_STACK },
+                    styleVars ? Object.assign({ darkMode: dark }, styleVars) : null),
                 securityLevel: 'loose',
-                fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif",
+                fontFamily: MERMAID_FONT_STACK,
                 // mermaid 12 made ELK the default layout engine and 'neo' the default
                 // appearance. Both are pinned back to the classic dagre look here, so a
                 // mermaid bump cannot silently re-lay-out and recolour every diagram in
@@ -4815,12 +4895,11 @@
                 //     ---
                 layout: 'dagre',
                 look: 'classic',
-            };
+            }, MERMAID_LAYOUT);
         }
-        async function ensureMermaid() {
-            await loadLib('libs/mermaid.min.js');
-            mermaid.initialize(mermaidBaseConfig());
-        }
+        // mermaid.initialize is owned by renderMermaidCached(): the config depends
+        // on the active style's stylesheet, which may still be loading here.
+        function ensureMermaid() { return loadLib('libs/mermaid.min.js'); }
         function ensureKatex() { return loadLib('libs/katex/katex.min.js'); }
         // abcjs ships only a browser-global IIFE (window.ABCJS); lazy-load it the
         // first time an ```abc block is rendered.
@@ -9877,9 +9956,22 @@ ${previewClone.outerHTML}
         // unique. Errors are not cached so a transient typing-syntax error
         // recovers on the next keystroke. The cache key is the full source
         // (incl. any `scale:` line), so changing the factor re-renders.
+        // The config last handed to mermaid.initialize, serialized. It doubles as
+        // the cache salt: the SVG bakes in the theme, its colours (dark mode AND
+        // the active style's --md-mermaid-* palette) and the font, so a key of
+        // dark/light + source alone would serve the previous style's colours
+        // after an S-key switch.
+        let __mermaidSig = null;
         async function renderMermaidCached(root) {
             const els = root.querySelectorAll('.mermaid');
             if (els.length === 0) return;
+            // The S-key picker starts this render while the new style's <link> is
+            // still loading; reading the palette before it lands would bake the
+            // PREVIOUS style's colours in (and cache them under the wrong key).
+            await __userStyleReady;
+            const cfg = mermaidBaseConfig();
+            const sig = JSON.stringify(cfg);
+            if (sig !== __mermaidSig) { mermaid.initialize(cfg); __mermaidSig = sig; }
             await Promise.all(Array.from(els).map(async (el) => {
                 // The source is kept on the element (both pipelines pass through
                 // here) because the render below overwrites textContent, and the
@@ -9887,7 +9979,7 @@ ${previewClone.outerHTML}
                 const src = el.hasAttribute('data-mermaid-source')
                     ? __diagSource(el, 'data-mermaid-source') : el.textContent;
                 el.setAttribute('data-mermaid-source', encodeURIComponent(src));
-                const key = __diagKey(src);
+                const key = sig + '|' + src;
                 if (__diagCacheHit(__mermaidCache, key, el)) return;
                 try {
                     const { scale, body } = parseMermaidScale(src);

@@ -118,15 +118,39 @@
     // ⚠ MIRROR of mermaidBaseConfig() in assets/index.html — the inspector must lay
     // the diagram out exactly as the preview did, or the reader is inspecting a
     // different picture. Keep the two in step (CLAUDE.md, mirror table).
+    // What must match is everything that moves a box: the font and MERMAID_LAYOUT.
+    // Colours deliberately do NOT follow the preview's style palette
+    // (--md-mermaid-*): the highlight colours below were designed against the
+    // stock default / dark themes, and colour never changes the layout.
+    const MERMAID_FONT_STACK = "'BIZ UDPGothic', 'BIZ UDPゴシック', 'Yu Gothic UI', Meiryo, sans-serif";
+    const MERMAID_LAYOUT = {
+        flowchart: { padding: 8, nodeSpacing: 30, rankSpacing: 36,
+                     diagramPadding: 4, minNodeWidth: 40, wrappingWidth: 160 },
+        sequence: { actorMargin: 30, width: 110, height: 44,
+                    boxMargin: 6, boxTextMargin: 3, noteMargin: 6,
+                    messageMargin: 26, diagramMarginX: 8, diagramMarginY: 8,
+                    actorFontFamily: MERMAID_FONT_STACK, noteFontFamily: MERMAID_FONT_STACK,
+                    messageFontFamily: MERMAID_FONT_STACK },
+        class: { dividerMargin: 6 },
+        state: { padding: 4, minNodeWidth: 40, noteMargin: 6 },
+        er: { entityPadding: 8, minEntityWidth: 70, minEntityHeight: 44,
+              diagramPadding: 8, nodeSpacing: 60, rankSpacing: 50 },
+        mindmap: { padding: 6 },
+        block: { padding: 4 },
+        kanban: { padding: 4 },
+        journey: { taskFontFamily: MERMAID_FONT_STACK },
+        timeline: { taskFontFamily: MERMAID_FONT_STACK },
+    };
     function mermaidConfig(dark) {
-        return {
+        return Object.assign({
             startOnLoad: false,
             theme: dark ? 'dark' : 'default',
+            themeVariables: { fontFamily: MERMAID_FONT_STACK },
             securityLevel: 'loose',
-            fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif",
+            fontFamily: MERMAID_FONT_STACK,
             layout: 'dagre',
             look: 'classic',
-        };
+        }, MERMAID_LAYOUT);
     }
     // ⚠ MIRROR of parseMermaidScale() in assets/index.html: leading blank lines
     // and `scale:` lines are consumed before mermaid sees the source. The factor
