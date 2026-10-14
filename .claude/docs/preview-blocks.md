@@ -9,7 +9,7 @@
 
 ---
 
-- **Mermaid** — ` ```mermaid ` fenced blocks are intercepted post-`marked.parse()` and substituted with rendered SVG. Mermaid accepts an optional leading `scale: <factor>` directive line (e.g. `scale: 1.5` enlarges to 150% — useful in Marp where mermaid's natural `max-width` makes diagrams feel small on a 1280px slide): `parseMermaidScale()` in `assets/index.html` strips the leading `scale:`/blank lines before `mermaid.render` (mermaid keys off the first line for the diagram type, so the directive must not reach it) and `applyMermaidScale()` post-multiplies the rendered SVG's `style="max-width:Npx"` (mermaid v10 `useMaxWidth:true` output; falls back to the `width`/`height` attributes otherwise). Works in both pipelines since both go through `renderMermaidCached`; the memoization cache key is the full source incl. the `scale:` line, so changing the factor re-renders (see *Diagram render memoization* (`preview-core.md`)). **Node-label clipping fix** — `mermaid.initialize` is fed a shared `mermaidBaseConfig()` (used by both `ensureMermaid()` and the `applyDarkMode()` M-key re-init) that sets `fontFamily` to the page's system-sans stack, so mermaid *measures* label text with the same font it *renders* with; without this the `<foreignObject>` HTML labels inherit Segoe UI (taller than mermaid's default measuring font) and the node box is sized too short, clipping the bottom of the glyphs. A CSS safety net (`.mermaid foreignObject { overflow: visible }` + `box-sizing: content-box` on the label `div`/`span`, undoing the global `* { box-sizing: border-box }`) guards against any residual overflow.
+- **Mermaid** — ` ```mermaid ` fenced blocks are intercepted post-`marked.parse()` and substituted with rendered SVG. Mermaid accepts an optional leading `scale: <factor>` directive line (e.g. `scale: 1.5` enlarges to 150% — useful in Marp where mermaid's natural `max-width` makes diagrams feel small on a 1280px slide): `parseMermaidScale()` in `assets/index.html` strips the leading `scale:`/blank lines before `mermaid.render` (mermaid keys off the first line for the diagram type, so the directive must not reach it) and `applyMermaidScale()` post-multiplies the rendered SVG's `style="max-width:Npx"` (mermaid v10 `useMaxWidth:true` output; falls back to the `width`/`height` attributes otherwise). Works in both pipelines since both go through `renderMermaidCached`, which also keeps the source on the host as `data-mermaid-source` for the inspector window (`inspector.md`); the memoization cache key is the full source incl. the `scale:` line, so changing the factor re-renders (see *Diagram render memoization* (`preview-core.md`)). **Node-label clipping fix** — `mermaid.initialize` is fed a shared `mermaidBaseConfig()` (used by both `ensureMermaid()` and the `applyDarkMode()` M-key re-init) that sets `fontFamily` to the page's system-sans stack, so mermaid *measures* label text with the same font it *renders* with; without this the `<foreignObject>` HTML labels inherit Segoe UI (taller than mermaid's default measuring font) and the node box is sized too short, clipping the bottom of the glyphs. A CSS safety net (`.mermaid foreignObject { overflow: visible }` + `box-sizing: content-box` on the label `div`/`span`, undoing the global `* { box-sizing: border-box }`) guards against any residual overflow.
 
 - **CSV / TSV codeblocks** — fenced ` ```csv ` / ` ```tsv ` render as HTML `<table>` (first row → `<thead>`). CSV parsing follows RFC 4180 (quoted fields may contain commas, newlines, and `""` for a literal quote); TSV splits each line on `\t` with no quoting. Fully-empty rows (blank lines anywhere in the source — leading, between header and body, or trailing) are dropped before the first row is assigned to `<thead>`, so authors can add visual whitespace inside the fence without producing a stray empty `<tr>`. Output wraps the table in `<div class="csv-table">` and inherits each theme's existing table styling. Carries through to HTML export since the live `<table>` DOM is serialized.
 
@@ -106,9 +106,18 @@ tikz figure, the **outermost `<svg>` between the click and the wrapper** wins.
 
 **The menu appears only when an `<svg>` or a `<canvas>` is actually present**, and that one
 rule is load-bearing: it is what keeps the renderers' error boxes, a still-compiling tikz
-placeholder, and `csv` / GFM tables out of the menu without a single special case. With no
-items the event is left alone, so the WebView2 native menu (back / forward) still shows —
-the same contract `setupFileTreeContextMenu()` keeps.
+placeholder, and `csv` / GFM tables out of the *figure* items without a single special case.
+⚠ A right-click that finds no figure is **no longer** left to the native menu: empty
+preview space now opens the app's own 「すべての図を保存…」 / 戻る / 進む menu
+(`preview-files-media.md`); only a text selection and an `<img>` still fall through
+(`__nativeMenuWins()`).
+
+**A mermaid figure gets one more item, first: 「インスペクタで開く…」.** It posts the block's
+*source* (not its SVG) to the inspector window — `inspector.md` owns that window and the
+live-follow protocol. To make the source available after render, `renderMermaidCached()`
+stamps it on the host as a percent-encoded `data-mermaid-source` (both pipelines pass
+through it, so neither needed its own change) and reads it back from there on every later
+pass, since the render overwrites `textContent`.
 
 **`__serializeFigureSvg()` is not `outerHTML`.** Four things have to be repaired, because
 each is something the live page was supplying from outside the element:

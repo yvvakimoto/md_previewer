@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Integrity checks for the two UI-language string tables.
+"""Integrity checks for the UI-language string tables.
 
     python tools/preview-harness/i18ncheck.py [--channel msedge|chrome]
 
@@ -15,7 +15,9 @@ actually contains what the source says it does.
 
 The two key spaces are disjoint by construction — i18n.js owns `ed.*`,
 index.html owns everything else — so `common.*` is the only overlap, and it must
-be byte-identical.
+be byte-identical. A third, small table lives in the Mermaid inspector window
+(assets/inspector/inspector.js, window.__inspectorI18n) and owns `insp.*` only;
+it shares no keys with either of the other two.
 """
 
 import argparse
@@ -120,11 +122,17 @@ def main():
             page.wait_for_function("() => !!window.__editorI18n")
             editor = page.evaluate("() => window.__editorI18n")
 
-            print("preview: %d messages / editor: %d messages"
-                  % (len(preview), len(editor)))
+            # --- inspector table (a plain page; it needs no host globals to boot) ---
+            page.goto("http://127.0.0.1:%d/inspector.html" % a.port, wait_until="domcontentloaded")
+            page.wait_for_function("() => !!window.__inspectorI18n")
+            inspector = page.evaluate("() => window.__inspectorI18n")
+
+            print("preview: %d messages / editor: %d messages / inspector: %d messages"
+                  % (len(preview), len(editor), len(inspector)))
 
             audit("preview", preview)
             audit("editor", editor)
+            audit("inspector", inspector)
 
             # The tables are separate files that cannot import each other (the
             # preview is a monolith with one inline <script>), so the shared
@@ -146,6 +154,10 @@ def main():
                   sorted(k for k in editor if not k.startswith(("ed.", "common."))), [])
             check("the preview owns no ed.* key",
                   sorted(k for k in preview if k.startswith("ed.")), [])
+            check("the inspector owns only insp.*",
+                  sorted(k for k in inspector if not k.startswith("insp.")), [])
+            check("nobody else owns an insp.* key",
+                  sorted(k for k in list(preview) + list(editor) if k.startswith("insp.")), [])
 
             browser.close()
     finally:

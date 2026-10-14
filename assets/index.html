@@ -16,6 +16,10 @@
             padding: 0;
             box-sizing: border-box;
         }
+        /* src/main.rs switches WebView2's pinch back ON so a TOUCHPAD pinch reaches
+           the page (as Ctrl+wheel, cancelled below). A touchSCREEN pinch would then
+           page-scale the whole UI instead; pan-x pan-y leaves it no pinch to do. */
+        html { touch-action: pan-x pan-y; }
 
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
@@ -3104,8 +3108,8 @@
             // shortcut stopped being a browser zoom and became a body-text scale.
             'help.key.zoom':       { ja: '本文の文字サイズ 拡大 / 縮小 / 既定',
                                      en: 'Body text size: larger / smaller / reset' },
-            'help.key.fontScaleWheel': { ja: '本文の文字サイズを拡大 / 縮小',
-                                     en: 'Body text size: larger / smaller' },
+            'help.key.fontScaleWheel': { ja: '本文の文字サイズを拡大 / 縮小（タッチパッドのピンチも可）',
+                                     en: 'Body text size: larger / smaller (touchpad pinch too)' },
             'help.key.history':    { ja: '開いたファイルの履歴を戻る / 進む', en: 'Go back / forward through opened files' },
             'help.key.ctrlClick':  { ja: '.md リンクを新しいプレビュアのウィンドウで開く（通常のクリックは同じウィンドウで遷移）',
                                      en: 'Open a .md link in a new previewer window (a plain click navigates in this window)' },
@@ -3182,6 +3186,7 @@
             'menu.saveSvg':        { ja: 'SVG として保存', en: 'Save as SVG' },
             'menu.savePng':        { ja: 'PNG として保存', en: 'Save as PNG' },
             'menu.saveAllFigures': { ja: 'すべての図を保存…', en: 'Save all figures…' },
+            'menu.openInspector':  { ja: 'インスペクタで開く…', en: 'Open in inspector…' },
             'menu.historyBack':    { ja: '戻る',         en: 'Back' },
             'menu.historyForward': { ja: '進む',         en: 'Forward' },
             'fn.backToRef':        { ja: '参照元に戻る', en: 'Back to reference' },
@@ -5248,16 +5253,52 @@
             e.preventDefault();
         }, { passive: false });
 
-        // Ctrl+wheel outside Marp: step the body text scale. Chromium also reports a
-        // precision-touchpad pinch as wheel+ctrlKey, so this is what gives pinch-zoom
-        // back after src/main.rs turned WebView2's own zoom control off (that flag
-        // gates pinch as well as the hotkeys). Registered BEFORE the Marp deck
-        // handler below, which is why this one bails on body.marp rather than the
-        // other way round.
+        // Mouse wheel vs. touchpad — ⚠ MIRROR of isTouchpadWheel() in
+        // assets/inspector/inspector.js. Measured in the real app (WebView2, CDP):
+        //   mouse notch     deltaY  100     wheelDeltaY −120
+        //   touchpad pinch  deltaY ≈ −3.3   wheelDeltaY  120  (ctrlKey)
+        // wheelDeltaY alone cannot separate them (a pinch reports a whole 120 too);
+        // the size of deltaY can — a notch is ≥ 50 px, a pinch step a few px.
+        function __isTouchpadWheel(e) {
+            if (e.deltaMode !== 0) return false;
+            if (e.deltaX !== 0 && !e.shiftKey) return true;
+            const big = Math.abs(e.deltaY) >= 50;
+            const wd = e.wheelDeltaY;
+            if (big && typeof wd === 'number' && wd !== 0 && wd % 120 === 0) return false;
+            return !big || !Number.isInteger(e.deltaY);
+        }
+
+        // Every Ctrl+wheel is the app's — cancelled document-wide, in the capture
+        // phase so nothing can forget to. src/main.rs re-enables WebView2's pinch (or
+        // a touchpad pinch never reaches the page at all), which makes any Ctrl+wheel
+        // left uncancelled a PAGE-scale zoom of the whole UI: over the sidebar, a
+        // modal, or a Marp scroll/list view that has no zoom of its own.
+        window.addEventListener('wheel', (e) => {
+            if (e.ctrlKey || e.metaKey) e.preventDefault();
+        }, { capture: true, passive: false });
+
+        // Ctrl+wheel outside Marp: step the body text scale. A mouse notch is one
+        // rung. A touchpad pinch streams many small deltas per gesture (≈17 for a
+        // ×1.5 pinch), so they are ACCUMULATED and a rung is taken per
+        // __PINCH_RUNG_DELTA — Chromium encodes the pinch so that exp(-Σ/100) is its
+        // scale, making 18 ≈ a ×1.2 pinch per rung. Stepping per event would fly
+        // through every rung in one gesture. The remainder decays after a pause so
+        // the next gesture starts clean. Registered BEFORE the Marp deck handler
+        // below, which is why this one bails on body.marp rather than the other way.
+        const __PINCH_RUNG_DELTA = 18;
+        let __pinchAcc = 0, __pinchAccTimer = 0;
         previewContainer.addEventListener('wheel', (e) => {
             if (!e.ctrlKey || document.body.classList.contains('marp')) return;
             e.preventDefault();
-            stepFontScale(e.deltaY < 0 ? 1 : -1);
+            if (!__isTouchpadWheel(e)) { stepFontScale(e.deltaY < 0 ? 1 : -1); return; }
+            __pinchAcc -= e.deltaY;
+            clearTimeout(__pinchAccTimer);
+            __pinchAccTimer = setTimeout(() => { __pinchAcc = 0; }, 400);
+            while (Math.abs(__pinchAcc) >= __PINCH_RUNG_DELTA) {
+                const dir = __pinchAcc > 0 ? 1 : -1;
+                __pinchAcc -= dir * __PINCH_RUNG_DELTA;
+                stepFontScale(dir);
+            }
         }, { passive: false });
 
         // Marp deck-mode: Ctrl+wheel zooms the active slide centered on the cursor.
@@ -5286,7 +5327,12 @@
                 __marpZoomBase = { left: r.left, top: r.top, w: r.width, h: r.height };
             }
             const b = __marpZoomBase;
-            const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+            // A pinch follows the fingers: exp(-deltaY/100) IS its scale (Chromium's
+            // encoding), applied per event with no easing. A mouse notch keeps its
+            // fixed 1.15 rung and the glide — ×1.15 per pinch event would be ~×10
+            // for one ordinary gesture.
+            const pinch = __isTouchpadWheel(e);
+            const factor = pinch ? Math.exp(-e.deltaY / 100) : (e.deltaY < 0 ? 1.15 : 1 / 1.15);
             const next = Math.min(__MARP_ZOOM_MAX, Math.max(__MARP_ZOOM_MIN, __marpZoom.scale * factor));
             const f = next / __marpZoom.scale;          // effective ratio after clamping
             // Keep the content point under the cursor fixed. With origin 0 0 and
@@ -5297,8 +5343,9 @@
             __marpZoom.scale = next;
             if (next <= 1.0001) { __marpZoom.scale = 1; __marpZoom.tx = 0; __marpZoom.ty = 0; }
             __clampMarpPan();
-            // Animate toward the target zoom level (CSS transition on transform).
-            svg.style.transition = __MARP_ZOOM_ANIM;
+            // Animate toward the target zoom level (CSS transition on transform) —
+            // except under a pinch, whose dense stream must track with no lag.
+            svg.style.transition = pinch ? 'none' : __MARP_ZOOM_ANIM;
             __applyMarpZoom();
         }, { passive: false });
 
@@ -9834,7 +9881,12 @@ ${previewClone.outerHTML}
             const els = root.querySelectorAll('.mermaid');
             if (els.length === 0) return;
             await Promise.all(Array.from(els).map(async (el) => {
-                const src = el.textContent;
+                // The source is kept on the element (both pipelines pass through
+                // here) because the render below overwrites textContent, and the
+                // Mermaid inspector window needs the text, not the SVG.
+                const src = el.hasAttribute('data-mermaid-source')
+                    ? __diagSource(el, 'data-mermaid-source') : el.textContent;
+                el.setAttribute('data-mermaid-source', encodeURIComponent(src));
                 const key = __diagKey(src);
                 if (__diagCacheHit(__mermaidCache, key, el)) return;
                 try {
@@ -9847,6 +9899,59 @@ ${previewClone.outerHTML}
                     el.innerHTML = '<pre style="color: red;">Mermaid Error: ' + error.message + '</pre>';
                 }
             }));
+            __inspectorSync();
+        }
+
+        // ----- Mermaid inspector window (src/inspector_registry.rs) -----------
+        // The preview only hands over SOURCE text; the inspector renders it
+        // itself (.claude/docs/inspector.md). `__inspTarget` is the block being
+        // followed, so a re-render can push its new source: set optimistically
+        // when the menu item is used, cleared by the host via
+        // `__inspectorTarget(null)` when the inspector window closes.
+        let __inspTarget = null;
+        window.__inspectorTarget = function (t) { __inspTarget = t || null; };
+        function __mermaidBlockInfo(el, els) {
+            const lineEl = el.closest('[data-line]');
+            return {
+                src: __diagSource(el, 'data-mermaid-source'),
+                ordinal: els.indexOf(el),
+                count: els.length,
+                line: lineEl ? parseInt(lineEl.getAttribute('data-line'), 10) || 0 : 0,
+            };
+        }
+        function __inspectorPayload(kind, info) {
+            return { kind, src: info.src, ordinal: info.ordinal, line: info.line,
+                     file: currentFilePath || '', dark: !!darkMode };
+        }
+        function __openMermaidInspector(host) {
+            if (!window.ipc) return;
+            const els = Array.from(preview.querySelectorAll('.mermaid'));
+            const info = __mermaidBlockInfo(host, els);
+            __inspTarget = info;
+            window.ipc.postMessage('openinspector:' + JSON.stringify(__inspectorPayload('open', info)));
+        }
+        // Re-locate the followed block after a render. Same block count → same
+        // ordinal (the common case: typing inside it). Otherwise blocks were
+        // added or removed, so take the one nearest the old source line, with
+        // ordinal distance as the tie-break (several blocks inside one list or
+        // fenced div share their ancestor's data-line). Posts only on a change.
+        function __inspectorSync() {
+            if (!__inspTarget || !window.ipc) return;
+            const els = Array.from(preview.querySelectorAll('.mermaid'));
+            if (!els.length) return;
+            let el = els.length === __inspTarget.count ? els[__inspTarget.ordinal] : null;
+            if (!el) {
+                let best = Infinity;
+                for (const [i, cand] of els.entries()) {
+                    const c = __mermaidBlockInfo(cand, els);
+                    const d = Math.abs(c.line - __inspTarget.line) * 1000 + Math.abs(i - __inspTarget.ordinal);
+                    if (d < best) { best = d; el = cand; }
+                }
+            }
+            const info = __mermaidBlockInfo(el, els);
+            const changed = info.src !== __inspTarget.src;
+            __inspTarget = info;
+            if (changed) window.ipc.postMessage('inspector:update:' + JSON.stringify(__inspectorPayload('update', info)));
         }
 
         const __ABC_RENDER_OPTS = {
@@ -13854,6 +13959,9 @@ ${previewClone.outerHTML}
                         addCopyItem(t('menu.copyLatex'), latex);
                     }
                     if (fig) {
+                        if (fig.spec.kind === 'mermaid' && window.ipc) {
+                            addItem(t('menu.openInspector'), () => { __openMermaidInspector(fig.host); });
+                        }
                         // A canvas figure has no vector form to offer.
                         if (!fig.canvas) addItem(t('menu.saveSvg'), () => { __figureSave(fig, 'svg'); });
                         addItem(t('menu.savePng'), () => { __figureSave(fig, 'png'); });
@@ -14993,7 +15101,7 @@ ${previewClone.outerHTML}
                     <tr><td class="keys"><span class="kc"><kbd>Ctrl</kbd>+<kbd>D</kbd></span></td><td data-i18n="help.key.ctrlD">インストール先フォルダを Explorer で開く</td></tr>
                     <tr><td class="keys"><kbd>X</kbd></td><td data-i18n="help.key.x">現在の文書をエクスポート（保存ダイアログで HTML / PDF を選択。PDFはクリック可能なリンクと見出しのしおりを保持）</td></tr>
                     <tr><td class="keys"><span class="kc"><kbd>Ctrl</kbd>+<kbd>+</kbd> /</span> <span class="kc"><kbd>Ctrl</kbd>+<kbd>-</kbd> /</span> <span class="kc"><kbd>Ctrl</kbd>+<kbd>0</kbd></span></td><td data-i18n="help.key.zoom">本文の文字サイズ 拡大 / 縮小 / 既定</td></tr>
-                    <tr><td class="keys"><span class="kc"><kbd>Ctrl</kbd>+<kbd>Wheel</kbd></span></td><td data-i18n="help.key.fontScaleWheel">本文の文字サイズを拡大 / 縮小</td></tr>
+                    <tr><td class="keys"><span class="kc"><kbd>Ctrl</kbd>+<kbd>Wheel</kbd></span></td><td data-i18n="help.key.fontScaleWheel">本文の文字サイズを拡大 / 縮小（タッチパッドのピンチも可）</td></tr>
                     <tr><td class="keys"><span class="kc"><kbd>Alt</kbd>+<kbd>←</kbd> /</span> <span class="kc"><kbd>Alt</kbd>+<kbd>→</kbd></span></td><td data-i18n="help.key.history">開いたファイルの履歴を戻る / 進む</td></tr>
                     <tr><td class="keys" data-i18n-html="help.cell.ctrlClick"><span class="kc"><kbd>Ctrl</kbd>+クリック</span></td><td data-i18n="help.key.ctrlClick">.md リンクを新しいプレビュアのウィンドウで開く（通常のクリックは同じウィンドウで遷移）</td></tr>
                     <tr><td class="keys"><kbd>P</kbd></td><td data-i18n="help.key.p">Marp表示の切り替え: スクロール → デッキ → 一覧（一覧でサムネイルをクリックするとデッキで開く）</td></tr>
