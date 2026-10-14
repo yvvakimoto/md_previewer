@@ -314,6 +314,42 @@ def main():
             press(page, "0", ctrl=True)
             check("Ctrl+0 returns to the default", fs_px(), "16px")
             check("...and clears the stored value", fs_stored(), None)
+
+            # Touchpad pinch. WebView2 delivers it as a stream of small Ctrl+wheel
+            # events that still carry wheelDeltaY = 120 (measured over CDP in the
+            # real app) — PINCH_JS reproduces exactly that shape. 17 × -2.4 is
+            # Σ = -40.8, i.e. a ×1.5 pinch, which must take TWO rungs (accumulated
+            # per 18), not seventeen.
+            PINCH_JS = """([sel, n, dy, x, y]) => { const el = document.querySelector(sel); let all = true;
+                for (let i = 0; i < n; i++) {
+                    const e = new WheelEvent('wheel', {deltaY: dy, deltaMode: 0, ctrlKey: true,
+                        clientX: x, clientY: y, bubbles: true, cancelable: true});
+                    Object.defineProperty(e, 'wheelDeltaY', {value: 120});
+                    all = !el.dispatchEvent(e) && all;   // dispatchEvent → false once cancelled
+                } return all; }"""
+            def pinch(n, dy, sel="#preview", x=400, y=300):
+                return page.evaluate(PINCH_JS, [sel, n, dy, x, y])
+            check("a pinch-out gesture is cancelled (no page-scale zoom)", pinch(17, -2.4), True)
+            check("...and steps the body text two rungs, not seventeen", fs_px(), "20px")
+            page.wait_for_timeout(500)
+            pinch(17, 2.4)
+            check("pinching back in returns two rungs", fs_px(), "16px")
+            page.wait_for_timeout(500)
+            pinch(5, -2.0)
+            page.wait_for_timeout(500)
+            pinch(5, -2.0)
+            check("two tiny pinches separated by a pause do not add up to a rung", fs_px(), "16px")
+            page.mouse.move(400, 300)
+            page.keyboard.down("Control")
+            page.mouse.wheel(0, -100)
+            page.keyboard.up("Control")
+            page.wait_for_timeout(150)
+            check("a real mouse Ctrl+wheel notch is still exactly one rung", fs_px(), "17.6px")
+            press(page, "0", ctrl=True)
+            # Pinch is ON in WebView2 now, so ANY uncancelled Ctrl+wheel page-zooms
+            # the UI — including over chrome the font-scale handler never sees.
+            check("Ctrl+wheel over the sidebar is cancelled too", pinch(1, -3.0, sel="#toc-sidebar"), True)
+            check("...and leaves the body text alone", fs_px(), "16px")
             # The scale is a layout property, so it has to be a real declaration the
             # export can carry - not a viewport zoom the document cannot see.
             press(page, "=", ctrl=True)
@@ -698,6 +734,24 @@ def main():
             check("Home jumps to the first slide",
                   page.evaluate(ACTIVE_IDX), 0)
 
+            # Deck zoom under a pinch follows the fingers: exp(-Σ/100), no easing.
+            # (×1.15 per event — the mouse rung — would be ~×10 for this gesture.)
+            ctr = page.evaluate("() => { const r = document.querySelector('div.marpit > svg.active').getBoundingClientRect();"
+                                " return [r.left + r.width / 2, r.top + r.height / 2]; }")
+            pinch(17, -2.4, sel="div.marpit > svg.active", x=ctr[0], y=ctr[1])
+            check("a pinch zooms the deck slide by the pinch's own scale",
+                  round(page.evaluate("() => __marpZoom.scale"), 3), round(__import__("math").exp(0.408), 3))
+            check("...with no easing in the way",
+                  page.evaluate("() => document.querySelector('div.marpit > svg.active').style.transition"), "none")
+            z0 = page.evaluate("() => __marpZoom.scale")
+            page.mouse.move(ctr[0], ctr[1])
+            page.keyboard.down("Control")
+            page.mouse.wheel(0, -100)
+            page.keyboard.up("Control")
+            check("a mouse notch keeps the 1.15 rung",
+                  round(page.evaluate("() => __marpZoom.scale") / z0, 3), 1.15)
+            page.evaluate("() => __resetMarpZoom()")
+
             # ---------- Marp colour themes: one ⚙ picker drives the palette ----------
             # Every bundled assets/marp/*.css declares a single @user-vars control,
             # --theme-color, and derives all other tokens from it with oklch relative
@@ -949,6 +1003,8 @@ def main():
             # decoded bytes is the only thing that proves the serializer produced a
             # standalone document rather than the live element's markup.
             want_svg, want_png = i18n_ja("menu.saveSvg", "menu.savePng")
+            # A mermaid figure alone also offers the inspector window, first.
+            (want_insp,) = i18n_ja("menu.openInspector")
 
             load(args.doc)          # samples/sample.md carries mermaid
 
@@ -975,8 +1031,9 @@ def main():
             right_click_center("#preview .mermaid svg")
             check("right-click on a mermaid figure opens the menu",
                   page.evaluate(VISIBLE), True)
-            check("...offering Save as SVG / Save as PNG", menu_labels(), [want_svg, want_png])
-            click_menu_item(0)
+            check("...offering the inspector, then Save as SVG / Save as PNG", menu_labels(),
+                  [want_insp, want_svg, want_png])
+            click_menu_item(1)
             page.wait_for_function("() => window.__sentIpc.some("
                                    "m => m.startsWith('savefigure:'))", timeout=15000)
             figs = saved_figures()
@@ -1009,7 +1066,7 @@ def main():
             page.wait_for_timeout(500)
             shoot.wait_for_render(page)
             right_click_center("#preview .mermaid svg")
-            click_menu_item(0)
+            click_menu_item(1)
             page.wait_for_function("() => window.__sentIpc.filter("
                                    "m => m.startsWith('savefigure:')).length > 1", timeout=15000)
             dark_el = xml.dom.minidom.parseString(saved_figures()[1]["bytes"]).documentElement

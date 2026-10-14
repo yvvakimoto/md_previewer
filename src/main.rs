@@ -26,6 +26,7 @@ mod editor_registry;
 #[cfg(windows)]
 mod http_win;
 mod ime_win;
+mod inspector_registry;
 mod mdx;
 #[cfg(windows)]
 mod pdf_win;
@@ -33,6 +34,7 @@ mod pdf_win;
 mod png_win;
 mod updater;
 use editor_registry::EditorRegistry;
+use inspector_registry::InspectorRegistry;
 
 // Path to a markdown file currently being viewed. Wrapped in Arc<Mutex>
 // for sharing between the event loop, IPC handler, and file watcher.
@@ -98,6 +100,10 @@ enum CustomEvent {
     ToggleFullscreen,
     // Editor window lifecycle.
     OpenEditorWindow { line: u32 },
+    // Mermaid inspector window (src/inspector_registry.rs). `json` is the
+    // already-validated payload, `file` its document path (for the title).
+    OpenInspectorWindow { json: String, file: String },
+    InspectorCloseRequested,
     EditorCloseRequested,
     // The editor JS answered the "save before closing?" dialog that a close
     // gesture put up (`EditorRegistry::request_close_confirm`). `close` is false
@@ -410,6 +416,41 @@ pub(crate) fn eval_js_fn(webview: &wry::webview::WebView, f: &str, args: &[&str]
 /// `Arc<Mutex<…>>` and scopes the guard itself: every call site goes on to call
 /// `load_and_render`, which locks internally, and a guard still held there would
 /// deadlock the single-threaded event loop.
+/// ⚠ wry 0.24 maps `with_hotkeys_zoom(false)` onto BOTH `IsZoomControlEnabled`
+/// and `IsPinchZoomEnabled`, and with pinch disabled WebView2 drops a touchpad
+/// pinch before the page ever sees it — measured over CDP
+/// (`Input.synthesizePinchGesture`): zero wheel events. Re-enabling pinch alone
+/// makes Chromium deliver it as a cancelable Ctrl+wheel. Every page that calls
+/// this MUST `preventDefault` every Ctrl+wheel document-wide (and block
+/// touchscreen pinch with `touch-action`), or a pinch page-scales the whole UI.
+/// Ctrl +/-/0 stay off: IsZoomControlEnabled is untouched. Used by the preview
+/// and the Mermaid inspector.
+#[cfg(windows)]
+pub(crate) fn enable_touchpad_pinch(webview: &wry::webview::WebView) {
+    use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Settings5;
+    use windows::core::Interface;
+    use wry::webview::WebviewExtWindows;
+    let result = unsafe {
+        webview
+            .controller()
+            .CoreWebView2()
+            .and_then(|core| core.Settings())
+            .and_then(|settings| settings.cast::<ICoreWebView2Settings5>())
+            .and_then(|s5| s5.SetIsPinchZoomEnabled(true))
+    };
+    if let Err(e) = result {
+        eprintln!("could not enable touchpad pinch: {}", e);
+    }
+}
+
+/// The inspector window went away: tell the preview to stop posting
+/// `inspector:update:` for the block it was following.
+fn stop_inspector_follow(webview: &Arc<Mutex<wry::webview::WebView>>) {
+    if let Ok(wv) = webview.lock() {
+        eval_js_fn(&wv, "__inspectorTarget", &["null"]);
+    }
+}
+
 fn clear_editor_cursor(webview: &Arc<Mutex<wry::webview::WebView>>) {
     if let Ok(wv) = webview.lock() {
         eval_js_fn(&wv, "applyEditorCursor", &["0"]);
@@ -2014,8 +2055,11 @@ fn main() -> wry::Result<()> {
         // This matches the editor window, which has never enabled it either
         // (src/editor_registry.rs) and implements its own font zoom.
         // Caveat: wry maps this one flag to both SetIsZoomControlEnabled and
-        // SetIsPinchZoomEnabled, so touchscreen pinch goes with it; a precision
-        // touchpad pinch still arrives as wheel+ctrlKey and is handled in JS.
+        // SetIsPinchZoomEnabled. ⚠ That kills a precision-touchpad pinch too:
+        // measured over CDP (Input.synthesizePinchGesture) it reaches the page as
+        // ZERO wheel events while pinch is disabled. So pinch is switched back ON
+        // right after build (enable_touchpad_pinch); the page then receives it as
+        // cancelable Ctrl+wheel and cancels every one of them itself.
         .with_hotkeys_zoom(false);
 
     // Tracks which markdown file the previewer is currently rendering.
@@ -2030,6 +2074,9 @@ fn main() -> wry::Result<()> {
     // here and routed only to/from this preview — no broadcast, no WS, no
     // chance of cross-file mixing.
     let editor_registry: EditorRegistry = EditorRegistry::new();
+    // The (at most one) Mermaid inspector window. Read-only: it never writes
+    // the document, so it takes no part in the save / suppression machinery.
+    let inspector_registry: InspectorRegistry = InspectorRegistry::new();
 
     // Set of file paths whose next `notify` event should be suppressed because
     // we just wrote them ourselves (from the editor's Ctrl+S). Entries are
@@ -2048,6 +2095,7 @@ fn main() -> wry::Result<()> {
     let ipc_event_proxy = event_proxy.clone();
     let ipc_current_file = current_file.clone();
     let ipc_editor_registry = editor_registry.clone();
+    let ipc_inspector_registry = inspector_registry.clone();
     let ipc_suppressed_saves = suppressed_saves.clone();
     // Owned copy of the install directory (exe_dir is a borrowed &Path) so the
     // `openinstalldir:` IPC branch can open it in Explorer from the move closure.
@@ -2463,6 +2511,22 @@ fn main() -> wry::Result<()> {
                     let _ = proxy.send_event(CustomEvent::OpenFile(path));
                 }
             });
+        } else if let Some(raw) = message.strip_prefix("openinspector:") {
+            // Right-click → 「インスペクタで開く」. Spawning needs the event
+            // loop's window target, so it goes through a CustomEvent.
+            match inspector_registry::parse_inspector_payload(raw) {
+                Some((json, file)) => {
+                    let _ = ipc_event_proxy.send_event(CustomEvent::OpenInspectorWindow { json, file });
+                }
+                None => eprintln!("openinspector: unparsable payload"),
+            }
+        } else if let Some(raw) = message.strip_prefix("inspector:update:") {
+            // The followed block was re-rendered with a new source. Pushed
+            // straight from here (the IPC handler runs on the UI thread, as
+            // `jumpto:` relies on too); a no-op when no inspector is open.
+            if let Some((json, file)) = inspector_registry::parse_inspector_payload(raw) {
+                ipc_inspector_registry.push(&json, &file, false);
+            }
         } else if let Some(line_str) = message.strip_prefix("openeditor:") {
             let line = line_str.trim().parse::<u32>().unwrap_or(1);
             if let Err(e) = ipc_event_proxy.send_event(CustomEvent::OpenEditorWindow { line }) {
@@ -2625,6 +2689,8 @@ fn main() -> wry::Result<()> {
     }
 
     let webview = webview_builder.build()?;
+    #[cfg(windows)]
+    enable_touchpad_pinch(&webview);
     // Clear any zoom factor WebView2 persisted per-origin in the user data
     // folder while `with_hotkeys_zoom(true)` was still set: turning the zoom
     // control off stops the USER changing it but does not reset it, so an
@@ -2823,6 +2889,14 @@ fn main() -> wry::Result<()> {
                 window_id,
                 ..
             } => {
+                // The inspector is read-only, so its close is unconditional. It
+                // MUST be tested before the editor/preview split below, whose
+                // `else` arm treats any other window as the preview and exits.
+                if inspector_registry.is_inspector_window(window_id) {
+                    inspector_registry.close();
+                    stop_inspector_follow(&webview);
+                    return;
+                }
                 // If the editor window was closed, just drop it. If the preview
                 // (main) window was closed, exit.
                 //
@@ -3317,6 +3391,27 @@ fn main() -> wry::Result<()> {
                     }
                 } else {
                     eprintln!("openeditor: no file is currently loaded");
+                }
+            }
+            Event::UserEvent(CustomEvent::OpenInspectorWindow { json, file }) => {
+                if inspector_registry.is_open() {
+                    inspector_registry.push(&json, &file, true);
+                } else if let Err(e) = inspector_registry::spawn_inspector_window(
+                    target,
+                    &editor_assets_dir,
+                    event_proxy.clone(),
+                    inspector_registry.clone(),
+                    &json,
+                    &file,
+                ) {
+                    eprintln!("Failed to spawn inspector window: {}", e);
+                    // The preview set its follow target optimistically.
+                    stop_inspector_follow(&webview);
+                }
+            }
+            Event::UserEvent(CustomEvent::InspectorCloseRequested) => {
+                if inspector_registry.close() {
+                    stop_inspector_follow(&webview);
                 }
             }
             Event::UserEvent(CustomEvent::EditorCloseRequested) => {
