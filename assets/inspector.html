@@ -52,6 +52,13 @@ button.on { border-color: var(--accent); color: var(--accent); }
 }
 #search:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
 #search-count { color: var(--muted); min-width: 42px; font-variant-numeric: tabular-nums; }
+#dim-wrap { display: flex; align-items: center; gap: 5px; color: var(--muted); white-space: nowrap; }
+#dim-range { width: 96px; accent-color: var(--accent); margin: 0; }
+#dim-num {
+    font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--line);
+    border-radius: 5px; padding: 2px 4px; width: 48px; text-align: right; font-variant-numeric: tabular-nums;
+}
+#dim-num:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
 
 #stage {
     position: relative; overflow: hidden; cursor: grab; touch-action: none;
@@ -71,7 +78,9 @@ svg.has-hl g.node, svg.has-hl g.cluster, svg.has-hl path[data-edge], svg.has-hl 
    the lit set stands out by colour and stroke weight rather than by contrast. */
 svg.has-hl g.node:not(.insp-on), svg.has-hl path[data-edge]:not(.insp-on),
 svg.has-hl g.edgeLabel:not(.insp-on) { opacity: var(--dim, .72); }
-svg.has-hl g.cluster:not(.insp-on) { opacity: .88; }
+/* --dim is the reader's toolbar setting (inspector.js setDim). Clusters fade
+   less than nodes — .43 of the node fade, which is .88 at the default .72. */
+svg.has-hl g.cluster:not(.insp-on) { opacity: calc(1 - (1 - var(--dim, .72)) * .43); }
 /* Wide, invisible click target behind every edge (inspector.js indexGraph). */
 #stage path.insp-hit {
     fill: none !important; stroke: transparent !important; stroke-width: 14px !important;
@@ -184,6 +193,12 @@ kbd {
         <span id="search-count"></span>
     </span>
     <span class="spacer"></span>
+    <label id="dim-wrap" data-i18n-attr="title:insp.dimTitle">
+        <span data-i18n="insp.dim">Fade</span>
+        <input id="dim-range" type="range" min="0" max="95" step="1" value="28">
+        <input id="dim-num" type="number" min="0" max="95" step="1" value="28">%
+    </label>
+    <span class="sep"></span>
     <button id="btn-minimap" class="on" data-i18n="insp.minimap">Minimap</button>
     <button id="btn-panel" class="on" data-i18n="insp.panel">Panel</button>
     <button id="btn-help" title="?">?</button>
