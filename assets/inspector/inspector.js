@@ -27,6 +27,8 @@
         'insp.searchPh':     { ja: 'ノードを検索 (Ctrl+F)', en: 'Search nodes (Ctrl+F)' },
         'insp.minimap':      { ja: 'ミニマップ', en: 'Minimap' },
         'insp.panel':        { ja: 'パネル', en: 'Panel' },
+        'insp.dim':          { ja: '非強調の透過率', en: 'Fade' },
+        'insp.dimTitle':     { ja: '強調されていない要素の透過率（0% = 薄くしない）', en: 'Transparency of non-highlighted elements (0% = no fading)' },
         'insp.hint':         { ja: 'クリック: 選択 / Shift+クリック: 経路 / ドラッグ: 移動 / Ctrl+ホイール: 拡大縮小 / ?: ヘルプ',
                                en: 'Click: select / Shift+click: paths / Drag: pan / Ctrl+wheel: zoom / ?: help' },
         'insp.helpTitle':    { ja: 'インスペクタの操作', en: 'Inspector controls' },
@@ -141,6 +143,9 @@
         journey: { taskFontFamily: MERMAID_FONT_STACK },
         timeline: { taskFontFamily: MERMAID_FONT_STACK },
     };
+    // Edge labels a step smaller than node text — it changes label box sizes,
+    // so it is mirrored too (MERMAID_THEME_CSS in index.html).
+    const MERMAID_THEME_CSS = '.edgeLabel, .edgeLabel .label, .edgeLabel p, span.edgeLabel { font-size: 13px; }';
     function mermaidConfig(dark) {
         return Object.assign({
             startOnLoad: false,
@@ -148,6 +153,7 @@
             themeVariables: { fontFamily: MERMAID_FONT_STACK },
             securityLevel: 'loose',
             fontFamily: MERMAID_FONT_STACK,
+            themeCSS: MERMAID_THEME_CSS,
             layout: 'dagre',
             look: 'classic',
         }, MERMAID_LAYOUT);
@@ -786,6 +792,9 @@
 
     function isTyping(e) {
         const tg = e.target;
+        // A slider keeps focus after a mouse drag; only the keys it actually
+        // uses belong to it, so U / D / M / P / Esc keep working afterwards.
+        if (tg && tg.type === 'range') return /^(Arrow|Home$|End$|Page)/.test(e.key);
         return tg && (tg.tagName === 'INPUT' || tg.tagName === 'TEXTAREA' || tg.isContentEditable);
     }
     document.addEventListener('keydown', (e) => {
@@ -844,6 +853,36 @@
         document.body.classList.toggle('panel-hidden', !showPanel);
         applyView();
     }
+    // Fade of everything outside the highlighted set, as TRANSPARENCY in %
+    // (opacity = 1 − v/100). Default 28 = the long-standing 0.72. Kept in the
+    // shared localStorage, so it survives a reopen; capped at 95 so a faded
+    // node never disappears outright and stays clickable-looking.
+    const DIM_KEY = 'inspectorDim', DIM_DEFAULT = 28, DIM_MAX = 95;
+    const dimRange = $('dim-range'), dimNum = $('dim-num');
+    let dimPct = DIM_DEFAULT;
+    function readDim() {
+        let v = null;
+        try { v = localStorage.getItem(DIM_KEY); } catch (e) { /* ignore */ }
+        const n = v === null ? NaN : Number(v);
+        return Number.isFinite(n) ? n : DIM_DEFAULT;
+    }
+    function setDim(pct, persist) {
+        const n = Math.round(Number(pct));
+        if (!Number.isFinite(n)) { dimNum.value = String(dimPct); return; }
+        dimPct = Math.min(DIM_MAX, Math.max(0, n));
+        dimRange.value = String(dimPct);
+        if (document.activeElement !== dimNum || Number(dimNum.value) !== dimPct) dimNum.value = String(dimPct);
+        document.documentElement.style.setProperty('--dim', String(1 - dimPct / 100));
+        if (persist) { try { localStorage.setItem(DIM_KEY, String(dimPct)); } catch (e) { /* ignore */ } }
+        buildMinimap();
+    }
+    dimRange.addEventListener('input', () => setDim(dimRange.value, true));
+    dimNum.addEventListener('input', () => { if (dimNum.value !== '') setDim(dimNum.value, true); });
+    dimNum.addEventListener('change', () => setDim(dimNum.value === '' ? dimPct : dimNum.value, true));
+    dimNum.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === 'Escape') { e.preventDefault(); setDim(dimPct, false); dimNum.blur(); }
+    });
+
     $('btn-fit').addEventListener('click', () => fit(true));
     $('btn-zoom-in').addEventListener('click', () => zoomCenter(1.25));
     $('btn-zoom-out').addEventListener('click', () => zoomCenter(0.8));
@@ -867,7 +906,10 @@
         if (l !== lang) { lang = l; applyI18n(); setHint(null); recompute(); runSearch(search.value, false); }
         if (svg && isDark() !== document.body.classList.contains('dark')) render(true);
     }
-    window.addEventListener('storage', (e) => { if (e.key === 'darkMode' || e.key === 'uiLang' || e.key === null) resync(); });
+    window.addEventListener('storage', (e) => {
+        if (e.key === 'darkMode' || e.key === 'uiLang' || e.key === null) resync();
+        if (e.key === DIM_KEY || e.key === null) setDim(readDim(), false);
+    });
     window.addEventListener('focus', resync);
 
     // ------------------------------------------------------------ host entry
@@ -893,7 +935,7 @@
                 nodes: result ? [...result.nodes].sort() : [],
                 edges: result ? [...result.edges].sort() : [],
                 found: result ? result.found : undefined,
-                matches: matches.slice(), isFlow: !!graph,
+                matches: matches.slice(), isFlow: !!graph, dim: dimPct,
             };
         },
         get view() { return { ...view }; },
@@ -905,6 +947,7 @@
     };
 
     applyI18n();
+    setDim(readDim(), false);
     setHint(null);
     updateButtons();
     if (window.__inspectorInit) window.__inspectorLoad(window.__inspectorInit);

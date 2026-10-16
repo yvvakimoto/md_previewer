@@ -165,6 +165,46 @@ def main():
             panel = ev("() => document.getElementById('panel').innerText")
             check("panel: balance row (120 in, 120 out, net 0)", "kW\t120\t120\t0" in panel, True)
 
+            # Edge labels render a step smaller than node text (MERMAID_THEME_CSS),
+            # and the label box is measured at that size (text fits, not clipped).
+            fs = ev("""() => {
+                const I = window.__inspector;
+                const t = (el) => { const s = el.querySelector('span, p, div') || el; return s; };
+                const lab = t(I.edgeEl('L_Grid_Inv_0').label.querySelector('.label'));
+                const node = t(I.nodeEl('Grid').querySelector('.label'));
+                const fo = I.edgeEl('L_Grid_Inv_0').label.querySelector('foreignObject');
+                const div = fo.firstElementChild;
+                return { edge: getComputedStyle(lab).fontSize, node: getComputedStyle(node).fontSize,
+                         fits: div.scrollWidth <= +fo.getAttribute('width') + 1 && div.scrollHeight <= +fo.getAttribute('height') + 1 };
+            }""")
+            check("edge label font is 13px, node text 16px", (fs["edge"], fs["node"]), ("13px", "16px"))
+            check("edge label box fits its text", fs["fits"], True)
+
+            # Fade setting: default 28 % transparency = opacity .72; the slider and
+            # the number field drive one value, which persists in localStorage.
+            check("fade: default 28%", (state()["dim"], ev("() => document.getElementById('dim-num').value")), (28, "28"))
+            check("fade: default opacity .72", round(dim, 2), 0.72)
+            ev("""() => { const r = document.getElementById('dim-range'); r.value = '60';
+                         r.dispatchEvent(new Event('input', {bubbles: true})); }""")
+            page.wait_for_timeout(250)
+            check("fade: slider sets 60% (number field follows, stored)",
+                  (state()["dim"], ev("() => document.getElementById('dim-num').value"), ev("() => localStorage.getItem('inspectorDim')")),
+                  (60, "60", "60"))
+            check("fade: unrelated node at opacity .4",
+                  round(ev("() => +getComputedStyle(window.__inspector.nodeEl('X')).opacity"), 2), 0.4)
+            page.fill("#dim-num", "200")
+            page.keyboard.press("Enter")
+            check("fade: number field clamps to 95", (state()["dim"], ev("() => document.getElementById('dim-range').value")), (95, "95"))
+            ev("() => { localStorage.setItem('inspectorDim', '10'); window.dispatchEvent(new StorageEvent('storage', {key: 'inspectorDim'})); }")
+            check("fade: follows storage", state()["dim"], 10)
+            page.focus("#dim-range")
+            page.keyboard.press("ArrowRight")
+            check("fade: arrow keys move the focused slider", (state()["dim"], state()["mode"]), (11, "node"))
+            page.keyboard.press("u")
+            check("fade: U still works with the slider focused", state()["mode"], "up")
+            page.keyboard.press("u")
+            ev("() => { localStorage.setItem('inspectorDim', '28'); window.dispatchEvent(new StorageEvent('storage', {key: 'inspectorDim'})); document.activeElement.blur(); }")
+
             click_node("Out", "Shift")
             s = state()
             check("shift+click: path mode", (s["mode"], s["a"], s["b"], s["found"]), ("path", "Inv", "Out", True))
