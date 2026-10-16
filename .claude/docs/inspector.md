@@ -44,8 +44,8 @@ payload = `{kind: 'open'|'update', src, ordinal, line, file, dark}`, built by
 - **Mirrors:** `mermaidConfig()` mirrors `mermaidBaseConfig()` and `stripScale()` mirrors
   `parseMermaidScale()`. Both pairs are in CLAUDE.md's mirror table. The inspector must lay
   out the diagram exactly as the preview did.
-  - What is mirrored is what moves a box: `MERMAID_FONT_STACK` and `MERMAID_LAYOUT` (copied
-    verbatim). The style palette (`--md-mermaid-*`) is deliberately **not** — the highlight
+  - What is mirrored is what moves a box: `MERMAID_FONT_STACK`, `MERMAID_LAYOUT` and
+    `MERMAID_THEME_CSS` (the smaller edge-label font; copied verbatim). The style palette (`--md-mermaid-*`) is deliberately **not** — the highlight
     colours here were designed against the stock `default` / `dark`, colour never changes the
     layout, and the window follows only `darkMode` (via `storage`), not the style.
 
@@ -147,9 +147,18 @@ The preview owns "which block". The host only relays.
   second click on a selected edge. Panel rows and search hits pass no `toggle`: they are
   navigation and must never drop the node they land on. There is deliberately **no dblclick
   handler**, because a double click is two clicks and the second already means "deselect".
-- **Highlighting** is CSS classes only. `svg.has-hl` fades everything not `.insp-on` only
-  **slightly** (`--dim`, 0.72; clusters 0.88 — lowered twice on request from 0.14), so the rest of the diagram stays readable as
-  context. The lit set stands out by colour and stroke weight, not by contrast. Edges
+- **Highlighting** is CSS classes only. `svg.has-hl` fades everything not `.insp-on` to
+  opacity `--dim`. The default is only a **slight** fade (0.72 — lowered twice on request from
+  0.14), so the rest of the diagram stays readable as context; the lit set stands out by colour
+  and stroke weight, not by contrast.
+  - After two hard-coded retunings `--dim` became **the reader's setting**: the toolbar's
+    「非強調の透過率」 slider + number field, as *transparency* in % (opacity = 1 − v/100,
+    0–95, default 28). `setDim()` writes `--dim` on `:root`, re-clones the minimap and stores
+    `inspectorDim` in the shared localStorage (followed via `storage`, like `darkMode`).
+    95 is the cap so a faded node never vanishes outright.
+  - Clusters derive theirs: `calc(1 - (1 - var(--dim)) * .43)` — the old 0.88 at the default.
+  - `isTyping()` gives a focused range input only Arrow / Home / End / Page keys, so U / D /
+    M / P / Esc still work after the slider was dragged with the mouse. Edges
   get `insp-in` / `insp-out` / `insp-path`. Ancestor clusters of a lit node stay lit.
   - The `!important`s are needed to beat mermaid's scoped rules and `linkStyle` inline styles.
 - **Minimap:** a **deep clone** of the live SVG, re-cloned (rAF-debounced) on every highlight
@@ -212,6 +221,9 @@ Pure, UMD-shaped, no DOM. `require`d by `inspector-graph.test.cjs`.
   - a syntax error keeping the diagram
   - a sequence diagram turning the graph features off
   - the theme following `storage`
+  - edge labels at 13px vs. 16px node text, with the label box fitting its text
+  - the fade setting: default 28 % / opacity .72, slider ↔ number field, clamp, `storage`,
+    and U still working with the slider focused
   - Ctrl+W → `inspector:close`
 
   Then, on the preview: `data-mermaid-source`, the menu item and its `openinspector:`

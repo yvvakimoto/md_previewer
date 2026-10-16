@@ -4836,6 +4836,14 @@
             journey: { taskFontFamily: MERMAID_FONT_STACK },
             timeline: { taskFontFamily: MERMAID_FONT_STACK },
         };
+        // Flowchart edge labels a step smaller than the 16px node text, so a
+        // label reads as an annotation on the line rather than a second node.
+        // mermaid has no config key for it; `themeCSS` lands in the SVG's own
+        // <style>, which mermaid inserts BEFORE drawing — so the label box is
+        // measured at this size (no clipping) and the rule rides inside the SVG
+        // into every export and figure save.
+        // ⚠ MIRRORED in assets/inspector/inspector.js (it moves label boxes).
+        const MERMAID_THEME_CSS = '.edgeLabel, .edgeLabel .label, .edgeLabel p, span.edgeLabel { font-size: 13px; }';
         // A style harmonises mermaid's colours with its own palette by declaring
         // these custom properties (on :root / #preview, re-pointed under
         // body.dark-mode if the style has a dark variant). "The theme declares,
@@ -4882,6 +4890,7 @@
                     styleVars ? Object.assign({ darkMode: dark }, styleVars) : null),
                 securityLevel: 'loose',
                 fontFamily: MERMAID_FONT_STACK,
+                themeCSS: MERMAID_THEME_CSS,
                 // mermaid 12 made ELK the default layout engine and 'neo' the default
                 // appearance. Both are pinned back to the classic dagre look here, so a
                 // mermaid bump cannot silently re-lay-out and recolour every diagram in
