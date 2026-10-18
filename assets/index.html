@@ -2052,6 +2052,41 @@
                 page-break-inside: avoid;
             }
 
+            /* Paper cannot scroll, but Chromium prints a scroll container's
+               scrollbar anyway — a long equation or code line came out with a
+               dead horizontal bar under it. Three layers:
+               1. code wraps (shrinking a long line to fit would make it tiny);
+               2. a too-wide display equation is shrunk to the printed column by
+                  __pdfFitMath(), which stamps its max-content/font ratio as
+                  --pdf-fit-r. The fit is done HERE in CSS against `cqi` rather
+                  than in JS against a guessed paper width, because only the
+                  print layout knows the real column — theme padding, list and
+                  quote indents, and the width multiplier all included;
+               3. whatever still overflows (an unfitted figure, a sub-pixel
+                  miss) loses its scrollbar instead of printing one.
+               Marp is excluded: a slide is fitted by its own autofit. */
+            body:not(.marp) #preview pre,
+            body:not(.marp) #preview pre code {
+                white-space: pre-wrap !important;
+                overflow-wrap: anywhere;
+                overflow: visible !important;
+            }
+            body:not(.marp) #preview .katex-display[data-pdf-fit] {
+                container-type: inline-size;
+            }
+            body:not(.marp) #preview .katex-display[data-pdf-fit] > .katex {
+                font-size: min(var(--pdf-fit-fs), calc(100cqi / var(--pdf-fit-r))) !important;
+            }
+            #preview .katex-display, #preview pre, #preview .markwhen-timeline,
+            #preview .tikz-diagram, #preview .tikzcd-diagram {
+                scrollbar-width: none;
+            }
+            #preview .katex-display::-webkit-scrollbar, #preview pre::-webkit-scrollbar,
+            #preview .markwhen-timeline::-webkit-scrollbar,
+            #preview .tikz-diagram::-webkit-scrollbar, #preview .tikzcd-diagram::-webkit-scrollbar {
+                display: none;
+            }
+
             /* Hide copy buttons when printing */
             .copy-button {
                 display: none !important;
@@ -4158,6 +4193,50 @@
         let __pdfImgSwaps = [];   // {img, origSrc, origSrcset}
         let __pdfTaskBoxes = [];  // task checkboxes disabled for the print, restored after
         let __pdfMarpRestore = null;   // teardown closure set by __marpPrepareForPdf
+        let __pdfFitEls = [];     // .katex-display blocks stamped by __pdfFitMath
+
+        // Stamp each display equation with what the print CSS needs to shrink it
+        // to the printed column: its max-content width as a multiple of its own
+        // font size (--pdf-fit-r), and that font size (--pdf-fit-fs, the cap —
+        // an equation that already fits is never enlarged). KaTeX lays out in em,
+        // so the ratio holds at any font size and `font-size: min(fs, 100cqi / r)`
+        // is exactly "as large as it is, or as large as fits". The ratio is
+        // measured here because CSS cannot ask for a max-content width; the
+        // column it is divided into is left to the print layout (see the
+        // @media print block) because only that layout knows it. Stamped on
+        // every block, not just the ones overflowing on screen: the paper column
+        // is narrower than the window, so an equation that fits now may not.
+        function __pdfFitMath() {
+            if (document.body.classList.contains('marp')) return;
+            if (/^vertical/.test(getComputedStyle(preview).writingMode)) return;
+            for (const el of preview.querySelectorAll('.katex-display')) {
+                const k = el.querySelector(':scope > .katex');
+                if (!k) continue;
+                const fs = parseFloat(getComputedStyle(k).fontSize);
+                if (!(fs > 0)) continue;
+                const prevW = el.style.width, prevMax = el.style.maxWidth;
+                el.style.width = 'max-content';
+                el.style.maxWidth = 'none';
+                const w = k.getBoundingClientRect().width;
+                el.style.width = prevW;
+                el.style.maxWidth = prevMax;
+                if (!(w > 0)) continue;
+                // 1% slack so a sub-pixel rounding on paper is not an overflow.
+                el.style.setProperty('--pdf-fit-r', String((w / fs) * 1.01));
+                el.style.setProperty('--pdf-fit-fs', fs + 'px');
+                el.setAttribute('data-pdf-fit', '');
+                __pdfFitEls.push(el);
+            }
+        }
+
+        function __pdfUnfitMath() {
+            for (const el of __pdfFitEls) {
+                el.removeAttribute('data-pdf-fit');
+                el.style.removeProperty('--pdf-fit-r');
+                el.style.removeProperty('--pdf-fit-fs');
+            }
+            __pdfFitEls = [];
+        }
         let __pdfVerticalRestore = null;   // ditto, set by __verticalPrepareForPdf
         const __PDF_IMG_MAX_EDGE = 1600;      // absolute cap on the long edge (~A4 width at high DPI)
         const __PDF_IMG_TARGET_SCALE = 2;     // keep up to 2× the displayed CSS size (retina-crisp)
@@ -4506,6 +4585,7 @@
             __pdfTaskBoxes = [];
             __pdfMarpRestore = null;
             __pdfVerticalRestore = null;
+            __pdfUnfitMath();
             let page = null;
             // Task checkboxes are interactive in the live preview; Chromium prints an
             // enabled control with its accent colour and a disabled one grey, so print
@@ -4519,6 +4599,7 @@
                 // full-page slide. Resizing the slides first makes those measurements
                 // describe the page the image actually lands on.
                 page = __marpPrepareForPdf();
+                __pdfFitMath();
                 const decodes = [];
                 // Downscale unnecessarily high-res images first (skip freshly-inserted
                 // video-frame stills, handled by the loop below).
@@ -4602,6 +4683,7 @@
             __pdfImgSwaps = [];
             for (const el of __pdfTaskBoxes) el.removeAttribute('disabled');
             __pdfTaskBoxes = [];
+            __pdfUnfitMath();
             // Marp layout last: it ends in a fitMarpSlides() pass, which measures the
             // DOM — so the images and videos must already be back to their real sizes.
             if (__pdfMarpRestore) {

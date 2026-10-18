@@ -151,6 +151,30 @@ CDP の Page.printToPDF が紙のサイズで組み直す PDF にはまったく
 
 """ * 8)
 
+# Wider than an A4 column, both at top level and inside a list (whose indent the
+# fit must honour), plus a short equation that must NOT be shrunk and a code line
+# that must wrap rather than scroll.
+OVERFLOW_MD = """# はみ出しの検査
+
+$$
+f(x) = a_0 + a_1 x + a_2 x^2 + a_3 x^3 + a_4 x^4 + a_5 x^5 + a_6 x^6 + a_7 x^7 + a_8 x^8 + a_9 x^9 + a_{10} x^{10} + a_{11} x^{11} + a_{12} x^{12} + a_{13} x^{13} + a_{14} x^{14} + a_{15} x^{15} + a_{16} x^{16} + a_{17} x^{17} + a_{18} x^{18}
+$$
+
+- リストの中:
+
+  $$
+  g(y) = b_0 + b_1 y + b_2 y^2 + b_3 y^3 + b_4 y^4 + b_5 y^5 + b_6 y^6 + b_7 y^7 + b_8 y^8 + b_9 y^9 + b_{10} y^{10} + b_{11} y^{11} + b_{12} y^{12} + b_{13} y^{13} + b_{14} y^{14} + b_{15} y^{15}
+  $$
+
+$$
+E = mc^2
+$$
+
+```text
+LONGCODELINE_0123456789_abcdefghijklmnopqrstuvwxyz_0123456789_abcdefghijklmnopqrstuvwxyz_0123456789_abcdefghijklmnopqrstuvwxyz_END
+```
+"""
+
 
 # Record every IPC message the page posts, so the ack payload is inspectable.
 RECORD_IPC_JS = """() => {
@@ -338,8 +362,10 @@ def main():
     plain = os.path.join(tmp, "plain.md")
     vertical = os.path.join(tmp, "vertical.md")
     scaled = os.path.join(tmp, "scaled.md")
+    overflow = os.path.join(tmp, "overflow.md")
     for path, body in ((deck, DECK_MD), (deck43, DECK_43_MD), (plain, PLAIN_MD),
-                       (vertical, VERTICAL_MD), (scaled, SCALED_MD)):
+                       (vertical, VERTICAL_MD), (scaled, SCALED_MD),
+                       (overflow, OVERFLOW_MD)):
         with open(path, "w", encoding="utf-8") as fh:
             fh.write(body)
 
@@ -599,6 +625,64 @@ def main():
                       approx(narrow / full, 0.7, 0.06), (narrow, full))
                 check("%s: ...and it is still centred on the sheet" % label,
                       approx(extents[0.7][0], sheet_w - extents[0.7][1], 4.0), extents[0.7])
+
+            # ---- nothing scrolls on paper -------------------------------------
+            # Chromium prints a scroll container's scrollbar, so a long equation or
+            # code line used to carry a dead bar on paper. Headless Chromium hides
+            # scrollbars, so the bar itself cannot be seen here; what is asserted is
+            # its cause — under print media, after __beforePdfPrint(), nothing that
+            # can scroll overflows — plus that the ink stays inside the page box.
+            # Per theme, because the column the fit divides into includes the
+            # theme's own print padding (hakuro-modern drops #preview's to 0).
+            print("\n[長い数式・コード — PDF で横にはみ出さない]")
+            OVERFLOW_JS = """() => [...document.querySelectorAll(
+                '#preview .katex-display, #preview pre')].map(e => ({
+                    tag: e.tagName, sw: e.scrollWidth, cw: e.clientWidth,
+                    fs: parseFloat(getComputedStyle(e.querySelector('.katex') || e).fontSize)}))"""
+            for style, label in ((None, "既定"), ("hakuro-modern.css", "hakuro-modern")):
+                octx, opage, oclient = open_scaled(browser, 1.0, style=style)
+                load(opage, base + overflow, marp=False, style=style)
+                opage.wait_for_function(
+                    "() => document.querySelectorAll('#preview .katex-display .katex').length >= 3")
+                screen = opage.evaluate(OVERFLOW_JS)
+                out = os.path.join(tmp, "overflow-%s.pdf" % label)
+                run_export(opage, oclient, out)
+                # Print media alone keeps the 1440px window as the layout width;
+                # narrow it to the A4 column (8.27in - 2 x 0.4in, in CSS px) so the
+                # overflow assertion is about the paper and not vacuous.
+                opage.set_viewport_size({"width": 717, "height": 900})
+                opage.emulate_media(media="print")
+                printed = opage.evaluate(OVERFLOW_JS)
+                bad = [b for b in printed if b["sw"] > b["cw"] + 1]
+                check("%s: no equation or code block overflows its box on paper" % label,
+                      not bad, bad)
+                maths = [i for i, b in enumerate(printed) if b["tag"] != "PRE"]
+                check("%s: the long equations were shrunk to fit" % label,
+                      printed[maths[0]]["fs"] < screen[maths[0]]["fs"] - 0.5
+                      and printed[maths[1]]["fs"] < screen[maths[1]]["fs"] - 0.5,
+                      (screen, printed))
+                check("%s: a short equation keeps its size" % label,
+                      approx(printed[maths[2]]["fs"], screen[maths[2]]["fs"], 0.05),
+                      (screen[maths[2]], printed[maths[2]]))
+                opage.emulate_media(media="screen")
+                doc = fitz.open(out)
+                sheet_w = doc[0].rect.width
+                x0, x1 = body_text_extent(doc)
+                text = "".join(doc[i].get_text() for i in range(doc.page_count))
+                doc.close()
+                # 2pt slack: hakuro-modern prints with zero #preview padding, so a
+                # glyph's side bearing at the column edge reads ~1pt past it.
+                margin = 0.4 * 72
+                check("%s: the printed ink stays inside the page margins" % label,
+                      x0 >= margin - 2 and x1 <= sheet_w - margin + 2,
+                      (x0, x1, sheet_w))
+                check("%s: the long code line wraps instead of being cut" % label,
+                      "_END" in text, "the code line's tail is missing")
+                opage.evaluate("() => window.__afterPdfPrint()")
+                check("%s: the fit stamps are removed after printing" % label,
+                      opage.evaluate("() => document.querySelectorAll('[data-pdf-fit]').length") == 0,
+                      "stamps left behind")
+                octx.close()
 
             # A toast is on screen for 1400 ms, so whether it lands in the PDF is purely
             # a race between the reader and the timer -- and it WAS landing there: the

@@ -72,6 +72,12 @@ $$(x + y)^n = \sum_{k=0}^{n} \binom{n}{k} x^{n-k} y^k$$
 The Fourier transform:
 
 $$F(\omega) = \int_{-\infty}^{\infty} f(t) e^{-i\omega t} dt$$
+
+A formula wider than the page — it scrolls sideways in the preview, and is shrunk to the column (no scrollbar) when exported to PDF with `X`:
+
+$$
+e^x = 1 + x + \frac{x^2}{2!} + \frac{x^3}{3!} + \frac{x^4}{4!} + \frac{x^5}{5!} + \frac{x^6}{6!} + \frac{x^7}{7!} + \frac{x^8}{8!} + \frac{x^9}{9!} + \frac{x^{10}}{10!} + \frac{x^{11}}{11!} + \frac{x^{12}}{12!} + \frac{x^{13}}{13!} + \frac{x^{14}}{14!} + \cdots
+$$
 ## Math and Code Block
 
 `$` a `$`,  `$E=mc^2$`
