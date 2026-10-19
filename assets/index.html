@@ -6468,8 +6468,15 @@
             // Task-list checkboxes are interactive in the live preview (the click writes
             // back to the source .md); an artifact has no host to write to, so re-disable
             // them — which also keeps the artifact looking exactly like it always has.
+            // The serialized artifact reads the `checked` ATTRIBUTE, but the live state
+            // is the property: a clicked box (whose echo skips the re-render, see
+            // __taskTakeEcho) and every Marp box (applyTaskLists sets `.checked`) would
+            // otherwise ship stale. cloneNode copies checkedness, so sync it here.
             previewClone.querySelectorAll('li.task-list-item input[type="checkbox"]')
-                .forEach((el) => el.setAttribute('disabled', ''));
+                .forEach((el) => {
+                    el.toggleAttribute('checked', el.checked);
+                    el.setAttribute('disabled', '');
+                });
             // Table edit mode must never leak into an artifact (a commit or cancel clears
             // it, but an export while editing would otherwise ship editable cells).
             previewClone.querySelectorAll('.table-editing').forEach(el => el.classList.remove('table-editing'));
@@ -9265,6 +9272,33 @@ ${previewClone.outerHTML}
             container.replaceWith(pre);
         }
 
+        // Carry rendered plotly graphs across a #preview rebuild. A plot is never
+        // memoized (its CSV can change on disk, and the render must refetch it), so a
+        // rebuild used to show an empty block through the whole fetch. Instead the
+        // caller detaches every rendered graph before the innerHTML swap — keyed by its
+        // encoded source, duplicates queued in order — and drops each one into the new
+        // placeholder with the same source; renderPlotlyBlock() then updates it in
+        // place with Plotly.react, so the old plot stays on screen until the new one
+        // replaces it. Unclaimed graphs are simply dropped with the old DOM.
+        function __plotlyHoldRendered(root) {
+            const held = new Map();
+            root.querySelectorAll('.plotly-block.plotly-block-ready[data-plotly-source]').forEach(el => {
+                if (!el._fullLayout) return;   // never drawn (error / still fetching)
+                const k = el.getAttribute('data-plotly-source');
+                if (!held.has(k)) held.set(k, []);
+                held.get(k).push(el);
+                el.remove();
+            });
+            return held;
+        }
+        function __plotlyTakeHeld(held, encodedSource) {
+            const q = held && held.get(encodedSource);
+            const el = q && q.shift();
+            if (!el) return null;
+            el.classList.remove('marp-fig');   // re-derived by the figure pass
+            return el;
+        }
+
         async function renderPlotlyBlock(container, encodedSource) {
             let spec;
             try {
@@ -9352,7 +9386,9 @@ ${previewClone.outerHTML}
                 await ensurePlotly();
                 container.classList.add('plotly-block-ready');
                 container.__plotlySpec = { traces, layout, config };
-                await Plotly.newPlot(container, traces, layout, config);
+                // A graph carried over by __plotlyHoldRendered() is updated in place,
+                // so it never blanks; a fresh placeholder gets a new plot.
+                await (container._fullLayout ? Plotly.react : Plotly.newPlot)(container, traces, layout, config);
             } catch (e) {
                 __plotlyShowError(container, 'Plotly.newPlot failed: ' + e.message);
             }
@@ -9430,6 +9466,9 @@ ${previewClone.outerHTML}
         // documented in renderMarp() below.
         let __marpDeckIndex = 0;
         let __marpLastRenderedPath = null;
+        // Bumped per renderMarp(); a deferred release of the rebuild's height hold
+        // only acts if no newer render has taken the hold since.
+        let __marpRenderSeq = 0;
         // Auto-shrink overflowing slides to fit (default on; A-key toggle).
         let __marpAutofit = localStorage.getItem('marpAutofit') !== 'false';
         const __MARP_FIT_MIN = 0.5;      // floor on the shrink scale
@@ -11914,9 +11953,32 @@ ${previewClone.outerHTML}
 
             const { html, css } = marp.render(markdown);
 
+            // ⚠ No frame may paint a half-built deck. Every `await` below (a figure
+            // engine, __nextPaint(), a plotly CSV fetch) can let the compositor show the
+            // DOM as it stands, and a re-render on every live-edit keystroke / save /
+            // checkbox click made that visible as a black flash (deck: no `.active`
+            // slide yet over the #000 backdrop) or a scroll jump (scroll / list: the
+            // figures are still empty, #preview shrinks and scrollTop is clamped). So:
+            //   • hold #preview's height and the scroll offset across the rebuild
+            //     (released at the end, after the final fit);
+            //   • carry each rendered plotly graph into its new placeholder, so the
+            //     old plot stays up through the fetch (see __plotlyHoldRendered);
+            //   • activate + fit the deck slide BEFORE the first await (below).
+            const __holdDeck = document.body.classList.contains('deck-mode');
+            const __holdH = __holdDeck ? 0 : preview.offsetHeight;
+            const __holdTop = previewContainer.scrollTop;
+            const __holdLeft = previewContainer.scrollLeft;
+            const __holdSeq = ++__marpRenderSeq;
+            preview.style.minHeight = __holdH > 0 ? __holdH + 'px' : '';
+            const __heldPlotly = __plotlyHoldRendered(preview);
+
             __abcStop(); // see the note at the normal pipeline's rebuild
             __model3dUnmount();
             preview.innerHTML = '<style id="marp-style">' + css + '</style>' + html;
+            if (__holdH > 0) {
+                previewContainer.scrollTop = __holdTop;
+                previewContainer.scrollLeft = __holdLeft;
+            }
             // The theme's ⚙ overrides (--theme-color) ride along with every render.
             __refreshMarpStyleVars(getMarpTheme(currentMarkdown) || 'default');
 
@@ -12188,10 +12250,11 @@ ${previewClone.outerHTML}
                     tpl.innerHTML = tableHtml;
                     pre.replaceWith(tpl.content);
                 } else if (lang === 'plotly') {
-                    const div = document.createElement('div');
-                    div.className = 'plotly-block';
+                    const enc = encodeURIComponent(code.textContent);
+                    const div = __plotlyTakeHeld(__heldPlotly, enc) || document.createElement('div');
+                    if (!div.classList.contains('plotly-block')) div.className = 'plotly-block';
                     div.id = 'marp-plotly-' + (plotlyCounter++);
-                    div.setAttribute('data-plotly-source', encodeURIComponent(code.textContent));
+                    div.setAttribute('data-plotly-source', enc);
                     pre.replaceWith(div);
                 } else if (lang === 'abc') {
                     const div = document.createElement('div');
@@ -12363,6 +12426,19 @@ ${previewClone.outerHTML}
 
             setupFootnoteTooltips();
 
+            // 同じファイルの再読込（保存後の再描画 / ライブプレビュー / テーマ変更）では
+            // 表示中のスライド位置を保持する。別ファイルへ切り替わったときだけ先頭へ。
+            // __marpUpdateDeck() が範囲外インデックスをクランプするので、スライド数が
+            // 減っても安全。
+            if (__marpLastRenderedPath !== currentFilePath) {
+                __marpDeckIndex = 0;
+            }
+            __marpLastRenderedPath = currentFilePath;
+            // First activation, BEFORE any await: whatever frame paints next shows the
+            // right slide, already fitted (see the ⚠ at the rebuild above). Called
+            // again at the end, once the async figures have their final heights.
+            __marpUpdateDeck();
+
             // Render mermaid diagrams (memoized by source + theme).
             const marpMermaidEls = preview.querySelectorAll('.mermaid');
             if (marpMermaidEls.length > 0 && await awaitLib(ensureMermaid(), 'Mermaid', marpMermaidEls)) {
@@ -12372,7 +12448,11 @@ ${previewClone.outerHTML}
             // Render ABC music-notation staves in slides (memoized).
             const marpAbcEls = preview.querySelectorAll('[data-abc]');
             if (marpAbcEls.length > 0 && await awaitLib(ensureAbcjs(), 'ABC', marpAbcEls)) {
-                await __nextPaint();
+                // The paint is for abcjs' layout on a fresh render; an all-hit pass just
+                // re-attaches markup, so it must not hand the compositor a frame.
+                if (!Array.from(marpAbcEls).every(el => __abcCache.has(__diagSource(el, 'data-abc-source')))) {
+                    await __nextPaint();
+                }
                 renderAbcCached(preview);
                 addAbcAudioBars(preview);
             }
@@ -12414,7 +12494,9 @@ ${previewClone.outerHTML}
             const marpFeynEls = preview.querySelectorAll('.feynman-block');
             if (marpFeynEls.length > 0 && await awaitLib(
                     Promise.all([ensureFeynmark(), ensureKatex()]), 'Feynmark', marpFeynEls)) {
-                await __nextPaint();
+                if (!Array.from(marpFeynEls).every(el => __feynmarkCache.has(__diagSource(el, 'data-feynman-source')))) {
+                    await __nextPaint();
+                }
                 renderFeynmarkCached(preview);
             }
 
@@ -12448,20 +12530,18 @@ ${previewClone.outerHTML}
                 })();
             }
 
-            // 同じファイルの再読込（保存後の再描画 / ライブプレビュー / テーマ変更）では
-            // 表示中のスライド位置を保持する。別ファイルへ切り替わったときだけ先頭へ。
-            // __marpUpdateDeck() が範囲外インデックスをクランプするので、スライド数が
-            // 減っても安全。
-            if (__marpLastRenderedPath !== currentFilePath) {
-                __marpDeckIndex = 0;
-            }
-            __marpLastRenderedPath = currentFilePath;
             __marpUpdateDeck();
             // Build the slide TOC (shown in scroll / list modes; deck hides the sidebar).
             generateMarpTOC();
             // Re-fit after a layout flush so any async-rendered (mermaid / abc /
-            // plotly) figures' final heights are accounted for.
-            requestAnimationFrame(() => fitMarpSlides());
+            // plotly) figures' final heights are accounted for. The height hold is
+            // released in the same frame, so the page shrinks (if it does) once, to
+            // its final size. __nextPaint, not a bare rAF: rAF never fires in the
+            // hidden --export-png window, and the hold must not outlive the render.
+            __nextPaint().then(() => {
+                fitMarpSlides();
+                if (__holdSeq === __marpRenderSeq) preview.style.minHeight = '';
+            });
 
             // List-mode click → jump into deck mode focused on that slide.
             // Bind on #preview (delegated) so we only attach once per render.
@@ -12701,6 +12781,7 @@ ${previewClone.outerHTML}
             // Leaving a previous Marp document: shed mode classes and slide-counter.
             const __wasMarp = document.body.classList.contains('marp');
             document.body.classList.remove('marp', 'deck-mode', 'list-mode');
+            preview.style.minHeight = '';     // renderMarp()'s rebuild hold, if one is pending
             if (__laserOn) setLaser(false);   // laser is deck-mode only
             // Restore the user-style <link> that renderMarp() stripped on entry.
             if (__wasMarp && currentStyle) applyUserStyle(currentStyle);
@@ -14444,6 +14525,23 @@ ${previewClone.outerHTML}
         function __taskRaw() {
             return (__taskPendingRaw != null) ? __taskPendingRaw : currentMarkdownRaw;
         }
+        // Every text a toggle has posted, oldest first, until it comes back. The
+        // checkbox already SHOWS the toggled state the moment it is clicked, so when the
+        // round trip returns exactly one of these, the DOM a re-render would build is
+        // the DOM already on screen — loadFileFromRust() skips the render instead of
+        // rebuilding #preview (which in a Marp deck blanked to the black backdrop for a
+        // frame or more). An echo of an EARLIER click while a later one is in flight is
+        // skipped too: the screen already shows the later state, which its own echo
+        // will confirm. Anything else (an external edit, the editor) renders as before.
+        let __taskSentRaws = [];
+        // → 'latest' | 'earlier' | null, and consumes the matched entries.
+        function __taskTakeEcho(raw) {
+            const i = __taskSentRaws.indexOf(raw);
+            if (i < 0) { __taskSentRaws = []; return null; }
+            const latest = (i === __taskSentRaws.length - 1);
+            __taskSentRaws = __taskSentRaws.slice(i + 1);
+            return latest ? 'latest' : 'earlier';
+        }
 
         // Every checkbox applyTaskLists() can produce, in document order. The two selectors
         // mirror its tight (<li>) / loose (<li> > <p>) host split, and the CSS rule's.
@@ -14539,10 +14637,11 @@ ${previewClone.outerHTML}
                     path: currentFilePath,
                     content: next,
                 }));
-                // No local re-render: the round trip (savefile: → EditorSavedContent →
-                // loadFileFromRust) re-renders from the saved content and restores the
-                // scroll position, exactly as a table commit does.
+                // No local re-render, and none on the way back either: the round trip
+                // (savefile: → EditorSavedContent → loadFileFromRust) recognizes its own
+                // echo via __taskTakeEcho() and keeps the DOM already on screen.
                 __taskPendingRaw = next;
+                __taskSentRaws.push(next);
             } catch (e) {
                 console.warn('__taskToggle: postMessage failed', e);
                 showToast(t('task.saveFailed'));
@@ -15114,6 +15213,19 @@ ${previewClone.outerHTML}
         // Function to load file from Rust (called when opened via double-click or auto-reload)
         window.loadFileFromRust = async function(fileData) {
             const isReload = currentFilePath === fileData.filepath && appContainer.style.display === 'flex';
+
+            // A task checkbox's own write coming back: the screen already shows it, so
+            // adopt the text and keep the DOM (see __taskTakeEcho). Must be decided
+            // before anything below touches state, and only for a reload of the same
+            // file with no Back/Forward or ToC target pending.
+            const __echo = isReload ? __taskTakeEcho(fileData.raw != null ? fileData.raw : fileData.content) : null;
+            if (__echo && pendingHistLine == null && !pendingHeadingSlug && !pendingScrollToTop) {
+                currentMarkdown = fileData.content;
+                currentMarkdownRaw = (fileData.raw != null) ? fileData.raw : fileData.content;
+                if (__echo === 'latest') __taskPendingRaw = null;
+                suppressHistoryPush = false;
+                return;
+            }
 
             // Store scroll position before reload
             const scrollPos = isReload ? previewContainer.scrollTop : 0;
