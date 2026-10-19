@@ -56,6 +56,9 @@ export const I18N = {
   'ed.status.slideCut':      { ja: '✂ スライド', en: '✂ Slide' },
   'ed.status.slideCutTitle': { ja: '現在のスライドをカット  ·  :slidecut / gsd / Ctrl+Alt+X',
                                en: 'Cut the current slide  ·  :slidecut / gsd / Ctrl+Alt+X' },
+  'ed.status.marp':          { ja: '▶ Marp', en: '▶ Marp' },
+  'ed.status.marpTitle':     { ja: 'Marp スライドの雛形を挿入（この文書をスライドにする）  ·  :marp / :slide',
+                               en: 'Insert a Marp deck template (turn this document into slides)  ·  :marp / :slide' },
 
   // ---- character count modal ----
   'ed.cc.title':             { ja: '文字数',   en: 'Character Count' },
@@ -73,9 +76,37 @@ export const I18N = {
 
   // ---- insert slide modal ----
   'ed.slide.title':          { ja: 'スライドを挿入', en: 'Insert Slide' },
-  'ed.slide.hint':           { ja: 'クラスを選択 · <kbd>Esc</kbd> で取消',
-                               en: 'Pick a class · <kbd>Esc</kbd> to cancel' },
+  'ed.slide.hint':           { ja: 'テンプレートまたはクラスを選択 · <kbd>Esc</kbd> で取消',
+                               en: 'Pick a template or a class · <kbd>Esc</kbd> to cancel' },
   'ed.slide.noClass':        { ja: '（クラスなし）', en: '(no class)' },
+  'ed.slide.templates':      { ja: 'テンプレート', en: 'Templates' },
+  'ed.slide.classes':        { ja: '空のスライド（クラスのみ）', en: 'Empty slide (class only)' },
+  // SLIDE_TEMPLATES button labels (marpSlides.js — the ids are data)
+  'ed.tpl.title':            { ja: '表紙', en: 'Title' },
+  'ed.tpl.section':          { ja: '章扉', en: 'Section' },
+  'ed.tpl.bullets':          { ja: '見出し＋箇条書き', en: 'Heading + bullets' },
+  'ed.tpl.split':            { ja: '2カラム', en: 'Two columns' },
+  'ed.tpl.image':            { ja: '見出し＋画像', en: 'Heading + image' },
+  'ed.tpl.end':              { ja: '締め', en: 'Closing' },
+  // Placeholder text written INTO the document by the slide / deck templates
+  'ed.tpl.ph.title':         { ja: 'タイトル', en: 'Title' },
+  'ed.tpl.ph.subtitle':      { ja: 'サブタイトル', en: 'Subtitle' },
+  'ed.tpl.ph.part':          { ja: 'Part 1', en: 'Part 1' },
+  'ed.tpl.ph.chapter':       { ja: '章タイトル', en: 'Chapter title' },
+  'ed.tpl.ph.heading':       { ja: '見出し', en: 'Heading' },
+  'ed.tpl.ph.item':          { ja: '項目', en: 'Item' },
+  'ed.tpl.ph.left':          { ja: '左カラム', en: 'Left column' },
+  'ed.tpl.ph.right':         { ja: '右カラム', en: 'Right column' },
+  'ed.tpl.ph.thanks':        { ja: 'ご清聴ありがとうございました', en: 'Thank you' },
+
+  // ---- Marp deck template modal ----
+  'ed.deck.title':           { ja: 'Marp スライドの雛形を挿入', en: 'Insert Marp Deck Template' },
+  'ed.deck.theme':           { ja: 'テーマ', en: 'Theme' },
+  'ed.deck.themeDefault':    { ja: '（指定しない）', en: '(none)' },
+  'ed.deck.paginate':        { ja: 'ページ番号', en: 'Page numbers' },
+  'ed.deck.insert':          { ja: '挿入', en: 'Insert' },
+  'ed.deck.hint':            { ja: 'フロントマターに <code>marp: true</code> を追加します。本文が空ならスライド一式も入ります · <kbd>Esc</kbd> で取消',
+                               en: 'Adds <code>marp: true</code> to the front matter, plus a starter deck when the body is empty · <kbd>Esc</kbd> to cancel' },
 
   // ---- insert table modal ----
   'ed.table.title':          { ja: '表を挿入', en: 'Insert Table' },
@@ -214,6 +245,21 @@ export const I18N = {
 
   // ---- completion popup `detail` text ----
   'ed.complete.parentDir':   { ja: '親フォルダへ', en: 'Parent folder' },
+
+  // fenceTemplateComplete.js — one per template language, plus the plain block
+  'ed.complete.fence.plain':      { ja: 'コードブロック（閉じフェンス付き）', en: 'Code block (with closing fence)' },
+  'ed.complete.fence.mermaid':    { ja: 'Mermaid 図の雛形', en: 'Mermaid diagram template' },
+  'ed.complete.fence.plotly':     { ja: 'Plotly グラフ（CSV/TSV ファイル）', en: 'Plotly chart (CSV/TSV file)' },
+  'ed.complete.fence.model3d':    { ja: '3D モデル（STL/OBJ/glTF…）', en: '3D model (STL/OBJ/glTF…)' },
+  'ed.complete.fence.csv':        { ja: 'CSV の表', en: 'CSV table' },
+  'ed.complete.fence.tsv':        { ja: 'TSV の表', en: 'TSV table' },
+  'ed.complete.fence.abc':        { ja: 'ABC 楽譜', en: 'ABC music notation' },
+  'ed.complete.fence.markwhen':   { ja: 'Markwhen タイムライン', en: 'Markwhen timeline' },
+  'ed.complete.fence.tikz':       { ja: 'TikZ 図', en: 'TikZ picture' },
+  'ed.complete.fence.tikzcd':     { ja: '可換図式 (tikz-cd)', en: 'Commutative diagram (tikz-cd)' },
+  'ed.complete.fence.kataskeve':  { ja: '幾何作図（2D）', en: 'Geometry figure (2D)' },
+  'ed.complete.fence.kataskeve3d':{ ja: '幾何作図（3D）', en: 'Geometry figure (3D)' },
+  'ed.complete.fence.feynman':    { ja: 'ファインマン図', en: 'Feynman diagram' },
 
   'ed.complete.fm.marp':     { ja: 'Marpスライドモード (true)', en: 'Marp slide mode (true)' },
   'ed.complete.fm.confidential': { ja: '機密透かし (true)', en: 'Confidential watermark (true)' },

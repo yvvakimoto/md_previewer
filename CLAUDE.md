@@ -80,7 +80,7 @@ README.md 「対応している記法・機能」.
 | Body text size (`Ctrl` `+`/`-`/`0`, `Ctrl`+wheel, and an `S`-modal row) — a layout multiplier, so it reaches the PDF / HTML export | `styles-theming.md` |
 | Content width (an `S`-modal row) — the second layout multiplier; `W` full-width is released when it is used | `styles-theming.md` |
 | Dark/light (`M`), style picker (`S`) with a per-style ⚙ `@user-vars` pane, `bunko.css` 文庫本 / `tategaki.css` 縦書き, section numbering (`N`), wide layout (`W`), `confidential:` / `watermark:` overlay | `styles-theming.md` |
-| Companion editor (`E`): CodeMirror 6, Vim, live preview, cursor-block highlight in the preview, cell mode, Office-table paste, autocomplete, font zoom, ⚙ settings | `editor-*.md` |
+| Companion editor (`E`): CodeMirror 6, Vim, live preview, cursor-block highlight in the preview, cell mode, Office-table paste, autocomplete, fence / Marp templates, font zoom, ⚙ settings | `editor-*.md` |
 | Mermaid inspector window (right-click a mermaid figure): pan/zoom, node / path / upstream-downstream highlighting, edge-label balance, search, minimap; follows live edits | `inspector.md` |
 | UI language toggle (ja / en), one shared `uiLang` key across both windows | `i18n.md` |
 | Export to standalone HTML or PDF (`X`); headless `--export-png` for agents | `export.md` |
@@ -348,7 +348,8 @@ eighteen that are checked (or partly checked) can rely on the harness rememberin
 | the preview context menu's reach (`__nativeMenuWins`) or the history index (`__histCanGo`, `history.state.idx`) | `keycheck.py` (+ `tablecheck.py` for the `.table-editing` guard) |
 | `--md-font-scale` / `--md-width-scale`, a theme's base `font-size` or `max-width`, `with_hotkeys_zoom` | `keycheck.py` + `exportcheck.py` + `pdfcheck.py` (the scaled cases are the only ones that can see either) |
 | preview table edit mode | `python tools/preview-harness/tablecheck.py` + `node tools/preview-harness/table-model.test.cjs` |
-| task-list checkboxes, `applyTaskLists()`, `__isTypingTarget()` | `python tools/preview-harness/taskcheck.py` (+ `keycheck.py` for the focus case) |
+| task-list checkboxes, `applyTaskLists()`, `__isTypingTarget()` | `python tools/preview-harness/taskcheck.py` (+ `keycheck.py` for the focus case, `flickercheck.py` for the echo skip) |
+| `renderMarp()`'s rebuild — anything before its first `await`, the height / scroll hold, the plotly carry-over, `loadFileFromRust()`'s reload path | `python tools/preview-harness/flickercheck.py` (the only check that sees intermediate frames: a deck frame with no `.active` slide is the black flash) |
 | tikz / tikzcd — the `__tikzJpPreamble()` TeX macros, `__tikzFillJpText` / `__tikzAdoptJpFill`, `renderTikzCached` | `python tools/preview-harness/tikzcheck.py` (the ONLY check that can see tikz: `domdump.py` collapses the `<svg>`, and `shoot.py` counts a `.tikz-error` as settled) |
 | `model3d` / `tools/build-three/` | `python tools/preview-harness/keycheck.py` (pixels, theme salt, **and the leak nets: one WebGL context, flat shader-program count**) + `exportcheck.py` + `pdfcheck.py` |
 | the editor's close paths (`__confirmClose`, `editor:closeconfirm:`, `WindowEvent::CloseRequested`, Vim `:q`) | `python tools/preview-harness/quitcheck.py` + `cargo test` (the Rust veto itself is invisible to both — drive the real app and send it a `WM_CLOSE`) |
@@ -367,6 +368,7 @@ eighteen that are checked (or partly checked) can rely on the harness rememberin
 | Rust pure helpers | `cargo test` |
 | markdown table model | `cd tools/build-editor && node mdTable.test.mjs` |
 | editor prefs model | `cd tools/build-editor && node editorPrefs.test.mjs` |
+| fence templates, fence-body path completion, Marp slide / deck templates | `cd tools/build-editor && node templates.test.mjs` |
 | anything visual, for actual pixels | `python tools/preview-harness/shoot.py <file.md>` (or `--export-png` for byte-exact WebView2) |
 
 Details of how the harness works, and its intentional no-ops: `.claude/docs/harness-testing.md`.

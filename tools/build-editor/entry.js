@@ -34,6 +34,7 @@ import { texEnvCompletionSource } from './texEnvComplete.js';
 import { katexCommandCompletionSource } from './katexCommandComplete.js';
 import { pathCompletionSource } from './pathComplete.js';
 import { fencedDivCompletionSource } from './fencedDivComplete.js';
+import { fenceTemplateCompletionSource } from './fenceTemplateComplete.js';
 import { spanStyleCompletionSource } from './spanStyleComplete.js';
 import { frontMatterCompletionSource, frontMatterBlankFieldAt } from './frontMatterComplete.js';
 import { installJpWordMotion } from './jpWordMotion.js';
@@ -45,7 +46,8 @@ import { numberedListIndentKeymap } from './numberedListIndent.js';
 import { installClipboardSync } from './clipboardSync.js';
 import {
   isMarpDocument, insertSlideAfter, copySlide, cutSlide,
-  marpSlideKeymap, SLIDE_CLASSES,
+  marpSlideKeymap, SLIDE_CLASSES, SLIDE_TEMPLATES,
+  insertSlideTemplate, insertDeckTemplate,
 } from './marpSlides.js';
 import {
   insertTable, tableColumnHighlight, mdTableKeymap, TABLE_ALIGNS,
@@ -212,7 +214,14 @@ export function create(root, opts = {}) {
   btnSlideCut.dataset.i18n = 'ed.status.slideCut';
   btnSlideCut.dataset.i18nAttr = 'title:ed.status.slideCutTitle';
   btnSlideCut.style.display = 'none';
-  statusCtrls.append(btnSettings, btnTable,
+  // The non-Marp counterpart of the trio: turn the document into a deck.
+  const btnMarpDeck = document.createElement('button');
+  btnMarpDeck.className = 'status-btn';
+  btnMarpDeck.type = 'button';
+  btnMarpDeck.dataset.i18n = 'ed.status.marp';
+  btnMarpDeck.dataset.i18nAttr = 'title:ed.status.marpTitle';
+  btnMarpDeck.style.display = 'none';
+  statusCtrls.append(btnSettings, btnTable, btnMarpDeck,
                      btnSlideAdd, btnSlideCopy, btnSlideCut);
   statusRight.append(statusInfo, statusCtrls);
   status.appendChild(statusFile);
@@ -284,14 +293,34 @@ export function create(root, opts = {}) {
     <div class="cc-panel" role="dialog" aria-modal="true">
       <button class="cc-close" type="button" data-i18n-attr="aria-label:common.close">&times;</button>
       <h2 data-i18n="ed.slide.title"></h2>
-      <div class="slide-class-grid"></div>
+      <h3 class="slide-grid-label" data-i18n="ed.slide.templates"></h3>
+      <div class="slide-class-grid slide-tpl-grid"></div>
+      <h3 class="slide-grid-label" data-i18n="ed.slide.classes"></h3>
+      <div class="slide-class-grid slide-cls-grid"></div>
       <div class="cc-hint" data-i18n-html="ed.slide.hint"></div>
     </div>`;
   document.body.appendChild(slideModal);
   slideModal.querySelector('.cc-close').addEventListener('click', () => closeSlideModal());
   slideModal.addEventListener('click', (e) => { if (e.target === slideModal) closeSlideModal(); });
+  // Placeholder copy for the templates, resolved at insert time (UI language).
+  const tplText = (k) => t('ed.tpl.ph.' + k);
   {
-    const grid = slideModal.querySelector('.slide-class-grid');
+    const grid = slideModal.querySelector('.slide-tpl-grid');
+    SLIDE_TEMPLATES.forEach((tpl) => {
+      const b = document.createElement('button');
+      b.className = 'slide-class-btn';
+      b.type = 'button';
+      b.dataset.i18n = 'ed.tpl.' + tpl.id;
+      b.addEventListener('click', () => {
+        closeSlideModal();
+        insertSlideTemplate(view, tpl, tplText);
+        if (tpl.path) setTimeout(() => startCompletion(view), 0);
+      });
+      grid.appendChild(b);
+    });
+  }
+  {
+    const grid = slideModal.querySelector('.slide-cls-grid');
     SLIDE_CLASSES.forEach((name) => {
       const b = document.createElement('button');
       b.className = 'slide-class-btn';
@@ -305,6 +334,9 @@ export function create(root, opts = {}) {
     });
   }
   function openSlideModal() {
+    // Every "insert slide" gesture (+ Slide, :slide, gsi, Ctrl+Alt+N, cell mode)
+    // lands here; in a document that is not a deck yet, offer to make it one.
+    if (!isMarpDocument(view.state.doc.toString())) { openDeckModal(); return; }
     document.body.classList.add('status-pinned');
     slideModal.style.display = 'flex';
     const first = slideModal.querySelector('.slide-class-btn');
@@ -312,6 +344,61 @@ export function create(root, opts = {}) {
   }
   function closeSlideModal() {
     slideModal.style.display = 'none';
+    document.body.classList.remove('status-pinned');
+    setTimeout(() => view.focus(), 0);
+  }
+
+  // Marp deck template (mirrors the table picker). Offered where the slide
+  // picker would be meaningless: a document that is not a Marp deck yet.
+  const deckModal = document.createElement('div');
+  deckModal.className = 'cc-modal';
+  deckModal.style.display = 'none';
+  deckModal.innerHTML = `
+    <div class="cc-panel" role="dialog" aria-modal="true">
+      <button class="cc-close" type="button" data-i18n-attr="aria-label:common.close">&times;</button>
+      <h2 data-i18n="ed.deck.title"></h2>
+      <div class="table-size-form deck-form">
+        <label><span data-i18n="ed.deck.theme"></span><select class="deck-theme">
+          <option value="" data-i18n="ed.deck.themeDefault"></option>
+        </select></label>
+        <label><span data-i18n="ed.deck.paginate"></span><input type="checkbox" class="deck-paginate" checked></label>
+      </div>
+      <div class="cc-actions"><button class="cc-btn deck-insert" type="button" data-i18n="ed.deck.insert"></button></div>
+      <div class="cc-hint" data-i18n-html="ed.deck.hint"></div>
+    </div>`;
+  document.body.appendChild(deckModal);
+  const deckTheme = deckModal.querySelector('.deck-theme');
+  const deckPaginate = deckModal.querySelector('.deck-paginate');
+  deckModal.querySelector('.cc-close').addEventListener('click', () => closeDeckModal());
+  deckModal.addEventListener('click', (e) => { if (e.target === deckModal) closeDeckModal(); });
+  deckModal.querySelector('.deck-insert').addEventListener('click', () => commitDeckModal());
+  // Enter submits; Escape bubbles to the global modal-Esc chain.
+  deckModal.querySelector('.table-size-form').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); commitDeckModal(); }
+  });
+  function commitDeckModal() {
+    const opts = { theme: deckTheme.value, paginate: deckPaginate.checked };
+    closeDeckModal();
+    insertDeckTemplate(view, opts, tplText);
+    updateMarpButtons();
+  }
+  function openDeckModal() {
+    // Theme names are data (marp-core built-ins + the assets/marp/*.css themes
+    // the host injected as __marpUserThemes), rebuilt per open; the first,
+    // i18n'd "(default)" option stays.
+    const names = ['default', 'gaia', 'uncover'];
+    for (const n of (Array.isArray(window.__marpUserThemes) ? window.__marpUserThemes : [])) {
+      if (typeof n === 'string' && n && !names.includes(n)) names.push(n);
+    }
+    while (deckTheme.options.length > 1) deckTheme.remove(1);
+    for (const n of names) deckTheme.add(new Option(n, n));
+    deckTheme.value = names.includes('magenta') ? 'magenta' : '';
+    document.body.classList.add('status-pinned');
+    deckModal.style.display = 'flex';
+    setTimeout(() => deckTheme.focus(), 0);
+  }
+  function closeDeckModal() {
+    deckModal.style.display = 'none';
     document.body.classList.remove('status-pinned');
     setTimeout(() => view.focus(), 0);
   }
@@ -683,6 +770,7 @@ export function create(root, opts = {}) {
       || settingsModal.style.display === 'flex'
       || cellHelpModal.style.display === 'flex'
       || tableModal.style.display === 'flex'
+      || deckModal.style.display === 'flex'
       || slideModal.style.display === 'flex'
       || modal.style.display === 'flex';
   }
@@ -710,6 +798,11 @@ export function create(root, opts = {}) {
     if (e.key === 'Escape' && tableModal.style.display === 'flex') {
       e.preventDefault();
       closeTableModal();
+      return;
+    }
+    if (e.key === 'Escape' && deckModal.style.display === 'flex') {
+      e.preventDefault();
+      closeDeckModal();
       return;
     }
     if (e.key === 'Escape' && slideModal.style.display === 'flex') {
@@ -1104,6 +1197,7 @@ export function create(root, opts = {}) {
   btnSettings.addEventListener('click', () => openSettings());
   btnTable.addEventListener('click', () => openTableModal());
   btnSlideAdd.addEventListener('click', () => openSlideModal());
+  btnMarpDeck.addEventListener('click', () => openDeckModal());
   btnSlideCopy.addEventListener('click', () => copySlide(view));
   btnSlideCut.addEventListener('click', () => cutSlide(view));
 
@@ -1117,6 +1211,7 @@ export function create(root, opts = {}) {
     btnSlideAdd.style.display = disp;
     btnSlideCopy.style.display = disp;
     btnSlideCut.style.display = disp;
+    btnMarpDeck.style.display = marp ? 'none' : '';
   }
 
   function updateTitle() {
@@ -1325,6 +1420,7 @@ export function create(root, opts = {}) {
     });
     // Marp slide helpers (ex-commands — guaranteed no conflict with normal keys).
     Vim.defineEx('slide',     undefined, () => openSlideModal());
+    Vim.defineEx('marp',      undefined, () => openDeckModal());
     Vim.defineEx('slideyank', undefined, () => copySlide(view));
     Vim.defineEx('slidecut',  undefined, () => cutSlide(view));
     // Table helpers. No 1-letter shortName (`:t` is real Vim's :copy). The
@@ -1551,7 +1647,7 @@ export function create(root, opts = {}) {
       }),
       search(),
       autocompletion({
-        override: [frontMatterCompletionSource, fencedDivCompletionSource, spanStyleCompletionSource, texEnvCompletionSource, katexCommandCompletionSource, pathCompletionSource(() => currentPath)],
+        override: [frontMatterCompletionSource, fencedDivCompletionSource, fenceTemplateCompletionSource, spanStyleCompletionSource, texEnvCompletionSource, katexCommandCompletionSource, pathCompletionSource(() => currentPath)],
         activateOnTyping: true,
         defaultKeymap: false,
       }),
