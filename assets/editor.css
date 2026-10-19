@@ -286,6 +286,14 @@ body.theme-dark.ime-open .cm-editor.cm-focused .cm-fat-cursor {
     border-color: var(--fg);
     outline: none;
 }
+/* Section labels above the template grid and the bare-class grid. */
+.slide-grid-label {
+    margin: 10px 0 2px;
+    font-size: 12px;
+    font-weight: normal;
+    color: var(--muted);
+}
+.slide-grid-label:first-of-type { margin-top: 2px; }
 
 /* Pipe-table column highlight — the cell of the cursor's column in every row of
  * the table under the cursor. Only `background` is set (never color / display /
@@ -334,6 +342,9 @@ body.theme-dark .cm-editor .cm-md-table-col-head {
     border-color: var(--fg);
     outline: none;
 }
+/* Marp deck template: theme + page numbers, on the table form's styling. */
+.table-size-form.deck-form { grid-template-columns: 2fr 1fr; }
+.table-size-form.deck-form input[type="checkbox"] { align-self: flex-start; margin: 6px 0 0; }
 .cc-actions {
     display: flex;
     justify-content: flex-end;
