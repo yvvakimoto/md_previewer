@@ -1,9 +1,12 @@
-import { startCompletion } from '@codemirror/autocomplete';
+import { startCompletion } from '@codemirror/autocomplete';
 import { t } from './i18n.js';
+import { fenceInfoAt } from './fenceTemplateComplete.js';
 
 // Local-path completion for markdown link / image targets:
 //   [label](|)   →  sibling files & folders
 //   ![alt](sub/| →  contents of sub/
+// and for the path-valued keys of figure fences (see FENCE_PATH_KEYS):
+//   ```plotly  file: |      ```model3d  file: | / mtl: |
 //
 // Relies on a Rust-side IPC channel:
 //   JS → Rust: window.ipc.postMessage('editor:listdir:' + JSON.stringify({id, base, sub}))
@@ -13,6 +16,11 @@ import { t } from './i18n.js';
 const IMAGE_EXT = /\.(png|jpe?g|gif|webp|svg|avif|bmp|ico)$/i;
 const VIDEO_EXT = /\.(mov|mp4|m4v|webm|ogv|ogg)$/i;
 const MD_EXT = /\.(md|markdown)$/i;
+// Fence bodies: plotly `file:` reads CSV/TSV; model3d `file:` the mesh formats
+// three.js loads (tools/build-three/entry.js), `mtl:` an OBJ's material file.
+const DATA_EXT = /\.(csv|tsv)$/i;
+const MESH_EXT = /\.(stl|obj|ply|gltf|glb|3mf)$/i;
+const MTL_EXT = /\.mtl$/i;
 
 let nextId = 1;
 const pending = new Map(); // id -> { resolve, timeout }
@@ -81,25 +89,54 @@ function parentDir(absPath) {
   return i < 0 ? '' : absPath.slice(0, i);
 }
 
-function shouldKeep(entry, isImage) {
-  if (entry.isDir) return true;
-  // `![](…)` targets media (images + video); `[](…)` also allows .md links.
-  if (isImage) return IMAGE_EXT.test(entry.name) || VIDEO_EXT.test(entry.name);
-  return MD_EXT.test(entry.name) || IMAGE_EXT.test(entry.name) || VIDEO_EXT.test(entry.name);
+// `![](…)` targets media (images + video); `[](…)` also allows .md links.
+function linkKeep(isImage) {
+  return (name) => (isImage
+    ? IMAGE_EXT.test(name) || VIDEO_EXT.test(name)
+    : MD_EXT.test(name) || IMAGE_EXT.test(name) || VIDEO_EXT.test(name));
+}
+
+// Path-valued keys inside figure fences, keyed by fence language. `bare` is the
+// model3d shorthand where the whole body is just the path.
+const FENCE_PATH_KEYS = {
+  plotly:  { file: DATA_EXT },
+  model3d: { file: MESH_EXT, mtl: MTL_EXT, bare: MESH_EXT },
+};
+
+// Where (if anywhere) the cursor sits in a completable path, as
+// { partial, keep(name) }. Pure — exported for templates.test.mjs.
+//   [label](partial      ![alt](partial
+//   ```plotly  file: partial
+//   ```model3d file: partial / mtl: partial / partial (first body line)
+export function pathContextAt(state, pos) {
+  const line = state.doc.lineAt(pos);
+  const before = state.doc.sliceString(line.from, pos);
+
+  const m = /(!?)\[[^\]\n]*\]\(([^)\s]*)$/.exec(before);
+  if (m) return { partial: m[2], keep: linkKeep(m[1] === '!') };
+
+  const fence = fenceInfoAt(state, pos);
+  const keys = fence && FENCE_PATH_KEYS[fence.lang];
+  if (!keys) return null;
+  const kv = /^\s*([A-Za-z]+)\s*:\s*["']?([^\s"']*)$/.exec(before);
+  if (kv) {
+    const re = keys[kv[1].toLowerCase()];
+    return re ? { partial: kv[2], keep: (n) => re.test(n) } : null;
+  }
+  if (keys.bare && line.number === fence.openLine + 1) {
+    const bare = /^\s*["']?([^\s:"']*)$/.exec(before);
+    if (bare) return { partial: bare[1], keep: (n) => keys.bare.test(n) };
+  }
+  return null;
 }
 
 // Build the completion source bound to a live `getFile()` accessor so the
 // editor's currentPath reference stays fresh across file switches.
 export function pathCompletionSource(getFile) {
   return async function pathSource(context) {
-    const line = context.state.doc.lineAt(context.pos);
-    const before = context.state.doc.sliceString(line.from, context.pos);
-    // Match the URL portion of a markdown link/image: `[label](partial`
-    const m = /(!?)\[[^\]\n]*\]\(([^)\s]*)$/.exec(before);
-    if (!m) return null;
-
-    const isImage = m[1] === '!';
-    const partial = m[2];
+    const ctx = pathContextAt(context.state, context.pos);
+    if (!ctx) return null;
+    const { partial } = ctx;
     // Don't try to complete absolute URLs or anchors.
     if (/^[a-zA-Z]+:/.test(partial) || partial.startsWith('#') || partial.startsWith('/')) {
       return null;
@@ -111,13 +148,9 @@ export function pathCompletionSource(getFile) {
 
     const { sub, prefix } = splitPartial(partial);
 
-    if (!context.explicit && prefix === '' && sub === '' && !before.endsWith('(')) {
-      // Avoid firing on totally unrelated text.
-    }
-
     const entries = await requestListing(base, sub);
 
-    const filtered = (entries || []).filter((e) => shouldKeep(e, isImage));
+    const filtered = (entries || []).filter((e) => e.isDir || ctx.keep(e.name));
 
     const options = filtered.map((e) => {
       const insertion = e.isDir ? e.name + '/' : e.name;
@@ -174,7 +207,7 @@ export function pathCompletionSource(getFile) {
       options,
       // Re-query whenever the user types a `/` (drilled into a subdir) or a
       // non-name character. Plain word chars keep the popup live-filtering.
-      validFor: /^[^\/\s)]*$/,
+      validFor: /^[^\/\s)"']*$/,
     };
   };
 }

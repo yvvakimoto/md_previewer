@@ -80,7 +80,7 @@ README.md 「対応している記法・機能」.
 | Body text size (`Ctrl` `+`/`-`/`0`, `Ctrl`+wheel, and an `S`-modal row) — a layout multiplier, so it reaches the PDF / HTML export | `styles-theming.md` |
 | Content width (an `S`-modal row) — the second layout multiplier; `W` full-width is released when it is used | `styles-theming.md` |
 | Dark/light (`M`), style picker (`S`) with a per-style ⚙ `@user-vars` pane, `bunko.css` 文庫本 / `tategaki.css` 縦書き, section numbering (`N`), wide layout (`W`), `confidential:` / `watermark:` overlay | `styles-theming.md` |
-| Companion editor (`E`): CodeMirror 6, Vim, live preview, cursor-block highlight in the preview, cell mode, Office-table paste, autocomplete, font zoom, ⚙ settings | `editor-*.md` |
+| Companion editor (`E`): CodeMirror 6, Vim, live preview, cursor-block highlight in the preview, cell mode, Office-table paste, autocomplete, fence / Marp templates, font zoom, ⚙ settings | `editor-*.md` |
 | Mermaid inspector window (right-click a mermaid figure): pan/zoom, node / path / upstream-downstream highlighting, edge-label balance, search, minimap; follows live edits | `inspector.md` |
 | UI language toggle (ja / en), one shared `uiLang` key across both windows | `i18n.md` |
 | Export to standalone HTML or PDF (`X`); headless `--export-png` for agents | `export.md` |
@@ -367,6 +367,7 @@ eighteen that are checked (or partly checked) can rely on the harness rememberin
 | Rust pure helpers | `cargo test` |
 | markdown table model | `cd tools/build-editor && node mdTable.test.mjs` |
 | editor prefs model | `cd tools/build-editor && node editorPrefs.test.mjs` |
+| fence templates, fence-body path completion, Marp slide / deck templates | `cd tools/build-editor && node templates.test.mjs` |
 | anything visual, for actual pixels | `python tools/preview-harness/shoot.py <file.md>` (or `--export-png` for byte-exact WebView2) |
 
 Details of how the harness works, and its intentional no-ops: `.claude/docs/harness-testing.md`.

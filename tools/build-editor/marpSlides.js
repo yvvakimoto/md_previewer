@@ -10,6 +10,8 @@
 //     optionally with a `<!-- _class: NAME -->` directive.
 //   - copySlide(view) / cutSlide(view)  — copy / cut the slide under the cursor
 //     (one separator is removed on cut so none is left dangling).
+//   - insertSlideTemplate(view, tpl, p) — a ready-made slide (SLIDE_TEMPLATES).
+//   - insertDeckTemplate(view, opts, p) — make the document a Marp deck.
 //
 // All edits go through view.dispatch, so the existing modeListener flows them to
 // the live preview — no IPC needed. In-house module; same shape as the other
@@ -62,6 +64,144 @@ export function insertSlideAfter(view, className) {
     selection: EditorSelection.cursor(at + bodyOffset + body.length),
     scrollIntoView: true,
     userEvent: 'input',
+  });
+  view.focus();
+}
+
+// ── Templates ────────────────────────────────────────────────────────────────
+// A template body marks the selection with CARET: one marker is a caret, two
+// select the placeholder between them so typing replaces it.
+export const CARET = '‸';
+
+// Ready-made slides offered in the insert picker under the bare classes. `id` is
+// data (never a label — #15); the button text is t('ed.tpl.<id>') and the
+// placeholder copy is resolved at insert time so it follows the UI language.
+// `path: true` re-opens completion after insert (the caret is inside `![](…)`).
+export const SLIDE_TEMPLATES = [
+  { id: 'title',   cls: 'title',   body: (p) => `# ${CARET}${p('title')}${CARET}\n\n## ${p('subtitle')}` },
+  { id: 'section', cls: 'section', body: (p) => `## ${p('part')}\n\n# ${CARET}${p('chapter')}${CARET}` },
+  { id: 'bullets', cls: '',        body: (p) => `## ${CARET}${p('heading')}${CARET}\n\n- ${p('item')} 1\n- ${p('item')} 2\n- ${p('item')} 3` },
+  { id: 'split',   cls: 'split',   body: (p) => `## ${CARET}${p('heading')}${CARET}\n\n${p('left')}\n\n+++\n\n${p('right')}` },
+  { id: 'image',   cls: '',        body: (p) => `## ${p('heading')}\n\n![](${CARET})`, path: true },
+  { id: 'end',     cls: 'lead',    body: (p) => `# ${CARET}${p('thanks')}${CARET}` },
+];
+
+// Strip the markers from `text`; return the clean text and the selection
+// offsets within it ({anchor, head}, equal for a bare caret; null if unmarked).
+export function takeCaret(text) {
+  const a = text.indexOf(CARET);
+  if (a < 0) return { text, sel: null };
+  const rest = text.slice(0, a) + text.slice(a + 1);
+  const b = rest.indexOf(CARET);
+  if (b < 0) return { text: rest, sel: { anchor: a, head: a } };
+  return { text: rest.slice(0, b) + rest.slice(b + 1), sel: { anchor: a, head: b } };
+}
+
+// Pure planner: insert template `tpl` (resolved through `p`) as a new slide
+// after the one under `pos`. Returns { changes, anchor, head } in post-change
+// coordinates. Same placement rules as insertSlideAfter().
+export function planSlideTemplate(state, pos, tpl, p) {
+  const scan = scanSeparators(state);
+  const slide = unitAt(state, pos, scan);
+  const at = slide.inFrontMatter ? scan.fmEnd : slide.to;
+  let head = '---\n\n';
+  if (tpl.cls) head += `<!-- _class: ${tpl.cls} -->\n\n`;
+  const { text, sel } = takeCaret(tpl.body(p));
+  const { insert, bodyOffset } = padInsert(state, at, head + text);
+  const base = at + bodyOffset + head.length;
+  const s = sel || { anchor: text.length, head: text.length };
+  return { changes: { from: at, insert }, anchor: base + s.anchor, head: base + s.head };
+}
+
+export function insertSlideTemplate(view, tpl, p) {
+  const plan = planSlideTemplate(view.state, view.state.selection.main.head, tpl, p);
+  view.dispatch({
+    changes: plan.changes,
+    selection: EditorSelection.single(plan.anchor, plan.head),
+    scrollIntoView: true,
+    userEvent: 'slide.template',
+  });
+  view.focus();
+}
+
+// Pure planner for the deck template: turn the document into a Marp deck.
+//   - no leading front-matter → prepend one (marp / theme / paginate);
+//   - front-matter present    → set `marp: true` (rewriting a `marp:` line that
+//     says otherwise) and add `theme:` / `paginate:` only where absent — keys
+//     the author already wrote are never touched;
+//   - empty body              → also fill it with a starter deck
+//     (title, bullets, closing slide), selecting the title placeholder.
+// A non-empty body is kept as is: it simply becomes the deck's slides.
+// `theme` '' omits the theme line. Returns { changes, anchor, head }.
+export function planDeckTemplate(state, { theme = '', paginate = true } = {}, p) {
+  const text = state.doc.toString();
+  const changes = [];
+  let bodyStart = 0;   // in original coordinates
+  let shift = 0;       // characters inserted before bodyStart
+  const want = (has, line) => (has ? '' : line + '\n');
+
+  const fm = FM_RE.exec(text);
+  if (fm && fm.index === 0) {
+    const openerLen = fm[0].indexOf('\n') + 1;
+    const yaml = fm[1];
+    const marpLine = /^[ \t]*marp[ \t]*:.*$/m.exec(yaml);
+    if (marpLine && !/^\s*marp\s*:\s*true\s*$/.test(marpLine[0])) {
+      const from = openerLen + marpLine.index;
+      changes.push({ from, to: from + marpLine[0].length, insert: 'marp: true' });
+      shift += 'marp: true'.length - marpLine[0].length;
+    }
+    const add = want(!!marpLine, 'marp: true')
+      + (theme ? want(/^[ \t]*theme[ \t]*:/m.test(yaml), `theme: ${theme}`) : '')
+      + (paginate ? want(/^[ \t]*paginate[ \t]*:/m.test(yaml), 'paginate: true') : '');
+    if (add) {
+      // Start of the closing `---` line. FM_RE always has a newline between the
+      // YAML group and the closer, even when the group is empty.
+      const at = openerLen + yaml.length + 1;
+      changes.push({ from: at, insert: add });
+      shift += add.length;
+    }
+    bodyStart = fm[0].length;
+  } else {
+    const head = '---\nmarp: true\n'
+      + (theme ? `theme: ${theme}\n` : '')
+      + (paginate ? 'paginate: true\n' : '')
+      + '---\n\n';
+    changes.push({ from: 0, insert: head });
+    shift += head.length;
+  }
+
+  if (text.slice(bodyStart).trim() !== '') {
+    const at = bodyStart + shift;
+    return { changes, anchor: at, head: at };
+  }
+  // Empty body: replace whatever whitespace is there with the starter deck.
+  const deck = [
+    `<!-- _class: title -->\n\n# ${CARET}${p('title')}${CARET}\n\n## ${p('subtitle')}`,
+    `## ${p('heading')}\n\n- ${p('item')} 1\n- ${p('item')} 2\n- ${p('item')} 3`,
+    `<!-- _class: lead -->\n\n# ${p('thanks')}`,
+  ].join('\n\n---\n\n');
+  const { text: body, sel } = takeCaret(deck);
+  let lead = '';
+  if (bodyStart > 0) {
+    lead = fm[2] ? '\n' : '\n\n';  // closer with / without its own newline
+    changes.push({ from: bodyStart, to: text.length, insert: lead + body + '\n' });
+  } else {
+    // No front-matter: one change for the whole (blank) document, so the
+    // prepended header and the deck never meet at the same position.
+    const head = changes.pop().insert;
+    changes.push({ from: 0, to: text.length, insert: head + body + '\n' });
+  }
+  const base = bodyStart + shift + lead.length;
+  return { changes, anchor: base + sel.anchor, head: base + sel.head };
+}
+
+export function insertDeckTemplate(view, opts, p) {
+  const plan = planDeckTemplate(view.state, opts, p);
+  view.dispatch({
+    changes: plan.changes,
+    selection: EditorSelection.single(plan.anchor, plan.head),
+    scrollIntoView: true,
+    userEvent: 'slide.deck',
   });
   view.focus();
 }
