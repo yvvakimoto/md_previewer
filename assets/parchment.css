@@ -62,6 +62,14 @@ body {
     --md-dl-desc-color: #5a4530;
 }
 
+/* タスクリストのチェックボックス — 箱は index.html のベースラインが描く。色だけを
+   リンクと同じ赤茶に寄せる。リンク色がダークでも変わらないので、チェック印も白で固定。 */
+#preview {
+    --md-task-accent: #a04a1a;
+    --md-task-check: #ffffff;
+    --md-task-border: rgba(160, 74, 26, 0.5);
+}
+
 #preview code {
     background: rgba(184, 150, 95, 0.18);
     color: #5a3a1b;

@@ -270,11 +270,10 @@ body.numbered #preview h4::before {
 #preview dt { line-height: var(--hk-leading); }
 #preview dd { line-height: var(--hk-leading); }
 
-/* GFM task lists, if the renderer emits them */
-#preview li > input[type="checkbox"] {
-    accent-color: var(--hk-accent);
-    margin-right: 0.5em;
-    transform: translateY(1px);
+/* Task-list checkboxes — the box itself is drawn by the index.html baseline;
+   only the colour is set here (--md-task-*), so it follows the dark palette. */
+#preview {
+    --md-task-accent: var(--hk-accent);
 }
 
 

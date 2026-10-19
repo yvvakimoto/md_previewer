@@ -2756,13 +2756,82 @@
         /* Clickable in the live preview (the click writes the toggled marker back to
            the source .md — see __taskToggle). An export / PDF / capture re-disables
            them, and `:disabled` is what keeps the cursor honest there. */
-        #preview li.task-list-item > input[type="checkbox"],
-        #preview li.task-list-item > p:first-child > input[type="checkbox"] {
-            margin: 0 0.4em 0 0;
-            vertical-align: middle;
-            cursor: pointer;
+        /* Drawn by us, not the OS control (appearance: none), so it looks the same
+           live, disabled (export / PDF / --export-png) and in every theme. Its colours
+           are "theme declares, the app implements", like --md-dl-accent:
+             --md-task-accent  fill + border of a checked box (and the hover / focus
+                               ring) — a theme points it at its own accent;
+             --md-task-check   the tick, which must contrast with the accent;
+             --md-task-border  the outline of an empty box.
+           The *-auto fallbacks are the app's: the link blue per light / dark, and in a
+           Marp slide the theme's own --accent / --bg (set on `section`, which inverts
+           them on `.invert`). `#preview` sits in :where(), so the selectors weigh
+           (0,2,2): enough to beat a Marp theme's element reset, never a theme's own
+           `#preview …` rule (CLAUDE.md invariant 25). The tick is a ::before,
+           which Chromium (the app, and the browser an export is normally opened in)
+           draws on an appearance:none checkbox; a browser that does not still shows
+           the filled box. em-sized, so it follows the body-text scale. */
+        :where(#preview) {
+            --md-task-accent-auto: #0366d6;
+            --md-task-check-auto: #ffffff;
         }
-        #preview li.task-list-item input[type="checkbox"]:disabled {
+        :where(body.dark-mode #preview) {
+            --md-task-accent-auto: #58a6ff;
+            --md-task-check-auto: #0d1117;
+        }
+        :where(#preview [data-marpit-svg] section) {
+            --md-task-accent-auto: var(--accent, #0366d6);
+            --md-task-check-auto: var(--bg, #ffffff);
+        }
+        :where(#preview) li.task-list-item > input[type="checkbox"],
+        :where(#preview) li.task-list-item > p:first-child > input[type="checkbox"] {
+            appearance: none;
+            -webkit-appearance: none;
+            position: relative;
+            box-sizing: border-box;
+            width: 1em;
+            height: 1em;
+            margin: 0 0.45em 0 0;
+            padding: 0;
+            vertical-align: -0.14em;
+            border: 0.1em solid var(--md-task-border,
+                color-mix(in srgb, currentColor 45%, transparent));
+            border-radius: 0.22em;
+            background: transparent;
+            /* A form control does not inherit `color`; the empty outline is mixed
+               from the text colour, so take it, or it is the UA's black on dark. */
+            color: inherit;
+            cursor: pointer;
+            transition: background-color 0.12s, border-color 0.12s;
+            /* The fill IS the state: never let print drop it. */
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+        }
+        :where(#preview) li.task-list-item input[type="checkbox"]:checked {
+            background: var(--md-task-accent, var(--md-task-accent-auto));
+            border-color: var(--md-task-accent, var(--md-task-accent-auto));
+        }
+        :where(#preview) li.task-list-item input[type="checkbox"]:checked::before {
+            content: "";
+            position: absolute;
+            left: 0.28em;
+            top: 0.08em;
+            width: 0.24em;
+            height: 0.5em;
+            border: solid var(--md-task-check, var(--md-task-check-auto));
+            border-width: 0 0.12em 0.12em 0;
+            transform: rotate(45deg);
+        }
+        :where(#preview) li.task-list-item input[type="checkbox"]:not(:disabled):hover {
+            border-color: var(--md-task-accent, var(--md-task-accent-auto));
+        }
+        :where(#preview) li.task-list-item input[type="checkbox"]:focus-visible {
+            outline: 0.12em solid color-mix(in srgb,
+                var(--md-task-accent, var(--md-task-accent-auto)) 45%, transparent);
+            outline-offset: 0.1em;
+        }
+        /* Disabled only in an export / PDF / capture: same look, honest cursor. */
+        :where(#preview) li.task-list-item input[type="checkbox"]:disabled {
             cursor: default;
         }
 

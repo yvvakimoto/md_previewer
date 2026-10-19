@@ -187,6 +187,12 @@ body {
     margin: 1.4em 0;
 }
 
+/* タスクリストのチェックボックス — 箱は index.html のベースラインが描く。色だけを
+   臙脂のアクセントへ寄せる（--cl-accent はダークで再定義されるので自動追従）。 */
+#preview {
+    --md-task-accent: var(--cl-accent);
+}
+
 #preview dt {
     font-family: var(--cl-font-sans);
     letter-spacing: 0.01em;
