@@ -1,6 +1,7 @@
 // YaTeX-style math input assist for CodeMirror 6.
 //
-// Only fires inside math context ($...$, $$...$$, or \begin{...}...\end{...}).
+// Only fires inside math context ($...$, $$...$$, \(...\), \[...\], or
+// \begin{...}...\end{...}).
 // Outside math: the same keys behave normally.
 
 import { EditorSelection, EditorState } from '@codemirror/state';
@@ -28,6 +29,23 @@ export function isInsideMath(state, pos) {
   const afterDisp = s.replace(/\$\$[\s\S]*?\$\$/g, '');
   const inlineMatches = afterDisp.match(/\$/g);
   if (inlineMatches && inlineMatches.length % 2 === 1) return 'inline';
+
+  // LaTeX-style \( … \) and \[ … \], on the preview's terms (TEX_*_MATH_RE in
+  // assets/index.html): `\[` opens only at line start, `\(` never after a
+  // backslash (`\\(`), and an inline span cannot cross a newline.
+  let tex = null;
+  const texRe = /(?<!\\)\\([()[\]])|\n/g;
+  let tm;
+  while ((tm = texRe.exec(s)) !== null) {
+    const d = tm[1];
+    if (d === undefined) { if (tex === 'tex-inline') tex = null; }
+    else if (d === '(' && tex === null) tex = 'tex-inline';
+    else if (d === ')' && tex === 'tex-inline') tex = null;
+    else if (d === '[' && tex === null
+      && /^[ \t>]*$/.test(s.slice(s.lastIndexOf('\n', tm.index - 1) + 1, tm.index))) tex = 'tex-display';
+    else if (d === ']' && tex === 'tex-display') tex = null;
+  }
+  if (tex) return tex;
 
   // \begin{...}...\end{...} environments
   let envDepth = 0;
@@ -243,6 +261,10 @@ function mathRegionEnd(state, pos, kind) {
     for (let i = rest.indexOf('$'); i >= 0; i = rest.indexOf('$', i + 1)) {
       if (i === 0 || rest[i - 1] !== '\\') { idx = i; break; }
     }
+  } else if (kind === 'tex-display') {
+    idx = rest.indexOf('\\]');
+  } else if (kind === 'tex-inline') {
+    idx = rest.indexOf('\\)');
   } else if (kind === 'env') {
     idx = rest.indexOf('\\end{');
   }

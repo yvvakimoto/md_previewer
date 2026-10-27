@@ -9080,10 +9080,16 @@ ${previewClone.outerHTML}
                 ids.forEach(id => {
                     const sid = footnoteSafeId(id);
                     const num = footnoteState.order.indexOf(id) + 1;
-                    const body = footnoteState.defs[id] || '';
-                    const rendered = /\n/.test(body)
+                    // Same math pass as the normal pipeline's footnotes. KaTeX was
+                    // awaited in renderMarp(); if it failed to load, leave the source
+                    // literal rather than leak MATH_* placeholders.
+                    const mathBlocks = [];
+                    let body = footnoteState.defs[id] || '';
+                    if (typeof katex !== 'undefined') body = extractMathInto(body, mathBlocks, { value: 0 });
+                    let rendered = /\n/.test(body)
                         ? marked.parse(body)
                         : marked.parseInline(body);
+                    if (mathBlocks.length) rendered = renderMathExpressions(rendered, mathBlocks);
                     const anchorId = seen.has(sid) ? '' : ' id="fn-' + sid + '"';
                     seen.add(sid);
                     html += '<div class="marp-footnote-item"' + anchorId
@@ -9157,12 +9163,22 @@ ${previewClone.outerHTML}
             }
         }
 
-        // Substitute $$...$$ and $...$ in `text` with placeholders, pushing entries onto the
-        // shared `mathBlocks` array. `counterRef` is `{ value: number }` so callers can keep
-        // placeholder names unique across multiple sources (main body + footnote bodies).
-        function extractMathInto(text, mathBlocks, counterRef) {
-            // Mask Markdown code regions first so `$` inside `code` / ```fences``` is not
-            // treated as math. Fenced blocks first (line-delimited), then inline spans.
+        // LaTeX-style math delimiters, alongside $$…$$ / $…$ (MathJax's defaults, and what
+        // LLM output uses). Both pipelines consume these two regexes: the normal one in
+        // extractMathInto(), Marp in __texDelimsToDollar() (marp-core only knows `$`).
+        // `\[` and `\(` are ALSO CommonMark escapes for a literal bracket / paren, so:
+        //   - `\[` opens only at the start of a line (after indentation / `>` quotes) and
+        //     `\]` closes only at the end of one — `\[注\]` mid-sentence stays literal.
+        //     No blank line inside (a paragraph break ends it, as in LaTeX). `\\[2pt]` is
+        //     never an opener: the lookbehind sees a backslash, not line start.
+        //   - `\(` … `\)` stays on one line, like `$…$`, and `\\(` is not an opener.
+        const TEX_DISPLAY_MATH_RE = /(?<=^[ \t>]*)\\\[((?:(?!\n[ \t>]*\n)[\s\S])+?)\\\](?=[ \t]*$)/gm;
+        const TEX_INLINE_MATH_RE = /(?<!\\)\\\(([^\n]+?)\\\)/g;
+
+        // Mask Markdown code regions so math delimiters inside `code` / ```fences``` are
+        // left alone. Returns the masked text and an `unmask(s)` that restores them.
+        function __maskMdCode(text) {
+            // Fenced blocks first (line-delimited), then inline spans.
             // The closing alternative for an unterminated fence must be true end-of-input
             // `(?![\s\S])`, NOT `$`: with the /m flag `$` matches end-of-LINE, which would
             // close the fence after its first body line, leak the rest of the block to the
@@ -9199,25 +9215,54 @@ ${previewClone.outerHTML}
                 codeMap.set(placeholder, match);
                 return placeholder;
             });
-            // Display math ($$...$$). Pad placeholder with newlines equal to those the match
-            // consumed so downstream line-number mapping stays aligned in the main pass.
-            text = text.replace(/\$\$([\s\S]+?)\$\$/g, (match, formula) => {
-                const placeholder = `MATH_BLOCK_${counterRef.value}`;
+            const unmask = s => s.replace(/MD(?:FENCE|CODE)\d+Z/g, (m) => codeMap.has(m) ? codeMap.get(m) : m);
+            return { text, unmask };
+        }
+
+        // Marp pre-pass: rewrite \[…\] / \(…\) into $$…$$ / $…$ for marp-core's math
+        // plugin. Line-count preserving (the formula keeps its own newlines). The inline
+        // formula is trimmed because marp-core rejects `$ x $` (space inside a `$`).
+        function __texDelimsToDollar(markdown) {
+            const masked = __maskMdCode(markdown);
+            let text = masked.text;
+            text = text.replace(TEX_DISPLAY_MATH_RE, (m, formula) => '$$' + formula + '$$');
+            text = text.replace(TEX_INLINE_MATH_RE, (m, formula) => '$' + formula.trim() + '$');
+            return masked.unmask(text);
+        }
+
+        // Substitute math spans in `text` with placeholders, pushing entries onto the
+        // shared `mathBlocks` array. `counterRef` is `{ value: number }` so callers can keep
+        // placeholder names unique across multiple sources (main body + footnote bodies).
+        function extractMathInto(text, mathBlocks, counterRef) {
+            const masked = __maskMdCode(text);
+            text = masked.text;
+            // Pad a display placeholder with newlines equal to those the match consumed so
+            // downstream line-number mapping stays aligned in the main pass.
+            // The trailing `Z` terminates the number: renderMathExpressions() replaces the
+            // first substring match, and without it `MATH_INLINE_2` also matches the head
+            // of `MATH_INLINE_25` — numbering no longer follows document order once the
+            // backslash forms are extracted in their own earlier passes.
+            const display = (match, formula) => {
+                const placeholder = `MATH_BLOCK_${counterRef.value}Z`;
                 mathBlocks.push({ type: 'display', formula: formula.trim(), placeholder });
                 counterRef.value++;
                 const newlineCount = (match.match(/\n/g) || []).length;
                 return placeholder + '\n'.repeat(newlineCount);
-            });
-            // Inline math ($...$).
-            text = text.replace(/\$([^\$\n]+?)\$/g, (match, formula) => {
-                const placeholder = `MATH_INLINE_${counterRef.value}`;
+            };
+            const inline = (match, formula) => {
+                const placeholder = `MATH_INLINE_${counterRef.value}Z`;
                 mathBlocks.push({ type: 'inline', formula: formula.trim(), placeholder });
                 counterRef.value++;
                 return placeholder;
-            });
-            // Restore masked code regions.
-            text = text.replace(/MD(?:FENCE|CODE)\d+Z/g, (m) => codeMap.has(m) ? codeMap.get(m) : m);
-            return text;
+            };
+            // The backslash forms go FIRST, as placeholders rather than by rewriting them to
+            // `$`: a rewrite would let a stray dollar in prose ("$5 and \(x\)") pair with the
+            // new one and swallow the text between them.
+            text = text.replace(TEX_DISPLAY_MATH_RE, display);
+            text = text.replace(TEX_INLINE_MATH_RE, inline);
+            text = text.replace(/\$\$([\s\S]+?)\$\$/g, display);
+            text = text.replace(/\$([^\$\n]+?)\$/g, inline);
+            return masked.unmask(text);
         }
 
         function processMathExpressions(markdown) {
@@ -11888,6 +11933,9 @@ ${previewClone.outerHTML}
             footnoteState.order = [];
             footnoteState.refCounts = {};
             footnoteState.suspend = false;
+            // \[…\] / \(…\) → $$…$$ / $…$ first, so footnote bodies and every later
+            // pre-pass see the one form marp-core understands.
+            markdown = __texDelimsToDollar(markdown);
             markdown = extractFootnoteDefinitions(markdown);
 
             // Sentinel uses Unicode bracket pair unlikely to occur in normal prose.
@@ -12040,6 +12088,14 @@ ${previewClone.outerHTML}
             });
 
             const marp = await getMarp();
+            // Footnote bodies never pass through marp-core, so their math is typeset by
+            // our own KaTeX in renderMarpSlideFootnotes(). That pass runs synchronously
+            // after the deck rebuild, where an await would paint a half-built deck — so
+            // the library is awaited HERE, while the previous deck is still on screen.
+            // (__texDelimsToDollar() already ran, so `$` is the only delimiter left.)
+            if (Object.values(footnoteState.defs).some(b => /\$/.test(b))) {
+                await awaitLib(ensureKatex(), 'KaTeX', null);
+            }
 
             // Build a slide → source-line map by scanning the ORIGINAL (un-pre-passed)
             // markdown for thematic breaks. Marp's default slide separator is `---`

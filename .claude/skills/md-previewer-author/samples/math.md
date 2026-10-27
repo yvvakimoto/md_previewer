@@ -78,6 +78,18 @@ A formula wider than the page — it scrolls sideways in the preview, and is shr
 $$
 e^x = 1 + x + \frac{x^2}{2!} + \frac{x^3}{3!} + \frac{x^4}{4!} + \frac{x^5}{5!} + \frac{x^6}{6!} + \frac{x^7}{7!} + \frac{x^8}{8!} + \frac{x^9}{9!} + \frac{x^{10}}{10!} + \frac{x^{11}}{11!} + \frac{x^{12}}{12!} + \frac{x^{13}}{13!} + \frac{x^{14}}{14!} + \cdots
 $$
+## LaTeX 形式の区切り `\( … \)` / `\[ … \]`
+
+`$` 記法と同じく、行内数式は \(E = mc^2\)、別行建て数式は `\[ … \]` でも書けます。
+
+\[
+\int_0^1 x^n \, dx = \frac{1}{n+1}
+\]
+
+\[ \nabla \cdot \mathbf{E} = \frac{\rho}{\varepsilon_0} \]
+
+`\[` は行頭、`\]` は行末にあるときだけ数式になります。文中の \[注\] のような角括弧のエスケープはそのまま表示され、行内の $5 と \(x\) が混在しても `$` どうしが誤って組になることはありません。
+
 ## Math and Code Block
 
 `$` a `$`,  `$E=mc^2$`
