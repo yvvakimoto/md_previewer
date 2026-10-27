@@ -361,7 +361,9 @@ KTX2-compressed glTF, glTF animation playback. Models are capped at 64 MB.
 
 ## KaTeX math — `samples/math.md`
 
-Inline `$ ... $`, display `$$ ... $$`. Right-clicking rendered math offers Copy MathML / LaTeX.
+Inline `$ ... $`, display `$$ ... $$`. The LaTeX forms `\( ... \)` and `\[ ... \]` also work
+(both pipelines); `\[` must start its line and `\]` end one, otherwise it stays an escaped
+bracket. Prefer `$` / `$$` for portability. Right-clicking rendered math offers Copy MathML / LaTeX.
 
 ```markdown
 Inline: $E = mc^2$ and $\sum_{i=1}^{n} i = \frac{n(n+1)}{2}$.
