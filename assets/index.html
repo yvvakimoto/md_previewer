@@ -9038,10 +9038,16 @@ ${previewClone.outerHTML}
                 ids.forEach(id => {
                     const sid = footnoteSafeId(id);
                     const num = footnoteState.order.indexOf(id) + 1;
-                    const body = footnoteState.defs[id] || '';
-                    const rendered = /\n/.test(body)
+                    // Same math pass as the normal pipeline's footnotes. KaTeX was
+                    // awaited in renderMarp(); if it failed to load, leave the source
+                    // literal rather than leak MATH_* placeholders.
+                    const mathBlocks = [];
+                    let body = footnoteState.defs[id] || '';
+                    if (typeof katex !== 'undefined') body = extractMathInto(body, mathBlocks, { value: 0 });
+                    let rendered = /\n/.test(body)
                         ? marked.parse(body)
                         : marked.parseInline(body);
+                    if (mathBlocks.length) rendered = renderMathExpressions(rendered, mathBlocks);
                     const anchorId = seen.has(sid) ? '' : ' id="fn-' + sid + '"';
                     seen.add(sid);
                     html += '<div class="marp-footnote-item"' + anchorId
@@ -12019,6 +12025,14 @@ ${previewClone.outerHTML}
             });
 
             const marp = await getMarp();
+            // Footnote bodies never pass through marp-core, so their math is typeset by
+            // our own KaTeX in renderMarpSlideFootnotes(). That pass runs synchronously
+            // after the deck rebuild, where an await would paint a half-built deck — so
+            // the library is awaited HERE, while the previous deck is still on screen.
+            // (__texDelimsToDollar() already ran, so `$` is the only delimiter left.)
+            if (Object.values(footnoteState.defs).some(b => /\$/.test(b))) {
+                await awaitLib(ensureKatex(), 'KaTeX', null);
+            }
 
             // Build a slide → source-line map by scanning the ORIGINAL (un-pre-passed)
             // markdown for thematic breaks. Marp's default slide separator is `---`
