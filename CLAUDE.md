@@ -71,7 +71,7 @@ README.md 「対応している記法・機能」.
 |---|---|
 | GFM preview, auto-reload on external change, sidebar TOC | `preview-core.md` |
 | Diagram / figure fences: `mermaid`, `plotly`, `abc` (+ playback), `markwhen`, `tikz`/`tikzcd`, `kataskeve`/`kataskeve3d`, `feynman`, `model3d` (3D mesh files, interactive), `csv`/`tsv`, KaTeX math, highlight.js (+ in-house Modelica grammar) | `preview-blocks.md` |
-| Footnotes, `::: center/right/left/message/vcenter/columns` fenced divs, `[text]{color=…}` inline spans, definition lists, ruby (`｜猫《ねこ》`), task lists, CJK soft-break join | `preview-markdown-ext.md` |
+| Footnotes, `::: center/right/left/message/vcenter/columns` fenced divs, `[text]{color=…}` inline spans, definition lists, ruby (`｜猫《ねこ》`), task lists, CJK soft-break join, CJK-friendly `**` emphasis | `preview-markdown-ext.md` |
 | Copy table for PowerPoint (rich-HTML clipboard); Edit table (writes back to the `.md`) | `preview-tables.md` |
 | Right-click a rendered figure → save it alone as SVG / PNG (canvas engines: PNG only); right-click **empty** preview space → save every figure into one picked folder, plus the app's own back / forward (which that menu displaced) | `preview-blocks.md`, `preview-files-media.md` |
 | Clickable task-list checkboxes — a click rewrites that one `- [ ]` line in the `.md` (both pipelines; inert in every export) | `preview-markdown-ext.md` |
@@ -301,12 +301,13 @@ than in a detail doc, so that a missed pointer is not fatal.
 
 ## Mirror implementations — change both sides
 
-Twenty-nine pairs. **The eleven with no machine check are the real invariant surface**; the
+Thirty pairs. **The twelve with no machine check are the real invariant surface**; the
 eighteen that are checked (or partly checked) can rely on the harness remembering.
 
 | A | B | Checked by |
 |---|---|---|
 | `isParagraphLine()` — `tools/build-editor/mdBlocks.js` | `__isMdParagraphLine()` — `assets/index.html` | indirect (`cells.test.mjs`) |
+| CJK-friendly emphasis — the `marked` `emStrong` tokenizer wrapper — `assets/index.html` | the markdown-it `scanDelims` wrapper in `getMarp()` — `assets/index.html` (same relax-only rule, `*` only, shared `__CJK_EMPH_RE`) | ❌ |
 | task-list marker rule — upstream `marked` (`/^\[[ xX]\] /` after the marker is stripped, plus `h > 4 ? 1 : h` on the post-marker indent) | `MD_TASK_LINE_RE` + `applyTaskLists`'s `markerRe` — `assets/index.html`. ⚠ `markerRe` used `\s+`, which matched a NEWLINE, so Marp rendered a checkbox where marked renders literal text | ✅ `taskcheck.py` (a disagreement shows up as a refused toggle) |
 | `emitTable` / `escapeTableCell` / `displayWidth` — `mdTable.js` | `tblEmitRow` / `tblEscapeCell` / `tblPadCell` / `tblDisplayWidth` — `assets/index.html` | per-side only |
 | `__editorI18n` (`ed.*`) — `tools/build-editor/i18n.js` | `__I18N` — `assets/index.html`; six `common.*` byte-identical | ✅ `i18ncheck.py` |

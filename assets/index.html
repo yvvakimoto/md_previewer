@@ -8353,6 +8353,48 @@ ${previewClone.outerHTML}
             gfm: true
         });
 
+        // CJK-friendly emphasis. CommonMark's flanking rule refuses a `**` whose INNER
+        // neighbour is punctuation while its OUTER neighbour is a letter — fine for
+        // English, but Japanese has no inter-word spaces, so `**A**と**「B」**` loses
+        // its second bold and `**「A」**と**B**` mis-nests. When either neighbour of a
+        // `*` run is CJK, the run may open / close anyway (the same relaxation as the
+        // CJK-friendly amendment GitLab and Redmine adopted). It only ever RELAXES,
+        // so no bold that rendered before can be lost. `_` is left alone so a
+        // `変数_名_` identifier is never italicised.
+        // Mirror: the scanDelims wrapper in getMarp() (markdown-it, Marp pipeline).
+        // Both wrap upstream instead of copying it: the opener is relaxed by passing
+        // an empty prevChar (start-of-line), the closer by masking the punctuation
+        // before the run as a letter in maskedSrc — marked's own same-length mask,
+        // which only the closing-delimiter scan reads.
+        const __CJK_EMPH_RE = /[、-〿ぁ-ゖァ-ヺー㐀-䶿一-鿿豈-﫿！-｠￠-￦ᄀ-ᇿ㄰-㆏가-힯]/;
+        const __EMPH_PUNCT_RE = /[\p{P}\p{S}]/u;
+        const __markedEmStrong = marked.Tokenizer.prototype.emStrong;
+        marked.use({
+            tokenizer: {
+                emStrong(src, maskedSrc, prevChar = '') {
+                    if (src[0] !== '*') return __markedEmStrong.call(this, src, maskedSrc, prevChar);
+                    let n = 1;
+                    while (src[n] === '*') n++;
+                    if (prevChar && (__CJK_EMPH_RE.test(prevChar) || __CJK_EMPH_RE.test(src[n] || ''))) prevChar = '';
+                    let masked = null;
+                    const runRe = /\*+/g;
+                    let m;
+                    while ((m = runRe.exec(maskedSrc))) {
+                        const s = m.index, p = maskedSrc[s - 1], q = maskedSrc[s + m[0].length];
+                        if (!p || !q || /\s/.test(p) || /\s/.test(q)) continue;
+                        if (!__EMPH_PUNCT_RE.test(p) || __EMPH_PUNCT_RE.test(q)) continue;
+                        if (!__CJK_EMPH_RE.test(p) && !__CJK_EMPH_RE.test(q)) continue;
+                        // p is also the OUTER neighbour of a run that ends right before
+                        // it (`」**、**B`): masking it would cost that run its closing.
+                        if (maskedSrc[s - 2] === '*') continue;
+                        if (!masked) masked = maskedSrc.split('');
+                        masked[s - 1] = 'a';
+                    }
+                    return __markedEmStrong.call(this, src, masked ? masked.join('') : maskedSrc, prevChar);
+                }
+            }
+        });
+
         // ----- Footnote support -----
         // Per-render registry. Reset at the start of each renderMarkdown() call.
         const footnoteState = {
@@ -11819,6 +11861,27 @@ ${previewClone.outerHTML}
             // as data URIs of *any* MIME (svg+xml, bmp, …), so allow them all.
             if (marp.markdown && typeof marp.markdown.validateLink === 'function') {
                 marp.markdown.validateLink = () => true;
+            }
+            // CJK-friendly emphasis — the markdown-it half of the marked emStrong
+            // wrapper above (see there for the rule). Relax-only: a `*` run with a CJK
+            // neighbour may also open (if not followed by whitespace) / close (if not
+            // preceded by whitespace). The prototype is shared, so wrap it once.
+            const __mdState = marp.markdown && marp.markdown.inline && marp.markdown.inline.State;
+            if (__mdState && !__mdState.prototype.scanDelims.__cjkEmph) {
+                const origScanDelims = __mdState.prototype.scanDelims;
+                const wrapped = function (start, canSplitWord) {
+                    const res = origScanDelims.call(this, start, canSplitWord);
+                    if (this.src.charCodeAt(start) !== 0x2A /* * */) return res;
+                    const prev = start > 0 ? this.src[start - 1] : ' ';
+                    const next = this.src[start + res.length] || ' ';
+                    if (__CJK_EMPH_RE.test(prev) || __CJK_EMPH_RE.test(next)) {
+                        if (!/\s/.test(next)) res.can_open = true;
+                        if (!/\s/.test(prev)) res.can_close = true;
+                    }
+                    return res;
+                };
+                wrapped.__cjkEmph = true;
+                __mdState.prototype.scanDelims = wrapped;
             }
             console.log('[marp] registering themes:', Array.from(__marpThemeCache.keys()));
             __dbgLog('themeSet.add starting, count=' + __marpThemeCache.size);
