@@ -146,6 +146,10 @@ enum CustomEvent {
     // toast. Only posted once a path was actually chosen — cancelling the dialog
     // sends nothing, so the user sees no message for their own cancel.
     FigureSaveDone { ok: bool, name: String },
+    // The same right-click menu's 「SVG / PNG としてコピー」 (`copyfigure:` IPC):
+    // the worker thread wrote the clipboard. Always posted — there is no dialog
+    // to cancel, so silence would only ever mean a lost message.
+    FigureCopyDone { ok: bool },
     // Every figure in the document was saved at once via the `savefigures:` IPC
     // (right-click on empty preview space). One folder dialog, N files, one
     // result: `failed` already carries the figures the webview could not
@@ -645,6 +649,20 @@ fn parse_figure_payload(ext: &str, data: &str) -> Result<FigurePayload, String> 
         return Err("empty figure payload".to_string());
     }
     Ok(FigurePayload { ext: ext.to_string(), bytes })
+}
+
+/// Validate and decode the optional `dib` of a `copyfigure:` payload: a packed
+/// `CF_DIB` (BITMAPINFOHEADER + pixels) the webview built from the PNG. Only the
+/// header size is checked — the clipboard copies the bytes, it does not parse them.
+fn parse_figure_dib(data: &str) -> Result<Vec<u8>, String> {
+    use base64::Engine as _;
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(data.as_bytes())
+        .map_err(|e| format!("dib base64 decode failed: {}", e))?;
+    if bytes.len() <= 40 || bytes[..4] != 40u32.to_le_bytes() {
+        return Err("dib is not a BITMAPINFOHEADER bitmap".to_string());
+    }
+    Ok(bytes)
 }
 
 /// One item of a `savefigures:` batch: a validated file name and its bytes.
@@ -2317,6 +2335,44 @@ fn main() -> wry::Result<()> {
                 }
                 Err(e) => eprintln!("savefigure: {}", e),
             }
+        } else if let Some(payload) = message.strip_prefix("copyfigure:") {
+            // Right-click → "Copy as SVG / PNG": `savefigure:`'s payload without the
+            // name, plus (for PNG) a CF_DIB the webview decoded for us — the host
+            // has no PNG decoder. A bad `dib` costs only that format, not the copy.
+            #[derive(Deserialize)]
+            struct CopyFigurePayload {
+                ext: String,
+                data: String,
+                #[serde(default)]
+                dib: Option<String>,
+            }
+            match serde_json::from_str::<CopyFigurePayload>(payload)
+                .map_err(|e| format!("bad payload: {}", e))
+                .and_then(|p| parse_figure_payload(&p.ext, &p.data).map(|f| (f, p.dib)))
+            {
+                Ok((fig, dib)) => {
+                    let dib = dib.and_then(|d| {
+                        parse_figure_dib(&d).map_err(|e| eprintln!("copyfigure: {}", e)).ok()
+                    });
+                    let copy_proxy = ipc_event_proxy.clone();
+                    // Off the IPC thread: Clipboard::new_attempts() retries while
+                    // another process holds the clipboard.
+                    std::thread::spawn(move || {
+                        let ok = match crate::clipboard_win::set_figure(&fig.ext, &fig.bytes, dib.as_deref()) {
+                            Ok(()) => true,
+                            Err(e) => {
+                                eprintln!("copyfigure: {}", e);
+                                false
+                            }
+                        };
+                        let _ = copy_proxy.send_event(CustomEvent::FigureCopyDone { ok });
+                    });
+                }
+                Err(e) => {
+                    eprintln!("copyfigure: {}", e);
+                    let _ = ipc_event_proxy.send_event(CustomEvent::FigureCopyDone { ok: false });
+                }
+            }
         } else if let Some(payload) = message.strip_prefix("savefigures:") {
             // Right-click on empty preview space → "save every figure". The whole
             // batch arrives in ONE payload and the host runs ONE folder dialog —
@@ -3066,6 +3122,11 @@ fn main() -> wry::Result<()> {
                     eval_js_fn(&wv, "__figureSaveDone", &[&ok.to_string(), &name_js]);
                 }
             }
+            Event::UserEvent(CustomEvent::FigureCopyDone { ok }) => {
+                if let Ok(wv) = webview.lock() {
+                    eval_js_fn(&wv, "__figureCopyDone", &[&ok.to_string()]);
+                }
+            }
             Event::UserEvent(CustomEvent::FiguresSaveDone { saved, failed }) => {
                 // Toast only, for the same reason FigureSaveDone opens nothing: a
                 // batch save would otherwise launch an Explorer window the reader
@@ -3714,6 +3775,20 @@ mod tests {
     fn figure_payload_rejects_undecodable_or_empty_data() {
         assert!(parse_figure_payload("png", "not base64!!").is_err());
         assert!(parse_figure_payload("svg", "").is_err());
+    }
+
+    #[test]
+    fn figure_dib_needs_a_bitmapinfoheader_and_pixels() {
+        use base64::Engine as _;
+        let b64 = |b: &[u8]| base64::engine::general_purpose::STANDARD.encode(b);
+        let mut dib = vec![0u8; 44];
+        dib[0] = 40;
+        assert_eq!(parse_figure_dib(&b64(&dib)).unwrap().len(), 44);
+        // A header with no pixels, a BITMAPCOREHEADER, and junk are all refused.
+        assert!(parse_figure_dib(&b64(&dib[..40])).is_err());
+        dib[0] = 12;
+        assert!(parse_figure_dib(&b64(&dib)).is_err());
+        assert!(parse_figure_dib("not base64!!").is_err());
     }
 
     // ---- sanitize_figure_name / parse_figure_batch_item ---------------------

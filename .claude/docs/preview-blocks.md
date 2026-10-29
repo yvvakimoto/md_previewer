@@ -86,7 +86,7 @@ host wires up **no download plumbing at all** (nothing in `src/` handles a downl
 `setupMathContextMenu()` — the two are **deliberately one listener and one menu**. A
 feynmark `equation{}` draws KaTeX inside a `<foreignObject>`, so a click there matches
 `.katex` **and** `.feynman-block`; as two separate `__createContextMenu()` instances they
-would both open, side by side. Merged, that click simply offers all four items. The table
+would both open, side by side. Merged, that click simply offers the math and the figure items. The table
 edit-mode menu stays separate, for the reason `preview-tables.md` already gives (an editing
 cell shows markdown *source*, so it can contain neither). Net: `keycheck.py`.
 
@@ -173,6 +173,52 @@ is needed, in `rust-host.md`. The result comes back as `FigureSaveDone` → a to
 document exports it deliberately does **not** `open_with_default()`, since saving several
 figures in a row would launch the image viewer each time. Cancelling the dialog posts
 nothing, so the user gets no message for their own cancel.
+
+## Copying one rendered figure (right-click → 「SVG / PNG としてコピー」)
+
+The same menu offers **「SVG としてコピー」/「PNG としてコピー」** after the two save items
+(a canvas figure: PNG only, by the same `fig.canvas` test). `__figureCopy()` reuses
+`__figureBytes()`, so a copied figure is a saved one — backdrop, baked ink and inlined fonts
+included — with ONE difference for SVG, below.
+
+⚠ **The clipboard SVG has its HTML labels flattened to `<text>`.** mermaid draws every label
+as HTML inside `<foreignObject>` (`htmlLabels`), which browsers render and **Office's SVG
+importer silently drops**: a pasted diagram kept its boxes and lost every word.
+`__flattenHtmlLabels()` (via `__serializeFigureSvg(…, {flattenHtmlLabels})`) replaces each
+plain-text foreignObject in the clone with one `<text>` per *rendered line*, cutting a run
+wherever a character's client rect moves to a new line box, so the browser's own wrapping is
+reproduced rather than recomputed. Baseline = line top + the font's `fontBoundingBoxAscent`
+(canvas `measureText`); positions map back through the parent's `getScreenCTM()`, so the
+`<text>` stays in place in the tree (z-order kept). Opaque label backgrounds (edge labels)
+become `<rect>`s. ⚠ `text-anchor` / `fill` / `font-size` go in an inline `style` as well as
+attributes: mermaid's own `<style>` travels in the file and sets `text-anchor: middle` on
+`text`, and any CSS rule beats a presentation attribute — without it every line shifted left
+by half its width. Limits: a foreignObject holding KaTeX / media is left alone (feynman
+`equation{}` still has no text in Office); a `display:none` figure has no CTM and is skipped
+(only right-click reaches copy, so it is always laid out). The **save keeps the HTML labels**:
+a file is opened in browsers too, where they are exact and this is an approximation. Verified
+by pasting into PowerPoint via COM and exporting the slide.
+
+⚠ **The bytes go to the host, never to `navigator.clipboard`.** The preview runs on the
+insecure `app://` scheme, where `navigator.clipboard` does not exist (`editor-keymaps.md`
+hits the same wall), and `execCommand('copy')` carries text only. So `copyfigure:`
+(`rust-host.md`) is `savefigure:`'s payload minus the name, and `src/clipboard_win.rs`
+`set_figure()` writes every format under one open/empty:
+
+| copy | clipboard formats (in order) | who reads it |
+|---|---|---|
+| PNG | registered `PNG`, then `CF_DIB` | Office / browsers / chat keep the PNG; Paint and the Win+V history only know bitmaps |
+| SVG | registered `image/svg+xml`, then `CF_UNICODETEXT` (the same markup) | Office 365 / Inkscape paste a vector picture; text editors get the source |
+
+**The DIB is built in the webview** (`__figurePngToDib()`: 24 bpp, bottom-up, rows padded to
+4 bytes, transparency composited onto white) because the host has no PNG decoder and adding
+one would be a new crate for one format. Verified on the real clipboard: Windows synthesizes
+`CF_BITMAP` / `CF_DIBV5` from it, and **PowerPoint pastes the SVG set as a graphic
+(`msoGraphic`), not as text** — the `CF_UNICODETEXT` alongside does not win.
+
+Unlike a save there is no dialog to cancel, so the host **always** answers with
+`FigureCopyDone` → `__figureCopyDone(ok)` → a toast. Net: `keycheck.py` (payload, DIB header
+against the PNG's IHDR, both toasts); the Win32 write itself is invisible to the harness.
 
 ## Saving every figure at once (right-click empty space → 一括保存)
 

@@ -73,7 +73,7 @@ README.md 「対応している記法・機能」.
 | Diagram / figure fences: `mermaid`, `plotly`, `abc` (+ playback), `markwhen`, `tikz`/`tikzcd`, `kataskeve`/`kataskeve3d`, `feynman`, `model3d` (3D mesh files, interactive), `csv`/`tsv`, KaTeX math, highlight.js (+ in-house Modelica grammar) | `preview-blocks.md` |
 | Footnotes, `::: center/right/left/message/vcenter/columns` fenced divs, `[text]{color=…}` inline spans, definition lists, ruby (`｜猫《ねこ》`), task lists, CJK soft-break join, CJK-friendly `**` emphasis | `preview-markdown-ext.md` |
 | Copy table for PowerPoint (rich-HTML clipboard); Edit table (writes back to the `.md`) | `preview-tables.md` |
-| Right-click a rendered figure → save it alone as SVG / PNG (canvas engines: PNG only); right-click **empty** preview space → save every figure into one picked folder, plus the app's own back / forward (which that menu displaced) | `preview-blocks.md`, `preview-files-media.md` |
+| Right-click a rendered figure → save it alone as SVG / PNG, or copy it to the clipboard as SVG / PNG (canvas engines: PNG only); right-click **empty** preview space → save every figure into one picked folder, plus the app's own back / forward (which that menu displaced) | `preview-blocks.md`, `preview-files-media.md` |
 | Clickable task-list checkboxes — a click rewrites that one `- [ ]` line in the `.md` (both pipelines; inert in every export) | `preview-markdown-ext.md` |
 | Images via the `/userfile/` route with `\|WxH` sizing and `../` paths; video + YouTube embeds; cross-file `.md` links with back/forward history; `Ctrl`+click opens a new window; drag & drop; `Ctrl+N` new file; `Ctrl+D` install dir | `preview-files-media.md` |
 | Marp slides (`marp: true`), 3 views (`P`), autofit (`A`), laser pointer (`Z`), 8-colour theme family, selection highlighter | `marp.md` |
@@ -106,7 +106,7 @@ A file with no owning doc is an anomaly.
 | `src/http_win.rs` | blocking HTTPS GET over WinHTTP — the GitHub provider's only transport | `auto-update.md` |
 | `src/cdp_win.rs` | shared WebView2 DevTools-Protocol plumbing | `export.md` |
 | `src/pdf_win.rs` / `src/png_win.rs` | PDF via `Page.printToPDF` / PNG via `Page.captureScreenshot` | `export.md` |
-| `src/clipboard_win.rs` | Win32 clipboard behind the editor's `unnamedplus` yank/paste | `editor-keymaps.md` |
+| `src/clipboard_win.rs` | Win32 clipboard behind the editor's `unnamedplus` yank/paste, and the preview's figure copy (`set_figure`) | `editor-keymaps.md`, `preview-blocks.md` |
 | `src/ime_win.rs` | IMM32 bridge (auto half-width on Vim NORMAL, caret tint) | `editor-core.md` |
 | `assets/index.html` | the preview UI. ~11k lines, ONE inline `<script>` | `preview-*.md`, `marp.md`, `styles-theming.md`, `i18n.md`, `export.md` |
 | `assets/editor.html`, `assets/editor.css` | editor window shell and chrome | `editor-core.md` |
@@ -345,7 +345,7 @@ eighteen that are checked (or partly checked) can rely on the harness rememberin
 |---|---|
 | the render pipeline, any preprocessing pass | `python tools/preview-harness/domdump.py` (+ `gate.sh <label> <files…>` to diff against `_dom/base`) |
 | shortcuts, context menus, Marp autofit, `@user-vars` | `python tools/preview-harness/keycheck.py` |
-| the figure save — `__FIGURE_KINDS`, `__serializeFigureSvg`, `savefigure:`, and the batch (`__allFigures`, `savefigures:`) | `keycheck.py` (it decodes both payloads — the DOM digest cannot see any of this) |
+| the figure save / copy — `__FIGURE_KINDS`, `__serializeFigureSvg`, `savefigure:`, `copyfigure:` (`__figurePngToDib`), and the batch (`__allFigures`, `savefigures:`) | `keycheck.py` (it decodes both payloads — the DOM digest cannot see any of this) |
 | the preview context menu's reach (`__nativeMenuWins`) or the history index (`__histCanGo`, `history.state.idx`) | `keycheck.py` (+ `tablecheck.py` for the `.table-editing` guard) |
 | `--md-font-scale` / `--md-width-scale`, a theme's base `font-size` or `max-width`, `with_hotkeys_zoom` | `keycheck.py` + `exportcheck.py` + `pdfcheck.py` (the scaled cases are the only ones that can see either) |
 | preview table edit mode | `python tools/preview-harness/tablecheck.py` + `node tools/preview-harness/table-model.test.cjs` |
