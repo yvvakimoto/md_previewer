@@ -18,6 +18,7 @@ import argparse
 import base64
 import json
 import os
+import struct
 import sys
 import xml.dom.minidom
 
@@ -932,6 +933,18 @@ def main():
                     out.append(p)
                 return out
 
+            def copied_figures():
+                """Every `copyfigure:` payload the IPC tap recorded, decoded."""
+                out = []
+                for msg in page.evaluate(
+                        "() => window.__sentIpc.filter(m => m.startsWith('copyfigure:'))"):
+                    p = json.loads(msg[len("copyfigure:"):])
+                    p["bytes"] = base64.b64decode(p["data"])
+                    if p.get("dib"):
+                        p["dib_bytes"] = base64.b64decode(p["dib"])
+                    out.append(p)
+                return out
+
             def saved_figure_batches():
                 """Every `savefigures:` payload the IPC tap recorded, decoded."""
                 out = []
@@ -1003,6 +1016,7 @@ def main():
             # decoded bytes is the only thing that proves the serializer produced a
             # standalone document rather than the live element's markup.
             want_svg, want_png = i18n_ja("menu.saveSvg", "menu.savePng")
+            want_csvg, want_cpng = i18n_ja("menu.copySvg", "menu.copyPng")
             # A mermaid figure alone also offers the inspector window, first.
             (want_insp,) = i18n_ja("menu.openInspector")
 
@@ -1031,8 +1045,8 @@ def main():
             right_click_center("#preview .mermaid svg")
             check("right-click on a mermaid figure opens the menu",
                   page.evaluate(VISIBLE), True)
-            check("...offering the inspector, then Save as SVG / Save as PNG", menu_labels(),
-                  [want_insp, want_svg, want_png])
+            check("...offering the inspector, then Save / Copy as SVG / PNG", menu_labels(),
+                  [want_insp, want_svg, want_png, want_csvg, want_cpng])
             click_menu_item(1)
             page.wait_for_function("() => window.__sentIpc.some("
                                    "m => m.startsWith('savefigure:'))", timeout=15000)
@@ -1080,7 +1094,7 @@ def main():
             # A canvas engine has no vector form, so it must offer PNG only.
             load("samples/kataskeve3d.md")
             right_click_center("#preview .kataskeve3d canvas")
-            check("a canvas figure offers PNG only", menu_labels(), [want_png])
+            check("a canvas figure offers PNG only", menu_labels(), [want_png, want_cpng])
             click_menu_item(0)
             page.wait_for_function("() => window.__sentIpc.some("
                                    "m => m.startsWith('savefigure:'))", timeout=15000)
@@ -1088,14 +1102,67 @@ def main():
             check("...saved as .png", png_fig["ext"], "png")
             check("...with real PNG bytes", png_fig["bytes"][:8], b"\x89PNG\r\n\x1a\n")
 
+            # ---------- copy one figure (copyfigure:) ----------
+            # The host writes the clipboard; the payload is all the webview owns.
+            # PNG travels with a CF_DIB the webview decoded, since the host has no
+            # PNG decoder — assert its header agrees with the PNG it came from.
+            right_click_center("#preview .kataskeve3d canvas")
+            click_menu_item(1)
+            page.wait_for_function("() => window.__sentIpc.some("
+                                   "m => m.startsWith('copyfigure:'))", timeout=15000)
+            cp = copied_figures()[0]
+            check("Copy as PNG posts the same PNG bytes as the save",
+                  [cp["ext"], cp["bytes"] == png_fig["bytes"]], ["png", True])
+            dib = cp["dib_bytes"]
+            png_w, png_h = struct.unpack(">II", cp["bytes"][16:24])
+            dib_hdr = struct.unpack("<IiiHHI", dib[:20])
+            check("...plus a 24 bpp bottom-up CF_DIB of the same size",
+                  dib_hdr, (40, png_w, png_h, 1, 24, 0))
+            check("...whose pixel rows are padded to 4 bytes",
+                  len(dib), 40 + ((png_w * 3 + 3) & ~3) * png_h)
+            press(page, "Escape")
+            load(args.doc)
+            right_click_center("#preview .mermaid svg")
+            click_menu_item(3)
+            page.wait_for_function("() => window.__sentIpc.some("
+                                   "m => m.startsWith('copyfigure:'))", timeout=15000)
+            cp_svg = copied_figures()[-1]
+            check("Copy as SVG posts a standalone SVG and no DIB",
+                  [cp_svg["ext"], "dib" in cp_svg,
+                   xml.dom.minidom.parseString(cp_svg["bytes"]).documentElement.tagName],
+                  ["svg", False, "svg"])
+            # ⚠ Office drops <foreignObject>, which is where mermaid's labels live:
+            # the copy must carry them as <text>, and every word must survive.
+            # The SAVE keeps the exact HTML labels (browsers render them).
+            cp_doc = xml.dom.minidom.parseString(cp_svg["bytes"])
+            # Whitespace-free comparison: a wrapped label becomes several <text>.
+            live_text = page.evaluate(
+                "() => [...document.querySelector('#preview .mermaid svg')"
+                ".querySelectorAll('foreignObject')].map(f => f.textContent).join('')"
+                ".replace(/\\s+/g, '')")
+            copied_text = "".join(n.firstChild.data for n in cp_doc.getElementsByTagName("text")
+                                  if n.firstChild).replace(" ", "")
+            check("...with mermaid's HTML labels flattened to <text>",
+                  [len(cp_doc.getElementsByTagName("foreignObject")),
+                   copied_text, len(live_text) > 0],
+                  [0, live_text, True])
+            check("...while the save keeps the HTML labels",
+                  b"<foreignObject" in svg_fig["bytes"], True)
+            for ok, key in [(True, "toast.figureCopied"), (False, "toast.figureCopyFail")]:
+                page.evaluate("(ok) => window.__figureCopyDone(ok)", ok)
+                check("__figureCopyDone(%s) toasts %s" % (ok, key),
+                      page.evaluate("() => document.getElementById('toast').textContent"),
+                      i18n_ja(key)[0])
+
             # ⚠ Regression net for the merged menu. feynmark draws KaTeX inside a
             # <foreignObject>, so a click there matches .katex AND .feynman-block —
             # two separate __createContextMenu() instances would both open.
             load("samples/feynman.md")
             right_click_center("#preview .feynmark-equation svg")
-            check("math inside a figure offers all four items, from ONE menu",
+            check("math inside a figure offers every item, from ONE menu",
                   menu_labels(), i18n_ja("menu.copyMathML", "menu.copyLatex",
-                                         "menu.saveSvg", "menu.savePng"))
+                                         "menu.saveSvg", "menu.savePng",
+                                         "menu.copySvg", "menu.copyPng"))
             check("...and only one menu is open", page.evaluate(
                 "() => [...document.querySelectorAll('.app-context-menu')]"
                 ".filter(m => m.style.display !== 'none').length"), 1)

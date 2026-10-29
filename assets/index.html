@@ -3304,6 +3304,8 @@
             'menu.expandAll':      { ja: 'すべて開く',   en: 'Expand all' },
             'menu.saveSvg':        { ja: 'SVG として保存', en: 'Save as SVG' },
             'menu.savePng':        { ja: 'PNG として保存', en: 'Save as PNG' },
+            'menu.copySvg':        { ja: 'SVG としてコピー', en: 'Copy as SVG' },
+            'menu.copyPng':        { ja: 'PNG としてコピー', en: 'Copy as PNG' },
             'menu.saveAllFigures': { ja: 'すべての図を保存…', en: 'Save all figures…' },
             'menu.openInspector':  { ja: 'インスペクタで開く…', en: 'Open in inspector…' },
             'menu.historyBack':    { ja: '戻る',         en: 'Back' },
@@ -3451,6 +3453,8 @@
             'toast.pdfExportFail': { ja: 'PDF出力に失敗しました', en: 'PDF export failed' },
             'toast.figureSaved':   { ja: '保存しました: {name}', en: 'Saved: {name}' },
             'toast.figureSaveFail':{ ja: '図の保存に失敗しました', en: 'Could not save the figure' },
+            'toast.figureCopied':  { ja: '図をクリップボードにコピーしました', en: 'Copied the figure to the clipboard' },
+            'toast.figureCopyFail':{ ja: '図のコピーに失敗しました', en: 'Could not copy the figure' },
             'toast.figuresSaving': { ja: '図を書き出しています…', en: 'Exporting figures…' },
             'toast.figuresSaved':  { ja: '{count} 個の図を保存しました', en: 'Saved {count} figures' },
             'toast.figuresSavedPartial': { ja: '{count} 個を保存しました（{failed} 個は失敗）',
@@ -14148,10 +14152,122 @@ ${previewClone.outerHTML}
             return faces.filter(Boolean).join('\n') + '\n' + rest;
         }
 
+        // `rgb(r, g, b[, a])` → `#rrggbb` + opacity. SVG consumers outside a browser
+        // (PowerPoint) are not trusted to parse CSS colour functions.
+        function __cssColorToHex(c) {
+            const m = /^rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)(?:[\s,/]+([\d.]+))?\s*\)$/.exec(c || '');
+            if (!m) return { hex: c || '#000000', alpha: 1 };
+            const h = n => Math.round(+n).toString(16).padStart(2, '0');
+            return { hex: '#' + h(m[1]) + h(m[2]) + h(m[3]), alpha: m[4] === undefined ? 1 : +m[4] };
+        }
+
+        // Replace every plain-text <foreignObject> in `clone` with SVG <text>, one
+        // per rendered line, at the position the LIVE label occupies. mermaid draws
+        // its labels as HTML inside <foreignObject> (htmlLabels), which browsers
+        // render and Office's SVG importer drops — a pasted diagram kept its boxes
+        // and lost every word. Positions are measured, not recomputed, so the
+        // browser's own line wrapping is what the <text> lines reproduce.
+        //
+        // Only for the clipboard SVG: a saved file is opened in browsers too, where
+        // the HTML label is exact and this is an approximation (the pasting app
+        // substitutes its own metrics). ⚠ Needs the live <svg> laid out — a
+        // display:none figure has no screen CTM and is left untouched.
+        // A foreignObject holding KaTeX / media is not text and is left as-is.
+        function __flattenHtmlLabels(svg, clone) {
+            const live = svg.querySelectorAll('foreignObject');
+            const copies = clone.querySelectorAll('foreignObject');
+            if (!live.length || live.length !== copies.length) return;
+            const metrics = document.createElement('canvas').getContext('2d');
+            const transparent = /^(transparent|rgba\(\s*0,\s*0,\s*0,\s*0\s*\))$/;
+            live.forEach((fo, idx) => {
+                if (fo.querySelector('.katex, img, svg, canvas, video')) return;
+                const ctm = fo.parentNode && fo.parentNode.getScreenCTM && fo.parentNode.getScreenCTM();
+                if (!ctm) return;
+                const inv = ctm.inverse();
+                const k = Math.hypot(ctm.a, ctm.b) || 1;    // screen px per local unit
+                const toLocal = (x, y) => new DOMPoint(x, y).matrixTransform(inv);
+                const g = document.createElementNS(__SVG_NS, 'g');
+
+                // Label backgrounds (mermaid's edge labels paint one on the span).
+                fo.querySelectorAll('*').forEach(el => {
+                    const bg = getComputedStyle(el).backgroundColor;
+                    if (!bg || transparent.test(bg)) return;
+                    const r = el.getBoundingClientRect();
+                    if (!r.width || !r.height) return;
+                    const p0 = toLocal(r.left, r.top), p1 = toLocal(r.right, r.bottom);
+                    const c = __cssColorToHex(bg);
+                    const rect = document.createElementNS(__SVG_NS, 'rect');
+                    rect.setAttribute('x', Math.min(p0.x, p1.x));
+                    rect.setAttribute('y', Math.min(p0.y, p1.y));
+                    rect.setAttribute('width', Math.abs(p1.x - p0.x));
+                    rect.setAttribute('height', Math.abs(p1.y - p0.y));
+                    rect.setAttribute('fill', c.hex);
+                    if (c.alpha < 1) rect.setAttribute('fill-opacity', c.alpha);
+                    g.appendChild(rect);
+                });
+
+                // Text: walk each text node a code point at a time and cut a new
+                // run wherever the line box changes — that is where the browser
+                // wrapped (or a <br> broke) the label.
+                const range = document.createRange();
+                const walker = document.createTreeWalker(fo, NodeFilter.SHOW_TEXT);
+                for (let t = walker.nextNode(); t; t = walker.nextNode()) {
+                    const cs = getComputedStyle(t.parentElement);
+                    if (cs.visibility === 'hidden' || cs.display === 'none') continue;
+                    metrics.font = cs.fontStyle + ' ' + cs.fontWeight + ' ' + cs.fontSize + ' ' + cs.fontFamily;
+                    const ascent = metrics.measureText('M').fontBoundingBoxAscent;
+                    const ink = __cssColorToHex(cs.color);
+                    const emit = (run) => {
+                        const s = run.text.replace(/\s+$/, '');
+                        if (!s) return;
+                        const p = toLocal(run.left, run.top + ascent * k);
+                        const el = document.createElementNS(__SVG_NS, 'text');
+                        el.setAttribute('x', p.x);
+                        el.setAttribute('y', p.y);
+                        el.setAttribute('fill', ink.hex);
+                        if (ink.alpha < 1) el.setAttribute('fill-opacity', ink.alpha);
+                        el.setAttribute('font-family', cs.fontFamily);
+                        el.setAttribute('font-size', cs.fontSize);
+                        if (cs.fontWeight !== '400') el.setAttribute('font-weight', cs.fontWeight);
+                        if (cs.fontStyle !== 'normal') el.setAttribute('font-style', cs.fontStyle);
+                        el.setAttribute('xml:space', 'preserve');
+                        // ⚠ Also inline: the figure's own <style> travels with it
+                        // (mermaid sets `text-anchor: middle` and a fill on `text`),
+                        // and any CSS rule beats a presentation attribute.
+                        el.setAttribute('style', 'text-anchor:start;dominant-baseline:alphabetic;'
+                            + 'fill:' + ink.hex + ';font-size:' + cs.fontSize + ';stroke:none');
+                        el.textContent = s;
+                        g.appendChild(el);
+                    };
+                    const str = t.data;
+                    let run = null;
+                    for (let i = 0; i < str.length; ) {
+                        const n = str.codePointAt(i) > 0xffff ? 2 : 1;
+                        const ch = str.slice(i, i + n);
+                        range.setStart(t, i);
+                        range.setEnd(t, i + n);
+                        i += n;
+                        const r = range.getClientRects()[0];
+                        if (!r || !r.height) continue;          // collapsed whitespace
+                        if (run && Math.abs(r.top - run.top) > r.height / 2) { emit(run); run = null; }
+                        if (!run) {
+                            if (/\s/.test(ch)) continue;        // a line never starts blank
+                            run = { left: r.left, top: r.top, text: '' };
+                        }
+                        run.text += /\s/.test(ch) ? ' ' : ch;
+                    }
+                    if (run) emit(run);
+                }
+                copies[idx].replaceWith(g);
+            });
+        }
+
         // Turn a live inline <svg> into a standalone document.
-        async function __serializeFigureSvg(svg, spec) {
+        // opts.flattenHtmlLabels: see __flattenHtmlLabels() — the clipboard SVG only.
+        async function __serializeFigureSvg(svg, spec, opts) {
             const box = __figureSvgBox(svg);
             const clone = svg.cloneNode(true);
+            if (opts && opts.flattenHtmlLabels) __flattenHtmlLabels(svg, clone);
             clone.setAttribute('xmlns', __SVG_NS);
             clone.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink');
             clone.setAttribute('viewBox', box.x + ' ' + box.y + ' ' + box.w + ' ' + box.h);
@@ -14200,7 +14316,9 @@ ${previewClone.outerHTML}
         // UTF-8 safe base64. btoa() alone throws on any non-Latin-1 character, and a
         // figure's labels are routinely Japanese.
         function __b64FromText(s) {
-            const bytes = new TextEncoder().encode(s);
+            return __b64FromBytes(new TextEncoder().encode(s));
+        }
+        function __b64FromBytes(bytes) {
             let bin = '';
             const CHUNK = 0x8000;   // fromCharCode.apply blows the stack on a big array
             for (let i = 0; i < bytes.length; i += CHUNK) {
@@ -14239,7 +14357,7 @@ ${previewClone.outerHTML}
         }
 
         // Produce the bytes for one figure in one format, as base64.
-        async function __figureBytes(fig, ext) {
+        async function __figureBytes(fig, ext, opts) {
             if (fig.spec.plotly) {
                 // Plotly owns its own serializer; it handles the modebar, the WebGL
                 // traces and its own colours, none of which the generic path sees.
@@ -14262,7 +14380,7 @@ ${previewClone.outerHTML}
                 // proves for both kataskeve3d and model3d.
                 return __b64FromDataUrl(fig.canvas.toDataURL('image/png'));
             }
-            const svgText = await __serializeFigureSvg(fig.svg, fig.spec);
+            const svgText = await __serializeFigureSvg(fig.svg, fig.spec, opts);
             if (ext === 'svg') return __b64FromText(svgText);
             return __b64FromDataUrl(await __figureSvgToPng(svgText, __figureSvgBox(fig.svg)));
         }
@@ -14290,6 +14408,71 @@ ${previewClone.outerHTML}
         // See CustomEvent::FigureSaveDone in src/main.rs.
         window.__figureSaveDone = function (ok, name) {
             showToast(ok ? t('toast.figureSaved', { name: name || '' }) : t('toast.figureSaveFail'));
+        };
+
+        // A PNG re-encoded as a packed CF_DIB (24 bpp, bottom-up), for the
+        // clipboard. The registered "PNG" format alone is enough for Office,
+        // browsers and chat apps, but Paint and the Win+V history read only the
+        // bitmap formats — and the host has no PNG decoder, so the pixels are
+        // unpacked here, where the browser already has one. Transparency is
+        // composited onto white: CF_DIB has no alpha that consumers agree on.
+        async function __figurePngToDib(pngB64) {
+            const img = new Image();
+            img.src = 'data:image/png;base64,' + pngB64;
+            await img.decode();
+            const w = img.naturalWidth, h = img.naturalHeight;
+            const c = document.createElement('canvas');
+            c.width = w;
+            c.height = h;
+            const ctx = c.getContext('2d');
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, w, h);
+            ctx.drawImage(img, 0, 0);
+            const px = ctx.getImageData(0, 0, w, h).data;
+            const stride = (w * 3 + 3) & ~3;        // rows pad to 4 bytes
+            const buf = new Uint8Array(40 + stride * h);
+            const dv = new DataView(buf.buffer);
+            dv.setUint32(0, 40, true);              // BITMAPINFOHEADER size
+            dv.setInt32(4, w, true);
+            dv.setInt32(8, h, true);                // positive = bottom-up
+            dv.setUint16(12, 1, true);              // planes
+            dv.setUint16(14, 24, true);             // bpp; compression 0 = BI_RGB
+            dv.setUint32(20, stride * h, true);
+            for (let y = 0; y < h; y++) {
+                let o = 40 + (h - 1 - y) * stride;
+                for (let x = 0, i = y * w * 4; x < w; x++, i += 4) {
+                    buf[o++] = px[i + 2];
+                    buf[o++] = px[i + 1];
+                    buf[o++] = px[i];
+                }
+            }
+            return __b64FromBytes(buf);
+        }
+
+        // Put one figure on the OS clipboard. navigator.clipboard does not exist
+        // under the app:// scheme (src/clipboard_win.rs), and execCommand('copy')
+        // carries text only, so the bytes go to the host like a save does — the
+        // same __figureBytes() payload, minus the dialog.
+        async function __figureCopy(fig, ext) {
+            try {
+                // The pasting app (PowerPoint) cannot render HTML labels.
+                const data = await __figureBytes(fig, ext, { flattenHtmlLabels: ext === 'svg' });
+                if (!data) throw new Error('empty figure payload');
+                const msg = { ext: ext, data: data };
+                if (ext === 'png') msg.dib = await __figurePngToDib(data);
+                if (window.ipc && typeof window.ipc.postMessage === 'function') {
+                    window.ipc.postMessage('copyfigure:' + JSON.stringify(msg));
+                }
+            } catch (err) {
+                console.error('figure copy failed', err);
+                showToast(t('toast.figureCopyFail'));
+            }
+        }
+
+        // Called by the Rust host once the clipboard is written (or could not be).
+        // See CustomEvent::FigureCopyDone in src/main.rs.
+        window.__figureCopyDone = function (ok) {
+            showToast(t(ok ? 'toast.figureCopied' : 'toast.figureCopyFail'));
         };
 
         // Save EVERY figure of the document into one folder. SVG where a vector
@@ -14340,7 +14523,7 @@ ${previewClone.outerHTML}
         // items. They are not independent: a feynman `equation{}` draws KaTeX inside
         // a <foreignObject>, so a click there matches `.katex` AND `.feynman-block` —
         // two separate __createContextMenu() instances would both open, side by side.
-        // Merged, that click simply offers all four items.
+        // Merged, that click simply offers the math AND the figure items.
         //
         // The table edit menu stays separate: a `.table-editing` cell shows markdown
         // SOURCE text, so it can contain neither a .katex nor a figure
@@ -14417,6 +14600,8 @@ ${previewClone.outerHTML}
                         // A canvas figure has no vector form to offer.
                         if (!fig.canvas) addItem(t('menu.saveSvg'), () => { __figureSave(fig, 'svg'); });
                         addItem(t('menu.savePng'), () => { __figureSave(fig, 'png'); });
+                        if (!fig.canvas) addItem(t('menu.copySvg'), () => { __figureCopy(fig, 'svg'); });
+                        addItem(t('menu.copyPng'), () => { __figureCopy(fig, 'png'); });
                     }
                     if (bare) {
                         // Serialization runs before the folder dialog, so flash a
