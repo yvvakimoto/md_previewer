@@ -377,6 +377,128 @@ def run_model3d(browser, base_url, doc):
     ctx.close()
 
 
+MERMAID_MD = """# Mermaid inspector in the export
+
+```mermaid
+flowchart LR
+  subgraph S[Plant]
+    A_1[Grid] -->|100 kW| B[Inverter]
+  end
+  B -->|90 kW| C[Load]
+  B -->|10 kW| D[Loss]
+```
+
+```mermaid
+sequenceDiagram
+  Alice->>Bob: Hi
+```
+"""
+
+
+def run_mermaid_inspector(browser, base_url, doc, tmpdir):
+    """The embedded Mermaid inspector (inspector.md, "Embedded in an HTML export").
+
+    The artifact ships the inspector page but NOT mermaid: the exported SVG is
+    reused, and the edge endpoints it cannot give back are snapshotted onto the
+    figure as data-mermaid-graph at export time. Loaded from file:// on purpose —
+    that is how a reader opens a saved export, and it makes the overlay's iframe
+    an opaque origin, which is why the bridge is postMessage.
+    """
+    ctx = browser.new_context(viewport={"width": 1280, "height": 900})
+    page = ctx.new_page()
+    page.set_default_timeout(30000)
+    page.goto(base_url + doc, wait_until="domcontentloaded")
+    page.wait_for_function(
+        "() => { const p=document.getElementById('preview'); return p && p.children.length>0; }")
+    shoot.wait_for_render(page)
+
+    print("\n[mermaid inspector]")
+    html = page.evaluate("async () => (await buildExportArtifact({})).html")
+    check("the artifact references no external script (mermaid is not shipped)",
+          not re.search(r"<script[^>]+src=", html), re.findall(r"<script[^>]+src=[^>]*>", html)[:2])
+    path = os.path.join(tmpdir, "mermaid-artifact.html")
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(html)
+
+    requests = []
+    page2 = ctx.new_page()
+    page2.set_default_timeout(30000)
+    page2.on("request", lambda r: requests.append(r.url))
+    page2.goto("file:///" + path.replace("\\", "/"), wait_until="load")
+
+    info = page2.evaluate("""() => [...document.querySelectorAll('.mermaid')].map(el => ({
+        btn: !!el.querySelector(':scope > .mdp-insp-btn'),
+        graph: el.hasAttribute('data-mermaid-graph'),
+    }))""")
+    check("every exported mermaid figure gets an inspector button",
+          len(info) == 2 and all(i["btn"] for i in info), info)
+    check("only the flowchart carries a graph snapshot",
+          [i["graph"] for i in info] == [True, False], info)
+
+    def open_inspector(i):
+        page2.locator(".mermaid").nth(i).hover()
+        page2.locator(".mermaid .mdp-insp-btn").nth(i).click()
+        page2.wait_for_selector(".mdp-insp-overlay iframe")
+        fr = page2.frame_locator(".mdp-insp-overlay iframe")
+        frame = [f for f in page2.frames if f != page2.main_frame][0]
+        frame.wait_for_function("() => window.__inspector && window.__inspector.mounts() > 0")
+        return fr, frame
+
+    _, frame = open_inspector(0)
+    st = frame.evaluate("""() => {
+        const I = window.__inspector;
+        return { isFlow: I.state.isFlow, embedded: document.body.classList.contains('embedded'),
+                 noMermaid: typeof mermaid === 'undefined',
+                 unmapped: ['A_1', 'B', 'C', 'D', 'S'].filter(n => !I.nodeEl(n)),
+                 lang: document.documentElement.lang };
+    }""")
+    check("the inspector mounts the exported SVG with no mermaid loaded",
+          st["isFlow"] and st["embedded"] and st["noMermaid"], st)
+    check("every node (incl. an id with '_' and a subgraph) maps to the SVG", st["unmapped"] == [], st)
+    check("the inspector takes the artifact's language", st["lang"] == page.evaluate("() => uiLang"), st)
+
+    # A real mouse click, through the overlay's iframe offset.
+    frame.wait_for_function("() => window.__inspector.settled")
+    box = frame.evaluate("""() => { const r = window.__inspector.nodeEl('B').getBoundingClientRect();
+        return [r.x + r.width / 2, r.y + r.height / 2]; }""")
+    off = page2.evaluate("""() => { const r = document.querySelector('.mdp-insp-overlay iframe').getBoundingClientRect();
+        return [r.x, r.y]; }""")
+    page2.mouse.click(off[0] + box[0], off[1] + box[1])
+    page2.wait_for_timeout(100)
+    hl = frame.evaluate("() => window.__inspector.state")
+    check("clicking a node highlights it and its neighbours (graph features work)",
+          hl["a"] == "B" and {"A_1", "C", "D"} <= set(hl["nodes"]) and len(hl["edges"]) == 3, hl)
+
+    frame.locator("#stage").press("Escape")   # clears the selection
+    page2.wait_for_timeout(50)
+    still = page2.locator(".mdp-insp-overlay").count()
+    frame.locator("#stage").press("Escape")   # nothing selected → closes
+    page2.wait_for_timeout(100)
+    check("Esc clears first, then closes the overlay",
+          still == 1 and page2.locator(".mdp-insp-overlay").count() == 0)
+
+    _, frame = open_inspector(1)
+    seq = frame.evaluate("() => ({ isFlow: window.__inspector.state.isFlow, svg: !!document.querySelector('#stage svg') })")
+    check("a non-flowchart opens with pan/zoom only", seq == {"isFlow": False, "svg": True}, seq)
+    frame.locator("#btn-close").click()
+    page2.wait_for_timeout(100)
+    check("the close button closes the overlay", page2.locator(".mdp-insp-overlay").count() == 0)
+
+    external = [u for u in requests if not u.startswith(("file:", "data:", "about:"))]
+    check("the artifact requests nothing over the network", not external, external[:3])
+
+    page2.emulate_media(media="print")
+    hidden = page2.evaluate("() => getComputedStyle(document.querySelector('.mdp-insp-btn')).display")
+    check("the button is hidden on paper", hidden == "none", hidden)
+
+    # A document without mermaid must not carry the inspector at all.
+    plain = page.evaluate("""async () => { const keep = preview.innerHTML;
+        preview.querySelectorAll('.mermaid').forEach(el => el.remove());
+        const h = (await buildExportArtifact({})).html; preview.innerHTML = keep; return h; }""")
+    check("no mermaid → nothing embedded", "mdp-inspector" not in plain)
+    ctx.close()
+
+
 def main():
     ap = argparse.ArgumentParser(description="HTML export fidelity check (preview-harness)")
     ap.add_argument("--channel", default=None, help="browser channel: msedge | chrome")
@@ -397,7 +519,8 @@ def main():
     tmp = tempfile.mkdtemp(prefix="mdp-exportcheck-")
     vertical = os.path.join(tmp, "vertical.md")
     plain = os.path.join(tmp, "plain.md")
-    for path, body in ((vertical, VERTICAL_MD), (plain, PLAIN_MD)):
+    mermaid_md = os.path.join(tmp, "mermaid.md")
+    for path, body in ((vertical, VERTICAL_MD), (plain, PLAIN_MD), (mermaid_md, MERMAID_MD)):
         with open(path, "w", encoding="utf-8") as fh:
             fh.write(body)
 
@@ -441,6 +564,7 @@ def main():
             # already exercises every option and every error path, and it keeps this
             # check honest about what ships.
             run_model3d(browser, base, os.path.join(repo_root, "samples", "model3d.md").replace("\\", "/"))
+            run_mermaid_inspector(browser, base, mermaid_md.replace("\\", "/"), tmp)
 
             browser.close()
     finally:

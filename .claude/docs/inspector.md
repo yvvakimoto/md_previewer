@@ -176,6 +176,45 @@ The preview owns "which block". The host only relays.
 - **Stylesheet inline in `inspector.html`.** A top-level `assets/*.css` would join the
   preview's M-key style cycle, which skips only `editor.css`.
 
+## Embedded in an HTML export
+
+The `X` → HTML artifact carries the inspector too, **without mermaid** (5.5MB). The one thing
+the exported SVG cannot give back is edge endpoints (see *Shape*), so the db is snapshotted
+at export time instead of re-parsed at view time.
+
+- **Export side (`buildExportArtifact()`).** Only when the clone has a rendered
+  `.mermaid[data-mermaid-source]` and mermaid is loaded. Per figure: `parseMermaidScale()` →
+  `mermaid.mermaidAPI.getDiagramFromText(body)` → for a flowchart, `db.getData()` trimmed to
+  `{nodes:[{id,domId,label,isGroup}], edges:[{id,start,end,label}]}` and stored as
+  `data-mermaid-graph` (percent-encoded JSON) on the clone. A failure leaves the attribute
+  off, which only costs that figure its graph features.
+- `__embeddedInspectorDoc()` fetches `inspector.html` + `graph.js` + `inspector.js`, inlines the
+  two scripts, drops the mermaid `<script>`, and memoizes the string (workspace export calls
+  once per page). It refuses a result that still has a `<script src=`: a new external script
+  in `inspector.html` must be inlined here too. Any failure returns `''` = no button.
+- **Artifact side (`inspectorScript`).** A second inline `<script>` with the page as a JSON
+  string (`<` escaped). It adds a hover button (`.copy-button.mdp-insp-btn`) to each figure,
+  and opens a full-window overlay with a **`srcdoc` iframe**. All messaging is `postMessage`:
+  a `file://` artifact makes frames opaque origins, so a direct `contentWindow` call fails.
+  - inspector → parent `{type:'mdp-inspector', msg:'inspector:ready'}` once its listener is up;
+    the parent answers `{type:'mdp-inspector-load', payload}` with
+    `payload = {kind:'open', src, svg, graph, dark, lang}`.
+  - inspector → parent `{type:'mdp-inspector', msg:'inspector:close'}` from `×` or Esc.
+  - Nothing is added to the clone, so PDF / `--export-png` are untouched; `@media print`
+    also hides the button.
+- **Inspector side.** A payload with `svg` skips `render()` and calls
+  `mount(payload.svg, payload.graph)` directly, sets `body.embedded` (shows `#btn-close` and
+  the Esc help row, hides the Ctrl+W row), takes `lang` as an override of `uiLang`, and
+  `isDark()` returns `payload.dark` — the theme is baked into the SVG, so the `storage`
+  resync never re-renders. Esc with nothing selected closes (there is no window to Ctrl+W).
+- **Colours are the preview's**, `--md-mermaid-*` palette included, since it is the preview's
+  SVG. The window version re-renders with stock colours; here the highlight colours sit on
+  the style palette instead.
+- Net: `exportcheck.py`'s `[mermaid inspector]` block — artifact loaded from **file://**,
+  no external `<script src>`, no network request, node mapping (an `_` id and a subgraph),
+  a real click highlighting neighbours, Esc twice, the `×` button, the sequence-diagram case,
+  print hiding, and no embedding without mermaid.
+
 ## `graph.js`
 
 Pure, UMD-shaped, no DOM. `require`d by `inspector-graph.test.cjs`.

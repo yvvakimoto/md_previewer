@@ -3426,6 +3426,8 @@
                                      en: 'The span is too wide (about {months} months), so this fell back to the timeline view instead of the calendar.' },
 
             'export.untitled':     { ja: 'エクスポートした文書', en: 'Exported document' },
+            'export.openInspector': { ja: 'インスペクタ', en: 'Inspector' },
+            'export.openInspectorTitle': { ja: 'この図をインスペクタで開く（拡大縮小・ノード強調・経路）', en: 'Open this diagram in the inspector (zoom, highlight nodes, trace paths)' },
             'err.plotlyInit':      { ja: 'Plotly の初期化に失敗しました: ', en: 'Plotly init failed: ' },
 
             'toast.lang':          { ja: '表示言語: {lang}', en: 'Language: {lang}' },
@@ -6467,6 +6469,32 @@
         }
         function __tikzFontUrl(fam) { return 'libs/tikzjax/dist/fonts/' + fam + '.woff2'; }
 
+        // The inspector page as ONE self-contained HTML string for an export's
+        // srcdoc iframe: graph.js / inspector.js inlined, and mermaid dropped —
+        // the embedded payload carries its own SVG (inspector.md). Memoized for
+        // the workspace loop; '' on any failure, which only omits the button.
+        let __embeddedInspectorDocP = null;
+        function __embeddedInspectorDoc() {
+            if (!__embeddedInspectorDocP) {
+                const get = (p) => fetch(new URL(p, document.baseURI).href).then((r) => {
+                    if (!r.ok) throw new Error(p + ': ' + r.status);
+                    return r.text();
+                });
+                const inline = (js) => '<script>' + js.replace(/<\/script/gi, '<\\/script') + '<\/script>';
+                __embeddedInspectorDocP = Promise.all([get('inspector.html'), get('inspector/graph.js'), get('inspector/inspector.js')])
+                    .then(([html, graphJs, inspJs]) => {
+                        const out = html
+                            .replace(/<script src="libs\/mermaid\.min\.js"[^>]*><\/script>/, '')
+                            .replace(/<script src="inspector\/graph\.js"><\/script>/, () => inline(graphJs))
+                            .replace(/<script src="inspector\/inspector\.js"><\/script>/, () => inline(inspJs));
+                        if (/<script src=/.test(out)) throw new Error('inspector.html: unexpected external script');
+                        return out;
+                    })
+                    .catch((e) => { console.warn('export: inspector not embedded', e); __embeddedInspectorDocP = null; return ''; });
+            }
+            return __embeddedInspectorDocP;
+        }
+
         async function buildExportArtifact({ pageRelPath = null } = {}) {
             // Marp: the export reflects scroll-mode layout, so drop deck/list first
             // (see __marpEnterScrollLayout for why hidden slides must be un-hidden
@@ -6703,6 +6731,36 @@
                     } catch (e) {
                         console.warn('export: failed to rasterize model3d canvas', e);
                     }
+                }
+            }
+
+            // Mermaid inspector, embedded (inspector.md, "Embedded in an HTML
+            // export"). The artifact reuses the exported SVG instead of shipping
+            // mermaid (5.5MB): what the SVG cannot give back is edge endpoints
+            // (an `L_<start>_<end>_<n>` id cannot be split), so snapshot the
+            // flowchart db NOW, while mermaid is loaded, onto the clone. Every
+            // failure only costs that figure its graph features (pan/zoom stay).
+            let inspectorDoc = '';
+            {
+                const cloneMm = Array.from(previewClone.querySelectorAll('.mermaid[data-mermaid-source]'))
+                    .filter((el) => el.querySelector('svg'));
+                if (cloneMm.length && typeof mermaid !== 'undefined') {
+                    for (const el of cloneMm) {
+                        try {
+                            const { body } = parseMermaidScale(__diagSource(el, 'data-mermaid-source'));
+                            const diag = await mermaid.mermaidAPI.getDiagramFromText(body);
+                            if (!/^flowchart/.test(diag.type) || !diag.db || typeof diag.db.getData !== 'function') continue;
+                            const d = diag.db.getData();
+                            const graph = {
+                                nodes: (d.nodes || []).map((n) => ({ id: n.id, domId: n.domId, label: String(n.label || ''), isGroup: !!n.isGroup })),
+                                edges: (d.edges || []).map((e) => ({ id: e.id, start: e.start, end: e.end, label: String(e.label || '') })),
+                            };
+                            el.setAttribute('data-mermaid-graph', encodeURIComponent(JSON.stringify(graph)));
+                        } catch (e) {
+                            console.warn('export: failed to snapshot mermaid graph', e);
+                        }
+                    }
+                    inspectorDoc = await __embeddedInspectorDoc();
                 }
             }
 
@@ -7062,6 +7120,74 @@
   initPlotlyArtifact();
 })();`;
 
+            // Mermaid inspector overlay: a hover button per figure opens the
+            // inspector page (inlined, no mermaid) in a full-window srcdoc
+            // iframe and posts it the figure's SVG + graph. postMessage, not a
+            // direct call, because a file:// artifact's frames are opaque origins.
+            // `<` is escaped so the page text can never close this <script>.
+            const inspectorScript = !inspectorDoc ? '' : `
+(function () {
+  var DOC = ${JSON.stringify(inspectorDoc).replace(/</g, '\\u003c')};
+  var LANG = ${JSON.stringify(uiLang)};
+  var LABEL = ${JSON.stringify(t('export.openInspector'))};
+  var TITLE = ${JSON.stringify(t('export.openInspectorTitle'))};
+  var st = document.createElement('style');
+  st.textContent = ''
+    + '.mermaid[data-mermaid-source]{position:relative;}'
+    + '.mermaid:hover>.mdp-insp-btn,.mdp-insp-btn:focus{opacity:1;}'
+    + '.mdp-insp-overlay{position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,.45);padding:3vh 3vw;box-sizing:border-box;}'
+    + '.mdp-insp-overlay iframe{width:100%;height:100%;border:0;border-radius:8px;background:#fff;box-shadow:0 8px 32px rgba(0,0,0,.35);}'
+    + '@media print{.mdp-insp-btn,.mdp-insp-overlay{display:none !important;}}';
+  document.head.appendChild(st);
+  var overlay = null, frame = null, pending = null, opener = null;
+  function close() {
+    if (!overlay) return;
+    overlay.remove(); overlay = frame = pending = null;
+    if (opener) { try { opener.focus(); } catch (e) {} opener = null; }
+  }
+  function open(host, btn) {
+    var svg = host.querySelector('svg');
+    if (!svg) return;
+    var src = '', graph = null;
+    try { src = decodeURIComponent(host.getAttribute('data-mermaid-source') || ''); } catch (e) {}
+    try { graph = JSON.parse(decodeURIComponent(host.getAttribute('data-mermaid-graph') || 'null')); } catch (e) {}
+    close();
+    pending = { kind: 'open', src: src, svg: svg.outerHTML, graph: graph,
+                dark: document.body.classList.contains('dark-mode'), lang: LANG };
+    opener = btn;
+    overlay = document.createElement('div');
+    overlay.className = 'mdp-insp-overlay';
+    frame = document.createElement('iframe');
+    frame.title = LABEL;
+    overlay.appendChild(frame);
+    overlay.addEventListener('click', function (e) { if (e.target === overlay) close(); });
+    document.body.appendChild(overlay);
+    frame.srcdoc = DOC;
+    frame.addEventListener('load', function () { try { frame.focus(); } catch (e) {} });
+  }
+  window.addEventListener('message', function (e) {
+    var d = e.data;
+    if (!frame || e.source !== frame.contentWindow || !d || d.type !== 'mdp-inspector') return;
+    if (d.msg === 'inspector:ready' && pending) {
+      frame.contentWindow.postMessage({ type: 'mdp-inspector-load', payload: pending }, '*');
+      pending = null;
+    } else if (d.msg === 'inspector:close') {
+      close();
+    }
+  });
+  document.addEventListener('keydown', function (e) { if (overlay && e.key === 'Escape') close(); });
+  document.querySelectorAll('.mermaid[data-mermaid-source]').forEach(function (host) {
+    if (!host.querySelector('svg')) return;
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'copy-button mdp-insp-btn';
+    btn.textContent = LABEL;
+    btn.title = TITLE;
+    btn.addEventListener('click', function () { open(host, btn); });
+    host.appendChild(btn);
+  });
+})();`;
+
             const html =
 `<!DOCTYPE html>
 <html lang="${uiLang}">
@@ -7091,7 +7217,7 @@ ${previewClone.outerHTML}
 </div>
 </div>
 <script>${tocScript}<\/script>
-</body>
+${inspectorScript ? `<script>${inspectorScript}<\/script>\n` : ''}</body>
 </html>`;
 
             // Suggest a filename derived from the current file.

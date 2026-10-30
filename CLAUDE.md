@@ -81,7 +81,7 @@ README.md 「対応している記法・機能」.
 | Content width (an `S`-modal row) — the second layout multiplier; `W` full-width is released when it is used | `styles-theming.md` |
 | Dark/light (`M`), style picker (`S`) with a per-style ⚙ `@user-vars` pane, `bunko.css` 文庫本 / `tategaki.css` 縦書き, section numbering (`N`), wide layout (`W`), `confidential:` / `watermark:` overlay | `styles-theming.md` |
 | Companion editor (`E`): CodeMirror 6, Vim, live preview, cursor-block highlight in the preview, cell mode, Office-table paste, autocomplete, fence / Marp templates, font zoom, ⚙ settings | `editor-*.md` |
-| Mermaid inspector window (right-click a mermaid figure): pan/zoom, node / path / upstream-downstream highlighting, edge-label balance, search, minimap; follows live edits | `inspector.md` |
+| Mermaid inspector window (right-click a mermaid figure): pan/zoom, node / path / upstream-downstream highlighting, edge-label balance, search, minimap; follows live edits. Also embedded in every HTML export as an in-page overlay (exported SVG + a db snapshot, no mermaid shipped) | `inspector.md` |
 | UI language toggle (ja / en), one shared `uiLang` key across both windows | `i18n.md` |
 | Export to standalone HTML or PDF (`X`); headless `--export-png` for agents | `export.md` |
 | Workspace (directory) mode with file tree and `_toc.md`; `.mdx` ZIP bundles | `rust-host.md` |
@@ -355,7 +355,7 @@ eighteen that are checked (or partly checked) can rely on the harness rememberin
 | `model3d` / `tools/build-three/` | `python tools/preview-harness/keycheck.py` (pixels, theme salt, **and the leak nets: one WebGL context, flat shader-program count**) + `exportcheck.py` + `pdfcheck.py` |
 | the editor's close paths (`__confirmClose`, `editor:closeconfirm:`, `WindowEvent::CloseRequested`, Vim `:q`) | `python tools/preview-harness/quitcheck.py` + `cargo test` (the Rust veto itself is invisible to both — drive the real app and send it a `WM_CLOSE`) |
 | cell mode | `python tools/preview-harness/cellcheck.py` + `cd tools/build-editor && node cells.test.mjs` |
-| the Mermaid inspector (`assets/inspector*`, `renderMermaidCached`'s source stamp, the figure menu's mermaid item) | `python tools/preview-harness/inspectorcheck.py` + `node tools/preview-harness/inspector-graph.test.cjs` (+ `keycheck.py` for the menu order) |
+| the Mermaid inspector (`assets/inspector*`, `renderMermaidCached`'s source stamp, the figure menu's mermaid item) | `python tools/preview-harness/inspectorcheck.py` + `node tools/preview-harness/inspector-graph.test.cjs` (+ `keycheck.py` for the menu order, `exportcheck.py` for the embedded export copy) |
 | editor↔preview scroll sync (either axis), `applyEditorScroll` / `applyEditorCursor` / `__blockForLine`, the cursor-block tint | `python tools/preview-harness/synccheck.py` (+ `exportcheck.py` / `prefscheck.py` for the tint's export and settings halves) |
 | Office-table paste | `python tools/preview-harness/pastecheck.py` + `cd tools/build-editor && node tablePaste.test.mjs` |
 | HTML export / PDF export | `python tools/preview-harness/exportcheck.py` / `pdfcheck.py` |

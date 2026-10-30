@@ -6,6 +6,12 @@
 // ordinal, line, file}. The window renders mermaid ITSELF rather than receiving
 // the preview's SVG: only a fresh render comes with mermaid's db, and the db is
 // the only reliable source for edge endpoints (see graph.js).
+//
+// EMBEDDED mode (an HTML export, no host and no mermaid): the artifact posts
+// {type:'mdp-inspector-load', payload} into this page's iframe, and the payload
+// additionally carries `svg` (the exported figure) and `graph` (the db snapshot
+// buildExportArtifact() took while mermaid was still loaded), plus `lang`. The
+// render step is skipped and the SVG is mounted as-is.
 (function () {
     'use strict';
     const G = window.InspectorGraph;
@@ -47,6 +53,8 @@
         'insp.help.search':  { ja: 'ノード検索。Enter で次、Shift+Enter で前', en: 'Search nodes; Enter for next, Shift+Enter for previous' },
         'insp.help.toggles': { ja: 'ミニマップ / サイドパネルの表示切替', en: 'Toggle the minimap / side panel' },
         'insp.help.close':   { ja: 'インスペクタを閉じる', en: 'Close the inspector' },
+        'insp.help.closeEmbedded': { ja: '選択がないときはインスペクタを閉じる', en: 'Close the inspector when nothing is selected' },
+        'insp.closeTitle':   { ja: '閉じる (Esc)', en: 'Close (Esc)' },
         'insp.noLib':        { ja: 'Mermaid ライブラリを読み込めませんでした（assets/libs/mermaid.min.js）。',
                                en: 'Could not load the Mermaid library (assets/libs/mermaid.min.js).' },
         'insp.renderError':  { ja: 'Mermaid の描画に失敗しました:', en: 'Mermaid failed to render:' },
@@ -85,8 +93,11 @@
     window.__inspectorI18n = I18N;   // read by tools/preview-harness/i18ncheck.py
 
     // Same rules as the preview's __detectUiLang(): the shared, unprefixed
-    // `uiLang` key wins; its absence means "follow the OS list".
+    // `uiLang` key wins; its absence means "follow the OS list". Embedded, the
+    // artifact's language is baked in and wins over both.
+    let langOverride = null;
     function resolveLang() {
+        if (langOverride) return langOverride;
         let stored = null;
         try { stored = localStorage.getItem('uiLang'); } catch (e) { /* ignore */ }
         if (stored === 'ja' || stored === 'en') return stored;
@@ -172,6 +183,8 @@
         return lines.slice(i).join('\n');
     }
     function isDark() {
+        // Embedded: the SVG's theme is baked in, so the payload is the truth.
+        if (payload && typeof payload.svg === 'string') return !!payload.dark;
         try {
             const v = localStorage.getItem('darkMode');
             if (v === 'true' || v === 'false') return v === 'true';
@@ -277,6 +290,12 @@
         const seq = ++renderSeq;
         const dark = isDark();
         document.body.classList.toggle('dark', dark);
+        if (typeof payload.svg === 'string') {
+            hideMessage();
+            setHint(null);
+            mount(payload.svg, payload.graph || null, keepState);
+            return;
+        }
         if (window.__mermaidLoadFailed || typeof mermaid === 'undefined') {
             showMessage(t('insp.noLib'), true);
             return;
@@ -816,7 +835,11 @@
         if (e.altKey) return;
         const panStep = e.shiftKey ? 240 : 80;
         switch (e.key) {
-            case 'Escape': clearSel(); break;
+            case 'Escape':
+                // Embedded there is no window to Ctrl+W, so an Esc with nothing
+                // left to clear closes the overlay.
+                if (embedded && sel.mode === 'none') post('inspector:close'); else clearSel();
+                break;
             case 'f': case 'F': fit(true); break;
             case 'u': case 'U': trace('up'); break;
             case 'd': case 'D': trace('down'); break;
@@ -892,9 +915,16 @@
     $('btn-minimap').addEventListener('click', toggleMinimap);
     $('btn-panel').addEventListener('click', togglePanel);
     $('btn-help').addEventListener('click', () => $('help').classList.add('show'));
+    $('btn-close').addEventListener('click', () => post('inspector:close'));
 
+    // Embedded, the parent is the exported artifact; postMessage works across
+    // the opaque origins a file:// artifact gets, where a direct call would not.
+    let embedded = false;
     function post(msg) {
-        try { if (window.ipc && window.ipc.postMessage) window.ipc.postMessage(msg); } catch (e) { /* ignore */ }
+        try {
+            if (window.ipc && window.ipc.postMessage) window.ipc.postMessage(msg);
+            else if (embedded && window.parent !== window) window.parent.postMessage({ type: 'mdp-inspector', msg }, '*');
+        } catch (e) { /* ignore */ }
     }
 
     // Theme and language follow the preview through the localStorage the two
@@ -915,6 +945,12 @@
     // ------------------------------------------------------------ host entry
     window.__inspectorLoad = function (p) {
         if (!p || typeof p.src !== 'string') return;
+        if (typeof p.svg === 'string') {
+            embedded = true;
+            document.body.classList.add('embedded');
+            const l = p.lang === 'ja' || p.lang === 'en' ? p.lang : null;
+            if (l !== langOverride) { langOverride = l; lang = resolveLang(); applyI18n(); }
+        }
         const isOpen = p.kind !== 'update';
         const same = payload && payload.src === p.src;
         payload = p;
@@ -951,4 +987,13 @@
     setHint(null);
     updateButtons();
     if (window.__inspectorInit) window.__inspectorLoad(window.__inspectorInit);
+    window.addEventListener('message', (e) => {
+        const d = e.data;
+        if (e.source === window.parent && d && d.type === 'mdp-inspector-load') window.__inspectorLoad(d.payload);
+    });
+    // Tell an embedding artifact this page is listening (its load event can
+    // fire before this script has run on a slow machine).
+    if (window.parent !== window) {
+        try { window.parent.postMessage({ type: 'mdp-inspector', msg: 'inspector:ready' }, '*'); } catch (e) { /* ignore */ }
+    }
 })();
