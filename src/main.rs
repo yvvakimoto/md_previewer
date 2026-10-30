@@ -166,6 +166,13 @@ enum CustomEvent {
     CaptureStart { marp: bool, slides: usize },
     CaptureReady { index: usize, clip: CaptureClip, layout: Option<SlideLayout> },
     CaptureDone { index: usize, ok: bool },
+    // Headless `--export-html <out.html>`. `renderdone:` → HtmlExportStart asks
+    // the preview to build the artifact (`__exportHtmlHeadless`); the
+    // `exporthtmlcli:` answer is written on the IPC thread → HtmlExportDone
+    // exits with 0 / 1. The watchdog posts HtmlExportDone{ok:false} too, so a
+    // render that never settles cannot leave a hidden process behind.
+    HtmlExportStart,
+    HtmlExportDone { ok: bool },
     // Auto-update (see `updater`). The background check — kicked off only after
     // the first render, see StartUpdateCheck — found a newer version upstream
     // (GitHub Releases by default, or an internal share) → show the preview's
@@ -295,6 +302,10 @@ const APP_NAME: &str = "Markdown Previewer";
 /// and losing this race only means the check overlaps the tail of that render.
 /// Do not drop below ~3s.
 const UPDATE_WATCHDOG_MS: u64 = 5_000;
+
+/// Upper bound on a whole `--export-html` run. Generous: the page itself waits
+/// up to ~35 s for tikz before building the artifact.
+const HTML_EXPORT_WATCHDOG_MS: u64 = 120_000;
 
 // Forensic log written next to the exe. Truncated on each launch. Used to
 // diagnose "works in target/release, broken when copied" reports — release
@@ -1514,6 +1525,8 @@ fn main() -> wry::Result<()> {
     let mut cap_out: Option<PathBuf> = None;
     let mut cap_slides: Option<String> = None;
     let mut cap_scale: f64 = 2.0;
+    // `--export-html <out.html>`: headless single-file HTML export (export.md).
+    let mut html_out: Option<PathBuf> = None;
     // Set by the parent when this process was spawned from a Ctrl+click
     // (`openmdnew:`): where to put the window instead of centring it.
     let mut win_pos: Option<(f64, f64)> = None;
@@ -1523,6 +1536,10 @@ fn main() -> wry::Result<()> {
             match args[i].as_str() {
                 "--export-png" => {
                     cap_out = args.get(i + 1).map(PathBuf::from);
+                    i += 2;
+                }
+                "--export-html" => {
+                    html_out = args.get(i + 1).map(PathBuf::from);
                     i += 2;
                 }
                 "--slides" => {
@@ -1584,6 +1601,27 @@ fn main() -> wry::Result<()> {
         Some(p) if p.is_file() => (Some(p.clone()), None),
         _ => (None, None),
     };
+
+    // `--export-html` takes one document (a `.md` or an `.mdx`). A folder, a
+    // missing file, or a combination with `--export-png` is refused up front
+    // with exit code 2, before any window exists. Release builds have no
+    // console and the log is not open yet, so the exit code is the report.
+    let html_out: Option<PathBuf> = html_out.map(|p| to_abs(&p));
+    if html_out.is_some() {
+        let why = if capture_config.is_some() {
+            Some("--export-html cannot be combined with --export-png")
+        } else if dir_path.is_some() {
+            Some("--export-html takes a single .md / .mdx file, not a folder")
+        } else if file_path.is_none() {
+            Some("--export-html: no readable input file")
+        } else {
+            None
+        };
+        if let Some(why) = why {
+            eprintln!("{}", why);
+            std::process::exit(2);
+        }
+    }
 
     // If a directory was supplied, also queue its first file (if any) for
     // initial rendering.
@@ -1676,7 +1714,7 @@ fn main() -> wry::Result<()> {
     // keep it hidden so the user never sees it flash. CDP `Page.captureScreenshot`
     // with `captureBeyondViewport:true` rasterizes off the renderer, not the
     // window surface, so a hidden window still produces valid PNGs.
-    if capture_config.is_some() {
+    if capture_config.is_some() || html_out.is_some() {
         window_builder = window_builder.with_visible(false);
     }
     let window = window_builder.build(&event_loop).unwrap();
@@ -1831,6 +1869,9 @@ fn main() -> wry::Result<()> {
     // render settles and to expose `window.__prepareCapture(index)`.
     let capture_init = match &capture_config {
         Some(c) => format!("window.__captureConfig = {{ scale: {} }};\n", c.scale),
+        // `--export-html` shares the capture-mode pins (font / width scale at
+        // 1, no update check) but never calls __prepareCapture.
+        None if html_out.is_some() => "window.__captureConfig = { scale: 1, html: true };\n".to_string(),
         None => String::new(),
     };
     let init_script = format!(
@@ -1863,7 +1904,9 @@ fn main() -> wry::Result<()> {
     // itself moves into the event loop further down, and the IPC handler is
     // built before that, so both need this plain flag instead. `bool: Copy`, so
     // the `move` IPC closure copies it and it stays usable for the watchdog.
-    let is_capture = capture_config.is_some();
+    // `--export-html` is headless too: same hidden window, same update ban.
+    let is_capture = capture_config.is_some() || html_out.is_some();
+    let is_html_export = html_out.is_some();
     // Owned inputs for the update worker, which no longer runs here: the check
     // is kicked off only once the preview reports its initial render (see the
     // `StartUpdateCheck` arm). `load_config` used to run on this thread before
@@ -2111,6 +2154,7 @@ fn main() -> wry::Result<()> {
     let pending_pdf: Arc<Mutex<Option<PathBuf>>> = Arc::new(Mutex::new(None));
 
     let ipc_event_proxy = event_proxy.clone();
+    let ipc_html_out = html_out.clone();
     let ipc_current_file = current_file.clone();
     let ipc_editor_registry = editor_registry.clone();
     let ipc_inspector_registry = inspector_registry.clone();
@@ -2217,6 +2261,48 @@ fn main() -> wry::Result<()> {
                 }
                 Err(e) => eprintln!("exportdir: bad payload: {}", e),
             }
+        } else if let (Some(payload), Some(out)) = (message.strip_prefix("exporthtmlcli:"), ipc_html_out.as_ref()) {
+            // `--export-html`: the artifact, built headless. No dialog — the
+            // path came from argv. Media is copied next to it exactly as the
+            // dialog export does, so a local video still plays.
+            #[derive(Deserialize)]
+            struct CliExportPayload {
+                #[serde(default)]
+                html: Option<String>,
+                #[serde(default)]
+                media: Vec<MediaItem>,
+                #[serde(default)]
+                error: Option<String>,
+            }
+            let ok = match serde_json::from_str::<CliExportPayload>(payload) {
+                Ok(CliExportPayload { html: Some(html), media, error: None }) => {
+                    if let Some(parent) = out.parent() {
+                        let _ = std::fs::create_dir_all(parent);
+                    }
+                    match std::fs::write(out, html.as_bytes()) {
+                        Ok(()) => {
+                            if let Some(base) = out.parent() {
+                                copy_export_media(base, &media);
+                            }
+                            dbg_log!("export-html: wrote {:?}", out);
+                            true
+                        }
+                        Err(e) => {
+                            dbg_log!("export-html: failed to write {:?}: {}", out, e);
+                            false
+                        }
+                    }
+                }
+                Ok(p) => {
+                    dbg_log!("export-html: page reported an error: {}", p.error.unwrap_or_default());
+                    false
+                }
+                Err(e) => {
+                    dbg_log!("export-html: bad payload: {}", e);
+                    false
+                }
+            };
+            let _ = ipc_event_proxy.send_event(CustomEvent::HtmlExportDone { ok });
         } else if let Some(payload) = message.strip_prefix("exporthtml:") {
             // Webview asks the host to save an HTML artifact via a native Save-As dialog.
             // Payload is JSON: { "suggestedName": "...", "html": "..." }.
@@ -2668,7 +2754,9 @@ fn main() -> wry::Result<()> {
             //                   only point at which the update check may touch
             //                   the share. The marp/slides payload is
             //                   capture-only, so there is nothing to parse here.
-            if is_capture {
+            if is_html_export {
+                let _ = ipc_event_proxy.send_event(CustomEvent::HtmlExportStart);
+            } else if is_capture {
                 #[derive(Deserialize)]
                 struct RenderDoneMsg { marp: bool, slides: usize }
                 match serde_json::from_str::<RenderDoneMsg>(payload) {
@@ -2770,6 +2858,16 @@ fn main() -> wry::Result<()> {
         std::thread::spawn(move || {
             std::thread::sleep(Duration::from_millis(UPDATE_WATCHDOG_MS));
             let _ = proxy.send_event(CustomEvent::StartUpdateCheck { watchdog: true });
+        });
+    }
+    // `--export-html` must always end: a render that never reports done (or a
+    // page that never answers) exits 1 here instead of idling hidden forever.
+    if is_html_export {
+        let proxy = event_proxy.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(HTML_EXPORT_WATCHDOG_MS));
+            dbg_log_write("export-html: watchdog fired");
+            let _ = proxy.send_event(CustomEvent::HtmlExportDone { ok: false });
         });
     }
 
@@ -3309,6 +3407,18 @@ fn main() -> wry::Result<()> {
                         }
                     }
                 });
+            }
+            Event::UserEvent(CustomEvent::HtmlExportStart) => {
+                dbg_log!("export-html: render done, building artifact");
+                if let Ok(wv) = webview.lock() {
+                    let _ = wv.evaluate_script(
+                        "if (typeof window.__exportHtmlHeadless === 'function') { window.__exportHtmlHeadless(); } \
+                         else { window.ipc.postMessage('exporthtmlcli:' + JSON.stringify({ error: 'no __exportHtmlHeadless' })); }",
+                    );
+                }
+            }
+            Event::UserEvent(CustomEvent::HtmlExportDone { ok }) => {
+                *control_flow = ControlFlow::ExitWithCode(if ok { 0 } else { 1 });
             }
             Event::UserEvent(CustomEvent::CaptureStart { marp, slides }) => {
                 // `--export-png`: the initial render settled. Build the capture

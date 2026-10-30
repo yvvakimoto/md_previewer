@@ -139,7 +139,8 @@ pie title Technologies
 
 Right-click this chart and choose **Open in inspector…**: click a node to see its
 edges and in/out balance, Shift+click a second node for every path between them,
-`U` / `D` for everything upstream / downstream.
+`U` / `D` for everything upstream / downstream. Export with `X` → HTML and the
+same inspector opens from the **Inspector** button on the chart.
 
 ```mermaid
 flowchart LR

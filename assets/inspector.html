@@ -171,6 +171,13 @@ body.panel-hidden #panel { display: none; }
 #help table { border-collapse: collapse; width: 100%; }
 #help td { padding: 4px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
 #help td:first-child { white-space: nowrap; width: 1%; padding-right: 14px; }
+/* Embedded in an HTML export (body.embedded, set by inspector.js when the
+   payload carries its own SVG): there is no host window to Ctrl+W, so a close
+   button and an Esc row take that row's place. */
+#btn-close, .embedded-only { display: none; }
+body.embedded #btn-close { display: inline-block; }
+body.embedded .embedded-only { display: table-row; }
+body.embedded .host-only { display: none; }
 kbd {
     font: 11.5px Consolas, monospace; background: var(--btn); border: 1px solid var(--line);
     border-bottom-width: 2px; border-radius: 4px; padding: 0 5px;
@@ -202,6 +209,7 @@ kbd {
     <button id="btn-minimap" class="on" data-i18n="insp.minimap">Minimap</button>
     <button id="btn-panel" class="on" data-i18n="insp.panel">Panel</button>
     <button id="btn-help" title="?">?</button>
+    <button id="btn-close" data-i18n-attr="title:insp.closeTitle">×</button>
 </div>
 <div id="stage">
     <div id="message"></div>
@@ -224,7 +232,8 @@ kbd {
         <tr><td><kbd>←</kbd><kbd>↑</kbd><kbd>↓</kbd><kbd>→</kbd></td><td data-i18n="insp.help.arrows"></td></tr>
         <tr><td><kbd>Ctrl</kbd>+<kbd>F</kbd> / <kbd>/</kbd></td><td data-i18n="insp.help.search"></td></tr>
         <tr><td><kbd>M</kbd> / <kbd>P</kbd></td><td data-i18n="insp.help.toggles"></td></tr>
-        <tr><td><kbd>Ctrl</kbd>+<kbd>W</kbd></td><td data-i18n="insp.help.close"></td></tr>
+        <tr class="host-only"><td><kbd>Ctrl</kbd>+<kbd>W</kbd></td><td data-i18n="insp.help.close"></td></tr>
+        <tr class="embedded-only"><td><kbd>Esc</kbd></td><td data-i18n="insp.help.closeEmbedded"></td></tr>
     </table>
 </div></div>
 <script>
