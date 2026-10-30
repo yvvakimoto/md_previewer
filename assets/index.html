@@ -7254,6 +7254,29 @@ ${inspectorScript ? `<script>${inspectorScript}<\/script>\n` : ''}</body>
             }
         }
 
+        // Headless `--export-html <out.html>` (export.md). Called by the host once
+        // `renderdone:` arrives; answers with ONE `exporthtmlcli:` message, which
+        // the host writes to the path it was given and then exits on. Always
+        // answers — an `{error}` too — so the process can never hang on it.
+        // tikz is the one fire-and-forget engine (it is not awaited before
+        // renderdone), so wait for it here, past its own 30 s timeout. A style's
+        // `_export.js` is deliberately NOT consulted: it posts its own IPC and
+        // may open dialogs, neither of which a CLI run can honour.
+        window.__exportHtmlHeadless = async function () {
+            let msg;
+            try {
+                const deadline = Date.now() + __TIKZ_RENDER_TIMEOUT_MS + 5000;
+                while (preview.querySelector('.tikzjax-loading, script[type="text/tikz"]') && Date.now() < deadline) {
+                    await new Promise((r) => setTimeout(r, 200));
+                }
+                const { html, mediaFiles } = await buildExportArtifact();
+                msg = { html, media: mediaFiles || [] };
+            } catch (e) {
+                msg = { error: String((e && e.message) || e) };
+            }
+            try { window.ipc.postMessage('exporthtmlcli:' + JSON.stringify(msg)); } catch (e) {}
+        };
+
         // Iterate every file in the workspace, render each, snapshot the artifact,
         // and post a single exportdir: payload back to Rust. Restores live preview state at end.
         async function exportWorkspace() {

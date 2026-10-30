@@ -83,7 +83,7 @@ README.md 「対応している記法・機能」.
 | Companion editor (`E`): CodeMirror 6, Vim, live preview, cursor-block highlight in the preview, cell mode, Office-table paste, autocomplete, fence / Marp templates, font zoom, ⚙ settings | `editor-*.md` |
 | Mermaid inspector window (right-click a mermaid figure): pan/zoom, node / path / upstream-downstream highlighting, edge-label balance, search, minimap; follows live edits. Also embedded in every HTML export as an in-page overlay (exported SVG + a db snapshot, no mermaid shipped) | `inspector.md` |
 | UI language toggle (ja / en), one shared `uiLang` key across both windows | `i18n.md` |
-| Export to standalone HTML or PDF (`X`); headless `--export-png` for agents | `export.md` |
+| Export to standalone HTML or PDF (`X`); headless `--export-html <out.html>` (same artifact, no window); headless `--export-png` for agents | `export.md` |
 | Workspace (directory) mode with file tree and `_toc.md`; `.mdx` ZIP bundles | `rust-host.md` |
 | Auto-update: GitHub Releases by default (ON, via the shipped `assets/update.json`), or an intranet file share with `provider: "share"` | `auto-update.md` |
 | Help modal (`H`) | `preview-core.md` |
@@ -386,6 +386,7 @@ unless noted.
 | live-edit debounce | 150 ms | every keystroke rebuilds `#preview` |
 | `SAVE_SUPPRESS_MS` (`src/main.rs`) | 1500 | watcher-suppression window after a self-write |
 | `UPDATE_WATCHDOG_MS` (`src/main.rs`) | 5000 | floor for the update check when `renderdone:` never arrives |
+| `HTML_EXPORT_WATCHDOG_MS` (`src/main.rs`) | 120000 | `--export-html` exits 1 if it has not finished by then; must exceed the page's own tikz wait (`__TIKZ_RENDER_TIMEOUT_MS` + 5 s) |
 | `minCheckIntervalMinutes` default (`src/updater.rs`) | 360 | ⚠ GitHub allows 60 unauthenticated req/h **per IP**; a NATted office would burn it and go silently un-notified |
 | `timeoutMs` default (`src/updater.rs`) | 4000 share / 8000 github | HTTPS pays DNS + TLS before the first byte |
 | `NOTES_MAX_CHARS` / `MANIFEST_MAX_BYTES` / `INSTALLER_MAX_BYTES` (`src/updater.rs`) | 160 / 2 MB / 200 MB | banner card width; caps on anything read off the network |
@@ -467,7 +468,7 @@ restate these here — link to them.
 | `.mdx` バンドル形式 / 自動更新 / 表示言語 | bundle format, update UX, language toggle |
 | テーマのカスタマイズ / 通常プレビュー / Marp スライドのテーマ / 機密表示（Confidential） | theme usage and the watermark front-matter |
 | エディタウィンドウ（`E` キー） | editor features from a user's view |
-| HTML / PDF エクスポート（`X`）, PNG 出力（`--export-png`） | export usage and CLI flags |
+| HTML / PDF エクスポート（`X`）, `--export-html`, PNG 出力（`--export-png`） | export usage and CLI flags |
 | `samples/` フォルダの見方 / トラブルシューティング / 既知の制限 | sample guide, troubleshooting, limits |
 | ライセンス・サードパーティ表記 / ソースからビルドする場合 | licensing, full build walkthrough |
 

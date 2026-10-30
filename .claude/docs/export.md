@@ -65,6 +65,17 @@ Chromium's printer paints a scroll container's scrollbar, so every `overflow-x: 
 
 **Net**: `pdfcheck.py`'s 「長い数式・コード」 block, run for 既定 + hakuro-modern. Headless Chromium hides scrollbars, so it asserts the cause instead: under print media at a 717px viewport, after `__beforePdfPrint()`, no `.katex-display` / `pre` has `scrollWidth > clientWidth`; the long equations' font size dropped while a short one's did not; the PDF's ink stays inside the 0.4in margins; the code line's tail is printed; and no stamp survives `__afterPdfPrint()`. Against the pre-fix `index.html` 7 of its assertions fail.
 
+## Headless HTML export (`--export-html`)
+
+`md-previewer.exe <file.md|.mdx> --export-html <out.html>` writes the same artifact `X` → HTML does, with no window and no dialog. It is `--export-png`'s shape with a different final step, and it rides the same rails on purpose:
+
+- **Same headless setup.** `is_capture` is true for both modes (hidden window, no update check at all), and the init script sets `window.__captureConfig = { scale: 1, html: true }`. That object is what pins `--md-font-scale` / `--md-width-scale` to 1 (`__readFontScale()` / `__readWidthScale()`), so the artifact never depends on what the operator last pressed — the same machine-dependence trap described below for PNG. Theme, dark mode and `uiLang` **do** come from the shared localStorage, deliberately: they are the reader's chosen look, the same choice `X` makes.
+- **Flow.** `renderdone:` → `CustomEvent::HtmlExportStart` → `window.__exportHtmlHeadless()` → one `exporthtmlcli:{html, media}` (or `{error}`) → the IPC arm writes `<out.html>` (creating its folder), runs `copy_export_media()` beside it, and posts `HtmlExportDone { ok }` → `ControlFlow::ExitWithCode(0 | 1)`. `__prepareCapture` is never called, so `body.capturing` never applies.
+- **tikz is waited for in the page.** It is the one engine not awaited before `renderdone:` (fire-and-forget, see *preview-blocks.md*), so `__exportHtmlHeadless()` polls until no `.tikzjax-loading` / `script[type="text/tikz"]` remains, capped at `__TIKZ_RENDER_TIMEOUT_MS + 5 s`. A PNG capture has no such wait; adding one there would be a separate change.
+- **Always ends.** `HTML_EXPORT_WATCHDOG_MS` (120 s) posts `HtmlExportDone { ok: false }` from a thread, and `__exportHtmlHeadless()` answers even on a throw. Exit 2 is the argv refusals, checked before any window exists (a folder, no readable file, or combined with `--export-png`); the log is not open that early, so the exit code is the only report.
+- **Not covered.** Workspace export (a folder argument is refused, not degraded), and a style's `_export.js` exporter — it posts its own IPC and may open dialogs, so the headless path always uses `buildExportArtifact()`.
+- **Net.** No harness can reach this path (it is the Rust half). Verified against the real exe: `.md`, a Marp deck (media copied into `media/`), an `.mdx`, `samples/tikzcd.md` (every diagram compiled; the one `.tikz-error` is the sample's deliberate bad-TeX block), plus exit 2 for a folder and a missing file.
+
 ## Headless PNG capture for agents (`--export-png`)
 
 A **non-interactive CLI mode** so an AI agent authoring Marp decks can *see* its own rendering — render → PNG → inspect layout → fix the Markdown → repeat — without any GUI interaction. Also emits a cheap, deterministic **layout report** so the agent can triage which slides are broken before ever looking at an image.
