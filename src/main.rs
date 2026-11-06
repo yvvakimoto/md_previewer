@@ -27,6 +27,7 @@ mod editor_registry;
 mod http_win;
 mod ime_win;
 mod inspector_registry;
+mod linkcard;
 mod mdx;
 #[cfg(windows)]
 mod pdf_win;
@@ -150,6 +151,10 @@ enum CustomEvent {
     // the worker thread wrote the clipboard. Always posted — there is no dialog
     // to cancel, so silence would only ever mean a lost message.
     FigureCopyDone { ok: bool },
+    // A ```linkcard fence's metadata (`linkcard:` IPC). The worker thread ran
+    // `linkcard::resolve`; `url` echoes the request (several are in flight at
+    // once) and `json` is the serialized `linkcard::Meta`. Always posted.
+    LinkCardDone { url: String, json: String },
     // Every figure in the document was saved at once via the `savefigures:` IPC
     // (right-click on empty preview space). One folder dialog, N files, one
     // result: `failed` already carries the figures the webview could not
@@ -1942,6 +1947,28 @@ fn main() -> wry::Result<()> {
                     .unwrap());
             }
 
+            // ```linkcard thumbnails, downloaded by `linkcard::resolve` into the
+            // card cache. The segment must be exactly a cache key (16 hex) — never
+            // a path — and this arm only reads disk: the network was the worker's.
+            if let Some(key) = path.strip_prefix("/linkcard-img/") {
+                if linkcard::is_valid_key(key) {
+                    if let Ok(bytes) = fs::read(linkcard::image_path(&linkcard::cache_dir(), key)) {
+                        if let Some(mime) = linkcard::sniff_image_mime(&bytes) {
+                            return Ok(Response::builder()
+                                .header("Content-Type", mime)
+                                .header("Access-Control-Allow-Origin", "*")
+                                .header("Cache-Control", "no-cache")
+                                .body(bytes.into())
+                                .unwrap());
+                        }
+                    }
+                }
+                return Ok(Response::builder()
+                    .status(404)
+                    .body(Vec::<u8>::new().into())
+                    .unwrap());
+            }
+
             // Check if this is a user file request (for relative images)
             if path.starts_with("/userfile/") {
                 let file_path_str = &path["/userfile/".len()..];
@@ -2458,6 +2485,29 @@ fn main() -> wry::Result<()> {
                     eprintln!("copyfigure: {}", e);
                     let _ = ipc_event_proxy.send_event(CustomEvent::FigureCopyDone { ok: false });
                 }
+            }
+        } else if let Some(payload) = message.strip_prefix("linkcard:") {
+            // ```linkcard metadata request: `{url, cacheOnly}`. The fetch (page +
+            // thumbnail, each under its own wall-clock cap) runs off the IPC
+            // thread and is always answered, so the preview's pending card never
+            // waits on a lost message — it has its own timeout regardless.
+            #[derive(Deserialize)]
+            struct LinkCardPayload {
+                url: String,
+                #[serde(default, rename = "cacheOnly")]
+                cache_only: bool,
+            }
+            match serde_json::from_str::<LinkCardPayload>(payload) {
+                Ok(p) => {
+                    let lc_proxy = ipc_event_proxy.clone();
+                    std::thread::spawn(move || {
+                        let meta = linkcard::resolve(&p.url, p.cache_only);
+                        let json = serde_json::to_string(&meta)
+                            .unwrap_or_else(|_| r#"{"ok":false}"#.to_string());
+                        let _ = lc_proxy.send_event(CustomEvent::LinkCardDone { url: p.url, json });
+                    });
+                }
+                Err(e) => eprintln!("linkcard: bad payload: {}", e),
             }
         } else if let Some(payload) = message.strip_prefix("savefigures:") {
             // Right-click on empty preview space → "save every figure". The whole
@@ -3223,6 +3273,12 @@ fn main() -> wry::Result<()> {
             Event::UserEvent(CustomEvent::FigureCopyDone { ok }) => {
                 if let Ok(wv) = webview.lock() {
                     eval_js_fn(&wv, "__figureCopyDone", &[&ok.to_string()]);
+                }
+            }
+            Event::UserEvent(CustomEvent::LinkCardDone { url, json }) => {
+                if let Ok(wv) = webview.lock() {
+                    let url_js = serde_json::to_string(&url).unwrap_or_else(|_| "null".into());
+                    eval_js_fn(&wv, "__linkCardDone", &[&url_js, &json]);
                 }
             }
             Event::UserEvent(CustomEvent::FiguresSaveDone { saved, failed }) => {

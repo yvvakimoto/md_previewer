@@ -40,8 +40,10 @@ malformed ⇒ `None` ⇒ no thread, no network.
   **on by default**. Deleting that file, or setting `enabled:false`, turns it off.
   A unit test (`shipped_update_json_selects_github`) pins that the shipped file really
   does load, is enabled, and resolves to GitHub — the whole default rests on it.
-- **The offline-first guarantee is about *viewing*.** Rendering a document still pulls
-  nothing from the network; the update check is deliberately outside that promise.
+- **The offline-first guarantee is about *viewing*.** Rendering a document pulls nothing
+  from the network — with one opt-out exception, ```` ```linkcard ```` metadata
+  (`preview-blocks.md`), which has its own S-modal toggle; the update check is
+  deliberately outside that promise.
   Say it that way in user-facing text — `README.md` used to claim the app never
   contacts the internet at all, which this contradicts.
 - ⚠ **`provider` is inferred when absent**, and that branch is a *compatibility

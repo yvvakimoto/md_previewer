@@ -314,7 +314,7 @@ pub fn is_newer(latest: &str, current: &str) -> bool {
 /// outer guard for *both* providers: an unreachable UNC share hangs on the SMB
 /// timeout, and a black-holed TCP connect hangs on WinHTTP's own per-phase
 /// timeouts, which do not compose into a single request-level bound.
-fn run_with_timeout<T, F>(timeout_ms: u64, f: F) -> Option<T>
+pub(crate) fn run_with_timeout<T, F>(timeout_ms: u64, f: F) -> Option<T>
 where
     T: Send + 'static,
     F: FnOnce() -> T + Send + 'static,
