@@ -259,6 +259,7 @@ export const I18N = {
   'ed.complete.fence.tikzcd':     { ja: '可換図式 (tikz-cd)', en: 'Commutative diagram (tikz-cd)' },
   'ed.complete.fence.kataskeve':  { ja: '幾何作図（2D）', en: 'Geometry figure (2D)' },
   'ed.complete.fence.kataskeve3d':{ ja: '幾何作図（3D）', en: 'Geometry figure (3D)' },
+  'ed.complete.fence.linkcard':   { ja: 'リンクカード（URL）', en: 'Link card (URL)' },
   'ed.complete.fence.feynman':    { ja: 'ファインマン図', en: 'Feynman diagram' },
 
   'ed.complete.fm.marp':     { ja: 'Marpスライドモード (true)', en: 'Marp slide mode (true)' },

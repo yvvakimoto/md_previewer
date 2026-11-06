@@ -61,7 +61,8 @@ so `grep -l "Owns:.*<path>" .claude/docs/` is a working reverse lookup.
 A standalone desktop Markdown previewer in Rust, **Windows only**, **offline for viewing**
 (every rendering dependency bundled; no CDN at runtime). ⚠ **The offline guarantee covers
 *viewing*, not updating** — the update check contacts GitHub Releases by default
-(`auto-update.md`), so never write "never touches the internet" in user-facing text.
+(`auto-update.md`), and a ` ```linkcard ` fence fetches its page's OGP fields (an S-modal toggle turns
+that off; `preview-blocks.md`), so never write "never touches the internet" in user-facing text.
 Two optional components — the TikZ engine and the ABC playback sound bank — are fetched by the
 **installer**, not at runtime; once installed, viewing and playback are fully offline.
 One line per feature, for routing only — user-facing descriptions live in
@@ -71,6 +72,7 @@ README.md 「対応している記法・機能」.
 |---|---|
 | GFM preview, auto-reload on external change, sidebar TOC | `preview-core.md` |
 | Diagram / figure fences: `mermaid`, `plotly`, `abc` (+ playback), `markwhen`, `tikz`/`tikzcd`, `kataskeve`/`kataskeve3d`, `feynman`, `model3d` (3D mesh files, interactive), `csv`/`tsv`, KaTeX math, highlight.js (+ in-house Modelica grammar) | `preview-blocks.md` |
+| ` ```linkcard ` OGP link cards — host-fetched (HTTPS), disk-cached, thumbnail served from the cache, S-modal fetch toggle | `preview-blocks.md`, `rust-host.md` |
 | Footnotes, `::: center/right/left/message/vcenter/columns` fenced divs, `[text]{color=…}` inline spans, definition lists, ruby (`｜猫《ねこ》`), task lists, CJK soft-break join, CJK-friendly `**` emphasis | `preview-markdown-ext.md` |
 | Copy table for PowerPoint (rich-HTML clipboard); Edit table (writes back to the `.md`) | `preview-tables.md` |
 | Right-click a rendered figure → save it alone as SVG / PNG, or copy it to the clipboard as SVG / PNG (canvas engines: PNG only); right-click **empty** preview space → save every figure into one picked folder, plus the app's own back / forward (which that menu displaced) | `preview-blocks.md`, `preview-files-media.md` |
@@ -103,7 +105,8 @@ A file with no owning doc is an anomaly.
 | `src/inspector_registry.rs` | the one read-only Mermaid inspector `WebView`; payload validation, spawn / push / close | `inspector.md` |
 | `src/mdx.rs` | `.mdx` ZIP extract-to-temp and repack | `rust-host.md` |
 | `src/updater.rs` | auto-update: provider dispatch (`github` / `share`), detect + fetch + silent install | `auto-update.md` |
-| `src/http_win.rs` | blocking HTTPS GET over WinHTTP — the GitHub provider's only transport | `auto-update.md` |
+| `src/http_win.rs` | blocking HTTPS GET over WinHTTP — the GitHub provider's only transport, and the link-card fetch's | `auto-update.md` |
+| `src/linkcard.rs` | ` ```linkcard ` metadata: OGP fetch + parse, charset decode, `%TEMP%\mdp-linkcard\` cache, the `/linkcard-img/` bytes | `rust-host.md`, `preview-blocks.md` |
 | `src/cdp_win.rs` | shared WebView2 DevTools-Protocol plumbing | `export.md` |
 | `src/pdf_win.rs` / `src/png_win.rs` | PDF via `Page.printToPDF` / PNG via `Page.captureScreenshot` | `export.md` |
 | `src/clipboard_win.rs` | Win32 clipboard behind the editor's `unnamedplus` yank/paste, and the preview's figure copy (`set_figure`) | `editor-keymaps.md`, `preview-blocks.md` |
@@ -359,6 +362,7 @@ eighteen that are checked (or partly checked) can rely on the harness rememberin
 | editor↔preview scroll sync (either axis), `applyEditorScroll` / `applyEditorCursor` / `__blockForLine`, the cursor-block tint | `python tools/preview-harness/synccheck.py` (+ `exportcheck.py` / `prefscheck.py` for the tint's export and settings halves) |
 | Office-table paste | `python tools/preview-harness/pastecheck.py` + `cd tools/build-editor && node tablePaste.test.mjs` |
 | HTML export / PDF export | `python tools/preview-harness/exportcheck.py` / `pdfcheck.py` |
+| ` ```linkcard ` — `__linkCard*`, the `linkcard:` IPC, `src/linkcard.rs`, `/linkcard-img/` | `python tools/preview-harness/linkcardcheck.py` + `cargo test linkcard` |
 | either i18n table | `python tools/preview-harness/i18ncheck.py` |
 | Vim key layout | `python tools/preview-harness/dvorakcheck.py` + `cd tools/build-editor && node keyLayout.test.mjs` |
 | editor font zoom, settings modal | `python tools/preview-harness/prefscheck.py` |
@@ -390,6 +394,8 @@ unless noted.
 | `minCheckIntervalMinutes` default (`src/updater.rs`) | 360 | ⚠ GitHub allows 60 unauthenticated req/h **per IP**; a NATted office would burn it and go silently un-notified |
 | `timeoutMs` default (`src/updater.rs`) | 4000 share / 8000 github | HTTPS pays DNS + TLS before the first byte |
 | `NOTES_MAX_CHARS` / `MANIFEST_MAX_BYTES` / `INSTALLER_MAX_BYTES` (`src/updater.rs`) | 160 / 2 MB / 200 MB | banner card width; caps on anything read off the network |
+| `LINKCARD_WAIT_MS` | 6000 | how long a render waits for link-card answers before leaving the fallback card (a late answer still patches). Must exceed the host's 5 s page cap so the usual slow fetch lands inside it |
+| `PAGE_TIMEOUT_MS` / `IMAGE_TIMEOUT_MS` / `PAGE_MAX_BYTES` / `IMAGE_MAX_BYTES` / `CACHE_TTL` (`src/linkcard.rs`) | 5 s / 8 s / 1 MB (truncated) / 5 MB / 7 days | link-card fetch caps; a failure is never cached on disk |
 | `__DIAGRAM_CACHE_MAX` | 200 | FIFO cap bounding diagram memory across long sessions |
 | `__TIKZ_SCALE` / `__TIKZ_RENDER_TIMEOUT_MS` | 1.6 / 30000 | tikz renders small; a bad diagram must not wait forever |
 | `__TIKZ_BASE_PACKAGES` | `amsmath`, `amssymb` | the `\usepackage` lines **every** tikz/tikzcd block gets (`tikz-cd` is appended for `cd`). The core dump preloads standalone + inputenc + tikz/pgf and **no AMS layer**, so `\mathbb` / `\text{}` / `\dfrac` need it. ⚠ **Never re-split this by fence kind** — that asymmetry is exactly what made `\mathbb` work in `tikzcd` and fail in `tikz` with a misleading "check your TeX syntax". Detail: `preview-blocks.md` |

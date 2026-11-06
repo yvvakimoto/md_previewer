@@ -358,6 +358,33 @@ pub fn get(url: &str, accept: &str, timeout_ms: u64, max_bytes: u64) -> Result<V
     Ok(out)
 }
 
+/// GET `url` into memory, keeping at most the first `cap` bytes.
+///
+/// Unlike [`get`], an oversized body is *truncated*, not an error: the link-card
+/// fetch (`linkcard.rs`) only needs the page's `<head>`, and a long article must
+/// not lose its card for being long.
+pub fn get_truncated(url: &str, accept: &str, timeout_ms: u64, cap: usize) -> Result<Vec<u8>> {
+    let resp = send(url, accept, timeout_ms)?;
+    if !(200..300).contains(&resp.status) {
+        return Err(status_error(resp.status, url));
+    }
+    let mut out: Vec<u8> = Vec::new();
+    let r = read_body(&resp, u64::MAX, |chunk| {
+        let room = cap.saturating_sub(out.len());
+        out.extend_from_slice(&chunk[..chunk.len().min(room)]);
+        if out.len() >= cap {
+            // Stop reading; mapped back to Ok below.
+            return Err(Error::new(ErrorKind::WriteZero, "cap reached"));
+        }
+        Ok(())
+    });
+    match r {
+        Ok(_) => Ok(out),
+        Err(_) if out.len() >= cap => Ok(out),
+        Err(e) => Err(e),
+    }
+}
+
 /// GET `url` straight to `dest`, returning the byte count.
 ///
 /// Streams through a `BufWriter` so a multi-MB installer never sits in memory.

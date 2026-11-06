@@ -32,6 +32,7 @@ const TEMPLATES = [
   { lang: 'tikzcd',      body: `${CARET}A \\arrow[r, "f"] & B` },
   { lang: 'kataskeve',   body: `viewport: -1 -1 6 5\nA = point(0, 0)\nB = point(5, 0)\nC = point(2, 4)\ntriangle(A, B, C)${CARET}` },
   { lang: 'kataskeve3d', body: `view: tilt=26 yaw=32\nunit: 90\ncube(point(0,0,0), 2)${CARET}` },
+  { lang: 'linkcard',    body: `https://${CARET}` },
   { lang: 'feynman',     body: `diagram {\n  in a: $e^-$; out b: $e^-$\n  a -- [fermion${CARET}] b\n}` },
 ];
 

@@ -359,6 +359,28 @@ Keys: `file` (required), `format`, `width` / `height` (680 / 460), `color`, `bac
 **Not supported**: STEP / IGES / DWG (solid CAD — export a mesh first), Draco- or
 KTX2-compressed glTF, glTF animation playback. Models are capped at 64 MB.
 
+## Link cards — `samples/linkcard.md`
+
+A `linkcard` fence turns a URL into a bordered card (title / description / site /
+thumbnail). The app fetches the page's OGP fields itself and caches them, so write just
+the URL; add overrides only when you know better than the page does.
+
+````markdown
+```linkcard
+https://example.com/article
+title: 任意（取得した値より優先）
+description: 任意
+image: images/thumb.png
+site: 任意
+fetch: false
+```
+````
+
+The first non-`key:` line (or `url:`) is the URL — one card per fence. Only `https://` is
+fetched; `http://` and `fetch: false` cards show the overrides (else URL + host) and never
+touch the network — use `fetch: false` for intranet pages. A failed fetch still renders a
+URL-only card. Prefer a plain `[text](url)` link inside prose; a card is a block.
+
 ## KaTeX math — `samples/math.md`
 
 Inline `$ ... $`, display `$$ ... $$`. The LaTeX forms `\( ... \)` and `\[ ... \]` also work

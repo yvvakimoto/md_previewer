@@ -1101,6 +1101,114 @@
             border-color: #f85149;
             color: #ffa198;
         }
+        /* ```linkcard — an OGP-style card (`renderLinkCardHtml()`). Lives in the
+           FIRST <style> so it rides into the HTML export (CLAUDE.md #18). Colours
+           follow the "theme declares, the app implements" shape: a theme or Marp
+           theme sets --md-linkcard-border / -bg / -hover / -title / -desc. The
+           (1,1,1) selectors exist to beat a theme's plain `#preview a` /
+           `#preview img` rules (underline, image border / shadow / margin), which
+           would otherwise dress the whole card as a link and the thumbnail as a
+           figure. Always horizontal: under tategaki's vertical-rl a card is a
+           foreign object, like a table of Latin text. */
+        #preview a.md-linkcard {
+            display: flex;
+            align-items: stretch;
+            margin: 16px 0;
+            max-width: 100%;
+            min-height: 96px;
+            box-sizing: border-box;
+            border: 1px solid var(--md-linkcard-border, #d0d7de);
+            border-radius: 8px;
+            overflow: hidden;
+            background: var(--md-linkcard-bg, transparent);
+            color: inherit;
+            text-decoration: none;
+            text-align: left;
+            text-indent: 0;
+            line-height: 1.5;
+            font-size: 0.95em;
+            writing-mode: horizontal-tb;
+            break-inside: avoid;
+            page-break-inside: avoid;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+        }
+        #preview a.md-linkcard:hover {
+            background: var(--md-linkcard-hover, rgba(127, 127, 127, 0.07));
+            text-decoration: none;
+        }
+        #preview a.md-linkcard .md-linkcard-body {
+            flex: 1 1 auto;
+            min-width: 0;
+            padding: 12px 16px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            gap: 4px;
+        }
+        #preview a.md-linkcard .md-linkcard-title {
+            font-weight: 600;
+            color: var(--md-linkcard-title, inherit);
+            overflow-wrap: anywhere;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+        #preview a.md-linkcard .md-linkcard-desc {
+            font-size: 0.85em;
+            color: var(--md-linkcard-desc, #57606a);
+            overflow-wrap: anywhere;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+        #preview a.md-linkcard .md-linkcard-site {
+            font-size: 0.8em;
+            color: var(--md-linkcard-desc, #57606a);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        #preview a.md-linkcard .md-linkcard-thumb {
+            flex: 0 0 30%;
+            max-width: 220px;
+            min-width: 96px;
+            background: rgba(127, 127, 127, 0.08);
+        }
+        #preview a.md-linkcard .md-linkcard-thumb img {
+            display: block;
+            width: 100%;
+            height: 100%;
+            max-width: none;
+            object-fit: cover;
+            margin: 0;
+            padding: 0;
+            border: 0;
+            border-radius: 0;
+            box-shadow: none;
+        }
+        #preview a.md-linkcard[data-linkcard-pending] .md-linkcard-body { opacity: 0.6; }
+        body.dark-mode #preview a.md-linkcard { border-color: var(--md-linkcard-border, #30363d); }
+        body.dark-mode #preview a.md-linkcard .md-linkcard-desc,
+        body.dark-mode #preview a.md-linkcard .md-linkcard-site { color: var(--md-linkcard-desc, #8b949e); }
+        .linkcard-error {
+            margin: 16px 0;
+            padding: 12px 16px;
+            border: 1px solid #d73a49;
+            border-radius: 4px;
+            background: #ffeef0;
+            color: #b31d28;
+            font-size: 0.9em;
+            text-align: left;
+            writing-mode: horizontal-tb;
+        }
+        body.dark-mode .linkcard-error {
+            background: #2a0d10;
+            border-color: #f85149;
+            color: #ffa198;
+        }
 
         /* Kataskeve — 2D Euclidean-geometry diagrams (libs/kataskeve/, MIT).
            kataskeve.render() returns a complete inline <svg> carrying BOTH a
@@ -2635,6 +2743,9 @@
         body.dark-mode .scale-row button { border-color: #30363d; color: #c9d1d9; }
         body.dark-mode .scale-row button:hover:not(:disabled) { background: #21262d; }
         body.dark-mode .scale-row .fs-fixed { color: #d6a95f; }
+        /* The link-card fetch toggle borrows the scale rows' chrome. */
+        .scale-row label.fs-head { cursor: pointer; align-items: center; }
+        .scale-row label.fs-head input { margin: 0; }
         body.dark-mode #help-modal .panel,
         body.dark-mode #style-modal .panel {
             background: #161b22;
@@ -3288,6 +3399,12 @@
             // quantities, and the row's own label already says which. The `%` next
             // to the box is a symbol and stays out of this table.
             'style.scaleInput':    { ja: '倍率（%）を直接入力', en: 'Type a scale (%)' },
+            'style.linkCardFetch': { ja: 'リンクカードの情報をインターネットから取得する',
+                                     en: 'Fetch link-card details from the internet' },
+            'style.linkCardFetchHint': { ja: 'OFF のときは取得済みのキャッシュだけを使います',
+                                         en: 'When off, only already-cached details are used' },
+            'linkcard.noUrl':      { ja: 'linkcard: URL（https://…）が見つかりません',
+                                     en: 'linkcard: no URL (https://…) found' },
 
             'lic.loadFailed':      { ja: 'THIRD_PARTY_LICENSES.txt の読み込みに失敗しました ({error})',
                                      en: 'Could not load THIRD_PARTY_LICENSES.txt ({error})' },
@@ -6773,7 +6890,9 @@
             // in parallel. Failures leave the original src (broken link in artifact,
             // same as before for an unreadable file).
             {
-                const isUserfile = (s) => /^\/userfile\//i.test(s) || /^app:\/\/[^/]*\/userfile\//i.test(s);
+                // `/linkcard-img/` is a ```linkcard thumbnail out of the host's card
+                // cache — same-origin bytes, inlined the same way.
+                const isUserfile = (s) => /^\/(userfile|linkcard-img)\//i.test(s) || /^app:\/\/[^/]*\/(userfile|linkcard-img)\//i.test(s);
                 const cloneImgs = Array.from(previewClone.querySelectorAll('img'))
                     .filter(img => isUserfile(img.getAttribute('src') || ''));
                 const bySrc = new Map(); // src -> dataURL
@@ -7903,6 +8022,7 @@ ${inspectorScript ? `<script>${inspectorScript}<\/script>\n` : ''}</body>
         function toUserfileUrl(p) {
             if (/^(https?:|app:|file:|data:|blob:)/i.test(p)) return p;
             if (/^\/userfile\//i.test(p)) return p;   // already routed — don't double-prefix
+            if (/^\/linkcard-img\//i.test(p)) return p; // a ```linkcard thumbnail (host cache route)
             const fwd = p.replace(/\\/g, '/');
             // Already absolute (Windows drive or POSIX root) — serve as-is.
             if (/^[A-Za-z]:\//.test(fwd) || fwd.startsWith('/')) {
@@ -9460,6 +9580,198 @@ ${inspectorScript ? `<script>${inspectorScript}<\/script>\n` : ''}</body>
                 .replace(/>/g, '&gt;')
                 .replace(/"/g, '&quot;')
                 .replace(/'/g, '&#39;');
+        }
+
+        // ---- ```linkcard — OGP-style link cards ------------------------------------
+        // The fence names a URL (plus optional title / description / image / site
+        // overrides); the Rust host fetches the page's OGP fields and thumbnail
+        // (`linkcard:` IPC → `src/linkcard.rs`, disk-cached) and answers through
+        // `window.__linkCardDone`. Detail: `.claude/docs/preview-blocks.md`, *Link cards*.
+        //
+        // State lives in module-level Maps, OUTSIDE #preview, so it survives the
+        // innerHTML rebuild of every keystroke (CLAUDE.md #4): a known URL renders
+        // its finished card synchronously, and a failure is remembered for the
+        // session so a dead link is not re-requested 7 times a second.
+        // A late answer patches whatever card for that URL is in the CURRENT DOM —
+        // never a held node reference.
+        const LINKCARD_WAIT_MS = 6000;
+        const __linkCardMeta = new Map();      // url -> {ok, title, desc, site, img}
+        const __linkCardInflight = new Map();  // url -> {promise, resolve}
+
+        function __linkCardFetchEnabled() {
+            try { return localStorage.getItem('linkCardFetch') !== 'off'; } catch (_) { return true; }
+        }
+
+        // `key: value` lines; the first other non-blank line is the URL.
+        function __parseLinkCardSpec(src) {
+            const spec = { url: '', title: '', description: '', image: '', site: '', fetch: true };
+            for (const raw of String(src || '').split(/\r?\n/)) {
+                const line = raw.trim();
+                if (!line) continue;
+                const m = line.match(/^([A-Za-z]+)\s*:\s*(.*)$/);
+                // `https://x` also matches `key: value` — a scheme is never a key.
+                if (m && !/^https?$/i.test(m[1])) {
+                    const k = m[1].toLowerCase(), v = m[2].trim();
+                    if (k === 'url') spec.url = v;
+                    else if (k === 'title') spec.title = v;
+                    else if (k === 'description' || k === 'desc') spec.description = v;
+                    else if (k === 'image' || k === 'img') spec.image = v;
+                    else if (k === 'site') spec.site = v;
+                    else if (k === 'fetch') spec.fetch = !/^(false|no|off|0)$/i.test(v);
+                    continue;
+                }
+                if (!spec.url) spec.url = line;
+            }
+            return spec;
+        }
+
+        function __linkCardHost(url) {
+            try { return new URL(url).host; } catch (_) { return ''; }
+        }
+
+        // Only https is ever fetched (the host refuses plaintext); `fetch: false`
+        // and http:// cards are final at first render.
+        function __linkCardWantsFetch(spec) {
+            return spec.fetch && /^https:\/\//i.test(spec.url);
+        }
+
+        // Precedence per field: the fence's own value > fetched OGP > fallback
+        // (title = the URL, site = the host name).
+        function renderLinkCardHtml(spec, meta, pending, src) {
+            const url = spec.url;
+            const m = (meta && meta.ok) ? meta : {};
+            const title = spec.title || m.title || url;
+            const desc = spec.description || m.desc || '';
+            const site = spec.site || m.site || __linkCardHost(url);
+            const img = spec.image ? transformImagePath(spec.image) : (m.img || '');
+            const attrs = [
+                `class="md-linkcard${img ? ' has-img' : ''}"`,
+                `href="${escapeHtml(url)}"`,
+                `data-linkcard-url="${escapeHtml(url)}"`,
+                `data-linkcard-src="${encodeURIComponent(src || '')}"`,
+            ];
+            if (pending) attrs.push('data-linkcard-pending=""');
+            return `<a ${attrs.join(' ')}>`
+                + `<span class="md-linkcard-body">`
+                + `<span class="md-linkcard-title">${escapeHtml(title)}</span>`
+                + (desc ? `<span class="md-linkcard-desc">${escapeHtml(desc)}</span>` : '')
+                + `<span class="md-linkcard-site">${escapeHtml(site)}</span>`
+                + `</span>`
+                + (img ? `<span class="md-linkcard-thumb"><img src="${escapeHtml(img)}" alt="" decoding="async"></span>` : '')
+                + `</a>`;
+        }
+
+        // One fence body -> its HTML, shared by both pipelines.
+        function __linkCardBlockHtml(src) {
+            const spec = __parseLinkCardSpec(src);
+            if (!/^https?:\/\//i.test(spec.url)) {
+                return `<div class="linkcard-error">${escapeHtml(t('linkcard.noUrl'))}</div>`;
+            }
+            const want = __linkCardWantsFetch(spec);
+            const meta = want ? __linkCardMeta.get(spec.url) : null;
+            return renderLinkCardHtml(spec, meta, want && !meta, src);
+        }
+
+        function __linkCardRequest(url) {
+            if (__linkCardMeta.has(url)) return Promise.resolve(__linkCardMeta.get(url));
+            const inflight = __linkCardInflight.get(url);
+            if (inflight) return inflight.promise;
+            if (!(window.ipc && typeof window.ipc.postMessage === 'function')) {
+                // No host (harness / plain browser): settle as a fallback card.
+                const fail = { ok: false };
+                __linkCardMeta.set(url, fail);
+                return Promise.resolve(fail);
+            }
+            let resolve;
+            const promise = new Promise(r => { resolve = r; });
+            __linkCardInflight.set(url, { promise, resolve });
+            try {
+                window.ipc.postMessage('linkcard:' + JSON.stringify({ url, cacheOnly: !__linkCardFetchEnabled() }));
+            } catch (_) {
+                __linkCardInflight.delete(url);
+                __linkCardMeta.set(url, { ok: false });
+                resolve({ ok: false });
+            }
+            return promise;
+        }
+
+        // Rebuild the inside of every card for `url` in the current DOM. The <a>
+        // itself is kept, so its stamped data-line / cursor tint survive.
+        function __linkCardPatch(url) {
+            const root = document.getElementById('preview');
+            if (!root) return 0;
+            let n = 0;
+            root.querySelectorAll('a.md-linkcard[data-linkcard-url]').forEach(el => {
+                if (el.getAttribute('data-linkcard-url') !== url) return;
+                let src = '';
+                try { src = decodeURIComponent(el.getAttribute('data-linkcard-src') || ''); } catch (_) { return; }
+                const tpl = document.createElement('template');
+                tpl.innerHTML = renderLinkCardHtml(__parseLinkCardSpec(src), __linkCardMeta.get(url), false, src);
+                const fresh = tpl.content.firstElementChild;
+                if (!fresh) return;
+                el.innerHTML = fresh.innerHTML;
+                el.classList.toggle('has-img', fresh.classList.contains('has-img'));
+                el.removeAttribute('data-linkcard-pending');
+                n++;
+            });
+            return n;
+        }
+
+        // Host callback (`CustomEvent::LinkCardDone`).
+        window.__linkCardDone = function (url, meta) {
+            const m = (meta && typeof meta === 'object') ? meta : { ok: false };
+            __linkCardMeta.set(url, m);
+            const inflight = __linkCardInflight.get(url);
+            if (inflight) { __linkCardInflight.delete(url); inflight.resolve(m); }
+            // Inside a render the resolver below patches; a LATE answer (after its
+            // wait expired) lands here on its own, so re-fit a Marp slide too.
+            if (!inflight || !__linkCardResolving) {
+                if (__linkCardPatch(url) && document.body.classList.contains('marp')
+                        && typeof fitMarpSlides === 'function') {
+                    __nextPaint().then(fitMarpSlides);
+                }
+            }
+        };
+
+        // Awaited by both render pipelines before `__emitRenderDone`, so the HTML
+        // export and `--export-png` see finished cards. Never throws; gives up after
+        // LINKCARD_WAIT_MS and leaves the fallback card (a late answer still patches).
+        let __linkCardResolving = 0;
+        async function __linkCardResolveAll(root) {
+            const els = root ? root.querySelectorAll('a.md-linkcard[data-linkcard-pending]') : [];
+            if (!els.length) return;
+            const urls = [...new Set(Array.from(els, el => el.getAttribute('data-linkcard-url')))];
+            __linkCardResolving++;
+            try {
+                await Promise.race([
+                    Promise.all(urls.map(u => __linkCardRequest(u).then(() => __linkCardPatch(u)))),
+                    new Promise(r => setTimeout(r, LINKCARD_WAIT_MS)),
+                ]);
+            } catch (_) {
+                /* a card must never cost the document */
+            } finally {
+                __linkCardResolving--;
+            }
+            root.querySelectorAll('a.md-linkcard[data-linkcard-pending]')
+                .forEach(el => el.removeAttribute('data-linkcard-pending'));
+        }
+
+        // S-modal toggle (`localStorage.linkCardFetch`, default ON).
+        function __initLinkCardToggle() {
+            const box = document.getElementById('linkcard-fetch');
+            if (!box) return;
+            box.checked = __linkCardFetchEnabled();
+            box.addEventListener('change', () => {
+                try { localStorage.setItem('linkCardFetch', box.checked ? 'on' : 'off'); } catch (_) {}
+                // Failures were remembered under the old setting; give them a retry.
+                for (const [u, m] of __linkCardMeta) if (!m || !m.ok) __linkCardMeta.delete(u);
+                if (currentMarkdown) renderMarkdown(currentMarkdown);
+            });
+        }
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', __initLinkCardToggle);
+        } else {
+            __initLinkCardToggle();
         }
 
         // RFC 4180-style CSV parser: handles "quoted" fields containing commas,
@@ -12590,6 +12902,10 @@ ${inspectorScript ? `<script>${inspectorScript}<\/script>\n` : ''}</body>
                     const tpl = document.createElement('template');
                     tpl.innerHTML = tableHtml;
                     pre.replaceWith(tpl.content);
+                } else if (lang === 'linkcard') {
+                    const tpl = document.createElement('template');
+                    tpl.innerHTML = __linkCardBlockHtml(code.textContent);
+                    pre.replaceWith(tpl.content);
                 } else if (lang === 'plotly') {
                     const enc = encodeURIComponent(code.textContent);
                     const div = __plotlyTakeHeld(__heldPlotly, enc) || document.createElement('div');
@@ -12855,6 +13171,9 @@ ${inspectorScript ? `<script>${inspectorScript}<\/script>\n` : ''}</body>
             if (marpMwEls.length > 0 && await awaitLib(ensureMarkwhen(), 'Markwhen', marpMwEls)) {
                 await Promise.all(Array.from(marpMwEls).map(el => renderMarkwhenCached(el)));
             }
+
+            // Link cards in slides (same bounded wait as the normal pipeline).
+            await __linkCardResolveAll(preview);
 
             // Render tikz / tikz-cd diagrams in slides (memoized by kind + source).
             // Fire-and-forget like the normal pipeline (see the long note there):
@@ -13238,6 +13557,11 @@ ${inspectorScript ? `<script>${inspectorScript}<\/script>\n` : ''}</body>
                 (match, lang, code) => renderDataTable(lang, code) || match
             );
 
+            // Replace linkcard code blocks with cards (finished when the URL is
+            // already known, else pending until __linkCardResolveAll below).
+            html = html.replace(/<pre><code class="language-linkcard">([\s\S]*?)<\/code><\/pre>/g,
+                (match, code) => __linkCardBlockHtml(decodeEntities(code)));
+
             // Replace plotly code blocks with placeholder divs; the async renderer
             // runs after preview.innerHTML is assigned (it fetches the CSV file).
             html = html.replace(/<pre><code class="language-plotly">([\s\S]*?)<\/code><\/pre>/g, (match, code) => {
@@ -13463,6 +13787,9 @@ ${inspectorScript ? `<script>${inspectorScript}<\/script>\n` : ''}</body>
             if (mwEls.length > 0 && await awaitLib(markwhenReady, 'Markwhen', mwEls)) {
                 await Promise.all(Array.from(mwEls).map(el => renderMarkwhenCached(el)));
             }
+
+            // Link cards: ask the host for any URL not yet known (bounded wait).
+            await __linkCardResolveAll(preview);
 
             // Render tikz / tikz-cd diagrams (memoized by kind + source).
             // FIRE-AND-FORGET (not awaited): a TeX compile takes seconds and a
@@ -15990,6 +16317,15 @@ ${inspectorScript ? `<script>${inspectorScript}<\/script>\n` : ''}</body>
                      and are disabled under .cw-fixed (bunko's ⚙ is the control). -->
                 <div class="cw-wide fs-fixed" hidden data-i18n="style.widthScaleWide">全幅表示（W）が有効です。幅を変えると全幅表示は解除されます</div>
                 <div class="cw-fixed fs-fixed" hidden data-i18n="style.widthScaleFixed">このスタイルは版面を字数で決めるため倍率は効きません。⚙ の「1行の文字数」で変更してください</div>
+            </div>
+            <!-- Style-independent like the scale rows. Only the ```linkcard fetch
+                 talks to the network during viewing; this is its off switch. -->
+            <div id="linkcard-fetch-row" class="scale-row">
+                <label class="fs-head">
+                    <input type="checkbox" id="linkcard-fetch" checked>
+                    <span class="fs-label" data-i18n="style.linkCardFetch">リンクカードの情報をインターネットから取得する</span>
+                </label>
+                <div class="fs-hint" data-i18n="style.linkCardFetchHint">OFF のときは取得済みのキャッシュだけを使います</div>
             </div>
             <div id="style-vars-pane" hidden></div>
         </div>

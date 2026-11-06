@@ -43,7 +43,8 @@ Example opening line to the user:
 - Read the relevant reference for exact syntax:
   - `references/features.md` — all normal-pipeline extensions (fenced divs, inline spans,
     footnotes, definition lists, ruby/振り仮名, mermaid, markwhen, csv/tsv, plotly, abc,
-    tikz/tikzcd, kataskeve/kataskeve3d, feynman, model3d (3D mesh files), KaTeX,
+    tikz/tikzcd, kataskeve/kataskeve3d, feynman, model3d (3D mesh files), linkcard
+    (OGP link cards), KaTeX,
     image sizing, video/YouTube,
     blockquote attribution, soft-break rules, cross-file links, workspace `_toc.md`,
     `confidential:`/`watermark:` front-matter, `.mdx` bundles).

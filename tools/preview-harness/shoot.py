@@ -107,7 +107,10 @@ _FIGURES_READY_JS = """() => {
   // engines' is not: a headless browser without WebGL2 renders every block as
   // an error box, and that is a legitimately settled state, not a hang.
   const m3d = done('.model3d', m => m.querySelector('canvas') || m.querySelector('.model3d-error'));
-  return mer && mw && abc && pl && tkz && ks2 && ks3 && fey && m3d;
+  // ```linkcard: a card is settled once it lost data-linkcard-pending, which
+  // __linkCardResolveAll drops on answer OR after its own bounded wait.
+  const lc  = done('a.md-linkcard', m => !m.hasAttribute('data-linkcard-pending'));
+  return mer && mw && abc && pl && tkz && ks2 && ks3 && fey && m3d && lc;
 }"""
 
 _TIKZ_SELECTOR_JS = "() => !!document.querySelector('.tikzcd-diagram, .tikz-diagram')"
