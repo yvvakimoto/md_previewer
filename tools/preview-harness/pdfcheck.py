@@ -175,6 +175,69 @@ LONGCODELINE_0123456789_abcdefghijklmnopqrstuvwxyz_0123456789_abcdefghijklmnopqr
 ```
 """
 
+# Explicit page breaks: the three marker spellings, plus a marker inside a code
+# fence that must stay literal text (and must NOT break the page).
+PAGEBREAK_MD = r"""# 改ページの検査
+
+一ページ目 PBPAGEONE の本文。
+
+\newpage
+
+二ページ目 PBPAGETWO の本文。
+
+<!-- pagebreak -->
+
+三ページ目 PBPAGETHREE の本文。
+
+\pagebreak
+
+## 四ページ目 PBPAGEFOUR
+
+```text
+\newpage
+```
+
+フェンスの後も PBSTILLFOUR 同じページ。
+"""
+
+# front-matter `pagebreak: h2` — h1 AND h2 start a page, h3 does not, the
+# document's first heading does not (no blank page 1), and a marker right in
+# front of a tagged heading costs no extra (blank) page.
+PB_HEADING_MD = r"""---
+pagebreak: h2
+---
+
+# 表題 PBTITLE
+
+前書き。
+
+## 一章 PBCHAPONE
+
+本文。
+
+\newpage
+
+## 二章 PBCHAPTWO
+
+本文。
+
+### 小節 PBSUBSEC
+
+本文。
+
+## 三章 PBCHAPTHREE
+
+本文。
+"""
+
+# A marker inside a Marp deck: no extra page, and no literal `\newpage` text.
+PB_DECK_MD = DECK_MD.replace("二枚目の本文。", "二枚目の本文。\n\n\\newpage\n\n続き。")
+
+# A vertical-theme document with a marker in the middle; the text after it must
+# open a new page (tategaki) / a new 文庫 page (bunko).
+PB_VERTICAL_MD = "# 縦組みの改ページ\n\n短い一段落目。\n\n\\newpage\n\nPBVNEXTの段落はここから始まる。\n\n" + (
+    "縦組みの改ページを確かめるための文章である。" * 8) + "\n"
+
 
 # Record every IPC message the page posts, so the ack payload is inspectable.
 RECORD_IPC_JS = """() => {
@@ -363,9 +426,15 @@ def main():
     vertical = os.path.join(tmp, "vertical.md")
     scaled = os.path.join(tmp, "scaled.md")
     overflow = os.path.join(tmp, "overflow.md")
+    pbreak = os.path.join(tmp, "pagebreak.md")
+    pbhead = os.path.join(tmp, "pagebreak-heading.md")
+    pbdeck = os.path.join(tmp, "pagebreak-deck.md")
+    pbvert = os.path.join(tmp, "pagebreak-vertical.md")
     for path, body in ((deck, DECK_MD), (deck43, DECK_43_MD), (plain, PLAIN_MD),
                        (vertical, VERTICAL_MD), (scaled, SCALED_MD),
-                       (overflow, OVERFLOW_MD)):
+                       (overflow, OVERFLOW_MD), (pbreak, PAGEBREAK_MD),
+                       (pbhead, PB_HEADING_MD), (pbdeck, PB_DECK_MD),
+                       (pbvert, PB_VERTICAL_MD)):
         with open(path, "w", encoding="utf-8") as fh:
             fh.write(body)
 
@@ -703,6 +772,92 @@ def main():
             tctx.close()
             check("...but no preview-only toast is painted onto the paper",
                   "PRINTCHROMEPROBE" not in printed, "the toast printed")
+
+            # ---- explicit page breaks -----------------------------------------
+            print("\n[改ページ — \\newpage / \\pagebreak / <!-- pagebreak -->]")
+            load(page, base + pbreak, marp=False)
+            dom = page.evaluate("""() => ({
+              n: document.querySelectorAll('#preview > .md-pagebreak').length,
+              lines: [...document.querySelectorAll('#preview > .md-pagebreak')].map(e => e.dataset.line),
+              literal: [...document.querySelectorAll('#preview pre code')].some(c => c.textContent.includes('\\\\newpage')),
+            })""")
+            check("three markers become three break elements", dom["n"] == 3, dom)
+            check("each marker carries its own source line", dom["lines"] == ["5", "9", "13"], dom)
+            check("a marker inside a code fence stays literal", dom["literal"], dom)
+            out = os.path.join(tmp, "pagebreak.pdf")
+            run_export(page, client, out)
+            doc = fitz.open(out)
+            texts = flat_text(doc)
+            doc.close()
+            want = ["PBPAGEONE", "PBPAGETWO", "PBPAGETHREE", "PBPAGEFOUR"]
+            check("one page per marked section (4 pages)", len(texts) == 4, [t[:30] for t in texts])
+            check("each section lands on its own page",
+                  len(texts) == 4 and all(w in texts[i] for i, w in enumerate(want))
+                  and not any(w in texts[i] for i in range(len(texts))
+                              for j, w in enumerate(want) if j != i),
+                  [t[:40] for t in texts])
+            check("the fenced \\newpage did not break the page",
+                  len(texts) == 4 and "PBSTILLFOUR" in texts[3], [t[-40:] for t in texts])
+            check("no marker text is printed",
+                  not any("pagebreak" in t for t in texts[:3]), [t[:40] for t in texts])
+            page.evaluate("() => window.__afterPdfPrint()")
+
+            print("\n[改ページ — front-matter pagebreak: h2]")
+            load(page, base + pbhead, marp=False)
+            tagged = page.evaluate(
+                "() => [...document.querySelectorAll('#preview .md-break-before')].map(e => e.tagName)")
+            check("h1/h2 are tagged except the first element", tagged == ["H2", "H2", "H2"], tagged)
+            out = os.path.join(tmp, "pagebreak-heading.pdf")
+            run_export(page, client, out)
+            doc = fitz.open(out)
+            texts = flat_text(doc)
+            doc.close()
+            check("4 pages: title + three chapters (no blank page)", len(texts) == 4,
+                  [t[:30] for t in texts])
+            check("page 1 opens with the title, not a blank page",
+                  bool(texts) and texts[0].startswith("表題PBTITLE"), [t[:30] for t in texts])
+            check("every chapter heading opens its page",
+                  len(texts) == 4 and texts[1].startswith("一章PBCHAPONE")
+                  and texts[2].startswith("二章PBCHAPTWO") and texts[3].startswith("三章PBCHAPTHREE"),
+                  [t[:30] for t in texts])
+            check("an h3 does not break", len(texts) >= 3 and "PBSUBSEC" in texts[2],
+                  [t[:60] for t in texts])
+            page.evaluate("() => window.__afterPdfPrint()")
+
+            print("\n[改ページ — Marp では無視]")
+            load(page, base + pbdeck, marp=True)
+            out = os.path.join(tmp, "pagebreak-deck.pdf")
+            run_export(page, client, out)
+            doc = fitz.open(out)
+            texts = flat_text(doc)
+            doc.close()
+            check("a deck with a marker still prints 1 page per slide", len(texts) == 3, len(texts))
+            check("no literal \\newpage on the slide", not any("newpage" in t for t in texts),
+                  [t[:40] for t in texts])
+            page.evaluate("() => window.__afterPdfPrint()")
+
+            for style, label in (("tategaki.css", "tategaki"), ("bunko.css", "bunko")):
+                print("\n[改ページ — %s]" % label)
+                vctx, vpage, vclient = open_styled(browser, style)
+                load_vertical(vpage, base + pbvert)
+                if style == "bunko.css":
+                    first = vpage.evaluate("""() => [...document.querySelectorAll('#preview > .md-page')]
+                        .map(p => (p.firstElementChild && p.firstElementChild.textContent || '').slice(0, 7))""")
+                    check("bunko: the paragraph after the marker opens a 文庫 page",
+                          "PBVNEXT" in first, first)
+                out = os.path.join(tmp, "pagebreak-%s.pdf" % label)
+                run_export(vpage, vclient, out)
+                doc = fitz.open(out)
+                texts = flat_text(doc)
+                doc.close()
+                if style == "tategaki.css":
+                    check("tategaki: the paragraph after the marker opens a page",
+                          len(texts) >= 2 and texts[1].startswith("PBVNEXT"), [t[:20] for t in texts])
+                else:
+                    check("bunko: a marker does not force a new SHEET",
+                          len(texts) == 1, [t[:20] for t in texts])
+                vpage.evaluate("() => window.__afterPdfPrint()")
+                vctx.close()
 
             # ---- model3d ------------------------------------------------------
             # export.md claims PDF and --export-png need no work for a canvas

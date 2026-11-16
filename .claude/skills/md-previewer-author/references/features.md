@@ -465,6 +465,30 @@ theme CSS (`--confidential-*`), so don't try to style it from the document. The 
 in Marp too and is carried into HTML and PDF export. **Do not translate the `watermark:`
 value** — it is document content, so use the wording the user asked for.
 
+## PDF page breaks — `samples/pagebreak.md`
+
+For a document meant to be printed / exported to PDF (`X`), control where pages break:
+
+```markdown
+---
+pagebreak: h2         # break before every h1 and h2 (h1 / h2 / h3 = that level or higher)
+---
+
+前の章の最後の段落。
+
+\newpage
+
+次のページはここから。
+```
+
+- A marker is a line of its own: `\newpage`, `\pagebreak` or `<!-- pagebreak -->` (the
+  comment form stays invisible in other viewers — prefer it for portable documents).
+- The document's first heading never breaks (no blank page 1); a marker right before a
+  break heading costs only one break. Headings inside lists / quotes are not affected.
+- Ignored in Marp (`marp: true`): each slide already is a page. Don't add markers to decks.
+- Tables, code blocks, figures and display math already avoid splitting across pages, so
+  don't sprinkle markers just to protect them.
+
 ## `.mdx` bundles — `samples/bundle.mdx`
 
 A `.mdx` file is a ZIP holding the Markdown (`index.md` or `README.md`) plus the images /

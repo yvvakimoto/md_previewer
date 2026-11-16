@@ -73,7 +73,7 @@ README.md 「対応している記法・機能」.
 | GFM preview, auto-reload on external change, sidebar TOC | `preview-core.md` |
 | Diagram / figure fences: `mermaid`, `plotly`, `abc` (+ playback), `markwhen`, `tikz`/`tikzcd`, `kataskeve`/`kataskeve3d`, `feynman`, `model3d` (3D mesh files, interactive), `csv`/`tsv`, KaTeX math, highlight.js (+ in-house Modelica grammar) | `preview-blocks.md` |
 | ` ```linkcard ` OGP link cards — host-fetched (HTTPS), disk-cached, thumbnail served from the cache, S-modal fetch toggle | `preview-blocks.md`, `rust-host.md` |
-| Footnotes, `::: center/right/left/message/vcenter/columns` fenced divs, `[text]{color=…}` inline spans, definition lists, ruby (`｜猫《ねこ》`), task lists, CJK soft-break join, CJK-friendly `**` emphasis | `preview-markdown-ext.md` |
+| Footnotes, `::: center/right/left/message/vcenter/columns` fenced divs, `[text]{color=…}` inline spans, definition lists, ruby (`｜猫《ねこ》`), task lists, CJK soft-break join, CJK-friendly `**` emphasis, PDF page breaks (`\newpage` / front-matter `pagebreak: hN`) | `preview-markdown-ext.md` |
 | Copy table for PowerPoint (rich-HTML clipboard); Edit table (writes back to the `.md`) | `preview-tables.md` |
 | Right-click a rendered figure → save it alone as SVG / PNG, or copy it to the clipboard as SVG / PNG (canvas engines: PNG only); right-click **empty** preview space → save every figure into one picked folder, plus the app's own back / forward (which that menu displaced) | `preview-blocks.md`, `preview-files-media.md` |
 | Clickable task-list checkboxes — a click rewrites that one `- [ ]` line in the `.md` (both pipelines; inert in every export) | `preview-markdown-ext.md` |

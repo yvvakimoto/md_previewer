@@ -250,6 +250,52 @@ def run_cursor_block(browser, base_url, doc):
     ctx.close()
 
 
+PAGEBREAK_MD = "---\npagebreak: h2\n---\n\n# 表題\n\n前書き。\n\n\\newpage\n\n## 一章\n\n本文。\n\n## 二章\n\n本文。\n"
+
+
+def run_pagebreak(browser, base_url, doc):
+    """`\\newpage` markers and front-matter `pagebreak:` headings in the artifact.
+
+    The break element and the heading class must ride along (printing the artifact
+    from a browser should still break the page, and the print rules come with the
+    inlined first <style>), but the on-screen dashed hint is an authoring aid and
+    must not ship.
+    """
+    ctx = browser.new_context(viewport={"width": 1440, "height": 900})
+    page = ctx.new_page()
+    page.set_default_timeout(20000)
+    page.goto(base_url + doc, wait_until="domcontentloaded")
+    page.wait_for_function(
+        "() => { const p=document.getElementById('preview'); return p && p.children.length>0; }")
+    page.wait_for_timeout(300)
+    print("\n[page break]")
+    check("the live preview shows the dashed hint",
+          page.evaluate("() => document.querySelectorAll('#preview .md-pagebreak-guide').length") == 1,
+          "no guide")
+    html = page.evaluate("async () => (await buildExportArtifact({})).html")
+    check("the artifact keeps the break element",
+          len(re.findall(r'class="[^"]*\bmd-pagebreak\b', html)) == 1, "missing .md-pagebreak")
+    check("the artifact drops the on-screen hint",
+          not re.findall(r'class="[^"]*\bmd-pagebreak-guide\b', html), "guide class shipped")
+    check("the artifact keeps the heading break class",
+          len(re.findall(r'class="[^"]*\bmd-break-before\b', html)) == 2, "md-break-before count")
+
+    page2 = ctx.new_page()
+    page2.set_default_timeout(20000)
+    page2.route("**" + ARTIFACT_PATH,
+                lambda route: route.fulfill(status=200, content_type="text/html; charset=utf-8", body=html))
+    page2.goto(base_url.split("/index.html")[0] + ARTIFACT_PATH, wait_until="load")
+    page2.emulate_media(media="print")
+    page2.wait_for_timeout(100)
+    got = page2.evaluate("""() => ({
+      after: getComputedStyle(document.querySelector('.md-pagebreak')).breakAfter,
+      before: [...document.querySelectorAll('.md-break-before')].map(e => getComputedStyle(e).breakBefore),
+    })""")
+    check("printing the artifact still breaks the page", got["after"] == "page"
+          and got["before"] == ["page", "page"], got)
+    ctx.close()
+
+
 def run_toc_width(browser, base_url, doc):
     """A dragged TOC width rides into the artifact; the drag handle does not."""
     ctx = browser.new_context(viewport={"width": 1440, "height": 900})
@@ -520,7 +566,9 @@ def main():
     vertical = os.path.join(tmp, "vertical.md")
     plain = os.path.join(tmp, "plain.md")
     mermaid_md = os.path.join(tmp, "mermaid.md")
-    for path, body in ((vertical, VERTICAL_MD), (plain, PLAIN_MD), (mermaid_md, MERMAID_MD)):
+    pbreak = os.path.join(tmp, "pagebreak.md")
+    for path, body in ((vertical, VERTICAL_MD), (plain, PLAIN_MD), (mermaid_md, MERMAID_MD),
+                       (pbreak, PAGEBREAK_MD)):
         with open(path, "w", encoding="utf-8") as fh:
             fh.write(body)
 
@@ -560,6 +608,7 @@ def main():
             run_toc_width(browser, base, plain)
             # The editor's cursor tint: absent from the artifact, dead on paper.
             run_cursor_block(browser, base, plain)
+            run_pagebreak(browser, base, pbreak)
             # samples/model3d.md rather than a synthetic doc: it is the file that
             # already exercises every option and every error path, and it keeps this
             # check honest about what ships.

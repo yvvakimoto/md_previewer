@@ -208,6 +208,21 @@
         #preview > .md-page:first-child > :where(:first-child) { margin-top: 0; }
         #preview .md-page { position: relative; counter-increment: md-page; }
 
+        /* Explicit page break (`\newpage` / `\pagebreak` / `<!-- pagebreak -->`,
+           the `pageBreak` marked extension). The element itself is a zero-size
+           break target; .md-pagebreak-guide adds the on-screen dashed hint and
+           is stripped from the HTML export. Logical border so the hint lies
+           across the line direction under vertical writing too. Inside a
+           paginating theme's .md-page the split pass has already turned the
+           marker into a real page boundary, so the hint would be noise there. */
+        #preview .md-pagebreak { block-size: 0; margin: 0; padding: 0; border: 0; }
+        #preview .md-pagebreak-guide {
+            margin-block: 1.4em;
+            border-block-start: 1px dashed color-mix(in srgb, currentColor 35%, transparent);
+        }
+        #preview .md-page .md-pagebreak,
+        body.capturing #preview .md-pagebreak-guide { display: none; }
+
         /* ノンブル (page number). Off unless the theme opts in by setting
            --md-nombre-display, the same "theme declares, the app implements"
            convention as --md-page-lines. `display` carries the on/off switch
@@ -2126,6 +2141,23 @@
                 background: #ffffff !important;
                 -webkit-print-color-adjust: exact;
                 print-color-adjust: exact;
+            }
+
+            /* Explicit page breaks: the `\newpage` marker and front-matter
+               `pagebreak: hN` headings (applyHeadingPageBreaks()). Two adjacent
+               forced breaks combine into one, so a marker right before a tagged
+               heading costs no blank page. Excluded inside a paginating theme's
+               .md-page: there the split pass already made the marker a page
+               boundary, and the vertical PDF packs several pages per sheet, so a
+               forced break would wrongly start a new SHEET. */
+            #preview .md-pagebreak-guide { margin: 0; border: 0; }
+            #preview .md-pagebreak:not(.md-page .md-pagebreak) {
+                break-after: page;
+                page-break-after: always;
+            }
+            #preview .md-break-before:not(.md-page > .md-break-before) {
+                break-before: page;
+                page-break-before: always;
             }
 
             /* Avoid page breaks inside code blocks, tables and definition lists */
@@ -6683,6 +6715,10 @@
             // carrying the .md-cursor-line rule — leave the class and the tint
             // ships. Net: the artifact case in exportcheck.py.
             previewClone.querySelectorAll('.md-cursor-line').forEach(el => el.classList.remove('md-cursor-line'));
+            // The `\newpage` marker's dashed hint is an authoring aid; the artifact
+            // keeps the bare .md-pagebreak (so printing it still breaks the page)
+            // but not the hint.
+            previewClone.querySelectorAll('.md-pagebreak-guide').forEach(el => el.classList.remove('md-pagebreak-guide'));
             // Task-list checkboxes are interactive in the live preview (the click writes
             // back to the source .md); an artifact has no host to write to, so re-disable
             // them — which also keeps the artifact looking exactly like it always has.
@@ -8406,14 +8442,23 @@ ${inspectorScript ? `<script>${inspectorScript}<\/script>\n` : ''}</body>
             let pageStart = 0;
             for (let guard = 0; guard < __PAGE_MAX_ITER; guard++) {
                 const boundary = pageStart + pageSize;
-                let target = null;
+                let target = null, forced = false;
                 for (const kid of preview.children) {
                     if (kid.classList.contains(__PAGE_BREAK_CLASS)) continue;
+                    // An explicit page break (`\newpage` marker, or a heading tagged
+                    // by front-matter `pagebreak: hN`) that begins past this page's
+                    // start ends the page early. Tested before the overflow check,
+                    // so whichever comes first in document order wins.
+                    const forcedAt = kid.classList.contains('md-break-before') ? kid
+                        : kid.classList.contains('md-pagebreak') ? kid.nextElementSibling : null;
+                    if (forcedAt && axis.pos(forcedAt.getBoundingClientRect()) > pageStart + 0.5) {
+                        target = forcedAt; forced = true; break;
+                    }
                     if (axis.end(kid.getBoundingClientRect()) > boundary + 0.5) { target = kid; break; }
                 }
                 if (!target) return;                       // the rest fits on this page
                 const startPos = axis.pos(target.getBoundingClientRect());
-                if (startPos < boundary - 0.5) {
+                if (!forced && startPos < boundary - 0.5) {
                     // The block straddles the boundary.
                     if (__pageSplittable(target)) {
                         const point = __findSplitPoint(target, axis, boundary);
@@ -9231,6 +9276,42 @@ ${inspectorScript ? `<script>${inspectorScript}<\/script>\n` : ''}</body>
                             : '<dd>\n' + this.parser.parse(r.tokens) + '</dd>\n';
                     });
                     return html + '</dl>\n';
+                }
+            }]
+        });
+
+        // Block-level marked extension for an explicit page break (PDF / print):
+        //   \newpage      \pagebreak      <!-- pagebreak -->
+        // on a line of its own. Emits exactly ONE element (stampLineNumbers() is
+        // positional over preview.children, see defList) and consumes only its own
+        // line, so data-line stays exact. The print CSS turns it into
+        // `break-after: page`; on screen it is a dashed guide (.md-pagebreak-guide,
+        // stripped from the HTML export by buildExportArtifact()). Extensions run
+        // before marked's own `html` tokenizer, which is what lets the comment form
+        // become an element instead of an invisible comment. Marp blanks the same
+        // lines in a pre-pass (renderMarp()) — a slide already is a page.
+        const PAGEBREAK_MARK_SRC = String.raw`(?:\\newpage|\\pagebreak|<!--[ \t]*pagebreak[ \t]*-->)`;
+        const PAGEBREAK_LINE_RE = new RegExp('^ {0,3}' + PAGEBREAK_MARK_SRC + '[ \\t]*$', 'i');
+        const PAGEBREAK_TOKEN_RE = new RegExp('^ {0,3}' + PAGEBREAK_MARK_SRC + '[ \\t]*(?:\\n|$)', 'i');
+        // `\n` in front: marked calls startBlock(src.slice(1)), so a hit at a line
+        // start is reported after its newline and the index is never 0 (which would
+        // clip a preceding paragraph after its first character — see defList).
+        const PAGEBREAK_SEEK_RE = new RegExp('\\n {0,3}' + PAGEBREAK_MARK_SRC + '[ \\t]*(?:\\n|$)', 'i');
+        marked.use({
+            extensions: [{
+                name: 'pageBreak',
+                level: 'block',
+                start(src) {
+                    const m = PAGEBREAK_SEEK_RE.exec(src);
+                    return m ? m.index + 1 : undefined;
+                },
+                tokenizer(src) {
+                    const m = PAGEBREAK_TOKEN_RE.exec(src);
+                    if (!m) return;
+                    return { type: 'pageBreak', raw: m[0] };
+                },
+                renderer() {
+                    return '<div class="md-pagebreak md-pagebreak-guide" aria-hidden="true"></div>\n';
                 }
             }]
         });
@@ -12440,6 +12521,13 @@ ${inspectorScript ? `<script>${inspectorScript}<\/script>\n` : ''}</body>
             // which __rewriteMdLines() does not do — see its comment.
             markdown = __rewriteMdLines(markdown, ln => rubyifyMdLine(ln));
 
+            // Page-break markers (`\newpage` / `\pagebreak` / `<!-- pagebreak -->`)
+            // mean nothing in a deck — every slide already is a page — so blank them
+            // rather than let `\newpage` print as text. 1 line in → 1 line out, and
+            // __rewriteMdLines() skips front-matter and fenced code. The normal
+            // pipeline's counterpart is the `pageBreak` marked extension.
+            markdown = __rewriteMdLines(markdown, ln => PAGEBREAK_LINE_RE.test(ln) ? '' : undefined);
+
             // Split layout pre-pass — within slides that declare `<!-- _class: split -->`
             // (or split-2/3/4), convert `+++` lines into a sentinel paragraph that
             // survives marp.render. The post-render pass below uses the sentinel as
@@ -13253,6 +13341,36 @@ ${inspectorScript ? `<script>${inspectorScript}<\/script>\n` : ''}</body>
             return { label };  // label===null → theme default "CONFIDENTIAL"
         }
 
+        // Resolve front-matter `pagebreak: h1|h2|h3` — a page break before every
+        // heading of that level OR HIGHER (h2 ⇒ h1 and h2). Same block regex as
+        // watermarkSetting(). Returns the deepest level (1..3) or null (key absent,
+        // `none` / `false` / `off` / anything unrecognized). Normal pipeline only:
+        // in Marp a slide already is a page.
+        function pageBreakSetting(md) {
+            const m = md.match(/^---\s*\n([\s\S]*?)\n---\s*(\n|$)/);
+            if (!m) return null;
+            const v = m[1].match(/^\s*pagebreak\s*:\s*(.+?)\s*$/im);
+            if (!v) return null;
+            const val = v[1].replace(/^(["'])([\s\S]*)\1$/, '$2').trim().toLowerCase();
+            const lv = /^h([1-3])$/.exec(val);
+            return lv ? Number(lv[1]) : null;
+        }
+
+        // Tag every top-level heading of level ≤ maxLevel with .md-break-before
+        // (the print CSS turns it into `break-before: page`). The document's first
+        // element is skipped so a heading-led document does not open on a blank
+        // page. Top-level only: a heading inside a list / quote / fenced div is
+        // not a section start. Must run BEFORE paginatePreview(), which moves the
+        // top-level children into .md-page wrappers.
+        function applyHeadingPageBreaks(maxLevel) {
+            if (!maxLevel) return;
+            const sel = [];
+            for (let i = 1; i <= maxLevel; i++) sel.push(':scope > h' + i);
+            preview.querySelectorAll(sel.join(', ')).forEach(h => {
+                if (h.previousElementSibling) h.classList.add('md-break-before');
+            });
+        }
+
         // Override the watermark text via a dedicated injected <style> (same pattern
         // as the laser #marker-style element). label===null clears it, restoring the
         // theme's own --confidential-label. Declared with !important directly on
@@ -13449,6 +13567,8 @@ ${inspectorScript ? `<script>${inspectorScript}<\/script>\n` : ''}</body>
             // Drop the leading YAML front-matter (kept as blank lines to preserve
             // source line numbers) so directives like `confidential:` / `title:` /
             // `theme:` don't render as an <hr> + text in the normal pipeline.
+            // `pagebreak:` is read first — it is a front-matter key.
+            const __pageBreakLevel = pageBreakSetting(markdown);
             markdown = stripFrontMatterKeepingLines(markdown);
 
             // Reset footnote registry so re-renders (auto-reload, navigation) start clean.
@@ -13682,6 +13802,9 @@ ${inspectorScript ? `<script>${inspectorScript}<\/script>\n` : ''}</body>
 
             // Stamp data-line attributes on top-level blocks and list items
             stampLineNumbers(blockLineNumbers);
+
+            // front-matter `pagebreak: hN` → break before those headings on paper.
+            applyHeadingPageBreaks(__pageBreakLevel);
 
             // Apply syntax highlighting to code blocks
             // A fence with no language stays plain: without a language-* class
