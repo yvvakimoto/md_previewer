@@ -47,14 +47,14 @@ Example opening line to the user:
     (OGP link cards), KaTeX,
     image sizing, video/YouTube,
     blockquote attribution, soft-break rules, cross-file links, workspace `_toc.md`,
-    `confidential:`/`watermark:` front-matter, `.mdx` bundles).
+    `confidential:`/`watermark:` front-matter, PDF page breaks, `.mdx` bundles).
   - `references/marp-slides.md` — Marp deck authoring (front-matter, separators, `_class`
     layouts, columns, per-slide footnotes, themes, view modes).
 - Canonical worked examples are **bundled with this skill** under `samples/` (e.g.
   `samples/marp.md`, `samples/alignment.md`, `samples/inline-style.md`, `samples/ruby.md`,
   `samples/plotly.md`, `samples/deflist.md`, `samples/markwhen.md`, `samples/tikzcd.md`,
   `samples/kataskeve.md`, `samples/feynman.md`, `samples/model3d.md`,
-  `samples/confidential.md`,
+  `samples/confidential.md`, `samples/pagebreak.md`,
   `samples/footnotes.md`, `samples/math.md`, plus `samples/workspace/` and the
   `samples/data/` CSVs the plotly example reads). Paths are relative to this skill
   directory, so they resolve even when the skill is used outside the md_previewer repo.
