@@ -7,7 +7,7 @@
 //   - planSlideTemplate / planDeckTemplate (marpSlides.js)
 
 import { EditorState } from '@codemirror/state';
-import { fenceTemplateContext, fenceInfoAt } from './fenceTemplateComplete.js';
+import { fenceTemplateContext, fenceInfoAt, TEMPLATES } from './fenceTemplateComplete.js';
 import { pathContextAt } from './pathComplete.js';
 import {
   planSlideTemplate, planDeckTemplate, SLIDE_TEMPLATES, isMarpDocument, takeCaret, CARET,
@@ -53,6 +53,30 @@ console.log('── fenceTemplateContext ──');
     eq('closing fence keeps indent and length', fenceTemplateContext(st, pos).fence, '  ````');
   }
   eq('front-matter `---` lines do not confuse the scan', langs('---\na: 1\n---\n```|') !== null, true);
+}
+
+console.log('\n── TEMPLATES bodies ──');
+{
+  const body = (l) => TEMPLATES.find((x) => x.lang === l).body;
+  for (const t of TEMPLATES) {
+    eq(`${t.lang}: exactly one caret`, t.body.split('‸').length - 1, 1);
+  }
+  // pathComplete.js needs an uncommented `file:` line, and model3d's bare-path
+  // shortcut only works on the first body line.
+  eq('plotly starts with file: ‸', body('plotly').startsWith('file: ‸'), true);
+  eq('model3d starts with file: ‸', body('model3d').startsWith('file: ‸'), true);
+  // A blank line inside a tikzcd matrix is fatal ("Missing $ inserted").
+  eq('tikzcd has no blank line', /\n\s*\n/.test(body('tikzcd')), false);
+  // kataskeve's `#` followed by a hex digit is a colour token, not a comment.
+  for (const l of ['kataskeve', 'kataskeve3d']) {
+    eq(`${l}: no '#<hex>' at line start`, body(l).split('\n').some((s) => /^\s*#[0-9a-fA-F]/.test(s)), false);
+  }
+  // linkcard: a comment line above the URL would be taken as the URL.
+  eq('linkcard URL is the first line', body('linkcard').startsWith('https://'), true);
+  // tikz/tikzcd `scale:` is recognised on line 1 only.
+  for (const l of ['tikz', 'tikzcd']) eq(`${l}: scale hint on line 1`, body(l).split('\n')[0], '% scale: 1.6');
+  // mermaid scans `%%{…}%%` directives before stripping comments.
+  eq('mermaid has no literal init directive', body('mermaid').includes('%%{'), false);
 }
 
 console.log('\n── fenceInfoAt ──');
