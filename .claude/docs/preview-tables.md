@@ -4,6 +4,7 @@
 **Also read:** preview-markdown-ext.md's task-list section — the second `data-line`-keyed
 write-back, which reuses `tblReadLines` / `tblReplaceLines` (generic despite the `tbl` prefix)
 and the same refuse-first shape
+**Also:** the third `data-line`-keyed write-back is markwhen item editing (preview-blocks.md, *Preview-side item editing*), which reuses `tblReadLines` / `tblReplaceLines` the same way.
 **Read before:** changing Copy table / Edit table, or anything that splices Markdown source by `data-line`.
 **Related:** preview-core.md (`data-line` fidelity), editor-tables.md (the mirrored emitter)
 

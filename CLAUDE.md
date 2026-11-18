@@ -71,7 +71,7 @@ README.md 「対応している記法・機能」.
 | Feature | Detail |
 |---|---|
 | GFM preview, auto-reload on external change, sidebar TOC | `preview-core.md` |
-| Diagram / figure fences: `mermaid`, `plotly`, `abc` (+ playback), `markwhen`, `tikz`/`tikzcd`, `kataskeve`/`kataskeve3d`, `feynman`, `model3d` (3D mesh files, interactive), `csv`/`tsv`, KaTeX math, highlight.js (+ in-house Modelica grammar) | `preview-blocks.md` |
+| Diagram / figure fences: `mermaid`, `plotly`, `abc` (+ playback), `markwhen` (+ drag / dialog item editing in the preview, written back to the `.md`), `tikz`/`tikzcd`, `kataskeve`/`kataskeve3d`, `feynman`, `model3d` (3D mesh files, interactive), `csv`/`tsv`, KaTeX math, highlight.js (+ in-house Modelica grammar) | `preview-blocks.md` |
 | ` ```linkcard ` OGP link cards — host-fetched (HTTPS), disk-cached, thumbnail served from the cache, S-modal fetch toggle | `preview-blocks.md`, `rust-host.md` |
 | Footnotes, `::: center/right/left/message/vcenter/columns` fenced divs, `[text]{color=…}` inline spans, definition lists, ruby (`｜猫《ねこ》`), task lists, CJK soft-break join, CJK-friendly `**` emphasis, PDF page breaks (`\newpage` / front-matter `pagebreak: hN`) | `preview-markdown-ext.md` |
 | Copy table for PowerPoint (rich-HTML clipboard); Edit table (writes back to the `.md`) | `preview-tables.md` |
@@ -352,6 +352,7 @@ eighteen that are checked (or partly checked) can rely on the harness rememberin
 | the preview context menu's reach (`__nativeMenuWins`) or the history index (`__histCanGo`, `history.state.idx`) | `keycheck.py` (+ `tablecheck.py` for the `.table-editing` guard) |
 | `--md-font-scale` / `--md-width-scale`, a theme's base `font-size` or `max-width`, `with_hotkeys_zoom` | `keycheck.py` + `exportcheck.py` + `pdfcheck.py` (the scaled cases are the only ones that can see either) |
 | preview table edit mode | `python tools/preview-harness/tablecheck.py` + `node tools/preview-harness/table-model.test.cjs` |
+| markwhen item editing — the `data-mw-*` stamps in `__mwBuildTimeline` / `__mwBuildCalendar`, `__mwFlatten`'s `idx`, the `__mw*` edit model, `__mwLocate` / `__mwCommit`, `#mw-edit-modal` | `python tools/preview-harness/markwhencheck.py` + `node tools/preview-harness/markwhen-edit.test.cjs` |
 | task-list checkboxes, `applyTaskLists()`, `__isTypingTarget()` | `python tools/preview-harness/taskcheck.py` (+ `keycheck.py` for the focus case, `flickercheck.py` for the echo skip) |
 | `renderMarp()`'s rebuild — anything before its first `await`, the height / scroll hold, the plotly carry-over, `loadFileFromRust()`'s reload path | `python tools/preview-harness/flickercheck.py` (the only check that sees intermediate frames: a deck frame with no `.active` slide is the black flash) |
 | tikz / tikzcd — the `__tikzJpPreamble()` TeX macros, `__tikzFillJpText` / `__tikzAdoptJpFill`, `renderTikzCached` | `python tools/preview-harness/tikzcheck.py` (the ONLY check that can see tikz: `domdump.py` collapses the `<svg>`, and `shoot.py` counts a `.tikz-error` as settled) |

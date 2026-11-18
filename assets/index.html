@@ -1075,6 +1075,65 @@
             border-color: #f85149;
             color: #ffa198;
         }
+        /* Preview-side item editing (__mwAttachEditing). Only a top-level block in the
+           normal pipeline gets .mw-editable, so Marp / nested / exported copies keep
+           the static chrome above. The add button is a .copy-button: hover-revealed,
+           hidden in print, stripped from the HTML export. */
+        .markwhen-timeline.mw-editable { position: relative; }
+        .markwhen-timeline.mw-editable:hover .mw-add-button { opacity: 1; }
+        .markwhen-timeline .mw-add-button { top: 4px; right: 4px; }
+        .mw-editable [data-mw-ev] { cursor: pointer; }
+        .mw-editable rect[data-mw-ev], .mw-editable circle[data-mw-ev] { cursor: grab; }
+        .mw-editable [data-mw-date] { cursor: cell; }
+        .mw-editable [data-mw-grp] { cursor: pointer; }
+        .mw-editable.mw-dragging, .mw-editable.mw-dragging * { cursor: grabbing !important; }
+        .mw-editable.mw-dragging.mw-resizing, .mw-editable.mw-dragging.mw-resizing * { cursor: ew-resize !important; }
+        .mw-editable rect.mw-hl { fill: rgba(9, 105, 218, 0.22) !important; }
+        body.dark-mode .mw-editable rect.mw-hl { fill: rgba(68, 147, 248, 0.30) !important; }
+        .mw-editable .mw-ghost { opacity: 0.45; }
+        .markwhen-timeline.mw-pending { opacity: 0.7; }
+        .mw-drag-tip {
+            position: fixed;
+            z-index: 10002;
+            pointer-events: none;
+            padding: 3px 8px;
+            border-radius: 4px;
+            background: rgba(27, 31, 36, 0.9);
+            color: #ffffff;
+            font: 12px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            white-space: nowrap;
+        }
+        #mw-edit-modal .mw-form { display: grid; grid-template-columns: max-content 1fr; gap: 10px 12px; align-items: center; }
+        #mw-edit-modal .mw-form label.mw-k { font-size: 13px; color: inherit; }
+        #mw-edit-modal .mw-form input[type="text"],
+        #mw-edit-modal .mw-form input[type="date"] {
+            font: inherit; font-size: 14px; padding: 5px 8px;
+            border: 1px solid #d0d7de; border-radius: 6px;
+            background: #ffffff; color: #24292e; min-width: 0;
+        }
+        #mw-edit-modal .mw-dates { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+        #mw-edit-modal .mw-single { font-size: 13px; display: inline-flex; align-items: center; gap: 4px; }
+        #mw-edit-modal .mw-color-row { display: flex; align-items: center; gap: 8px; }
+        #mw-edit-modal input[type="color"] { width: 44px; height: 28px; padding: 0 2px; border: 1px solid #d0d7de; border-radius: 6px; background: transparent; }
+        #mw-edit-modal .mw-hint { font-size: 12px; color: #6a737d; }
+        #mw-edit-modal .mw-actions { display: flex; gap: 8px; margin-top: 18px; align-items: center; }
+        #mw-edit-modal .mw-actions .mw-spacer { flex: 1; }
+        #mw-edit-modal .mw-actions button {
+            font: inherit; font-size: 13px; padding: 6px 14px; border-radius: 6px;
+            border: 1px solid #d0d7de; background: #f6f8fa; color: #24292e; cursor: pointer;
+        }
+        #mw-edit-modal .mw-actions button.mw-primary { background: #1f883d; border-color: #1f883d; color: #ffffff; }
+        #mw-edit-modal .mw-actions button.mw-danger { color: #cf222e; }
+        #mw-edit-modal .mw-actions button.mw-danger.armed { background: #cf222e; border-color: #cf222e; color: #ffffff; }
+        body.dark-mode #mw-edit-modal .mw-form input[type="text"],
+        body.dark-mode #mw-edit-modal .mw-form input[type="date"] {
+            background: #0d1117; color: #c9d1d9; border-color: #30363d; color-scheme: dark;
+        }
+        body.dark-mode #mw-edit-modal .mw-hint { color: #8b949e; }
+        body.dark-mode #mw-edit-modal .mw-actions button { background: #21262d; color: #c9d1d9; border-color: #30363d; }
+        body.dark-mode #mw-edit-modal .mw-actions button.mw-primary { background: #238636; border-color: #238636; color: #ffffff; }
+        body.dark-mode #mw-edit-modal .mw-actions button.mw-danger { color: #ff7b72; }
+        body.dark-mode #mw-edit-modal .mw-actions button.mw-danger.armed { background: #da3633; border-color: #da3633; color: #ffffff; }
 
         /* TikZ / tikz-cd (commutative diagrams) via @rod2ik/tikzjax. The engine
            renders each block into a .tikzjax-wrapper span holding an <svg> whose
@@ -2505,7 +2564,8 @@
         body.capturing #update-banner { display: none !important; }
 
         #help-modal,
-        #style-modal {
+        #style-modal,
+        #mw-edit-modal {
             position: fixed;
             inset: 0;
             background: rgba(0, 0, 0, 0.5);
@@ -2518,12 +2578,14 @@
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
         }
         #help-modal.visible,
-        #style-modal.visible {
+        #style-modal.visible,
+        #mw-edit-modal.visible {
             display: flex;
             opacity: 1;
         }
         #help-modal .panel,
-        #style-modal .panel {
+        #style-modal .panel,
+        #mw-edit-modal .panel {
             background: #ffffff;
             color: #24292e;
             border: 1px solid #e1e4e8;
@@ -2540,7 +2602,8 @@
            150px wide and every long description wrapped to 4+ lines. */
         #help-modal .panel { width: min(680px, calc(100vw - 40px)); }
         #help-modal h2,
-        #style-modal h2 {
+        #style-modal h2,
+        #mw-edit-modal h2 {
             margin: 0 0 16px 0;
             font-size: 18px;
             font-weight: 600;
@@ -2548,7 +2611,8 @@
             padding: 0;
         }
         #help-modal .close,
-        #style-modal .close {
+        #style-modal .close,
+        #mw-edit-modal .close {
             position: absolute;
             top: 10px;
             right: 14px;
@@ -2562,7 +2626,8 @@
             border-radius: 4px;
         }
         #help-modal .close:hover,
-        #style-modal .close:hover {
+        #style-modal .close:hover,
+        #mw-edit-modal .close:hover {
             background: #f0f0f0;
             color: #24292e;
         }
@@ -2779,17 +2844,20 @@
         .scale-row label.fs-head { cursor: pointer; align-items: center; }
         .scale-row label.fs-head input { margin: 0; }
         body.dark-mode #help-modal .panel,
-        body.dark-mode #style-modal .panel {
+        body.dark-mode #style-modal .panel,
+        body.dark-mode #mw-edit-modal .panel {
             background: #161b22;
             color: #c9d1d9;
             border-color: #30363d;
         }
         body.dark-mode #help-modal .close,
-        body.dark-mode #style-modal .close {
+        body.dark-mode #style-modal .close,
+        body.dark-mode #mw-edit-modal .close {
             color: #8b949e;
         }
         body.dark-mode #help-modal .close:hover,
-        body.dark-mode #style-modal .close:hover {
+        body.dark-mode #style-modal .close:hover,
+        body.dark-mode #mw-edit-modal .close:hover {
             background: #21262d;
             color: #c9d1d9;
         }
@@ -3507,6 +3575,49 @@
                                      en: "Checklist source and rendering don't match" },
             'task.saveFailed':     { ja: 'チェックの保存に失敗しました',
                                      en: 'Failed to save the checkbox' },
+
+            // markwhen item editing (__mwEdit* / __mwOpenDialog).
+            'mw.edit.add':         { ja: '＋ 項目',          en: '+ Item' },
+            'mw.edit.titleEdit':   { ja: '項目を編集',       en: 'Edit item' },
+            'mw.edit.titleAdd':    { ja: '項目を追加',       en: 'Add item' },
+            'mw.edit.label':       { ja: '項目名',           en: 'Label' },
+            'mw.edit.period':      { ja: '期間',             en: 'Dates' },
+            'mw.edit.from':        { ja: '開始日',           en: 'Start date' },
+            'mw.edit.to':          { ja: '終了日（この日を含む）', en: 'End date (inclusive)' },
+            'mw.edit.single':      { ja: '単日',             en: 'Single day' },
+            'mw.edit.tags':        { ja: 'タグ',             en: 'Tags' },
+            'mw.edit.tagsPlaceholder': { ja: '例: dev design（空白区切り）', en: 'e.g. dev design (space-separated)' },
+            'mw.edit.color':       { ja: '色',               en: 'Color' },
+            'mw.edit.colorHint':   { ja: 'タグ「{tag}」の色（同じタグの項目すべてに反映）',
+                                     en: 'Colour of tag "{tag}" (applies to every item with it)' },
+            'mw.edit.colorNoTag':  { ja: '色はタグに付きます。タグを入力してください',
+                                     en: 'Colours belong to tags — enter a tag first' },
+            'mw.edit.recurring':   { ja: '繰り返しの項目は日付をここでは変更できません',
+                                     en: "A recurring item's dates can't be changed here" },
+            'mw.edit.delete':      { ja: '削除',             en: 'Delete' },
+            'mw.edit.deleteConfirm': { ja: 'もう一度押して削除', en: 'Click again to delete' },
+            'mw.edit.cancel':      { ja: 'キャンセル',       en: 'Cancel' },
+            'mw.edit.save':        { ja: '保存',             en: 'Save' },
+            'mw.edit.saved':       { ja: 'markwhen を保存しました', en: 'markwhen saved' },
+            'mw.edit.noChanges':   { ja: '変更はありません', en: 'No changes' },
+            'mw.edit.errMarp':     { ja: 'Marp スライド内の markwhen は編集できません',
+                                     en: "markwhen inside a Marp deck can't be edited" },
+            'mw.edit.errNoFile':   { ja: 'ファイルが開かれていません', en: 'No file is currently open' },
+            'mw.edit.errNested':   { ja: 'この markwhen は編集できません（引用・リスト等の中のブロックは未対応）',
+                                     en: "This markwhen block can't be edited (blocks nested in a quote / list are not supported)" },
+            'mw.edit.errLocate':   { ja: 'markwhen のソースと表示が一致しません',
+                                     en: "markwhen source and rendering don't match" },
+            'mw.edit.errChanged':  { ja: 'markwhen が他で変更されたため保存を中止しました',
+                                     en: 'The markwhen block changed elsewhere — not saved' },
+            'mw.edit.errPending':  { ja: '保存中です。反映を待ってから操作してください',
+                                     en: 'Still saving — try again once the update lands' },
+            'mw.edit.errSave':     { ja: 'markwhen の保存に失敗しました', en: 'Failed to save the markwhen block' },
+            'mw.edit.errLabel':    { ja: '項目名を入力してください', en: 'Enter a label' },
+            'mw.edit.errDates':    { ja: '日付が正しくありません（終了日は開始日以降）',
+                                     en: 'Invalid dates (the end must not precede the start)' },
+            'menu.mwEdit':         { ja: '項目を編集…',      en: 'Edit item…' },
+            'menu.mwDelete':       { ja: '項目を削除',       en: 'Delete item' },
+            'menu.mwAdd':          { ja: '項目を追加…',      en: 'Add item…' },
 
             'menu.rowAbove':       { ja: '上に行を挿入',     en: 'Insert row above' },
             'menu.rowBelow':       { ja: '下に行を挿入',     en: 'Insert row below' },
@@ -6703,6 +6814,12 @@
             // Strip preview-only artifacts that don't belong in a static artifact.
             previewClone.querySelectorAll('[data-line]').forEach(el => el.removeAttribute('data-line'));
             previewClone.querySelectorAll('.copy-button').forEach(el => el.remove());
+            // markwhen editing chrome: the class hooks and the drag editor's SVG stamps
+            // (data-mw-*) mean nothing in a static artifact.
+            previewClone.querySelectorAll('.mw-editable, .mw-pending').forEach(el => el.classList.remove('mw-editable', 'mw-pending'));
+            previewClone.querySelectorAll('.markwhen-timeline svg, .markwhen-timeline svg *').forEach(el => {
+                Array.from(el.attributes).forEach(a => { if (a.name.indexOf('data-mw-') === 0) el.removeAttribute(a.name); });
+            });
             // The table button bar is left empty once its .copy-buttons are gone.
             previewClone.querySelectorAll('.table-btn-bar').forEach(el => el.remove());
             // ABC playback needs the bundled sound bank, which an artifact cannot
@@ -11676,8 +11793,13 @@ ${inspectorScript ? `<script>${inspectorScript}<\/script>\n` : ''}</body>
         function __mwTagColor(tag, header, palette, cacheMap) {
             if (cacheMap.has(tag)) return cacheMap.get(tag);
             let color = null;
-            const hv = header && (header[')' + tag] || header['#' + tag]);
-            if (hv && (!(window.CSS && CSS.supports) || CSS.supports('color', hv))) color = hv;
+            let hv = header && (header[')' + tag] || header['#' + tag]);
+            // The parser escapes EVERY leading `#` in the header to `)`, the value
+            // included: `#dev: #ff0000` arrives as `)ff0000`. Undo it for the value,
+            // or a hex colour — the form the preview's item dialog writes — is
+            // rejected by CSS.supports and silently replaced by a palette colour.
+            if (typeof hv === 'string' && hv.charAt(0) === ')') hv = '#' + hv.slice(1);
+            if (hv &&(!(window.CSS && CSS.supports) || CSS.supports('color', hv))) color = hv;
             if (!color) {
                 let h = 0;
                 for (let i = 0; i < tag.length; i++) h = (h * 31 + tag.charCodeAt(i)) >>> 0;
@@ -11729,8 +11851,14 @@ ${inspectorScript ? `<script>${inspectorScript}<\/script>\n` : ''}</body>
         }
 
         // Flatten the parsed event tree into display rows, tracking nesting depth.
+        // Every row carries the parser node it came from (`node`) — the preview's item
+        // editor (__mwEdit*) reads its source offsets — and every event row carries
+        // `idx`, its position among the event rows. `idx` is what the SVG builders stamp
+        // as `data-mw-ev`, and it is a pure function of the source, so a cached SVG's
+        // stamps stay valid for any later re-parse of the same text.
         function __mwFlatten(MW, root) {
             const rows = [];
+            let evIdx = 0;
             const walk = (node, depth) => {
                 if (MW.isEvent(node)) {
                     const dr = node.dateRangeIso;
@@ -11743,10 +11871,11 @@ ${inspectorScript ? `<script>${inspectorScript}<\/script>\n` : ''}</body>
                         type: 'event',
                         label: (node.firstLine && node.firstLine.restTrimmed) || '(untitled)',
                         from: from, to: to,
-                        tags: node.tags || [], depth: depth
+                        tags: node.tags || [], depth: depth,
+                        idx: evIdx++, node: node
                     });
                 } else {
-                    if (node.title) rows.push({ type: 'group', label: node.title, depth: depth });
+                    if (node.title) rows.push({ type: 'group', label: node.title, depth: depth, node: node });
                     const kids = node.children || [];
                     const nextDepth = node.title ? depth + 1 : depth;
                     kids.forEach(k => walk(k, nextDepth));
@@ -11809,7 +11938,10 @@ ${inspectorScript ? `<script>${inspectorScript}<\/script>\n` : ''}</body>
                 }
             }
 
-            let s = '<svg class="mw-svg" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="xMinYMin meet" width="100%" xmlns="http://www.w3.org/2000/svg" font-family="-apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, sans-serif">';
+            // data-mw-* = the axis the preview's drag editor needs to turn a pointer
+            // delta back into time (__mwEdit*). Stripped by buildExportArtifact().
+            let s = '<svg class="mw-svg" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="xMinYMin meet" width="100%" xmlns="http://www.w3.org/2000/svg" font-family="-apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, sans-serif"'
+                + ' data-mw-view="timeline" data-mw-t0="' + tMin + '" data-mw-t1="' + tMax + '" data-mw-x0="' + Lw + '" data-mw-pw="' + plotW + '">';
             ticks.forEach(tk => {
                 const x = xOf(tk.t);
                 if (x < Lw - 0.5 || x > W) return;
@@ -11824,15 +11956,16 @@ ${inspectorScript ? `<script>${inspectorScript}<\/script>\n` : ''}</body>
                 const indent = 8 + r.depth * 14;
                 const maxChars = Math.max(8, 32 - r.depth * 2);
                 if (r.type === 'group') {
-                    s += '<text x="' + indent + '" y="' + (cy + 4) + '" fill="' + c.group + '" font-size="12.5" font-weight="700">' + __mwEscape(__mwTrunc(r.label, maxChars)) + '</text>';
+                    s += '<text data-mw-grp="' + i + '" x="' + indent + '" y="' + (cy + 4) + '" fill="' + c.group + '" font-size="12.5" font-weight="700">' + __mwEscape(__mwTrunc(r.label, maxChars)) + '</text>';
                 } else {
-                    s += '<text x="' + indent + '" y="' + (cy + 4) + '" fill="' + c.text + '" font-size="12.5">' + __mwEscape(__mwTrunc(r.label, maxChars)) + '</text>';
+                    const ev = ' data-mw-ev="' + r.idx + '"';
+                    s += '<text' + ev + ' x="' + indent + '" y="' + (cy + 4) + '" fill="' + c.text + '" font-size="12.5">' + __mwEscape(__mwTrunc(r.label, maxChars)) + '</text>';
                     const color = (r.tags && r.tags.length) ? __mwTagColor(r.tags[0], mw.header, palette, tagColors) : c.defBar;
                     const x1 = xOf(r.from), x2 = xOf(r.to);
                     if ((x2 - x1) < 4) {
-                        s += '<circle cx="' + x1.toFixed(1) + '" cy="' + cy.toFixed(1) + '" r="5" fill="' + color + '"/>';
+                        s += '<circle' + ev + ' cx="' + x1.toFixed(1) + '" cy="' + cy.toFixed(1) + '" r="5" fill="' + color + '"/>';
                     } else {
-                        s += '<rect x="' + x1.toFixed(1) + '" y="' + (cy - barH / 2).toFixed(1) + '" width="' + (x2 - x1).toFixed(1) + '" height="' + barH + '" rx="3" fill="' + color + '"/>';
+                        s += '<rect' + ev + ' x="' + x1.toFixed(1) + '" y="' + (cy - barH / 2).toFixed(1) + '" width="' + (x2 - x1).toFixed(1) + '" height="' + barH + '" rx="3" fill="' + color + '"/>';
                     }
                 }
             });
@@ -11864,6 +11997,7 @@ ${inspectorScript ? `<script>${inspectorScript}<\/script>\n` : ''}</body>
             const calEvents = events.map(e => ({
                 s: dayStart(e.from),
                 e: Math.max(dayStart(e.to - 1), dayStart(e.from)),
+                idx: e.idx,
                 label: e.label,
                 color: (e.tags && e.tags.length) ? __mwTagColor(e.tags[0], mw.header, palette, tagColors) : cal.defBar
             }));
@@ -11896,7 +12030,7 @@ ${inspectorScript ? `<script>${inspectorScript}<\/script>\n` : ''}</body>
             }
             const H = yCur - monthGap + legendH + PAD;
 
-            let s = '<svg class="mw-svg mw-cal-svg" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="xMinYMin meet" width="100%" xmlns="http://www.w3.org/2000/svg" font-family="-apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, sans-serif">';
+            let s = '<svg class="mw-svg mw-cal-svg" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="xMinYMin meet" width="100%" xmlns="http://www.w3.org/2000/svg" font-family="-apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, sans-serif" data-mw-view="calendar">';
 
             monthDefs.forEach(md => {
                 const year = md.yy, month = md.mm, daysInMonth = md.daysInMonth, startWeekday = md.startWeekday, weeks = md.weeks, top = md.top;
@@ -11919,15 +12053,16 @@ ${inspectorScript ? `<script>${inspectorScript}<\/script>\n` : ''}</body>
                         const dayNum = w * 7 + cCol - startWeekday + 1;
                         const x = PAD + cCol * colW;
                         const valid = dayNum >= 1 && dayNum <= daysInMonth;
-                        let fill = cal.cell, holName = null;
+                        let fill = cal.cell, holName = null, dateAttr = '';
                         if (!valid) fill = cal.outside;
                         else {
                             const dateStr = year + '-' + pad2(month + 1) + '-' + pad2(dayNum);
                             holName = holidays[dateStr];
                             if (holName) fill = cal.holiday;
                             else if (cCol === 0 || cCol === 6) fill = cal.weekend;
+                            dateAttr = ' data-mw-date="' + dateStr + '"';
                         }
-                        s += '<rect x="' + x + '" y="' + rowY + '" width="' + colW + '" height="' + cellH + '" fill="' + fill + '" stroke="' + cal.grid + '" stroke-width="1"/>';
+                        s += '<rect' + dateAttr + ' x="' + x + '" y="' + rowY + '" width="' + colW + '" height="' + cellH + '" fill="' + fill + '" stroke="' + cal.grid + '" stroke-width="1"/>';
                         if (valid) {
                             const numColor = holName ? cal.holidayText : (cCol === 0 ? cal.sun : (cCol === 6 ? cal.sat : cal.text));
                             s += '<text x="' + (x + 6) + '" y="' + (rowY + 14) + '" fill="' + numColor + '" font-size="11" font-weight="600">' + dayNum + '</text>';
@@ -11964,9 +12099,10 @@ ${inspectorScript ? `<script>${inspectorScript}<\/script>\n` : ''}</body>
                         const bx = PAD + seg.c0 * colW + 2;
                         const bw = (seg.c1 - seg.c0 + 1) * colW - 4;
                         const by = rowY + dayNumH + lane * laneH;
-                        s += '<rect x="' + bx.toFixed(1) + '" y="' + by + '" width="' + bw.toFixed(1) + '" height="13" rx="3" fill="' + seg.ev.color + '"/>';
+                        const evAttr = ' data-mw-ev="' + seg.ev.idx + '"';
+                        s += '<rect' + evAttr + ' x="' + bx.toFixed(1) + '" y="' + by + '" width="' + bw.toFixed(1) + '" height="13" rx="3" fill="' + seg.ev.color + '"/>';
                         const maxChars = Math.max(2, Math.floor((bw - 8) / 6));
-                        s += '<text x="' + (bx + 5) + '" y="' + (by + 10) + '" fill="' + cal.barText + '" font-size="9.5">' + __mwEscape(__mwTrunc(seg.ev.label, maxChars)) + '</text>';
+                        s += '<text' + evAttr + ' x="' + (bx + 5) + '" y="' + (by + 10) + '" fill="' + cal.barText + '" font-size="9.5">' + __mwEscape(__mwTrunc(seg.ev.label, maxChars)) + '</text>';
                     });
                     Object.keys(hiddenByCol).forEach(cc => {
                         const x = PAD + parseInt(cc, 10) * colW + 4;
@@ -12057,6 +12193,642 @@ ${inspectorScript ? `<script>${inspectorScript}<\/script>\n` : ''}</body>
                 el.innerHTML = '<div class="markwhen-error">' + t('err.prefix', { engine: 'Markwhen' }) + __mwEscape(error && error.message) + '</div>';
             }
         }
+
+        // ---- markwhen edit model (pure) ----
+        // Source rewrites behind the preview's item editor. Every function takes the
+        // fence BODY (`src`, LF-only — what `data-markwhen-source` carries) plus parser
+        // nodes from a parse of that same string, and returns the new body (or null to
+        // refuse). Offsets come from the parser's own `textRanges`, so a date change
+        // replaces exactly the date text and leaves the label, tags, indentation and any
+        // description lines byte-for-byte. No DOM, no globals: extracted and run under
+        // plain node by tools/preview-harness/markwhen-edit.test.cjs.
+        const __MW_DAY_MS = 86400000;
+        function __mwPad2(n) { return (n < 10 ? '0' : '') + n; }
+        function __mwDayStart(ms) { const d = new Date(ms); return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime(); }
+        // Calendar arithmetic, not `ms + n * 86400000`: a DST transition would land
+        // the result an hour off midnight and __mwFmtDate could then name the wrong day.
+        function __mwAddDays(ms, n) { const d = new Date(ms); return new Date(d.getFullYear(), d.getMonth(), d.getDate() + n).getTime(); }
+        function __mwDayDiff(a, b) { return Math.round((__mwDayStart(b) - __mwDayStart(a)) / __MW_DAY_MS); }
+        function __mwFmtDate(ms) { const d = new Date(ms); return d.getFullYear() + '-' + __mwPad2(d.getMonth() + 1) + '-' + __mwPad2(d.getDate()); }
+        function __mwParseDate(str) {
+            const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(str || '').trim());
+            if (!m) return NaN;
+            const d = new Date(+m[1], +m[2] - 1, +m[3]);
+            return (d.getMonth() === +m[2] - 1) ? d.getTime() : NaN;
+        }
+        // An event row's covered days. markwhen ends are EXCLUSIVE (`2024-05-15` is
+        // [05-15, 05-16)), so the last covered day is dayStart(to - 1ms) — the same
+        // rule __mwBuildCalendar draws with.
+        function __mwEventDays(row) {
+            const first = __mwDayStart(row.from);
+            return { first: first, last: Math.max(__mwDayStart(row.to - 1), first) };
+        }
+        // The date text written back: ISO days, `A / B` with B the last INCLUSIVE day —
+        // which is exactly how markwhen reads `2024-05-01 / 2024-05-10`.
+        function __mwDatePart(first, last) {
+            return (last <= first) ? __mwFmtDate(first) : (__mwFmtDate(first) + ' / ' + __mwFmtDate(last));
+        }
+        function __mwSplice(src, from, to, text) { return src.slice(0, from) + text + src.slice(to); }
+        function __mwIsRecurring(node) { return !!(node && (node.recurrence || (node.textRanges && node.textRanges.recurrence))); }
+        // Tags as typed in the dialog → clean names (no `#`, no blanks, no dupes).
+        function __mwCleanTags(text) {
+            const out = [];
+            String(text || '').split(/[\s,、]+/).forEach((w) => {
+                w = w.replace(/^#+/, '');
+                if (w && out.indexOf(w) < 0) out.push(w);
+            });
+            return out;
+        }
+        function __mwCleanLabel(text) { return String(text || '').replace(/[\r\n]+/g, ' ').trim(); }
+        function __mwEventLine(first, last, label, tags) {
+            return __mwDatePart(first, last) + ': ' + __mwCleanLabel(label)
+                + tags.map((g) => ' #' + g).join('');
+        }
+
+        function __mwSetDates(src, node, first, last) {
+            const dp = node && node.textRanges && node.textRanges.datePart;
+            if (!dp || __mwIsRecurring(node) || !(last >= first)) return null;
+            return __mwSplice(src, dp.from, dp.to, __mwDatePart(first, last));
+        }
+        // Rewrite what follows the date's `:` on the event's FIRST line. Later lines
+        // (a description) are part of the event too and are kept.
+        function __mwSetLabelTags(src, node, label, tags) {
+            const dp = node && node.textRanges && node.textRanges.datePart;
+            if (!dp) return null;
+            let eol = src.indexOf('\n', dp.to);
+            if (eol < 0) eol = src.length;
+            const m = /^\s*:/.exec(src.slice(dp.to, eol));
+            if (!m) return null;
+            const rest = ' ' + __mwCleanLabel(label) + tags.map((g) => ' #' + g).join('');
+            return __mwSplice(src, dp.to + m[0].length, eol, rest);
+        }
+        // Insert one line at the start of the line holding `offset` (or at the end).
+        function __mwInsertLineAt(src, offset, line) {
+            if (offset >= src.length) {
+                if (src === '') return line;
+                return src + (src.charAt(src.length - 1) === '\n' ? '' : '\n') + line;
+            }
+            const at = src.lastIndexOf('\n', offset - 1) + 1;
+            return src.slice(0, at) + line + '\n' + src.slice(at);
+        }
+        // Where a new event goes: after the last event that is a DIRECT child of
+        // `group` (so it lands in that section, not in a nested sub-section), else
+        // right under the section heading; with no group, at the end of the block.
+        function __mwInsertOffset(MW, src, group) {
+            if (!group || !group.textRanges) return src.length;
+            const kids = (group.children || []).filter((k) => MW.isEvent(k) && k.textRanges && k.textRanges.whole);
+            if (kids.length) return __mwEventEnd(src, kids[kids.length - 1]);
+            const def = group.textRanges.definition || group.textRanges.whole;
+            const eol = src.indexOf('\n', def.from);
+            return eol < 0 ? src.length : eol + 1;
+        }
+        // Where an event's own text ends: the start of the line after its last non-blank
+        // line. The parser's `whole` also swallows the blank lines that follow an event,
+        // and a splice there would put a new line on the wrong side of the gap (or, for a
+        // delete, take the blank separator before the next section with it).
+        function __mwEventEnd(src, node) {
+            const w = node.textRanges.whole;
+            let i = Math.min(w.to, src.length) - 1;
+            while (i >= w.from && /\s/.test(src.charAt(i))) i--;
+            const eol = src.indexOf('\n', i + 1);
+            return eol < 0 ? src.length : eol + 1;
+        }
+        function __mwInsertEvent(MW, src, group, line) {
+            return __mwInsertLineAt(src, __mwInsertOffset(MW, src, group), line);
+        }
+        function __mwDeleteEvent(src, node) {
+            const w = node && node.textRanges && node.textRanges.whole;
+            if (!w) return null;
+            const to = __mwEventEnd(src, node);
+            // A last event with no trailing newline: take the newline BEFORE it instead,
+            // so no empty line is left behind.
+            if (to >= src.length && w.from > 0 && src.charAt(w.from - 1) === '\n' && src.charAt(to - 1) !== '\n') {
+                return src.slice(0, w.from - 1);
+            }
+            return __mwSplice(src, w.from, to, '');
+        }
+        // `#tag: colour` in the block's own `---` front matter: replace the tag's line,
+        // else add one before the closing `---`, else create the front matter.
+        function __mwSetTagColor(src, tag, color) {
+            const lines = src.split('\n');
+            const entry = '#' + tag + ': ' + color;
+            const keyRe = new RegExp('^\\s*#' + tag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*:');
+            if (lines.length && lines[0].trim() === '---') {
+                let close = -1;
+                for (let i = 1; i < lines.length; i++) { if (lines[i].trim() === '---') { close = i; break; } }
+                if (close > 0) {
+                    for (let i = 1; i < close; i++) {
+                        if (keyRe.test(lines[i])) { lines[i] = entry; return lines.join('\n'); }
+                    }
+                    lines.splice(close, 0, entry);
+                    return lines.join('\n');
+                }
+            }
+            return ['---', entry, '---'].concat(lines).join('\n');
+        }
+        // The tags already used in the block, for the dialog's suggestions.
+        function __mwAllTags(rows) {
+            const out = [];
+            rows.forEach((r) => (r.tags || []).forEach((g) => { if (out.indexOf(g) < 0) out.push(g); }));
+            return out;
+        }
+        // ---- end markwhen edit model ----
+
+        // ---- markwhen preview-side editing ----
+        // A top-level markwhen block in the normal preview can be edited in place: drag
+        // a timeline bar to move it or drag one of its ends to change the period, drag a
+        // calendar bar to another day, drag across calendar days to add an item, and
+        // click an item (or use the right-click menu / the hover "+ item" button) for a
+        // dialog holding the label, dates, tags and tag colour. Every change is ONE
+        // `savefile:` with the fence body spliced by offset (tblReplaceLines), exactly
+        // the refuse-first shape of the table editor and the task-list toggle — no Rust.
+        //
+        // #preview is rebuilt wholesale by every render, so nothing here holds a node
+        // across one: a drag checks `isConnected`, and the dialog keeps line numbers +
+        // the source text it was opened on and re-validates them against the file on
+        // save (optimistic concurrency), never the DOM.
+
+        // Resolve a rendered block to its fence body. Refuse-first.
+        function __mwLocate(el) {
+            if (document.body.classList.contains('marp')) return { error: t('mw.edit.errMarp') };
+            if (!currentFilePath) return { error: t('mw.edit.errNoFile') };
+            if (!el || el.parentElement !== preview || !el.hasAttribute('data-line')) return { error: t('mw.edit.errNested') };
+            if (el.classList.contains('mw-pending')) return { error: t('mw.edit.errPending') };
+            const fence = parseInt(el.getAttribute('data-line'), 10);
+            // marked's code text keeps the newline before the closing fence; the body
+            // proper (what the file holds between the fences) is without it.
+            const src = __diagSource(el, 'data-markwhen-source').replace(/\n$/, '');
+            if (!Number.isFinite(fence) || !src) return { error: t('mw.edit.errLocate') };
+            const start = fence + 1;
+            const end = fence + src.split('\n').length;
+            const lines = tblReadLines(currentMarkdownRaw, start, end);
+            // The cross-check: the file's lines under the fence must BE the source this
+            // block was rendered from. Catches a drifted data-line and an indented fence.
+            if (!lines || lines.join('\n') !== src) return { error: t('mw.edit.errLocate') };
+            return { path: currentFilePath, start: start, end: end, src: src, fence: fence };
+        }
+
+        // Parse a located body into what the editor needs. Same flatten as the renderer,
+        // so `rows`' idx matches the `data-mw-ev` stamps in the SVG on screen.
+        function __mwModel(src) {
+            const MW = window.Markwhen;
+            if (!MW || typeof MW.parse !== 'function') return null;
+            const mw = MW.parse(src);
+            if (!mw || !mw.events) return null;
+            const rows = __mwFlatten(MW, mw.events);
+            return { MW: MW, mw: mw, rows: rows, events: rows.filter((r) => r.type === 'event') };
+        }
+
+        function __mwHostAt(fence) {
+            return preview.querySelector(':scope > .markwhen-timeline[data-line="' + fence + '"]');
+        }
+
+        // One write. Re-reads the span right before splicing, so an edit that raced an
+        // external change (or the companion editor) is refused instead of clobbering it.
+        function __mwCommit(loc, newSrc) {
+            if (newSrc == null) { showToast(t('mw.edit.errSave')); return false; }
+            if (newSrc === loc.src) { showToast(t('mw.edit.noChanges')); return false; }
+            if (loc.path !== currentFilePath) { showToast(t('mw.edit.errChanged')); return false; }
+            const now = tblReadLines(currentMarkdownRaw, loc.start, loc.end);
+            if (!now || now.join('\n') !== loc.src) { showToast(t('mw.edit.errChanged')); return false; }
+            const next = tblReplaceLines(currentMarkdownRaw, loc.start, loc.end, newSrc.split('\n'));
+            if (next == null || next === currentMarkdownRaw) { showToast(t('mw.edit.errSave')); return false; }
+            try {
+                window.ipc.postMessage('savefile:' + JSON.stringify({ path: loc.path, content: next }));
+            } catch (e) {
+                console.warn('__mwCommit: postMessage failed', e);
+                showToast(t('mw.edit.errSave'));
+                return false;
+            }
+            // The round trip (savefile: → EditorSavedContent → loadFileFromRust) re-renders
+            // from the saved text. Until it lands, currentMarkdownRaw is still the OLD text,
+            // so a second edit spliced now would silently drop this one — the block is
+            // marked pending and refuses until the re-render replaces it.
+            const host = __mwHostAt(loc.fence);
+            if (host) host.classList.add('mw-pending');
+            showToast(t('mw.edit.saved'));
+            return true;
+        }
+
+        // Post-render pass (normal pipeline only): mark editable blocks and give each
+        // its hover "+ item" button. Runs after renderMarkwhenCached() has written the
+        // SVG — the renderer replaces the block's innerHTML, button included.
+        function __mwAttachEditing() {
+            if (document.body.classList.contains('marp') || !currentFilePath) return;
+            preview.querySelectorAll(':scope > .markwhen-timeline[data-line]').forEach((el) => {
+                if (!el.querySelector('svg.mw-svg') || el.classList.contains('mw-editable')) return;
+                el.classList.add('mw-editable');
+                const b = document.createElement('button');
+                b.type = 'button';
+                b.className = 'copy-button mw-add-button';
+                b.textContent = t('mw.edit.add');
+                b.addEventListener('click', (e) => { e.stopPropagation(); __mwOpenAdd(el, {}); });
+                el.appendChild(b);
+            });
+        }
+
+        // ----- drag -----
+        let __mwDrag = null;
+        let __mwTip = null;
+        function __mwShowTip(x, y, text) {
+            if (!__mwTip) { __mwTip = document.createElement('div'); __mwTip.className = 'mw-drag-tip'; document.body.appendChild(__mwTip); }
+            __mwTip.textContent = text;
+            __mwTip.style.left = (x + 14) + 'px';
+            __mwTip.style.top = (y + 16) + 'px';
+            __mwTip.style.display = 'block';
+        }
+        function __mwHideTip() { if (__mwTip) __mwTip.style.display = 'none'; }
+        function __mwTipText(first, last) {
+            return last > first ? (__mwFmtDate(first) + ' – ' + __mwFmtDate(last)) : __mwFmtDate(first);
+        }
+        // The calendar day cell under a viewport point. Geometry, not elementFromPoint:
+        // a bar drawn over the cell would win the hit test.
+        function __mwCellAt(svg, x, y) {
+            const cells = svg.querySelectorAll('rect[data-mw-date]');
+            for (let i = 0; i < cells.length; i++) {
+                const r = cells[i].getBoundingClientRect();
+                if (x >= r.left && x < r.right && y >= r.top && y < r.bottom) return cells[i];
+            }
+            return null;
+        }
+        function __mwHighlightDays(svg, first, last) {
+            svg.querySelectorAll('rect.mw-hl').forEach((r) => r.classList.remove('mw-hl'));
+            if (first == null) return;
+            svg.querySelectorAll('rect[data-mw-date]').forEach((r) => {
+                const d = __mwParseDate(r.getAttribute('data-mw-date'));
+                if (d >= first && d <= last) r.classList.add('mw-hl');
+            });
+        }
+        function __mwEndDrag() {
+            const d = __mwDrag;
+            __mwDrag = null;
+            __mwHideTip();
+            if (!d) return;
+            d.el.classList.remove('mw-dragging', 'mw-resizing');
+            if (d.svg.isConnected) {
+                __mwHighlightDays(d.svg, null);
+                d.svg.querySelectorAll('.mw-ghost').forEach((n) => n.classList.remove('mw-ghost'));
+            }
+        }
+
+        preview.addEventListener('pointerdown', (e) => {
+            if (e.button !== 0 || __mwDrag) return;
+            const el = e.target.closest && e.target.closest('.markwhen-timeline.mw-editable');
+            if (!el || e.target.closest('.mw-add-button')) return;
+            const svg = el.querySelector('svg.mw-svg');
+            if (!svg) return;
+            const evEl = e.target.closest('[data-mw-ev]');
+            const cellEl = evEl ? null : e.target.closest('rect[data-mw-date]');
+            const grpEl = (evEl || cellEl) ? null : e.target.closest('[data-mw-grp]');
+            if (!evEl && !cellEl && !grpEl) return;
+            e.preventDefault();   // no text selection while dragging
+            const view = svg.getAttribute('data-mw-view');
+            const d = { el: el, svg: svg, view: view, x0: e.clientX, y0: e.clientY, moved: false, days: 0 };
+            if (evEl) {
+                d.kind = 'event';
+                d.idx = parseInt(evEl.getAttribute('data-mw-ev'), 10);
+                d.shapes = Array.from(svg.querySelectorAll('[data-mw-ev="' + d.idx + '"]'));
+                d.mode = 'click';
+                // A timeline label sits in the left column, away from the axis: click
+                // only. A calendar bar's label is drawn ON the bar, so it drags with it.
+                if (evEl.localName === 'rect' || evEl.localName === 'circle' || view === 'calendar') {
+                    d.mode = 'move';
+                    if (view === 'timeline' && evEl.localName === 'rect') {
+                        const r = evEl.getBoundingClientRect();
+                        if (r.width >= 18) {
+                            if (e.clientX - r.left <= 6) d.mode = 'start';
+                            else if (r.right - e.clientX <= 6) d.mode = 'end';
+                        }
+                        d.rect = evEl;
+                        d.rx = parseFloat(evEl.getAttribute('x'));
+                        d.rw = parseFloat(evEl.getAttribute('width'));
+                    } else if (view === 'timeline') {
+                        d.circle = evEl;
+                        d.cx = parseFloat(evEl.getAttribute('cx'));
+                    } else {
+                        const c = __mwCellAt(svg, e.clientX, e.clientY);
+                        d.anchorDay = c ? __mwParseDate(c.getAttribute('data-mw-date')) : NaN;
+                    }
+                }
+            } else if (cellEl) {
+                d.kind = 'cell';
+                d.anchorDay = __mwParseDate(cellEl.getAttribute('data-mw-date'));
+                d.curDay = d.anchorDay;
+            } else {
+                d.kind = 'group';
+                d.grp = parseInt(grpEl.getAttribute('data-mw-grp'), 10);
+            }
+            // Resolve the event's current span up front (the tooltip needs it while
+            // dragging). A block that cannot be located is refused at once.
+            if (d.kind === 'event') {
+                const loc = __mwLocate(el);
+                if (loc.error) { showToast(loc.error); return; }
+                const model = __mwModel(loc.src);
+                const row = model && model.events[d.idx];
+                if (!row) { showToast(t('mw.edit.errLocate')); return; }
+                d.loc = loc; d.model = model; d.row = row;
+                d.span = __mwEventDays(row);
+                if (d.mode !== 'click' && __mwIsRecurring(row.node)) d.mode = 'click';
+            }
+            __mwDrag = d;
+            try { svg.setPointerCapture(e.pointerId); } catch (_) { /* not capturable: window listeners still see it */ }
+        });
+
+        preview.addEventListener('pointermove', (e) => {
+            const d = __mwDrag;
+            if (!d) return;
+            if (!d.svg.isConnected) { __mwEndDrag(); return; }   // a render replaced it
+            if (!d.moved && Math.abs(e.clientX - d.x0) + Math.abs(e.clientY - d.y0) < 3) return;
+            if (!d.moved) {
+                d.moved = true;
+                d.el.classList.add('mw-dragging');
+                if (d.mode === 'start' || d.mode === 'end') d.el.classList.add('mw-resizing');
+            }
+            if (d.kind === 'event' && d.mode !== 'click') {
+                let first = d.span.first, last = d.span.last;
+                if (d.view === 'timeline') {
+                    const t0 = parseFloat(d.svg.getAttribute('data-mw-t0')), t1 = parseFloat(d.svg.getAttribute('data-mw-t1'));
+                    const pw = parseFloat(d.svg.getAttribute('data-mw-pw'));
+                    const ctm = d.svg.getScreenCTM();
+                    const scale = ctm ? ctm.a : 1;
+                    const msPerUnit = (t1 - t0) / pw;
+                    let days = Math.round(((e.clientX - d.x0) / scale) * msPerUnit / __MW_DAY_MS);
+                    if (d.mode === 'start') days = Math.min(days, __mwDayDiff(first, last));
+                    if (d.mode === 'end') days = Math.max(days, -__mwDayDiff(first, last));
+                    d.days = days;
+                    if (d.mode === 'move' || d.mode === 'start') first = __mwAddDays(first, days);
+                    if (d.mode === 'move' || d.mode === 'end') last = __mwAddDays(last, days);
+                    // Visual feedback in SVG units — the bar follows the snapped days.
+                    const du = (__mwAddDays(d.span.first, days) - d.span.first) / msPerUnit;
+                    const dl = (__mwAddDays(d.span.last, days) - d.span.last) / msPerUnit;
+                    if (d.rect) {
+                        if (d.mode === 'move') d.rect.setAttribute('x', (d.rx + du).toFixed(1));
+                        else if (d.mode === 'start') { d.rect.setAttribute('x', (d.rx + du).toFixed(1)); d.rect.setAttribute('width', Math.max(2, d.rw - du).toFixed(1)); }
+                        else d.rect.setAttribute('width', Math.max(2, d.rw + dl).toFixed(1));
+                    } else if (d.circle) {
+                        d.circle.setAttribute('cx', (d.cx + du).toFixed(1));
+                    }
+                } else {
+                    const c = __mwCellAt(d.svg, e.clientX, e.clientY);
+                    if (c && Number.isFinite(d.anchorDay)) d.days = __mwDayDiff(d.anchorDay, __mwParseDate(c.getAttribute('data-mw-date')));
+                    first = __mwAddDays(first, d.days); last = __mwAddDays(last, d.days);
+                    d.shapes.forEach((n) => n.classList.add('mw-ghost'));
+                    __mwHighlightDays(d.svg, first, last);
+                }
+                d.first = first; d.last = last;
+                __mwShowTip(e.clientX, e.clientY, __mwTipText(first, last));
+            } else if (d.kind === 'cell') {
+                const c = __mwCellAt(d.svg, e.clientX, e.clientY);
+                if (c) d.curDay = __mwParseDate(c.getAttribute('data-mw-date'));
+                const a = Math.min(d.anchorDay, d.curDay), b = Math.max(d.anchorDay, d.curDay);
+                __mwHighlightDays(d.svg, a, b);
+                __mwShowTip(e.clientX, e.clientY, __mwTipText(a, b));
+            }
+        });
+
+        // A drag ends in a `click` on the nearest common ancestor of the pointerdown and
+        // pointerup targets — the <svg> itself — which the editor-sync listener would
+        // turn into a `jumpto:`. Swallow exactly that one click.
+        let __mwSwallowClick = false;
+        preview.addEventListener('click', (e) => {
+            if (!__mwSwallowClick) return;
+            __mwSwallowClick = false;
+            e.stopImmediatePropagation();
+        }, true);
+        function __mwFinishDrag(e, cancelled) {
+            const d = __mwDrag;
+            if (!d) return;
+            if (d.moved) {
+                __mwSwallowClick = true;
+                setTimeout(() => { __mwSwallowClick = false; }, 0);
+            }
+            __mwEndDrag();
+            if (cancelled || !d.el.isConnected) return;
+            if (d.kind === 'event') {
+                if (!d.moved || d.mode === 'click') { __mwOpenEdit(d.el, d.idx); return; }
+                if (!d.days) { __mwRestoreShapes(d); return; }
+                const out = __mwSetDates(d.loc.src, d.row.node, d.first, d.last);
+                if (!__mwCommit(d.loc, out)) __mwRestoreShapes(d);
+            } else if (d.kind === 'cell') {
+                if (!d.moved) return;   // a plain click on a day does nothing; double-click adds
+                const a = Math.min(d.anchorDay, d.curDay), b = Math.max(d.anchorDay, d.curDay);
+                __mwOpenAdd(d.el, { first: a, last: b });
+            } else if (d.kind === 'group' && !d.moved) {
+                __mwOpenAdd(d.el, { grp: d.grp });
+            }
+        }
+        function __mwRestoreShapes(d) {
+            if (d.rect) { d.rect.setAttribute('x', d.rx.toFixed(1)); d.rect.setAttribute('width', d.rw.toFixed(1)); }
+            if (d.circle) d.circle.setAttribute('cx', d.cx.toFixed(1));
+        }
+        preview.addEventListener('pointerup', (e) => __mwFinishDrag(e, false));
+        preview.addEventListener('pointercancel', (e) => { const d = __mwDrag; __mwFinishDrag(e, true); if (d) __mwRestoreShapes(d); });
+        document.addEventListener('keydown', (e) => {
+            if (e.key !== 'Escape' || !__mwDrag) return;
+            const d = __mwDrag;
+            __mwEndDrag();
+            __mwRestoreShapes(d);
+        });
+        preview.addEventListener('dblclick', (e) => {
+            const cell = e.target.closest && e.target.closest('.markwhen-timeline.mw-editable rect[data-mw-date]');
+            if (!cell) return;
+            const day = __mwParseDate(cell.getAttribute('data-mw-date'));
+            __mwOpenAdd(cell.closest('.markwhen-timeline'), { first: day, last: day });
+        });
+
+        // ----- item dialog -----
+        let __mwDialog = null;   // { loc, idx (edit) | null (add), grp, row, colorTouched, tagColor }
+        function __mwModalEl() { return document.getElementById('mw-edit-modal'); }
+        function __mwField(id) { return document.getElementById(id); }
+
+        function __mwOpenEdit(el, idx) {
+            const loc = __mwLocate(el);
+            if (loc.error) { showToast(loc.error); return; }
+            const model = __mwModel(loc.src);
+            const row = model && model.events[idx];
+            if (!row) { showToast(t('mw.edit.errLocate')); return; }
+            const span = __mwEventDays(row);
+            __mwShowDialog({ loc: loc, model: model, idx: idx, row: row },
+                { label: row.label === '(untitled)' ? '' : row.label, first: span.first, last: span.last, tags: row.tags || [] });
+        }
+        // opts: { first, last } (calendar range), { grp } (timeline group row index).
+        function __mwOpenAdd(el, opts) {
+            const loc = __mwLocate(el);
+            if (loc.error) { showToast(loc.error); return; }
+            const model = __mwModel(loc.src);
+            if (!model) { showToast(t('mw.edit.errLocate')); return; }
+            let first = opts.first, last = opts.last;
+            if (!Number.isFinite(first)) {
+                // Default: today if the block's span covers it, else the day after the
+                // block's last item — next to where the reader is looking.
+                const today = __mwDayStart(Date.now());
+                let lo = Infinity, hi = -Infinity;
+                model.events.forEach((r) => { const s = __mwEventDays(r); lo = Math.min(lo, s.first); hi = Math.max(hi, s.last); });
+                first = (today >= lo && today <= hi) || !isFinite(hi) ? today : __mwAddDays(hi, 1);
+                last = first;
+            }
+            const grpRow = Number.isFinite(opts.grp) ? model.rows[opts.grp] : null;
+            __mwShowDialog({ loc: loc, model: model, idx: null, group: grpRow && grpRow.type === 'group' ? grpRow.node : null },
+                { label: '', first: first, last: last, tags: [] });
+        }
+
+        // The tag's colour as `#rrggbb` (what <input type="color"> takes). A header may
+        // name it any CSS way — `green`, `rgb(…)` — so let a 2D context normalize it.
+        let __mwColorCtx = null;
+        function __mwCurrentTagColor(model, tag) {
+            if (!tag) return null;
+            const c = __mwTagColor(tag, model.mw.header, __mwPalette(), new Map());
+            if (/^#[0-9a-f]{6}$/i.test(c)) return c.toLowerCase();
+            try {
+                if (!__mwColorCtx) __mwColorCtx = document.createElement('canvas').getContext('2d');
+                __mwColorCtx.fillStyle = '#000000';
+                __mwColorCtx.fillStyle = c;
+                const n = String(__mwColorCtx.fillStyle);
+                return /^#[0-9a-f]{6}$/i.test(n) ? n.toLowerCase() : null;
+            } catch (e) { return null; }
+        }
+        function __mwSyncColorUi() {
+            const st = __mwDialog;
+            if (!st) return;
+            const tags = __mwCleanTags(__mwField('mw-f-tag').value);
+            const color = __mwField('mw-f-color'), hint = __mwField('mw-f-colorhint');
+            color.disabled = !tags.length;
+            hint.textContent = tags.length ? t('mw.edit.colorHint', { tag: tags[0] }) : t('mw.edit.colorNoTag');
+            if (tags.length && !st.colorTouched) {
+                const c = __mwCurrentTagColor(st.model, tags[0]);
+                if (c) color.value = c;
+            }
+        }
+        function __mwSyncSingleUi() {
+            const single = __mwField('mw-f-single').checked;
+            __mwField('mw-f-to').disabled = single || __mwField('mw-f-from').disabled;
+        }
+
+        function __mwShowDialog(st, init) {
+            const m = __mwModalEl();
+            if (!m) return;
+            st.colorTouched = false;
+            __mwDialog = st;
+            const editing = st.idx != null;
+            __mwField('mw-edit-title').textContent = t(editing ? 'mw.edit.titleEdit' : 'mw.edit.titleAdd');
+            __mwField('mw-f-label').value = init.label;
+            __mwField('mw-f-from').value = __mwFmtDate(init.first);
+            __mwField('mw-f-to').value = __mwFmtDate(init.last);
+            __mwField('mw-f-single').checked = init.last <= init.first;
+            __mwField('mw-f-tag').value = init.tags.join(' ');
+            const recurring = editing && __mwIsRecurring(st.row.node);
+            ['mw-f-from', 'mw-f-to', 'mw-f-single'].forEach((id) => { __mwField(id).disabled = recurring; });
+            __mwField('mw-f-note').textContent = recurring ? t('mw.edit.recurring') : '';
+            const list = __mwField('mw-f-taglist');
+            list.innerHTML = '';
+            __mwAllTags(st.model.rows).forEach((g) => { const o = document.createElement('option'); o.value = g; list.appendChild(o); });
+            const del = __mwField('mw-f-delete');
+            del.style.display = editing ? '' : 'none';
+            del.classList.remove('armed');
+            del.textContent = t('mw.edit.delete');
+            __mwField('mw-f-color').value = '#0969da';
+            __mwSyncColorUi();
+            __mwSyncSingleUi();
+            m.classList.add('visible');
+            setTimeout(() => { const f = __mwField('mw-f-label'); f.focus(); f.select(); }, 0);
+        }
+        function __mwCloseDialog() {
+            const m = __mwModalEl();
+            __mwDialog = null;
+            if (m) m.classList.remove('visible');
+        }
+
+        function __mwSaveDialog() {
+            const st = __mwDialog;
+            if (!st) return;
+            const label = __mwCleanLabel(__mwField('mw-f-label').value);
+            if (!label) { showToast(t('mw.edit.errLabel')); __mwField('mw-f-label').focus(); return; }
+            const tags = __mwCleanTags(__mwField('mw-f-tag').value);
+            const editing = st.idx != null;
+            const datesLocked = editing && __mwIsRecurring(st.row.node);
+            let first = __mwParseDate(__mwField('mw-f-from').value);
+            let last = __mwField('mw-f-single').checked ? first : __mwParseDate(__mwField('mw-f-to').value);
+            if (!datesLocked && (!Number.isFinite(first) || !Number.isFinite(last) || last < first)) {
+                showToast(t('mw.edit.errDates'));
+                return;
+            }
+            let src = st.loc.src;
+            if (editing) {
+                const node = st.row.node;
+                const before = __mwEventDays(st.row);
+                // Label/tags first: that splice sits AFTER the date text on the line, so
+                // the date offsets from the original parse stay valid for the second one.
+                const sameLT = label === st.row.label && tags.join(' ') === (st.row.tags || []).join(' ');
+                if (!sameLT) src = __mwSetLabelTags(src, node, label, tags);
+                if (src != null && !datesLocked && (first !== before.first || last !== before.last)) {
+                    src = __mwSetDates(src, node, first, last);
+                }
+            } else {
+                src = __mwInsertEvent(st.model.MW, src, st.group, __mwEventLine(first, last, label, tags));
+            }
+            // The tag colour last: the header sits ABOVE every event, so this splice would
+            // shift the offsets the two above rely on.
+            if (src != null && tags.length && st.colorTouched) {
+                const c = __mwField('mw-f-color').value.toLowerCase();
+                if (c !== __mwCurrentTagColor(st.model, tags[0])) src = __mwSetTagColor(src, tags[0], c);
+            }
+            if (__mwCommit(st.loc, src) || src === st.loc.src) __mwCloseDialog();
+        }
+        function __mwDeleteFromDialog() {
+            const st = __mwDialog;
+            if (!st || st.idx == null) return;
+            const del = __mwField('mw-f-delete');
+            if (!del.classList.contains('armed')) {
+                // Two-step: the write goes straight to the file.
+                del.classList.add('armed');
+                del.textContent = t('mw.edit.deleteConfirm');
+                return;
+            }
+            if (__mwCommit(st.loc, __mwDeleteEvent(st.loc.src, st.row.node))) __mwCloseDialog();
+        }
+        // Context-menu entry points (setupPreviewContextMenu).
+        function __mwDeleteItem(el, idx) {
+            const loc = __mwLocate(el);
+            if (loc.error) { showToast(loc.error); return; }
+            const model = __mwModel(loc.src);
+            const row = model && model.events[idx];
+            if (!row) { showToast(t('mw.edit.errLocate')); return; }
+            __mwCommit(loc, __mwDeleteEvent(loc.src, row.node));
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const m = __mwModalEl();
+            if (!m) return;
+            __mwField('mw-f-save').addEventListener('click', __mwSaveDialog);
+            __mwField('mw-f-cancel').addEventListener('click', __mwCloseDialog);
+            __mwField('mw-f-delete').addEventListener('click', __mwDeleteFromDialog);
+            m.querySelector('.close').addEventListener('click', __mwCloseDialog);
+            m.addEventListener('click', (e) => { if (e.target === m) __mwCloseDialog(); });
+            __mwField('mw-edit-form').addEventListener('submit', (e) => { e.preventDefault(); __mwSaveDialog(); });
+            __mwField('mw-f-tag').addEventListener('input', __mwSyncColorUi);
+            __mwField('mw-f-color').addEventListener('input', () => { if (__mwDialog) __mwDialog.colorTouched = true; });
+            __mwField('mw-f-single').addEventListener('change', __mwSyncSingleUi);
+            __mwField('mw-f-from').addEventListener('change', () => {
+                // Keep the end on or after the start as the start moves.
+                const a = __mwParseDate(__mwField('mw-f-from').value), b = __mwParseDate(__mwField('mw-f-to').value);
+                if (Number.isFinite(a) && (!Number.isFinite(b) || b < a)) __mwField('mw-f-to').value = __mwFmtDate(a);
+            });
+            m.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); __mwCloseDialog(); return; }
+                // Enter in a text/date field saves (the form has no submit button).
+                if (e.key === 'Enter' && e.target.matches('input[type="text"], input[type="date"]')) {
+                    e.preventDefault(); __mwSaveDialog(); return;
+                }
+                if (e.key !== 'Tab') return;
+                // Focus trap: keep Tab inside the dialog.
+                const f = Array.from(m.querySelectorAll('input, button')).filter((n) => !n.disabled && n.offsetParent !== null);
+                if (!f.length) return;
+                const i = f.indexOf(document.activeElement);
+                if (e.shiftKey && i <= 0) { e.preventDefault(); f[f.length - 1].focus(); }
+                else if (!e.shiftKey && i === f.length - 1) { e.preventDefault(); f[0].focus(); }
+            });
+        });
+        // ---- end markwhen preview-side editing ----
 
         // ---- TikZ / tikz-cd (commutative diagrams) via @rod2ik/tikzjax ----
         // The engine emits SVG with stroke/fill=currentColor, so dark mode needs no
@@ -13909,6 +14681,7 @@ ${inspectorScript ? `<script>${inspectorScript}<\/script>\n` : ''}</body>
             const mwEls = preview.querySelectorAll('.markwhen-timeline');
             if (mwEls.length > 0 && await awaitLib(markwhenReady, 'Markwhen', mwEls)) {
                 await Promise.all(Array.from(mwEls).map(el => renderMarkwhenCached(el)));
+                __mwAttachEditing();   // normal pipeline only — Marp blocks stay static
             }
 
             // Link cards: ask the host for any URL not yet known (bounded wait).
@@ -15187,10 +15960,28 @@ ${inspectorScript ? `<script>${inspectorScript}<\/script>\n` : ''}</body>
                     latex = (k.querySelector('annotation[encoding="application/x-tex"]')?.textContent || '').trim();
                 }
 
+                // An editable markwhen block offers its item operations first.
+                const mwHost = fig && fig.spec.kind === 'markwhen' && fig.host.classList.contains('mw-editable')
+                    ? fig.host : null;
+                const mwEv = mwHost ? e.target.closest('[data-mw-ev]') : null;
+                const mwIdx = mwEv ? parseInt(mwEv.getAttribute('data-mw-ev'), 10) : null;
+                const mwCell = mwHost ? e.target.closest('rect[data-mw-date]') : null;
+                const mwGrp = mwHost ? e.target.closest('[data-mw-grp]') : null;
+
                 show(e, () => {
                     if (k) {
                         addCopyItem(t('menu.copyMathML'), mathml);
                         addCopyItem(t('menu.copyLatex'), latex);
+                    }
+                    if (mwHost) {
+                        if (mwIdx != null) {
+                            addItem(t('menu.mwEdit'), () => { __mwOpenEdit(mwHost, mwIdx); });
+                            addItem(t('menu.mwDelete'), () => { __mwDeleteItem(mwHost, mwIdx); });
+                        }
+                        const addOpts = {};
+                        if (mwCell) { addOpts.first = addOpts.last = __mwParseDate(mwCell.getAttribute('data-mw-date')); }
+                        if (mwGrp) addOpts.grp = parseInt(mwGrp.getAttribute('data-mw-grp'), 10);
+                        addItem(t('menu.mwAdd'), () => { __mwOpenAdd(mwHost, addOpts); });
                     }
                     if (fig) {
                         if (fig.spec.kind === 'mermaid' && window.ipc) {
@@ -15641,7 +16432,10 @@ ${inspectorScript ? `<script>${inspectorScript}<\/script>\n` : ''}</body>
             // its own round trip already re-renders the document.
             if (e.target.closest('a, button, .copy-button, [contenteditable],'
                                  + ' li.task-list-item > input[type="checkbox"],'
-                                 + ' li.task-list-item > p:first-child > input[type="checkbox"]')) return;
+                                 + ' li.task-list-item > p:first-child > input[type="checkbox"],'
+                                 // markwhen items / days / sections are drag / dialog targets.
+                                 + ' .mw-editable [data-mw-ev], .mw-editable [data-mw-date],'
+                                 + ' .mw-editable [data-mw-grp]')) return;
             if (Date.now() < suppressJumpUntil) return;
             const block = e.target.closest('[data-line]');
             if (!block) return;
@@ -16340,6 +17134,40 @@ ${inspectorScript ? `<script>${inspectorScript}<\/script>\n` : ''}</body>
         };
     </script>
     <div id="toast"></div>
+    <!-- markwhen item dialog (preview-side editing, __mwOpenDialog). Static markup so
+         applyI18n() reaches it; the title is set per open (edit vs add). -->
+    <div id="mw-edit-modal" role="dialog" aria-modal="true" aria-labelledby="mw-edit-title">
+        <div class="panel">
+            <button class="close" type="button" aria-label="閉じる" data-i18n-attr="aria-label:common.close">&times;</button>
+            <h2 id="mw-edit-title"></h2>
+            <form id="mw-edit-form" class="mw-form" autocomplete="off">
+                <label class="mw-k" for="mw-f-label" data-i18n="mw.edit.label">項目名</label>
+                <input type="text" id="mw-f-label">
+                <label class="mw-k" for="mw-f-from" data-i18n="mw.edit.period">期間</label>
+                <div class="mw-dates">
+                    <input type="date" id="mw-f-from" data-i18n-attr="title:mw.edit.from" title="開始日">
+                    <span class="mw-to-sep">–</span>
+                    <input type="date" id="mw-f-to" data-i18n-attr="title:mw.edit.to" title="終了日（この日を含む）">
+                    <label class="mw-single"><input type="checkbox" id="mw-f-single"><span data-i18n="mw.edit.single">単日</span></label>
+                </div>
+                <label class="mw-k" for="mw-f-tag" data-i18n="mw.edit.tags">タグ</label>
+                <input type="text" id="mw-f-tag" list="mw-f-taglist" data-i18n-attr="placeholder:mw.edit.tagsPlaceholder" placeholder="例: dev design（空白区切り）">
+                <label class="mw-k" for="mw-f-color" data-i18n="mw.edit.color">色</label>
+                <div class="mw-color-row">
+                    <input type="color" id="mw-f-color" value="#0969da">
+                    <span class="mw-hint" id="mw-f-colorhint"></span>
+                </div>
+                <span></span><span class="mw-hint" id="mw-f-note"></span>
+                <datalist id="mw-f-taglist"></datalist>
+            </form>
+            <div class="mw-actions">
+                <button type="button" class="mw-danger" id="mw-f-delete" data-i18n="mw.edit.delete">削除</button>
+                <span class="mw-spacer"></span>
+                <button type="button" id="mw-f-cancel" data-i18n="mw.edit.cancel">キャンセル</button>
+                <button type="button" class="mw-primary" id="mw-f-save" data-i18n="mw.edit.save">保存</button>
+            </div>
+        </div>
+    </div>
     <div id="update-banner" role="status" aria-live="polite">
         <button type="button" id="update-later-btn" aria-label="閉じる" title="閉じる" data-i18n-attr="aria-label:common.close;title:common.close">&times;</button>
         <span id="update-banner-msg"></span>
