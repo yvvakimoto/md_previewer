@@ -166,12 +166,15 @@ try:
         inv = pg.evaluate("""() => {
           const els = [...document.querySelectorAll('#preview .markwhen-timeline')];
           return { n: els.length, editable: els.filter(e => e.classList.contains('mw-editable')).length,
-                   buttons: els.filter(e => e.querySelector(':scope > .mw-add-button')).length,
+                   buttons: els.filter(e => e.querySelector(':scope > .mw-btn-bar > .mw-add-button')).length,
+                   viewBtn: els.map(e => e.querySelector(':scope > .mw-btn-bar > .mw-view-button').textContent),
                    views: els.map(e => e.querySelector('svg').getAttribute('data-mw-view')),
                    evStamps: els.map(e => new Set([...e.querySelectorAll('[data-mw-ev]')].map(n => n.getAttribute('data-mw-ev'))).size) };
         }""")
         check("every top-level block is editable", [inv["editable"], inv["buttons"]], [inv["n"], inv["n"]])
         check("views stamped", inv["views"], ["timeline", "timeline", "calendar", "timeline"])
+        check("view toggle names the other view", inv["viewBtn"],
+              [I18N["mw.edit.toCalendar"], I18N["mw.edit.toCalendar"], I18N["mw.edit.toTimeline"], I18N["mw.edit.toCalendar"]])
         check("every event stamped (6 / 6 / 4 / 3)", inv["evStamps"], [6, 6, 4, 3])
         # The parser escapes a header value's leading `#` to `)`; without the fix this
         # colour fell back to the palette.
@@ -307,6 +310,41 @@ try:
             lines = c.split("\n")
             check("…inside its fence", lines[lines.index("2024-06-28: 振り返り") + 1], "```")
 
+        # ================= view toggle =================
+        fresh(pg)
+        pg.evaluate("() => document.querySelectorAll('#preview .markwhen-timeline')[2].querySelector('.mw-view-button').click()")
+        c = only_save(pg, "toggle to timeline")
+        if c:
+            check("calendar → timeline: only the display line goes", diff_lines(SRC, c), (["display: calendar"], []))
+        check("toggle: no jumpto:", len(sent(pg, "jumpto:")), 0)
+        check("toggle: block pending", pg.evaluate(
+            "() => document.querySelectorAll('#preview .markwhen-timeline')[2].classList.contains('mw-pending')"), True)
+
+        fresh(pg)
+        pg.evaluate("() => document.querySelectorAll('#preview .markwhen-timeline')[0].querySelector('.mw-view-button').click()")
+        c = only_save(pg, "toggle to calendar")
+        if c:
+            rm, add = diff_lines(SRC, c)
+            check("timeline → calendar: display: calendar added, nothing removed",
+                  [rm, "display: calendar" in add], [[], True])
+            # And the saved text renders as a calendar.
+            load_doc(pg, c)
+            check("…re-render shows a calendar", pg.evaluate(
+                "() => document.querySelectorAll('#preview .markwhen-timeline')[0].querySelector('svg').getAttribute('data-mw-view')"),
+                "calendar")
+
+        fresh(pg)
+        g = pg.evaluate(GEOM, {"blk": 2, "idx": 1})
+        pg.mouse.click(g["cx"], g["cy"], button="right")
+        pg.wait_for_timeout(150)
+        items = pg.evaluate("() => [...document.querySelectorAll('.app-context-menu')].filter(m => m.style.display !== 'none').flatMap(m => [...m.querySelectorAll('.app-menu-item')].map(i => i.textContent))")
+        want = pg.evaluate("() => window.__I18N['menu.mwToTimeline'].en")
+        check("menu offers the view switch", want in items, True)
+        pg.evaluate("(w) => [...document.querySelectorAll('.app-menu-item')].find(i => i.textContent === w).click()", want)
+        c = only_save(pg, "menu toggle")
+        if c:
+            check("menu toggle: same rewrite as the button", diff_lines(SRC, c), (["display: calendar"], []))
+
         # ================= EOLs: a CRLF document stays CRLF =================
         fresh(pg)
         crlf = "# t\r\n\r\n```markwhen\r\n2024-01-01 / 2024-01-05: a\r\n2024-01-10: b\r\n```\r\n"
@@ -337,7 +375,7 @@ try:
             // The inlined stylesheet legitimately names these selectors; look at markup.
             const h = (a.html || a).replace(/<style[\\s\\S]*?<\\/style>/g, '');
             return { svg: (h.match(/class="mw-svg/g) || []).length, stamps: /data-mw-/.test(h),
-                     button: /mw-add-button/.test(h), cls: /mw-editable/.test(h) };
+                     button: /mw-add-button|mw-view-button|mw-btn-bar/.test(h), cls: /mw-editable/.test(h) };
         }""")
         check("HTML export: figures kept, editing chrome gone", art, {"svg": 4, "stamps": False, "button": False, "cls": False})
 
