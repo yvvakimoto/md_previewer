@@ -27,7 +27,8 @@ function fnBlock(startPred) {
 const ms = L.findIndex((l) => l.includes('---- markwhen edit model (pure) ----'));
 const me = L.findIndex((l) => l.includes('---- end markwhen edit model ----'));
 if (ms < 0 || me < 0) throw new Error('model markers not found');
-const block = fnBlock((l) => l.includes('function __mwFlatten(')) + '\n' + L.slice(ms, me + 1).join('\n');
+const block = fnBlock((l) => l.includes('function __mwFlatten(')) + '\n'
+  + fnBlock((l) => l.includes('function __mwLegendShown(')) + '\n' + L.slice(ms, me + 1).join('\n');
 
 const lib = fs.readFileSync('assets/libs/markwhen/markwhen.iife.js', 'utf8');
 const ctx = { console };
@@ -36,7 +37,7 @@ vm.createContext(ctx);
 vm.runInContext(lib, ctx);
 vm.runInContext(block + '\nthis.api = {__mwFlatten,__mwSetDates,__mwSetLabelTags,__mwInsertEvent,' +
   '__mwDeleteEvent,__mwSetTagColor,__mwEventDays,__mwEventLine,__mwParseDate,__mwFmtDate,' +
-  '__mwAddDays,__mwCleanTags,__mwAllTags,__mwDatePart,__mwSetDisplay,__mwIsCalendarHeader};', ctx);
+  '__mwAddDays,__mwCleanTags,__mwAllTags,__mwDatePart,__mwSetDisplay,__mwIsCalendarHeader,__mwSetLegend,__mwLegendShown};', ctx);
 const MW = ctx.Markwhen;
 const A = ctx.api;
 
@@ -208,6 +209,25 @@ const SRC = [
   eq('…reads as calendar', isCal(A.__mwSetDisplay('title: t\n\n2024-01-01: a', true)), true);
   eq('a date line is not a header key', A.__mwSetDisplay('2024-01-01: a\n2024-01-02: b', false), '2024-01-01: a\n2024-01-02: b');
   eq('a # section is not a header key', A.__mwSetDisplay('# 節\n2024-01-01: a', true), '---\ndisplay: calendar\n---\n# 節\n2024-01-01: a');
+}
+
+// ---- legend visibility
+{
+  const shown = (src) => A.__mwLegendShown(model(src).mw.header);
+  eq('legend shown by default', shown(SRC), true);
+  for (const v of ['false', 'off', 'none', 'hide', 'no', '0', 'False']) {
+    eq('legend: ' + v + ' hides', shown('---\nlegend: ' + v + '\n---\n2024-01-01: a'), false);
+  }
+  eq('legend: true shows', shown('---\nlegend: true\n---\n2024-01-01: a'), true);
+  const hid = A.__mwSetLegend(SRC, false);
+  eq('hide: legend: false appended to the header', hid.split('\n').slice(0, 5), ['---', 'title: 計画', '#dev: green', 'legend: false', '---']);
+  eq('…reads as hidden', shown(hid), false);
+  eq('…show again restores the source', A.__mwSetLegend(hid, true), SRC);
+  eq('show replaces legend: off by dropping it', A.__mwSetLegend('---\nlegend: off\n---\nz', true), 'z');
+  eq('hide with no header creates one', A.__mwSetLegend('2024-01-01: a #x', false), '---\nlegend: false\n---\n2024-01-01: a #x');
+  eq('hide replaces in place', A.__mwSetLegend('---\nlegend: true\ntitle: t\n---\nz', false), '---\nlegend: false\ntitle: t\n---\nz');
+  eq('legend and view toggles compose', A.__mwSetDisplay(A.__mwSetLegend(SRC, false), true).split('\n').slice(0, 6),
+     ['---', 'title: 計画', '#dev: green', 'legend: false', 'display: calendar', '---']);
 }
 
 // ---- date helpers
