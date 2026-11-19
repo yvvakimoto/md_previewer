@@ -3625,6 +3625,8 @@
             'menu.mwAdd':          { ja: '項目を追加…',      en: 'Add item…' },
             'menu.mwToCalendar':   { ja: 'カレンダー表示に切り替え',  en: 'Switch to calendar view' },
             'menu.mwToTimeline':   { ja: 'タイムライン表示に切り替え', en: 'Switch to timeline view' },
+            'menu.mwHideLegend':   { ja: '色の凡例を隠す',   en: 'Hide colour legend' },
+            'menu.mwShowLegend':   { ja: '色の凡例を表示',   en: 'Show colour legend' },
 
             'menu.rowAbove':       { ja: '上に行を挿入',     en: 'Insert row above' },
             'menu.rowBelow':       { ja: '下に行を挿入',     en: 'Insert row below' },
@@ -11893,6 +11895,46 @@ ${inspectorScript ? `<script>${inspectorScript}<\/script>\n` : ''}</body>
             return rows;
         }
 
+        // ---- tag colour legend (both views) ----
+        // Shown by default; the header's `legend:` hides it with false / off / none /
+        // hide / no / 0 (the parser hands `false` and `0` over as non-strings).
+        function __mwLegendShown(hdr) {
+            const v = hdr ? hdr.legend : undefined;
+            if (v === false || v === 0) return false;
+            return ['false', 'off', 'none', 'hide', 'no', '0'].indexOf(String(v == null ? '' : v).trim().toLowerCase()) < 0;
+        }
+        // Rough advance width for laying out the legend: a CJK / fullwidth glyph is a
+        // full em, anything else a bit over half.
+        function __mwTextW(str, px) {
+            let w = 0;
+            for (const ch of str) w += (ch.codePointAt(0) > 0x2E7F ? 1.0 : 0.6) * px;
+            return w;
+        }
+        const __MW_LEGEND_ROW_H = 18;
+        // One entry per tag that coloured a bar (`tagColors` is filled in drawing
+        // order), wrapped onto as many rows as the width needs — never dropped.
+        function __mwLegendLayout(tagColors, x0, maxX) {
+            const items = [];
+            let x = x0, row = 0;
+            tagColors.forEach((color, tag) => {
+                const label = __mwTrunc(tag, 20);
+                const w = 15 + __mwTextW(label, 11);
+                if (x > x0 && x + w > maxX) { row++; x = x0; }
+                items.push({ label: label, color: color, x: x, row: row });
+                x += w + 18;
+            });
+            return { items: items, rows: items.length ? row + 1 : 0 };
+        }
+        function __mwLegendSvg(lay, top, textColor) {
+            let s = '<g class="mw-legend">';
+            lay.items.forEach((it) => {
+                const y = top + it.row * __MW_LEGEND_ROW_H + 11;
+                s += '<rect x="' + it.x.toFixed(1) + '" y="' + (y - 9) + '" width="11" height="11" rx="2" fill="' + it.color + '"/>';
+                s += '<text x="' + (it.x + 15).toFixed(1) + '" y="' + y + '" fill="' + textColor + '" font-size="11">' + __mwEscape(it.label) + '</text>';
+            });
+            return s + '</g>';
+        }
+
         // Build the horizontal cascading timeline SVG (the default markwhen view).
         function __mwBuildTimeline(MW, mw, rows, events) {
             // Overall span — prefer the parser's computed range, fall back to events.
@@ -11912,7 +11954,6 @@ ${inspectorScript ? `<script>${inspectorScript}<\/script>\n` : ''}</body>
             // Geometry (logical px; SVG scales to container width via viewBox).
             const W = 960, Lw = 220, rightPad = 18, topAxis = 34, rowH = 26, barH = 13;
             const plotW = W - Lw - rightPad;
-            const H = topAxis + rows.length * rowH + 14;
             const xOf = (t) => Lw + (t - tMin) / (tMax - tMin) * plotW;
 
             const c = darkMode
@@ -11920,6 +11961,12 @@ ${inspectorScript ? `<script>${inspectorScript}<\/script>\n` : ''}</body>
                 : { text: '#1f2328', group: '#57606a', axis: '#d0d7de', grid: '#eaeef2', tick: '#57606a', defBar: '#0969da' };
             const palette = __mwPalette();
             const tagColors = new Map();
+            // Resolve every bar's colour up front (same order the rows draw in, so the
+            // hashed palette assigns identically) — the legend's height is part of H.
+            events.forEach((r) => { if (r.tags && r.tags.length) __mwTagColor(r.tags[0], mw.header, palette, tagColors); });
+            const legend = __mwLegendShown(mw.header) ? __mwLegendLayout(tagColors, 8, W - rightPad) : { items: [], rows: 0 };
+            const rowsBottom = topAxis + rows.length * rowH + 14;
+            const H = rowsBottom + (legend.rows ? legend.rows * __MW_LEGEND_ROW_H + 10 : 0);
 
             // Axis ticks — granularity by span (years / months / days).
             const spanDays = (tMax - tMin) / 86400000;
@@ -11953,7 +12000,7 @@ ${inspectorScript ? `<script>${inspectorScript}<\/script>\n` : ''}</body>
             ticks.forEach(tk => {
                 const x = xOf(tk.t);
                 if (x < Lw - 0.5 || x > W) return;
-                s += '<line x1="' + x.toFixed(1) + '" y1="' + topAxis + '" x2="' + x.toFixed(1) + '" y2="' + (H - 6) + '" stroke="' + c.grid + '" stroke-width="1"/>';
+                s += '<line x1="' + x.toFixed(1) + '" y1="' + topAxis + '" x2="' + x.toFixed(1) + '" y2="' + (rowsBottom - 6) + '" stroke="' + c.grid + '" stroke-width="1"/>';
                 s += '<text x="' + x.toFixed(1) + '" y="20" fill="' + c.tick + '" font-size="11" text-anchor="middle">' + __mwEscape(tk.label) + '</text>';
             });
             s += '<line x1="' + Lw + '" y1="' + topAxis + '" x2="' + (W - rightPad) + '" y2="' + topAxis + '" stroke="' + c.axis + '" stroke-width="1"/>';
@@ -11977,6 +12024,7 @@ ${inspectorScript ? `<script>${inspectorScript}<\/script>\n` : ''}</body>
                     }
                 }
             });
+            if (legend.rows) s += __mwLegendSvg(legend, rowsBottom, c.group);
             s += '</svg>';
             return s;
         }
@@ -12020,7 +12068,9 @@ ${inspectorScript ? `<script>${inspectorScript}<\/script>\n` : ''}</body>
             const W = 872, PAD = 16, colW = 120;
             const monthHdrH = 30, dowH = 22, dayNumH = 18, laneH = 15, maxLanes = 3;
             const cellH = dayNumH + maxLanes * laneH + 13; // 76
-            const monthGap = 24, legendH = 26;
+            const monthGap = 24;
+            const legend = __mwLegendShown(mw.header) ? __mwLegendLayout(tagColors, PAD, W - PAD) : { items: [], rows: 0 };
+            const legendH = legend.rows ? legend.rows * __MW_LEGEND_ROW_H + 8 : 0;
 
             // Pre-compute month layout so the viewBox height is known up front.
             const monthDefs = [];
@@ -12120,16 +12170,9 @@ ${inspectorScript ? `<script>${inspectorScript}<\/script>\n` : ''}</body>
                 }
             });
 
-            // Legend (tag → color), single row, truncated.
-            const legendY = H - PAD - 4;
-            let lx = PAD;
-            Array.from(tagColors.entries()).slice(0, 8).forEach(entry => {
-                const tag = entry[0], color = entry[1];
-                s += '<rect x="' + lx + '" y="' + (legendY - 9) + '" width="11" height="11" rx="2" fill="' + color + '"/>';
-                const label = __mwTrunc(tag, 14);
-                s += '<text x="' + (lx + 15) + '" y="' + legendY + '" fill="' + cal.dim + '" font-size="11">' + __mwEscape(label) + '</text>';
-                lx += 15 + label.length * 7 + 18;
-            });
+            // Legend (tag → colour) under the last month, wrapped onto more rows when
+            // there are many tags.
+            if (legend.rows) s += __mwLegendSvg(legend, yCur - monthGap + 8, cal.dim);
             s += '</svg>';
             return s;
         }
@@ -12339,15 +12382,24 @@ ${inspectorScript ? `<script>${inspectorScript}<\/script>\n` : ''}</body>
             return String(hdr.display || '').toLowerCase() === 'calendar'
                 || hdr.calendar === true || String(hdr.calendar || '').toLowerCase() === 'true';
         }
-        // Switch the block's view by rewriting its header. Every `display:` / `calendar:`
-        // line is dropped; calendar puts back ONE `display: calendar` (in place of the
-        // first such line, else at the end of the header). The header is the `---` front
-        // matter, or else the leading run of `key: value` lines the parser also reads as
-        // one (keys start with a letter or `#name`, so a date line or a `# section` is
-        // never taken for one). Back to the timeline leaves no empty `---`/`---` behind.
+        // Header option toggles, both written through __mwSetHeaderLine.
+        // View: every `display:` / `calendar:` line goes; calendar puts back ONE
+        // `display: calendar`. Legend: shown is the default, so showing it just drops
+        // `legend:`, and hiding writes `legend: false`.
         function __mwSetDisplay(src, calendar) {
+            return __mwSetHeaderLine(src, /^\s*(display|calendar)\s*:/i, calendar ? 'display: calendar' : null);
+        }
+        function __mwSetLegend(src, show) {
+            return __mwSetHeaderLine(src, /^\s*legend\s*:/i, show ? null : 'legend: false');
+        }
+        // Drop every header line matching `dropRe`; when `line` is given, put it back
+        // in place of the first dropped line, else at the end of the header. The header
+        // is the `---` front matter, or else the leading run of `key: value` lines the
+        // parser also reads as one (keys start with a letter or `#name`, so a date line
+        // or a `# section` is never taken for one). No header + a line → a new front
+        // matter; a front matter left empty is removed, so no `---`/`---` is left behind.
+        function __mwSetHeaderLine(src, dropRe, line) {
             const lines = src.split('\n');
-            const viewRe = /^\s*(display|calendar)\s*:/i;
             let hs, he, delimited = false;
             if (lines.length && lines[0].trim() === '---') {
                 for (let i = 1; i < lines.length; i++) { if (lines[i].trim() === '---') { he = i; break; } }
@@ -12365,16 +12417,16 @@ ${inspectorScript ? `<script>${inspectorScript}<\/script>\n` : ''}</body>
             const head = [];
             let at = -1;
             for (let i = hs; i < he; i++) {
-                if (viewRe.test(lines[i])) { if (at < 0) at = head.length; continue; }
+                if (dropRe.test(lines[i])) { if (at < 0) at = head.length; continue; }
                 head.push(lines[i]);
             }
-            if (calendar) head.splice(at < 0 ? head.length : at, 0, 'display: calendar');
+            if (line != null) head.splice(at < 0 ? head.length : at, 0, line);
             let out;
             if (delimited) {
                 out = (head.length ? ['---'].concat(head, ['---']) : []).concat(lines.slice(he + 1));
-            } else if (calendar && he === 0) {
+            } else if (line != null && he === 0) {
                 // No header at all: create the front matter, as the tag colour does.
-                out = ['---', 'display: calendar', '---'].concat(lines);
+                out = ['---', line, '---'].concat(lines);
             } else {
                 out = head.concat(lines.slice(he));
             }
@@ -12505,6 +12557,20 @@ ${inspectorScript ? `<script>${inspectorScript}<\/script>\n` : ''}</body>
             const m = __mwModel(loc.src);
             if (!m) { showToast(t('mw.edit.errLocate')); return; }
             __mwCommit(loc, __mwSetDisplay(loc.src, !__mwIsCalendarHeader(m.mw.header)));
+        }
+        // Legend state for the menu: null when no item has a tag (nothing to show
+        // either way, so no menu item), else whether the header shows it.
+        function __mwHostLegend(el) {
+            const m = __mwModel(__diagSource(el, 'data-markwhen-source'));
+            if (!m || !m.events.some((r) => r.tags && r.tags.length)) return null;
+            return __mwLegendShown(m.mw.header);
+        }
+        function __mwToggleLegend(el) {
+            const loc = __mwLocate(el);
+            if (loc.error) { showToast(loc.error); return; }
+            const m = __mwModel(loc.src);
+            if (!m) { showToast(t('mw.edit.errLocate')); return; }
+            __mwCommit(loc, __mwSetLegend(loc.src, !__mwLegendShown(m.mw.header)));
         }
 
         // ----- drag -----
@@ -16064,6 +16130,11 @@ ${inspectorScript ? `<script>${inspectorScript}<\/script>\n` : ''}</body>
                         addItem(t('menu.mwAdd'), () => { __mwOpenAdd(mwHost, addOpts); });
                         addItem(t(__mwHostIsCalendar(mwHost) ? 'menu.mwToTimeline' : 'menu.mwToCalendar'),
                             () => { __mwToggleView(mwHost); });
+                        const legendShown = __mwHostLegend(mwHost);
+                        if (legendShown != null) {
+                            addItem(t(legendShown ? 'menu.mwHideLegend' : 'menu.mwShowLegend'),
+                                () => { __mwToggleLegend(mwHost); });
+                        }
                     }
                     if (fig) {
                         if (fig.spec.kind === 'mermaid' && window.ipc) {
