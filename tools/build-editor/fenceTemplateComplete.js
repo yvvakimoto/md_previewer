@@ -118,6 +118,7 @@ const TEMPLATES = [
     `title: ${C}`,
     '// display: calendar',
     '// country: JP',
+    '// legend: false',
     '#done: green',
     '#todo: orange',
     '---',

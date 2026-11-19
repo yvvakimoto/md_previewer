@@ -345,6 +345,45 @@ try:
         if c:
             check("menu toggle: same rewrite as the button", diff_lines(SRC, c), (["display: calendar"], []))
 
+        # ================= colour legend =================
+        fresh(pg)
+        leg = pg.evaluate("""() => [...document.querySelectorAll('#preview .markwhen-timeline')].map(e => {
+            const m = __mwModel(__diagSource(e, 'data-markwhen-source'));
+            const first = new Set(m.events.filter(r => r.tags.length).map(r => r.tags[0]));
+            const g = e.querySelector('svg .mw-legend');
+            const svgH = e.querySelector('svg').viewBox.baseVal.height;
+            let inside = true;
+            if (g) for (const n of g.querySelectorAll('rect, text')) {
+                const y = +n.getAttribute('y'); if (!(y > 0 && y <= svgH)) inside = false;
+            }
+            return { want: first.size, got: g ? g.querySelectorAll('rect').length : 0, inside };
+        })""")
+        check("every view draws one legend entry per colouring tag", [[l["got"], l["inside"]] for l in leg],
+              [[l["want"], True] for l in leg])
+        check("the timeline blocks have a legend too", leg[0]["got"] > 0, True)
+
+        g = pg.evaluate(GEOM, {"blk": 0, "idx": 0})
+        pg.mouse.click(g["cx"], g["cy"], button="right")
+        pg.wait_for_timeout(150)
+        hide = pg.evaluate("() => window.__I18N['menu.mwHideLegend'].en")
+        items = pg.evaluate("() => [...document.querySelectorAll('.app-context-menu')].filter(m => m.style.display !== 'none').flatMap(m => [...m.querySelectorAll('.app-menu-item')].map(i => i.textContent))")
+        check("menu offers hiding the legend", hide in items, True)
+        pg.evaluate("(w) => [...document.querySelectorAll('.app-menu-item')].find(i => i.textContent === w).click()", hide)
+        c = only_save(pg, "legend hide")
+        if c:
+            rm, add = diff_lines(SRC, c)
+            check("legend hide: legend: false added, nothing removed", [rm, "legend: false" in add], [[], True])
+            load_doc(pg, c)
+            check("…re-render has no legend on that block, others keep theirs", pg.evaluate(
+                "() => [...document.querySelectorAll('#preview .markwhen-timeline')].map(e => !!e.querySelector('svg .mw-legend'))"),
+                [False] + [l["got"] > 0 for l in leg[1:]])
+
+        fresh(pg)
+        load_doc(pg, "```markwhen\n2024-01-01 / 2024-01-05: a\n```\n")
+        check("no tags → no legend and no legend menu item", pg.evaluate("""() => [
+            !!document.querySelector('#preview svg .mw-legend'),
+            __mwHostLegend(document.querySelector('#preview .markwhen-timeline'))]"""), [False, None])
+
         # ================= EOLs: a CRLF document stays CRLF =================
         fresh(pg)
         crlf = "# t\r\n\r\n```markwhen\r\n2024-01-01 / 2024-01-05: a\r\n2024-01-10: b\r\n```\r\n"
