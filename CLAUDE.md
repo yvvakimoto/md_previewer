@@ -71,7 +71,7 @@ README.md 「対応している記法・機能」.
 | Feature | Detail |
 |---|---|
 | GFM preview, auto-reload on external change, sidebar TOC | `preview-core.md` |
-| Diagram / figure fences: `mermaid`, `plotly`, `abc` (+ playback), `markwhen` (+ drag / dialog item editing in the preview, written back to the `.md`), `tikz`/`tikzcd`, `kataskeve`/`kataskeve3d`, `feynman`, `model3d` (3D mesh files, interactive), `csv`/`tsv`, KaTeX math, highlight.js (+ in-house Modelica grammar) | `preview-blocks.md` |
+| Diagram / figure fences: `mermaid`, `plotly`, `abc` (+ playback), `markwhen` (+ drag / dialog item editing and a timeline ⇄ calendar toggle in the preview, written back to the `.md`), `tikz`/`tikzcd`, `kataskeve`/`kataskeve3d`, `feynman`, `model3d` (3D mesh files, interactive), `csv`/`tsv`, KaTeX math, highlight.js (+ in-house Modelica grammar) | `preview-blocks.md` |
 | ` ```linkcard ` OGP link cards — host-fetched (HTTPS), disk-cached, thumbnail served from the cache, S-modal fetch toggle | `preview-blocks.md`, `rust-host.md` |
 | Footnotes, `::: center/right/left/message/vcenter/columns` fenced divs, `[text]{color=…}` inline spans, definition lists, ruby (`｜猫《ねこ》`), task lists, CJK soft-break join, CJK-friendly `**` emphasis, PDF page breaks (`\newpage` / front-matter `pagebreak: hN`) | `preview-markdown-ext.md` |
 | Copy table for PowerPoint (rich-HTML clipboard); Edit table (writes back to the `.md`) | `preview-tables.md` |

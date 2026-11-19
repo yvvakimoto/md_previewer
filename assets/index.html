@@ -1080,8 +1080,11 @@
            the static chrome above. The add button is a .copy-button: hover-revealed,
            hidden in print, stripped from the HTML export. */
         .markwhen-timeline.mw-editable { position: relative; }
-        .markwhen-timeline.mw-editable:hover .mw-add-button { opacity: 1; }
-        .markwhen-timeline .mw-add-button { top: 4px; right: 4px; }
+        /* One flex bar, like .table-btn-bar: the labels are localized, so per-button
+           pixel offsets would overlap the moment a label's width changes. */
+        .markwhen-timeline .mw-btn-bar { position: absolute; top: 4px; right: 4px; display: flex; gap: 6px; z-index: 1; }
+        .markwhen-timeline .mw-btn-bar .copy-button { position: static; top: auto; right: auto; }
+        .markwhen-timeline.mw-editable:hover .mw-btn-bar .copy-button { opacity: 1; }
         .mw-editable [data-mw-ev] { cursor: pointer; }
         .mw-editable rect[data-mw-ev], .mw-editable circle[data-mw-ev] { cursor: grab; }
         .mw-editable [data-mw-date] { cursor: cell; }
@@ -3578,6 +3581,8 @@
 
             // markwhen item editing (__mwEdit* / __mwOpenDialog).
             'mw.edit.add':         { ja: '＋ 項目',          en: '+ Item' },
+            'mw.edit.toCalendar':  { ja: 'カレンダー表示',  en: 'Calendar view' },
+            'mw.edit.toTimeline':  { ja: 'タイムライン表示', en: 'Timeline view' },
             'mw.edit.titleEdit':   { ja: '項目を編集',       en: 'Edit item' },
             'mw.edit.titleAdd':    { ja: '項目を追加',       en: 'Add item' },
             'mw.edit.label':       { ja: '項目名',           en: 'Label' },
@@ -3618,6 +3623,8 @@
             'menu.mwEdit':         { ja: '項目を編集…',      en: 'Edit item…' },
             'menu.mwDelete':       { ja: '項目を削除',       en: 'Delete item' },
             'menu.mwAdd':          { ja: '項目を追加…',      en: 'Add item…' },
+            'menu.mwToCalendar':   { ja: 'カレンダー表示に切り替え',  en: 'Switch to calendar view' },
+            'menu.mwToTimeline':   { ja: 'タイムライン表示に切り替え', en: 'Switch to timeline view' },
 
             'menu.rowAbove':       { ja: '上に行を挿入',     en: 'Insert row above' },
             'menu.rowBelow':       { ja: '下に行を挿入',     en: 'Insert row below' },
@@ -6814,6 +6821,7 @@
             // Strip preview-only artifacts that don't belong in a static artifact.
             previewClone.querySelectorAll('[data-line]').forEach(el => el.removeAttribute('data-line'));
             previewClone.querySelectorAll('.copy-button').forEach(el => el.remove());
+            previewClone.querySelectorAll('.mw-btn-bar').forEach(el => el.remove());
             // markwhen editing chrome: the class hooks and the drag editor's SVG stamps
             // (data-mw-*) mean nothing in a static artifact.
             previewClone.querySelectorAll('.mw-editable, .mw-pending').forEach(el => el.classList.remove('mw-editable', 'mw-pending'));
@@ -12144,9 +12152,7 @@ ${inspectorScript ? `<script>${inspectorScript}<\/script>\n` : ''}</body>
                 // use a non-reserved key: `display: calendar` (primary) or the
                 // boolean alias `calendar: true`.
                 const hdr = mw.header || {};
-                const displayVal = String(hdr.display || '').toLowerCase();
-                const calFlag = hdr.calendar === true || String(hdr.calendar || '').toLowerCase() === 'true';
-                const isCalendar = displayVal === 'calendar' || calFlag;
+                const isCalendar = __mwIsCalendarHeader(hdr);
                 const titleHtml = hdr.title
                     ? '<div class="mw-title">' + __mwEscape(hdr.title) + '</div>' : '';
 
@@ -12326,6 +12332,54 @@ ${inspectorScript ? `<script>${inspectorScript}<\/script>\n` : ''}</body>
             }
             return ['---', entry, '---'].concat(lines).join('\n');
         }
+        // Which view the header asks for. The renderer and the view toggle share this one
+        // rule: `display: calendar`, or the boolean alias `calendar: true`.
+        function __mwIsCalendarHeader(hdr) {
+            hdr = hdr || {};
+            return String(hdr.display || '').toLowerCase() === 'calendar'
+                || hdr.calendar === true || String(hdr.calendar || '').toLowerCase() === 'true';
+        }
+        // Switch the block's view by rewriting its header. Every `display:` / `calendar:`
+        // line is dropped; calendar puts back ONE `display: calendar` (in place of the
+        // first such line, else at the end of the header). The header is the `---` front
+        // matter, or else the leading run of `key: value` lines the parser also reads as
+        // one (keys start with a letter or `#name`, so a date line or a `# section` is
+        // never taken for one). Back to the timeline leaves no empty `---`/`---` behind.
+        function __mwSetDisplay(src, calendar) {
+            const lines = src.split('\n');
+            const viewRe = /^\s*(display|calendar)\s*:/i;
+            let hs, he, delimited = false;
+            if (lines.length && lines[0].trim() === '---') {
+                for (let i = 1; i < lines.length; i++) { if (lines[i].trim() === '---') { he = i; break; } }
+                if (he != null) { hs = 1; delimited = true; }
+            }
+            if (!delimited) {
+                const keyRe = /^\s*([A-Za-z_][\w-]*|#[^\s:#]+)\s*:/;
+                let i = 0, last = -1;
+                while (i < lines.length && (lines[i].trim() === '' || keyRe.test(lines[i]))) {
+                    if (lines[i].trim() !== '') last = i;
+                    i++;
+                }
+                hs = 0; he = last + 1;
+            }
+            const head = [];
+            let at = -1;
+            for (let i = hs; i < he; i++) {
+                if (viewRe.test(lines[i])) { if (at < 0) at = head.length; continue; }
+                head.push(lines[i]);
+            }
+            if (calendar) head.splice(at < 0 ? head.length : at, 0, 'display: calendar');
+            let out;
+            if (delimited) {
+                out = (head.length ? ['---'].concat(head, ['---']) : []).concat(lines.slice(he + 1));
+            } else if (calendar && he === 0) {
+                // No header at all: create the front matter, as the tag colour does.
+                out = ['---', 'display: calendar', '---'].concat(lines);
+            } else {
+                out = head.concat(lines.slice(he));
+            }
+            return out.join('\n');
+        }
         // The tags already used in the block, for the dialog's suggestions.
         function __mwAllTags(rows) {
             const out = [];
@@ -12418,13 +12472,39 @@ ${inspectorScript ? `<script>${inspectorScript}<\/script>\n` : ''}</body>
             preview.querySelectorAll(':scope > .markwhen-timeline[data-line]').forEach((el) => {
                 if (!el.querySelector('svg.mw-svg') || el.classList.contains('mw-editable')) return;
                 el.classList.add('mw-editable');
+                const bar = document.createElement('div');
+                bar.className = 'mw-btn-bar';
+                // The toggle names the view it switches TO, read off the header (not off
+                // the SVG: a too-wide calendar falls back to a timeline but still asks
+                // for a calendar, and toggling must then write the timeline).
+                const v = document.createElement('button');
+                v.type = 'button';
+                v.className = 'copy-button mw-view-button';
+                v.textContent = t(__mwHostIsCalendar(el) ? 'mw.edit.toTimeline' : 'mw.edit.toCalendar');
+                v.addEventListener('click', (e) => { e.stopPropagation(); __mwToggleView(el); });
                 const b = document.createElement('button');
                 b.type = 'button';
                 b.className = 'copy-button mw-add-button';
                 b.textContent = t('mw.edit.add');
                 b.addEventListener('click', (e) => { e.stopPropagation(); __mwOpenAdd(el, {}); });
-                el.appendChild(b);
+                bar.appendChild(v);
+                bar.appendChild(b);
+                el.appendChild(bar);
             });
+        }
+
+        // The view the block's header asks for (true = calendar).
+        function __mwHostIsCalendar(el) {
+            const m = __mwModel(__diagSource(el, 'data-markwhen-source'));
+            return !!(m && __mwIsCalendarHeader(m.mw.header));
+        }
+        // Timeline ⇄ calendar: one header rewrite, one savefile:.
+        function __mwToggleView(el) {
+            const loc = __mwLocate(el);
+            if (loc.error) { showToast(loc.error); return; }
+            const m = __mwModel(loc.src);
+            if (!m) { showToast(t('mw.edit.errLocate')); return; }
+            __mwCommit(loc, __mwSetDisplay(loc.src, !__mwIsCalendarHeader(m.mw.header)));
         }
 
         // ----- drag -----
@@ -12474,7 +12554,7 @@ ${inspectorScript ? `<script>${inspectorScript}<\/script>\n` : ''}</body>
         preview.addEventListener('pointerdown', (e) => {
             if (e.button !== 0 || __mwDrag) return;
             const el = e.target.closest && e.target.closest('.markwhen-timeline.mw-editable');
-            if (!el || e.target.closest('.mw-add-button')) return;
+            if (!el || e.target.closest('.mw-btn-bar')) return;
             const svg = el.querySelector('svg.mw-svg');
             if (!svg) return;
             const evEl = e.target.closest('[data-mw-ev]');
@@ -15982,6 +16062,8 @@ ${inspectorScript ? `<script>${inspectorScript}<\/script>\n` : ''}</body>
                         if (mwCell) { addOpts.first = addOpts.last = __mwParseDate(mwCell.getAttribute('data-mw-date')); }
                         if (mwGrp) addOpts.grp = parseInt(mwGrp.getAttribute('data-mw-grp'), 10);
                         addItem(t('menu.mwAdd'), () => { __mwOpenAdd(mwHost, addOpts); });
+                        addItem(t(__mwHostIsCalendar(mwHost) ? 'menu.mwToTimeline' : 'menu.mwToCalendar'),
+                            () => { __mwToggleView(mwHost); });
                     }
                     if (fig) {
                         if (fig.spec.kind === 'mermaid' && window.ipc) {

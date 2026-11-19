@@ -36,7 +36,7 @@ vm.createContext(ctx);
 vm.runInContext(lib, ctx);
 vm.runInContext(block + '\nthis.api = {__mwFlatten,__mwSetDates,__mwSetLabelTags,__mwInsertEvent,' +
   '__mwDeleteEvent,__mwSetTagColor,__mwEventDays,__mwEventLine,__mwParseDate,__mwFmtDate,' +
-  '__mwAddDays,__mwCleanTags,__mwAllTags,__mwDatePart};', ctx);
+  '__mwAddDays,__mwCleanTags,__mwAllTags,__mwDatePart,__mwSetDisplay,__mwIsCalendarHeader};', ctx);
 const MW = ctx.Markwhen;
 const A = ctx.api;
 
@@ -181,6 +181,33 @@ const SRC = [
   eq('create front matter', A.__mwSetTagColor('2024-01-01: a #x', 'x', '#123456'), '---\n#x: #123456\n---\n2024-01-01: a #x');
   eq('tag prefix is not a match', A.__mwSetTagColor('---\n#devops: red\n---\nz', 'dev', '#111111'), '---\n#devops: red\n#dev: #111111\n---\nz');
   eq('all tags', A.__mwAllTags(model(SRC).rows), ['dev', 'qa']);
+}
+
+// ---- view toggle (timeline ⇄ calendar)
+{
+  const isCal = (src) => A.__mwIsCalendarHeader(model(src).mw.header);
+  const toCal = A.__mwSetDisplay(SRC, true);
+  eq('to calendar: appended to the front matter', toCal.split('\n').slice(0, 5), ['---', 'title: 計画', '#dev: green', 'display: calendar', '---']);
+  eq('…body untouched', toCal.split('\n').slice(5), SRC.split('\n').slice(4));
+  eq('…reads as calendar', isCal(toCal), true);
+  eq('…round trip restores the source', A.__mwSetDisplay(toCal, false), SRC);
+  eq('timeline source reads as timeline', isCal(SRC), false);
+
+  eq('no header: front matter created', A.__mwSetDisplay('2024-01-01: a', true), '---\ndisplay: calendar\n---\n2024-01-01: a');
+  eq('…and removed again (no empty ---/---)', A.__mwSetDisplay('---\ndisplay: calendar\n---\n2024-01-01: a', false), '2024-01-01: a');
+  eq('replaced in place', A.__mwSetDisplay('---\ndisplay: timeline\ntitle: x\n---\nz', true), '---\ndisplay: calendar\ntitle: x\n---\nz');
+  eq('alias calendar: true dropped, one display line', A.__mwSetDisplay('---\ncalendar: true\n---\n2024-01-01: a', true), '---\ndisplay: calendar\n---\n2024-01-01: a');
+  eq('alias calendar: true → timeline', A.__mwSetDisplay('---\ntitle: t\ncalendar: true\n---\n2024-01-01: a', false), '---\ntitle: t\n---\n2024-01-01: a');
+  eq('alias reads as calendar', isCal('---\ncalendar: true\n---\n2024-01-01: a'), true);
+
+  // A header the parser reads without `---` delimiters.
+  const bare = 'title: t\ndisplay: calendar\n\n# 節\n2024-01-01: a';
+  eq('undelimited header: removed', A.__mwSetDisplay(bare, false), 'title: t\n\n# 節\n2024-01-01: a');
+  eq('…reads as timeline', isCal(A.__mwSetDisplay(bare, false)), false);
+  eq('undelimited header: added after the last key', A.__mwSetDisplay('title: t\n\n2024-01-01: a', true), 'title: t\ndisplay: calendar\n\n2024-01-01: a');
+  eq('…reads as calendar', isCal(A.__mwSetDisplay('title: t\n\n2024-01-01: a', true)), true);
+  eq('a date line is not a header key', A.__mwSetDisplay('2024-01-01: a\n2024-01-02: b', false), '2024-01-01: a\n2024-01-02: b');
+  eq('a # section is not a header key', A.__mwSetDisplay('# 節\n2024-01-01: a', true), '---\ndisplay: calendar\n---\n# 節\n2024-01-01: a');
 }
 
 // ---- date helpers
