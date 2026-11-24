@@ -1045,6 +1045,15 @@
             display: block;
             max-width: 100%;
             height: auto;
+            /* Floor the width-scaling at ~0.75 of the viewBox (960 / 872) so the
+               text never shrinks past legibility in a narrow pane; below this the
+               block scrolls sideways instead (overflow-x above). Paper has a fixed
+               width, so print lets it fit. */
+            min-width: 720px;
+        }
+        .markwhen-timeline .mw-cal-svg { min-width: 660px; }
+        @media print {
+            .markwhen-timeline .mw-svg, .markwhen-timeline .mw-cal-svg { min-width: 0; }
         }
         .markwhen-timeline .mw-title {
             font-weight: 700;
@@ -11787,11 +11796,6 @@ ${inspectorScript ? `<script>${inspectorScript}<\/script>\n` : ''}</body>
                 .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
                 .replace(/"/g, '&quot;');
         }
-        function __mwTrunc(str, max) {
-            str = String(str || '');
-            if (max < 4) max = 4;
-            return str.length > max ? str.slice(0, max - 1) + '…' : str;
-        }
         function __mwPalette() {
             return darkMode
                 ? ['#4493f8', '#3fb950', '#f85149', '#bc8cff', '#d29922', '#db6d28', '#39c5cf', '#ff7b72']
@@ -11895,6 +11899,86 @@ ${inspectorScript ? `<script>${inspectorScript}<\/script>\n` : ''}</body>
             return rows;
         }
 
+        // ---- shared text helpers (both views) ----
+        // Font sizes in viewBox units. The SVG scales with the preview width, and the
+        // CSS `min-width` on `.mw-svg` floors that scale at ~0.75, so none of these
+        // lands below ~9px on screen; at a normal width they render near face value.
+        const __MW_FS = {
+            label: 14, group: 13.5, tick: 12, date: 11.5, legend: 12,
+            calTitle: 18, calDow: 12.5, calDay: 13, calChip: 12, calHoliday: 10.5, calMore: 11.5
+        };
+        // Rough advance width: a CJK / fullwidth glyph is a full em, anything else a
+        // bit over half. The SVG is built as a string, so there is no layout to measure.
+        function __mwTextW(str, px) {
+            let w = 0;
+            for (const ch of String(str)) w += (ch.codePointAt(0) > 0x2E7F ? 1.0 : 0.6) * px;
+            return w;
+        }
+        // Truncate to an estimated WIDTH, not a character count: a CJK glyph is about
+        // twice a Latin one, and the old 32-character cap let a Japanese label run
+        // across the label column into the bars (and a calendar chip into the next day).
+        function __mwTruncW(str, px, maxW) {
+            str = String(str || '');
+            if (__mwTextW(str, px) <= maxW) return str;
+            const ell = __mwTextW('…', px);
+            let w = 0, out = '';
+            for (const ch of str) {
+                const cw = __mwTextW(ch, px);
+                if (w + cw + ell > maxW) break;
+                out += ch; w += cw;
+            }
+            return out ? out + '…' : '';
+        }
+        // Text colour for a label drawn ON a coloured chip: dark ink on a light fill
+        // (a header's `yellow`, the dark palette's green / amber), white otherwise.
+        // A header may name the colour any CSS way, so a 2D context normalizes it.
+        const __mwInkCache = new Map();
+        function __mwInk(color) {
+            if (__mwInkCache.has(color)) return __mwInkCache.get(color);
+            let ink = '#ffffff';
+            try {
+                if (!__mwColorCtx) __mwColorCtx = document.createElement('canvas').getContext('2d');
+                __mwColorCtx.fillStyle = '#000000';
+                __mwColorCtx.fillStyle = color;
+                const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(String(__mwColorCtx.fillStyle));
+                if (m) {
+                    const lin = (h) => { const v = parseInt(h, 16) / 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
+                    const L = 0.2126 * lin(m[1]) + 0.7152 * lin(m[2]) + 0.0722 * lin(m[3]);
+                    if (L > 0.3) ink = '#1f2328';
+                }
+            } catch (e) { /* keep white */ }
+            __mwInkCache.set(color, ink);
+            return ink;
+        }
+        // Compact date text beside a timeline bar. markwhen ends are EXCLUSIVE, so the
+        // shown end is the last covered unit (the calendar's `to - 1ms` rule): whole
+        // years → `2020–2022`, whole months → `2023/1–3`, otherwise days
+        // (`2023/3/1–6/30`). `noYear` (the whole chart sits inside one calendar year)
+        // drops the year and skips the month form, so a plan reads `3/1–6/30` beside
+        // `1/1–2/15` instead of mixing the two shapes.
+        function __mwFmtRange(from, to, noYear) {
+            const a = new Date(from), b = new Date(to);
+            const mid = (d) => d.getHours() === 0 && d.getMinutes() === 0 && d.getSeconds() === 0 && d.getMilliseconds() === 0;
+            const span = to > from && mid(a) && mid(b);
+            if (span && a.getMonth() === 0 && a.getDate() === 1 && b.getMonth() === 0 && b.getDate() === 1) {
+                const y1 = a.getFullYear(), y2 = b.getFullYear() - 1;
+                return y1 === y2 ? String(y1) : y1 + '–' + y2;
+            }
+            if (span && !noYear && a.getDate() === 1 && b.getDate() === 1) {
+                const e = new Date(b.getFullYear(), b.getMonth() - 1, 1);
+                const head = a.getFullYear() + '/' + (a.getMonth() + 1);
+                if (e.getFullYear() === a.getFullYear() && e.getMonth() === a.getMonth()) return head;
+                if (e.getFullYear() === a.getFullYear()) return head + '–' + (e.getMonth() + 1);
+                return head + '–' + e.getFullYear() + '/' + (e.getMonth() + 1);
+            }
+            const e = new Date(Math.max(__mwDayStart(to > from ? to - 1 : from), __mwDayStart(from)));
+            const md = (d) => (d.getMonth() + 1) + '/' + d.getDate();
+            const pre = noYear ? '' : a.getFullYear() + '/';
+            if (e.getTime() === __mwDayStart(from)) return pre + md(a);
+            if (e.getFullYear() === a.getFullYear()) return pre + md(a) + '–' + md(e);
+            return a.getFullYear() + '/' + md(a) + '–' + e.getFullYear() + '/' + md(e);
+        }
+
         // ---- tag colour legend (both views) ----
         // Shown by default; the header's `legend:` hides it with false / off / none /
         // hide / no / 0 (the parser hands `false` and `0` over as non-strings).
@@ -11903,40 +11987,41 @@ ${inspectorScript ? `<script>${inspectorScript}<\/script>\n` : ''}</body>
             if (v === false || v === 0) return false;
             return ['false', 'off', 'none', 'hide', 'no', '0'].indexOf(String(v == null ? '' : v).trim().toLowerCase()) < 0;
         }
-        // Rough advance width for laying out the legend: a CJK / fullwidth glyph is a
-        // full em, anything else a bit over half.
-        function __mwTextW(str, px) {
-            let w = 0;
-            for (const ch of str) w += (ch.codePointAt(0) > 0x2E7F ? 1.0 : 0.6) * px;
-            return w;
-        }
-        const __MW_LEGEND_ROW_H = 18;
+        const __MW_LEGEND_ROW_H = 22;
         // One entry per tag that coloured a bar (`tagColors` is filled in drawing
         // order), wrapped onto as many rows as the width needs — never dropped.
         function __mwLegendLayout(tagColors, x0, maxX) {
+            const fs = __MW_FS.legend;
             const items = [];
             let x = x0, row = 0;
             tagColors.forEach((color, tag) => {
-                const label = __mwTrunc(tag, 20);
-                const w = 15 + __mwTextW(label, 11);
+                const label = __mwTruncW(tag, fs, 200);
+                const w = 18 + __mwTextW(label, fs);
                 if (x > x0 && x + w > maxX) { row++; x = x0; }
                 items.push({ label: label, color: color, x: x, row: row });
-                x += w + 18;
+                x += w + 20;
             });
             return { items: items, rows: items.length ? row + 1 : 0 };
         }
         function __mwLegendSvg(lay, top, textColor) {
+            const fs = __MW_FS.legend;
             let s = '<g class="mw-legend">';
             lay.items.forEach((it) => {
-                const y = top + it.row * __MW_LEGEND_ROW_H + 11;
-                s += '<rect x="' + it.x.toFixed(1) + '" y="' + (y - 9) + '" width="11" height="11" rx="2" fill="' + it.color + '"/>';
-                s += '<text x="' + (it.x + 15).toFixed(1) + '" y="' + y + '" fill="' + textColor + '" font-size="11">' + __mwEscape(it.label) + '</text>';
+                const y = top + it.row * __MW_LEGEND_ROW_H + 14;
+                s += '<rect x="' + it.x.toFixed(1) + '" y="' + (y - 10.5) + '" width="12" height="12" rx="3" fill="' + it.color + '"/>';
+                s += '<text x="' + (it.x + 18).toFixed(1) + '" y="' + y + '" fill="' + textColor + '" font-size="' + fs + '">' + __mwEscape(it.label) + '</text>';
             });
             return s + '</g>';
         }
 
-        // Build the horizontal cascading timeline SVG (the default markwhen view).
+        // Build the horizontal timeline / Gantt SVG (the default markwhen view).
+        // Layout, left to right: a label column sized to its content, then the plot.
+        // Top to bottom: a one- or two-tier time header (year | month, or month | day),
+        // one 30-unit row per item (zebra bands; a group row gets a full-width band),
+        // then the legend. Each bar carries its date range as dim text beside it.
         function __mwBuildTimeline(MW, mw, rows, events) {
+            const DAY = 86400000;
+            const FS = __MW_FS;
             // Overall span — prefer the parser's computed range, fall back to events.
             let tMin = Infinity, tMax = -Infinity;
             try {
@@ -11947,84 +12032,192 @@ ${inspectorScript ? `<script>${inspectorScript}<\/script>\n` : ''}</body>
                 tMin = Infinity; tMax = -Infinity;
                 events.forEach(e => { tMin = Math.min(tMin, e.from); tMax = Math.max(tMax, e.to); });
             }
-            if (tMax <= tMin) { const d = 86400000; tMin -= d; tMax += d; }
-            const padT = (tMax - tMin) * 0.03;
-            tMin -= padT; tMax += padT;
+            if (tMax <= tMin) { tMin -= DAY; tMax += DAY; }
+            const rawDays = (tMax - tMin) / DAY;
+            const scale = rawDays > 1100 ? 'year' : (rawDays > 70 ? 'month' : 'day');
+            if (scale === 'day') {
+                // Snap to whole days (one spare day each side) so gridlines sit on midnights.
+                const s0 = new Date(tMin), e0 = new Date(tMax - 1);
+                tMin = new Date(s0.getFullYear(), s0.getMonth(), s0.getDate() - 1).getTime();
+                tMax = new Date(e0.getFullYear(), e0.getMonth(), e0.getDate() + 2).getTime();
+            } else {
+                const padT = (tMax - tMin) * 0.03;
+                tMin -= padT; tMax += padT;
+            }
+            const spanDays = (tMax - tMin) / DAY;
 
-            // Geometry (logical px; SVG scales to container width via viewBox).
-            const W = 960, Lw = 220, rightPad = 18, topAxis = 34, rowH = 26, barH = 13;
+            // Geometry (viewBox units; the SVG scales to the container width).
+            const W = 960, rightPad = 16, rowH = 30, barH = 16;
+            const twoTier = scale !== 'year';
+            const topAxis = twoTier ? 48 : 30;
+            const indentOf = (r) => 10 + r.depth * 16;
+            let need = 0;
+            rows.forEach(r => {
+                const w = r.type === 'group' ? __mwTextW(r.label, FS.group) * 1.06 : __mwTextW(r.label, FS.label);
+                need = Math.max(need, indentOf(r) + w);
+            });
+            const Lw = Math.round(Math.min(340, Math.max(140, need + 16)));
             const plotW = W - Lw - rightPad;
+            const plotR = W - rightPad;
             const xOf = (t) => Lw + (t - tMin) / (tMax - tMin) * plotW;
 
             const c = darkMode
-                ? { text: '#e6edf3', group: '#8b949e', axis: '#30363d', grid: '#21262d', tick: '#8b949e', defBar: '#4493f8' }
-                : { text: '#1f2328', group: '#57606a', axis: '#d0d7de', grid: '#eaeef2', tick: '#57606a', defBar: '#0969da' };
+                ? { text: '#e6edf3', group: '#e6edf3', axis: '#3d444d', grid: '#262c34', gridMajor: '#3d444d', tick: '#9198a1', date: '#9198a1', defBar: '#4493f8',
+                    band: 'rgba(110,118,129,0.10)', groupBand: 'rgba(110,118,129,0.24)', weekend: 'rgba(110,118,129,0.14)' }
+                : { text: '#1f2328', group: '#1f2328', axis: '#d1d9e0', grid: '#eef1f4', gridMajor: '#d1d9e0', tick: '#59636e', date: '#59636e', defBar: '#0969da',
+                    band: 'rgba(175,184,193,0.13)', groupBand: 'rgba(175,184,193,0.32)', weekend: 'rgba(175,184,193,0.22)' };
             const palette = __mwPalette();
             const tagColors = new Map();
             // Resolve every bar's colour up front (same order the rows draw in, so the
             // hashed palette assigns identically) — the legend's height is part of H.
             events.forEach((r) => { if (r.tags && r.tags.length) __mwTagColor(r.tags[0], mw.header, palette, tagColors); });
-            const legend = __mwLegendShown(mw.header) ? __mwLegendLayout(tagColors, 8, W - rightPad) : { items: [], rows: 0 };
-            const rowsBottom = topAxis + rows.length * rowH + 14;
-            const H = rowsBottom + (legend.rows ? legend.rows * __MW_LEGEND_ROW_H + 10 : 0);
+            const legend = __mwLegendShown(mw.header) ? __mwLegendLayout(tagColors, 10, plotR) : { items: [], rows: 0 };
+            const rowsBottom = topAxis + rows.length * rowH + 8;
+            const H = rowsBottom + (legend.rows ? legend.rows * __MW_LEGEND_ROW_H + 14 : 6);
 
-            // Axis ticks — granularity by span (years / months / days).
-            const spanDays = (tMax - tMin) / 86400000;
-            const ticks = [];
+            // ---- time header ----
+            // `minor` = the lower (or only) tier: a gridline each, a label where there
+            // is room. `major` = the upper tier's boundaries (years over months, months
+            // over days), drawn as stronger full-height lines. Labels sit just right of
+            // their line, so none is clipped at the plot's left edge.
+            const months = t('cal.monthsShort').split(',');
+            const monthTitle = (d) => t('cal.monthTitle', { year: d.getFullYear(), month: d.getMonth() + 1, monthName: t('cal.month.' + (d.getMonth() + 1)) });
+            const minor = [], major = [], weekends = [];
             const dFrom = new Date(tMin), dTo = new Date(tMax);
-            if (spanDays > 1100) {
-                const yEnd = dTo.getFullYear();
-                let y = dFrom.getFullYear();
-                const step = Math.max(1, Math.ceil((yEnd - y + 1) / 12));
-                for (; y <= yEnd; y += step) ticks.push({ t: new Date(y, 0, 1).getTime(), label: String(y) });
-            } else if (spanDays > 70) {
-                const months = t('cal.monthsShort').split(',');
-                let d = new Date(dFrom.getFullYear(), dFrom.getMonth(), 1);
+            let lead = null, dayW = 0;
+            if (scale === 'year') {
+                const pxPerYear = plotW * 365.25 / spanDays;
+                const lw = __mwTextW('0000', FS.tick) + 12;
+                let step = 100;
+                for (const st of [1, 2, 5, 10, 20, 50, 100]) { if (pxPerYear * st >= lw) { step = st; break; } }
+                for (let y = Math.ceil(dFrom.getFullYear() / step) * step; y <= dTo.getFullYear(); y += step) {
+                    minor.push({ t: new Date(y, 0, 1).getTime(), label: String(y) });
+                }
+            } else if (scale === 'month') {
+                const pxPerMonth = plotW * 30.44 / spanDays;
+                let lw = 0;
+                months.forEach(m => { lw = Math.max(lw, __mwTextW(m, FS.tick)); });
+                lw += 10;
+                let step = 12;
+                for (const st of [1, 2, 3, 6, 12]) { if (pxPerMonth * st >= lw) { step = st; break; } }
+                let d = new Date(dFrom.getFullYear(), dFrom.getMonth() + 1, 1);
                 while (d.getTime() <= tMax) {
-                    ticks.push({ t: d.getTime(), label: (d.getMonth() === 0 ? d.getFullYear() + ' ' : '') + months[d.getMonth()] });
-                    d = new Date(d.getFullYear(), d.getMonth() + 1, 1);
+                    const m = d.getMonth();
+                    if (m === 0) major.push({ t: d.getTime(), label: String(d.getFullYear()) });
+                    minor.push({ t: d.getTime(), label: (m % step === 0) ? months[m] : null });
+                    d = new Date(d.getFullYear(), m + 1, 1);
                 }
+                lead = String(dFrom.getFullYear());
             } else {
-                const n = 8;
-                for (let i = 0; i <= n; i++) {
-                    const t = tMin + (tMax - tMin) * i / n;
-                    const dd = new Date(t);
-                    ticks.push({ t: t, label: (dd.getMonth() + 1) + '/' + dd.getDate() });
+                dayW = plotW / spanDays;
+                const daily = dayW >= __mwTextW('30', FS.tick) + 8;
+                let d = new Date(dFrom.getFullYear(), dFrom.getMonth(), dFrom.getDate());
+                while (d.getTime() < tMax) {
+                    const dow = d.getDay(), dn = d.getDate();
+                    if (dn === 1 && d.getTime() > tMin) major.push({ t: d.getTime(), label: monthTitle(d) });
+                    const lab = (daily || dow === 1) ? String(dn) : null; // weekly → Mondays
+                    minor.push({ t: d.getTime(), label: lab, center: daily, faint: !lab });
+                    if (dow === 0 || dow === 6) weekends.push(d.getTime());
+                    d = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1);
                 }
+                lead = monthTitle(dFrom);
             }
 
             // data-mw-* = the axis the preview's drag editor needs to turn a pointer
             // delta back into time (__mwEdit*). Stripped by buildExportArtifact().
             let s = '<svg class="mw-svg" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="xMinYMin meet" width="100%" xmlns="http://www.w3.org/2000/svg" font-family="-apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, sans-serif"'
                 + ' data-mw-view="timeline" data-mw-t0="' + tMin + '" data-mw-t1="' + tMax + '" data-mw-x0="' + Lw + '" data-mw-pw="' + plotW + '">';
-            ticks.forEach(tk => {
-                const x = xOf(tk.t);
-                if (x < Lw - 0.5 || x > W) return;
-                s += '<line x1="' + x.toFixed(1) + '" y1="' + topAxis + '" x2="' + x.toFixed(1) + '" y2="' + (rowsBottom - 6) + '" stroke="' + c.grid + '" stroke-width="1"/>';
-                s += '<text x="' + x.toFixed(1) + '" y="20" fill="' + c.tick + '" font-size="11" text-anchor="middle">' + __mwEscape(tk.label) + '</text>';
-            });
-            s += '<line x1="' + Lw + '" y1="' + topAxis + '" x2="' + (W - rightPad) + '" y2="' + topAxis + '" stroke="' + c.axis + '" stroke-width="1"/>';
 
+            // Row bands first, so the gridlines and bars paint over them. Zebra
+            // counting restarts under every group, so a group's first item is unbanded.
+            let zebra = 0;
+            rows.forEach((r, i) => {
+                const y = topAxis + i * rowH;
+                if (r.type === 'group') {
+                    s += '<rect x="0" y="' + y + '" width="' + W + '" height="' + rowH + '" fill="' + c.groupBand + '"/>';
+                    zebra = 0;
+                } else {
+                    if (zebra % 2 === 1) s += '<rect x="0" y="' + y + '" width="' + W + '" height="' + rowH + '" fill="' + c.band + '"/>';
+                    zebra++;
+                }
+            });
+            if (dayW >= 4) {
+                weekends.forEach(t0 => {
+                    const x1 = Math.max(Lw, xOf(t0)), x2 = Math.min(plotR, xOf(t0 + DAY));
+                    if (x2 > x1) s += '<rect x="' + x1.toFixed(1) + '" y="' + topAxis + '" width="' + (x2 - x1).toFixed(1) + '" height="' + (rowsBottom - topAxis) + '" fill="' + c.weekend + '"/>';
+                });
+            }
+
+            // Gridlines + header labels.
+            const lowerY = twoTier ? 39 : 20;
+            const tierTop = twoTier ? 24 : 4;
+            const inPlot = (x) => x >= Lw - 0.5 && x <= plotR + 0.5;
+            minor.forEach(tk => {
+                const x = xOf(tk.t);
+                if (!inPlot(x)) return;
+                if (tk.faint && dayW < 6) return;
+                s += '<line x1="' + x.toFixed(1) + '" y1="' + (tk.faint ? topAxis : tierTop) + '" x2="' + x.toFixed(1) + '" y2="' + rowsBottom + '" stroke="' + c.grid + '" stroke-width="1"/>';
+                if (!tk.label) return;
+                if (tk.center) {
+                    const cx = x + dayW / 2;
+                    if (cx + __mwTextW(tk.label, FS.tick) / 2 <= plotR + 2) s += '<text x="' + cx.toFixed(1) + '" y="' + lowerY + '" fill="' + c.tick + '" font-size="' + FS.tick + '" text-anchor="middle">' + __mwEscape(tk.label) + '</text>';
+                } else if (x + 4 + __mwTextW(tk.label, FS.tick) <= plotR + 2) {
+                    s += '<text x="' + (x + 4).toFixed(1) + '" y="' + lowerY + '" fill="' + c.tick + '" font-size="' + FS.tick + '">' + __mwEscape(tk.label) + '</text>';
+                }
+            });
+            if (twoTier) {
+                const majX = major.map(mj => xOf(mj.t)).filter(inPlot);
+                // The span's first year / month, unless a real boundary is right there.
+                if (lead && !(majX.length && majX[0] - Lw < __mwTextW(lead, FS.tick) + 14)) {
+                    s += '<text x="' + (Lw + 4) + '" y="16" fill="' + c.text + '" font-size="' + FS.tick + '" font-weight="600">' + __mwEscape(lead) + '</text>';
+                }
+                major.forEach(mj => {
+                    const x = xOf(mj.t);
+                    if (!inPlot(x)) return;
+                    s += '<line x1="' + x.toFixed(1) + '" y1="4" x2="' + x.toFixed(1) + '" y2="' + rowsBottom + '" stroke="' + c.gridMajor + '" stroke-width="1"/>';
+                    if (x + 4 + __mwTextW(mj.label, FS.tick) <= plotR + 2) s += '<text x="' + (x + 4).toFixed(1) + '" y="16" fill="' + c.text + '" font-size="' + FS.tick + '" font-weight="600">' + __mwEscape(mj.label) + '</text>';
+                });
+            }
+            s += '<line x1="0" y1="' + topAxis + '" x2="' + W + '" y2="' + topAxis + '" stroke="' + c.axis + '" stroke-width="1"/>';
+            s += '<line x1="' + Lw + '" y1="' + topAxis + '" x2="' + Lw + '" y2="' + rowsBottom + '" stroke="' + c.axis + '" stroke-width="1"/>';
+
+            // Rows: label, bar (or dot), date text beside the bar.
+            let yMin = Infinity, yMax = -Infinity;
+            events.forEach(e => {
+                yMin = Math.min(yMin, new Date(e.from).getFullYear());
+                yMax = Math.max(yMax, new Date(Math.max(e.from, e.to - 1)).getFullYear());
+            });
+            const noYear = yMin === yMax;
             rows.forEach((r, i) => {
                 const y = topAxis + i * rowH;
                 const cy = y + rowH / 2;
-                const indent = 8 + r.depth * 14;
-                const maxChars = Math.max(8, 32 - r.depth * 2);
+                const indent = indentOf(r);
+                const labelMax = Lw - indent - 10;
                 if (r.type === 'group') {
-                    s += '<text data-mw-grp="' + i + '" x="' + indent + '" y="' + (cy + 4) + '" fill="' + c.group + '" font-size="12.5" font-weight="700">' + __mwEscape(__mwTrunc(r.label, maxChars)) + '</text>';
-                } else {
-                    const ev = ' data-mw-ev="' + r.idx + '"';
-                    s += '<text' + ev + ' x="' + indent + '" y="' + (cy + 4) + '" fill="' + c.text + '" font-size="12.5">' + __mwEscape(__mwTrunc(r.label, maxChars)) + '</text>';
-                    const color = (r.tags && r.tags.length) ? __mwTagColor(r.tags[0], mw.header, palette, tagColors) : c.defBar;
-                    const x1 = xOf(r.from), x2 = xOf(r.to);
-                    if ((x2 - x1) < 4) {
-                        s += '<circle' + ev + ' cx="' + x1.toFixed(1) + '" cy="' + cy.toFixed(1) + '" r="5" fill="' + color + '"/>';
-                    } else {
-                        s += '<rect' + ev + ' x="' + x1.toFixed(1) + '" y="' + (cy - barH / 2).toFixed(1) + '" width="' + (x2 - x1).toFixed(1) + '" height="' + barH + '" rx="3" fill="' + color + '"/>';
-                    }
+                    s += '<text data-mw-grp="' + i + '" x="' + indent + '" y="' + (cy + 5) + '" fill="' + c.group + '" font-size="' + FS.group + '" font-weight="700">' + __mwEscape(__mwTruncW(r.label, FS.group * 1.06, labelMax)) + '</text>';
+                    return;
                 }
+                const ev = ' data-mw-ev="' + r.idx + '"';
+                s += '<text' + ev + ' x="' + indent + '" y="' + (cy + 5) + '" fill="' + c.text + '" font-size="' + FS.label + '">' + __mwEscape(__mwTruncW(r.label, FS.label, labelMax)) + '</text>';
+                const color = (r.tags && r.tags.length) ? __mwTagColor(r.tags[0], mw.header, palette, tagColors) : c.defBar;
+                const x1 = xOf(r.from), x2 = xOf(r.to);
+                let left = x1, right = x2;
+                // Under 8 units a bar is a sliver (a one-day item on a month scale);
+                // a dot reads as "a date" instead.
+                if ((x2 - x1) < 8) {
+                    s += '<circle' + ev + ' cx="' + x1.toFixed(1) + '" cy="' + cy.toFixed(1) + '" r="6" fill="' + color + '"/>';
+                    left = x1 - 6; right = x1 + 6;
+                } else {
+                    s += '<rect' + ev + ' x="' + x1.toFixed(1) + '" y="' + (cy - barH / 2).toFixed(1) + '" width="' + (x2 - x1).toFixed(1) + '" height="' + barH + '" rx="4" fill="' + color + '"/>';
+                }
+                const dt = __mwFmtRange(r.from, r.to, noYear);
+                const dw = __mwTextW(dt, FS.date);
+                let dx = null, anchor = '';
+                if (right + 6 + dw <= W - 4) dx = right + 6;
+                else if (left - 6 - dw >= Lw + 4) { dx = left - 6; anchor = ' text-anchor="end"'; }
+                if (dx !== null) s += '<text x="' + dx.toFixed(1) + '" y="' + (cy + 4) + '" fill="' + c.date + '" font-size="' + FS.date + '"' + anchor + '>' + __mwEscape(dt) + '</text>';
             });
-            if (legend.rows) s += __mwLegendSvg(legend, rowsBottom, c.group);
+            if (legend.rows) s += __mwLegendSvg(legend, rowsBottom + 6, c.tick);
             s += '</svg>';
             return s;
         }
@@ -12032,10 +12225,15 @@ ${inspectorScript ? `<script>${inspectorScript}<\/script>\n` : ''}</body>
         // Build the month-grid calendar SVG (display: calendar). Renders consecutive
         // month grids from the first event's month to the last; single-day events
         // and multi-day ranges are packed into per-week lanes (FullCalendar-style)
-        // so both read as chips / bars in the correct day cells. Holidays (online
-        // only) shade the cell and print the holiday name. Colors are baked in
-        // (theme-salted cache), so the SVG carries into export / Marp unchanged.
+        // so both read as chips / bars in the correct day cells. A week row is as
+        // tall as the lanes it needs (at least two, at most __MW_CAL_MAX_LANES; the
+        // rest becomes "+N"). Days outside the month are hatched, so they never read
+        // as a weekend. Holidays (online only) shade the cell and print their name.
+        // Colors are baked in (theme-salted cache), so the SVG carries into export /
+        // Marp unchanged.
+        const __MW_CAL_MAX_LANES = 6;
         function __mwBuildCalendar(mw, events, holidays) {
+            const FS = __MW_FS;
             const pad2 = (n) => (n < 10 ? '0' + n : '' + n);
             const dayStart = (ms) => { const d = new Date(ms); return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime(); };
             const DOW = t('cal.dow').split(',');
@@ -12043,8 +12241,9 @@ ${inspectorScript ? `<script>${inspectorScript}<\/script>\n` : ''}</body>
             const palette = __mwPalette();
             const tagColors = new Map();
             const cal = darkMode
-                ? { text: '#e6edf3', dim: '#8b949e', grid: '#30363d', cell: '#0d1117', outside: '#161b22', weekend: '#161b22', holiday: '#3d1d22', holidayText: '#ff7b72', sun: '#ff7b72', sat: '#79c0ff', month: '#e6edf3', overflow: '#8b949e', barText: '#ffffff', defBar: '#4493f8' }
-                : { text: '#1f2328', dim: '#57606a', grid: '#d0d7de', cell: '#ffffff', outside: '#f6f8fa', weekend: '#f6f8fa', holiday: '#fff0f0', holidayText: '#cf222e', sun: '#cf222e', sat: '#0969da', month: '#1f2328', overflow: '#57606a', barText: '#ffffff', defBar: '#0969da' };
+                ? { text: '#e6edf3', dim: '#9198a1', grid: '#3d444d', cell: '#0d1117', outside: '#0d1117', hatch: '#262c34', weekend: '#151b23', dowBand: '#151b23', holiday: '#3d1d22', holidayText: '#ff7b72', sun: '#ff7b72', sat: '#79c0ff', month: '#e6edf3', overflow: '#9198a1', defBar: '#4493f8' }
+                : { text: '#1f2328', dim: '#59636e', grid: '#d1d9e0', cell: '#ffffff', outside: '#ffffff', hatch: '#e6eaef', weekend: '#f6f8fa', dowBand: '#f6f8fa', holiday: '#ffebe9', holidayText: '#cf222e', sun: '#cf222e', sat: '#0969da', month: '#1f2328', overflow: '#59636e', defBar: '#0969da' };
+            const hatchId = 'mw-cal-hatch-' + (darkMode ? 'd' : 'l');
 
             // markwhen ranges use an EXCLUSIVE end (a single date "2024-05-15" is
             // [05-15T00:00, 05-16T00:00); a whole month "2024-05" ends at 06-01),
@@ -12066,13 +12265,13 @@ ${inspectorScript ? `<script>${inspectorScript}<\/script>\n` : ''}</body>
 
             // Geometry.
             const W = 872, PAD = 16, colW = 120;
-            const monthHdrH = 30, dowH = 22, dayNumH = 18, laneH = 15, maxLanes = 3;
-            const cellH = dayNumH + maxLanes * laneH + 13; // 76
-            const monthGap = 24;
+            const monthHdrH = 36, dowH = 26, dayNumH = 24, laneH = 20, chipH = 17, minLanes = 2, moreH = 18, padB = 6;
+            const monthGap = 26;
             const legend = __mwLegendShown(mw.header) ? __mwLegendLayout(tagColors, PAD, W - PAD) : { items: [], rows: 0 };
-            const legendH = legend.rows ? legend.rows * __MW_LEGEND_ROW_H + 8 : 0;
+            const legendH = legend.rows ? legend.rows * __MW_LEGEND_ROW_H + 10 : 0;
 
-            // Pre-compute month layout so the viewBox height is known up front.
+            // Pre-compute every month and week (lane packing included) so each week
+            // row's height, and so the viewBox height, is known up front.
             const monthDefs = [];
             let yCur = PAD;
             for (let mi = 0; mi < monthCount; mi++) {
@@ -12082,37 +12281,77 @@ ${inspectorScript ? `<script>${inspectorScript}<\/script>\n` : ''}</body>
                 const startWeekday = new Date(yy, mm, 1).getDay();
                 const weeks = Math.ceil((startWeekday + daysInMonth) / 7);
                 const top = yCur;
-                const h = monthHdrH + dowH + weeks * cellH;
-                monthDefs.push({ yy, mm, daysInMonth, startWeekday, weeks, top });
+                let h = monthHdrH + dowH;
+                const weekDefs = [];
+                for (let w = 0; w < weeks; w++) {
+                    const weekDates = [];
+                    for (let cCol = 0; cCol < 7; cCol++) {
+                        const dayNum = w * 7 + cCol - startWeekday + 1;
+                        if (dayNum >= 1 && dayNum <= daysInMonth) weekDates.push({ c: cCol, ms: new Date(yy, mm, dayNum).getTime() });
+                    }
+                    const placed = [], hiddenByCol = {};
+                    let lanesUsed = 0;
+                    if (weekDates.length) {
+                        const wFirstMs = weekDates[0].ms, wLastMs = weekDates[weekDates.length - 1].ms;
+                        const segs = [];
+                        calEvents.forEach(ev => {
+                            if (ev.e < wFirstMs || ev.s > wLastMs) return;
+                            let c0 = null, c1 = null;
+                            weekDates.forEach(wd => { if (ev.s <= wd.ms && wd.ms <= ev.e) { if (c0 === null) c0 = wd.c; c1 = wd.c; } });
+                            if (c0 !== null) segs.push({ c0: c0, c1: c1, ev: ev, contL: ev.s < wFirstMs, contR: ev.e > wLastMs });
+                        });
+                        segs.sort((a, b) => a.c0 - b.c0 || (b.c1 - b.c0) - (a.c1 - a.c0));
+                        const laneEnds = [];
+                        segs.forEach(seg => {
+                            let lane = 0;
+                            while (lane < laneEnds.length && laneEnds[lane] >= seg.c0) lane++;
+                            if (lane >= __MW_CAL_MAX_LANES) {
+                                for (let cc = seg.c0; cc <= seg.c1; cc++) hiddenByCol[cc] = (hiddenByCol[cc] || 0) + 1;
+                                return;
+                            }
+                            laneEnds[lane] = seg.c1;
+                            seg.lane = lane;
+                            placed.push(seg);
+                        });
+                        lanesUsed = laneEnds.length;
+                    }
+                    const hasMore = Object.keys(hiddenByCol).length > 0;
+                    const cellH = dayNumH + Math.max(lanesUsed, minLanes) * laneH + (hasMore ? moreH : padB);
+                    weekDefs.push({ rowY: top + h, cellH: cellH, placed: placed, hiddenByCol: hiddenByCol });
+                    h += cellH;
+                }
+                monthDefs.push({ yy, mm, daysInMonth, startWeekday, weekDefs, top });
                 yCur = top + h + monthGap;
             }
             const H = yCur - monthGap + legendH + PAD;
 
             let s = '<svg class="mw-svg mw-cal-svg" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="xMinYMin meet" width="100%" xmlns="http://www.w3.org/2000/svg" font-family="-apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, sans-serif" data-mw-view="calendar">';
+            s += '<defs><pattern id="' + hatchId + '" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">'
+                + '<rect width="7" height="7" fill="' + cal.outside + '"/><line x1="0" y1="0" x2="0" y2="7" stroke="' + cal.hatch + '" stroke-width="2"/></pattern></defs>';
 
             monthDefs.forEach(md => {
-                const year = md.yy, month = md.mm, daysInMonth = md.daysInMonth, startWeekday = md.startWeekday, weeks = md.weeks, top = md.top;
+                const year = md.yy, month = md.mm, daysInMonth = md.daysInMonth, startWeekday = md.startWeekday, top = md.top;
                 // Month title.
-                s += '<text x="' + PAD + '" y="' + (top + 20) + '" fill="' + cal.month + '" font-size="15" font-weight="700">'
+                s += '<text x="' + PAD + '" y="' + (top + 24) + '" fill="' + cal.month + '" font-size="' + FS.calTitle + '" font-weight="700">'
                     + __mwEscape(t('cal.monthTitle', { year: year, month: month + 1, monthName: t('cal.month.' + (month + 1)) })) + '</text>';
-                // Weekday header.
+                // Weekday header band.
                 const dowTop = top + monthHdrH;
+                s += '<rect x="' + PAD + '" y="' + dowTop + '" width="' + (7 * colW) + '" height="' + dowH + '" fill="' + cal.dowBand + '" stroke="' + cal.grid + '" stroke-width="1"/>';
                 for (let cCol = 0; cCol < 7; cCol++) {
                     const cx = PAD + cCol * colW + colW / 2;
                     const col = cCol === 0 ? cal.sun : (cCol === 6 ? cal.sat : cal.dim);
-                    s += '<text x="' + cx + '" y="' + (dowTop + 15) + '" fill="' + col + '" font-size="11" text-anchor="middle">' + DOW[cCol] + '</text>';
+                    s += '<text x="' + cx + '" y="' + (dowTop + 17.5) + '" fill="' + col + '" font-size="' + FS.calDow + '" font-weight="600" text-anchor="middle">' + __mwEscape(DOW[cCol]) + '</text>';
                 }
-                const gridTop = dowTop + dowH;
 
-                for (let w = 0; w < weeks; w++) {
-                    const rowY = gridTop + w * cellH;
+                md.weekDefs.forEach((wk, w) => {
+                    const rowY = wk.rowY, cellH = wk.cellH;
                     // Cells, day numbers, holiday names.
                     for (let cCol = 0; cCol < 7; cCol++) {
                         const dayNum = w * 7 + cCol - startWeekday + 1;
                         const x = PAD + cCol * colW;
                         const valid = dayNum >= 1 && dayNum <= daysInMonth;
                         let fill = cal.cell, holName = null, dateAttr = '';
-                        if (!valid) fill = cal.outside;
+                        if (!valid) fill = 'url(#' + hatchId + ')';
                         else {
                             const dateStr = year + '-' + pad2(month + 1) + '-' + pad2(dayNum);
                             holName = holidays[dateStr];
@@ -12123,51 +12362,33 @@ ${inspectorScript ? `<script>${inspectorScript}<\/script>\n` : ''}</body>
                         s += '<rect' + dateAttr + ' x="' + x + '" y="' + rowY + '" width="' + colW + '" height="' + cellH + '" fill="' + fill + '" stroke="' + cal.grid + '" stroke-width="1"/>';
                         if (valid) {
                             const numColor = holName ? cal.holidayText : (cCol === 0 ? cal.sun : (cCol === 6 ? cal.sat : cal.text));
-                            s += '<text x="' + (x + 6) + '" y="' + (rowY + 14) + '" fill="' + numColor + '" font-size="11" font-weight="600">' + dayNum + '</text>';
-                            if (holName) s += '<text x="' + (x + 22) + '" y="' + (rowY + 14) + '" fill="' + cal.holidayText + '" font-size="8.5">' + __mwEscape(__mwTrunc(holName, 9)) + '</text>';
+                            s += '<text x="' + (x + 8) + '" y="' + (rowY + 17) + '" fill="' + numColor + '" font-size="' + FS.calDay + '" font-weight="600">' + dayNum + '</text>';
+                            if (holName) {
+                                const hx = x + 8 + __mwTextW(String(dayNum), FS.calDay) + 6;
+                                s += '<text x="' + hx.toFixed(1) + '" y="' + (rowY + 16.5) + '" fill="' + cal.holidayText + '" font-size="' + FS.calHoliday + '">' + __mwEscape(__mwTruncW(holName, FS.calHoliday, x + colW - 6 - hx)) + '</text>';
+                            }
                         }
                     }
-
-                    // Per-week lane packing of event segments (chips + bars).
-                    const weekDates = [];
-                    for (let cCol = 0; cCol < 7; cCol++) {
-                        const dayNum = w * 7 + cCol - startWeekday + 1;
-                        if (dayNum >= 1 && dayNum <= daysInMonth) weekDates.push({ c: cCol, ms: new Date(year, month, dayNum).getTime() });
-                    }
-                    if (weekDates.length === 0) continue;
-                    const wFirstMs = weekDates[0].ms, wLastMs = weekDates[weekDates.length - 1].ms;
-                    const segs = [];
-                    calEvents.forEach(ev => {
-                        if (ev.e < wFirstMs || ev.s > wLastMs) return;
-                        let c0 = null, c1 = null;
-                        weekDates.forEach(wd => { if (ev.s <= wd.ms && wd.ms <= ev.e) { if (c0 === null) c0 = wd.c; c1 = wd.c; } });
-                        if (c0 !== null) segs.push({ c0: c0, c1: c1, ev: ev });
-                    });
-                    segs.sort((a, b) => a.c0 - b.c0 || (b.c1 - b.c0) - (a.c1 - a.c0));
-                    const laneEnds = [];
-                    const hiddenByCol = {};
-                    segs.forEach(seg => {
-                        let lane = 0;
-                        while (lane < laneEnds.length && laneEnds[lane] >= seg.c0) lane++;
-                        if (lane >= maxLanes) {
-                            for (let cc = seg.c0; cc <= seg.c1; cc++) hiddenByCol[cc] = (hiddenByCol[cc] || 0) + 1;
-                            return;
-                        }
-                        laneEnds[lane] = seg.c1;
-                        const bx = PAD + seg.c0 * colW + 2;
-                        const bw = (seg.c1 - seg.c0 + 1) * colW - 4;
-                        const by = rowY + dayNumH + lane * laneH;
+                    // Event chips / bars in their lanes.
+                    wk.placed.forEach(seg => {
+                        const bx = PAD + seg.c0 * colW + (seg.contL ? 0 : 3);
+                        const bw = PAD + (seg.c1 + 1) * colW - (seg.contR ? 0 : 3) - bx;
+                        const by = rowY + dayNumH + seg.lane * laneH;
                         const evAttr = ' data-mw-ev="' + seg.ev.idx + '"';
-                        s += '<rect' + evAttr + ' x="' + bx.toFixed(1) + '" y="' + by + '" width="' + bw.toFixed(1) + '" height="13" rx="3" fill="' + seg.ev.color + '"/>';
-                        const maxChars = Math.max(2, Math.floor((bw - 8) / 6));
-                        s += '<text' + evAttr + ' x="' + (bx + 5) + '" y="' + (by + 10) + '" fill="' + cal.barText + '" font-size="9.5">' + __mwEscape(__mwTrunc(seg.ev.label, maxChars)) + '</text>';
+                        s += '<rect' + evAttr + ' x="' + bx.toFixed(1) + '" y="' + by + '" width="' + bw.toFixed(1) + '" height="' + chipH + '" rx="4" fill="' + seg.ev.color + '"/>';
+                        // A square end says "continues into the previous / next week". An
+                        // inert overlay rather than a <path>: the editor and the harness
+                        // address a chip as rect[data-mw-ev].
+                        if (seg.contL) s += '<rect x="' + bx.toFixed(1) + '" y="' + by + '" width="5" height="' + chipH + '" fill="' + seg.ev.color + '" pointer-events="none"/>';
+                        if (seg.contR) s += '<rect x="' + (bx + bw - 5).toFixed(1) + '" y="' + by + '" width="5" height="' + chipH + '" fill="' + seg.ev.color + '" pointer-events="none"/>';
+                        const label = __mwTruncW(seg.ev.label, FS.calChip, bw - 14);
+                        if (label) s += '<text' + evAttr + ' x="' + (bx + 7).toFixed(1) + '" y="' + (by + 12.8).toFixed(1) + '" fill="' + __mwInk(seg.ev.color) + '" font-size="' + FS.calChip + '">' + __mwEscape(label) + '</text>';
                     });
-                    Object.keys(hiddenByCol).forEach(cc => {
-                        const x = PAD + parseInt(cc, 10) * colW + 4;
-                        const oy = rowY + dayNumH + maxLanes * laneH + 9;
-                        s += '<text x="' + x + '" y="' + oy + '" fill="' + cal.overflow + '" font-size="9">+' + hiddenByCol[cc] + '</text>';
+                    Object.keys(wk.hiddenByCol).forEach(cc => {
+                        const x = PAD + parseInt(cc, 10) * colW + 8;
+                        s += '<text x="' + x + '" y="' + (rowY + cellH - 5) + '" fill="' + cal.overflow + '" font-size="' + FS.calMore + '">+' + wk.hiddenByCol[cc] + '</text>';
                     });
-                }
+                });
             });
 
             // Legend (tag → colour) under the last month, wrapped onto more rows when
