@@ -3443,6 +3443,8 @@
                                      en: 'Open the editor window (Vim mode, math input assist, character count)' },
             'help.key.ctrlN':      { ja: '新規の空Markdownファイルを作成', en: 'Create a new empty Markdown file' },
             'help.key.ctrlD':      { ja: 'インストール先フォルダを Explorer で開く', en: 'Open the install folder in Explorer' },
+            'help.key.reload':     { ja: '文書と参照ファイル（画像・動画・データ）を再読み込み（変更は通常自動で反映）',
+                                     en: 'Reload the document and the files it references (images, video, data) — changes normally show up automatically' },
             'help.key.x':          { ja: '現在の文書をエクスポート（保存ダイアログで HTML / PDF を選択。PDFはクリック可能なリンクと見出しのしおりを保持）',
                                      en: 'Export the current document (pick HTML or PDF in the save dialog; PDF keeps clickable links and heading bookmarks)' },
             // The key SUFFIX (`zoom`) is what docskeycheck.py pairs against
@@ -3725,6 +3727,7 @@
             'toggle.laser':        { ja: 'レーザー',         en: 'Laser pointer' },
             'toast.dark':          { ja: 'ダーク',           en: 'Dark' },
             'toast.light':         { ja: 'ライト',           en: 'Light' },
+            'toast.reloaded':      { ja: '再読み込みしました', en: 'Reloaded' },
             'toast.styleDefault':  { ja: 'デフォルト',       en: 'Default' },
             'toast.marpFixedTheme':{ ja: 'テーマはMarpディレクティブで固定されています',
                                      en: 'The theme is pinned by a Marp directive' },
@@ -7682,6 +7685,28 @@ ${inspectorScript ? `<script>${inspectorScript}<\/script>\n` : ''}</body>
             }
         });
 
+        // Reload (F5 / Ctrl+R) — re-read the document from disk AND re-fetch every
+        // referenced image / video (the generation bump defeats WebView2's cache).
+        // ⚠ Not a helper-registered key: the browser default here is a full PAGE
+        // reload, which would drop the app back to its splash with no document, so
+        // it is suppressed unconditionally — even while typing in a modal field —
+        // and only the app's own reload is gated on the focus.
+        document.addEventListener('keydown', (e) => {
+            const k = typeof e.key === 'string' ? e.key.toLowerCase() : '';
+            const isReload = (k === 'f5' && !e.altKey)
+                || (k === 'r' && (e.ctrlKey || e.metaKey) && !e.altKey);
+            if (!isReload) return;
+            e.preventDefault();
+            if (__isTypingTarget(e.target)) return;
+            __assetGen++;
+            if (currentFilePath && window.ipc && typeof window.ipc.postMessage === 'function') {
+                window.ipc.postMessage('reload:');   // host re-reads the file (FileChanged)
+            } else {
+                __rerenderKeepingAnchor();
+            }
+            showToast(t('toast.reloaded'));
+        });
+
         // Body text size. Matching on e.key (not e.code) is enough for the numpad
         // too: NumpadAdd reports '+', NumpadSubtract '-', Numpad0 '0'. `=` is the
         // unshifted US key for `+`, and `;` is the JP one. Inert in Marp mode, where
@@ -8191,6 +8216,19 @@ ${inspectorScript ? `<script>${inspectorScript}<\/script>\n` : ''}</body>
             }).join('/');
         }
 
+        // Referenced-file cache generation. WebView2 keeps a decoded image in its
+        // memory cache under its URL, so re-rendering after an image was overwritten
+        // on disk would show the OLD picture: the rebuilt `<img>` asks for the very
+        // same `/userfile/...` URL. Bumping this (a referenced file changed — see
+        // __onAssetChanged — or F5 / Ctrl+R) appends `?v=<gen>` to every URL built
+        // below, so the next render fetches fresh bytes. The Rust route reads only
+        // `uri().path()`, so the query never reaches the file lookup. ⚠ At gen 0 no
+        // query is added, which keeps every harness digest byte-identical.
+        let __assetGen = 0;
+        function __withAssetGen(url) {
+            return __assetGen > 0 ? url + '?v=' + __assetGen : url;
+        }
+
         function toUserfileUrl(p) {
             if (/^(https?:|app:|file:|data:|blob:)/i.test(p)) return p;
             if (/^\/userfile\//i.test(p)) return p;   // already routed — don't double-prefix
@@ -8198,14 +8236,69 @@ ${inspectorScript ? `<script>${inspectorScript}<\/script>\n` : ''}</body>
             const fwd = p.replace(/\\/g, '/');
             // Already absolute (Windows drive or POSIX root) — serve as-is.
             if (/^[A-Za-z]:\//.test(fwd) || fwd.startsWith('/')) {
-                return '/userfile/' + encodePathForUserfile(fwd);
+                return __withAssetGen('/userfile/' + encodePathForUserfile(fwd));
             }
             // Escaping relative path: resolve to absolute against the open file's dir.
             if (currentFilePath && relPathEscapesBase(fwd)) {
                 const abs = resolveRelativePath(fwd).replace(/^file:\/\/\//, '');
-                return '/userfile/' + encodePathForUserfile(abs);
+                return __withAssetGen('/userfile/' + encodePathForUserfile(abs));
             }
-            return '/userfile/' + encodePathForUserfile(fwd);
+            return __withAssetGen('/userfile/' + encodePathForUserfile(fwd));
+        }
+
+        // Tell the host which local files the rendered preview references (images,
+        // videos), so it can watch them and call __onAssetChanged when one is
+        // overwritten. Runs after every render but posts only when the SET changed —
+        // a live-edit keystroke that touches no image costs no IPC and no watcher
+        // churn. (plotly CSV / model3d keep their own `csvwatch:` channel, which
+        // re-renders from disk via FileChanged; this one re-renders from memory.)
+        let __assetWatchSent = null;
+        function __syncAssetWatch() {
+            const set = new Set();
+            const add = (u) => {
+                if (!u || !/^\/userfile\//i.test(u)) return;
+                let p = u.slice('/userfile/'.length).replace(/[?#].*$/, '');
+                try { p = decodeURIComponent(p); } catch (_) {}
+                if (p) set.add(p);
+            };
+            preview.querySelectorAll('img[src], video source[src], video[src]')
+                .forEach(el => add(el.getAttribute('src')));
+            const list = Array.from(set).sort();
+            const key = JSON.stringify(list);
+            if (key === __assetWatchSent) return;
+            __assetWatchSent = key;
+            try {
+                if (window.ipc && typeof window.ipc.postMessage === 'function') {
+                    window.ipc.postMessage('assetwatch:' + key);
+                }
+            } catch (_) {}
+        }
+
+        // Called by the host when a watched referenced file changed on disk. Several
+        // files often land together (an export writing a folder of PNGs), so debounce,
+        // then bump the generation and re-render the in-memory source — NOT a disk
+        // reload, so the companion editor's unsaved text stays on screen.
+        let __assetChangedTimer = null;
+        window.__onAssetChanged = function () {
+            clearTimeout(__assetChangedTimer);
+            __assetChangedTimer = setTimeout(() => {
+                __assetGen++;
+                __rerenderKeepingAnchor();
+            }, 200);
+        };
+
+        // Re-render the current document (or the single dropped image) where it is.
+        function __rerenderKeepingAnchor() {
+            if (!currentMarkdown) {
+                // loadImageFromRust() view: one <img>, no source to re-render.
+                const img = preview.querySelector('img[src^="/userfile/"]');
+                if (img) img.setAttribute('src', __withAssetGen(img.getAttribute('src').replace(/\?.*$/, '')));
+                return Promise.resolve();
+            }
+            const anchor = capturePreviewAnchor();
+            return Promise.resolve(renderMarkdown(currentMarkdown))
+                .then(() => __nextPaint())
+                .then(() => restorePreviewAnchor(anchor));
         }
 
         function parseYoutubeStart(src) {
@@ -14692,6 +14785,7 @@ ${inspectorScript ? `<script>${inspectorScript}<\/script>\n` : ''}</body>
             // footnotes post-render so the tool's extensions still work inside slides).
             if (isMarpDocument(markdown)) {
                 await renderMarp(markdown);
+                __syncAssetWatch();
                 __emitRenderDone(true);
                 return;
             }
@@ -15098,6 +15192,7 @@ ${inspectorScript ? `<script>${inspectorScript}<\/script>\n` : ''}</body>
             // Generate table of contents
             generateTOC();
 
+            __syncAssetWatch();
             __emitRenderDone(false);
         }
 
@@ -17568,6 +17663,7 @@ ${inspectorScript ? `<script>${inspectorScript}<\/script>\n` : ''}</body>
                     <tr><td class="keys"><kbd>E</kbd></td><td data-i18n="help.key.e">エディタウィンドウを開く（Vimモード・数式入力補助・文字数カウント）</td></tr>
                     <tr><td class="keys"><span class="kc"><kbd>Ctrl</kbd>+<kbd>N</kbd></span></td><td data-i18n="help.key.ctrlN">新規の空Markdownファイルを作成</td></tr>
                     <tr><td class="keys"><span class="kc"><kbd>Ctrl</kbd>+<kbd>D</kbd></span></td><td data-i18n="help.key.ctrlD">インストール先フォルダを Explorer で開く</td></tr>
+                    <tr><td class="keys"><span class="kc"><kbd>F5</kbd> /</span> <span class="kc"><kbd>Ctrl</kbd>+<kbd>R</kbd></span></td><td data-i18n="help.key.reload">文書と参照ファイル（画像・動画・データ）を再読み込み（変更は通常自動で反映）</td></tr>
                     <tr><td class="keys"><kbd>X</kbd></td><td data-i18n="help.key.x">現在の文書をエクスポート（保存ダイアログで HTML / PDF を選択。PDFはクリック可能なリンクと見出しのしおりを保持）</td></tr>
                     <tr><td class="keys"><span class="kc"><kbd>Ctrl</kbd>+<kbd>+</kbd> /</span> <span class="kc"><kbd>Ctrl</kbd>+<kbd>-</kbd> /</span> <span class="kc"><kbd>Ctrl</kbd>+<kbd>0</kbd></span></td><td data-i18n="help.key.zoom">本文の文字サイズ 拡大 / 縮小 / 既定</td></tr>
                     <tr><td class="keys"><span class="kc"><kbd>Ctrl</kbd>+<kbd>Wheel</kbd></span></td><td data-i18n="help.key.fontScaleWheel">本文の文字サイズを拡大 / 縮小（タッチパッドのピンチも可）</td></tr>

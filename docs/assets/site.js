@@ -276,6 +276,8 @@
                         en: 'Open the editor window (Vim mode, math input assist, character count)' },
     'keys.ctrlN':     { ja: '新規の空Markdownファイルを作成', en: 'Create a new empty Markdown file' },
     'keys.ctrlD':     { ja: 'インストール先フォルダを Explorer で開く', en: 'Open the install folder in Explorer' },
+    'keys.reload':    { ja: '文書と参照ファイル（画像・動画・データ）を再読み込み（変更は通常自動で反映）',
+                        en: 'Reload the document and the files it references (images, video, data) — changes normally show up automatically' },
     'keys.history':   { ja: '開いたファイルの履歴を戻る / 進む', en: 'Go back / forward through opened files' },
     'keys.ctrlClick': { ja: '.md リンクを新しいプレビュアのウィンドウで開く（通常のクリックは同じウィンドウで遷移）',
                         en: 'Open a .md link in a new previewer window (a plain click navigates in this window)' },
