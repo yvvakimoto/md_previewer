@@ -654,6 +654,47 @@ def main():
             sent = page.evaluate("() => window.__sentIpc.slice()")
             check("Ctrl+D posts openinstalldir:", "openinstalldir:" in sent, True)
 
+            # ---------- referenced-file reload (assetwatch / F5 / Ctrl+R) ----------
+            # samples/sample.md references images/test.png; the first render
+            # must have reported it, and at generation 0 no `?v=` may appear
+            # (that is what keeps every domdump digest unchanged).
+            img_src = "() => document.querySelector('#preview img[src*=\"test.png\"]').getAttribute('src')"
+            check("gen 0: image URL carries no ?v=", "?v=" in page.evaluate(img_src), False)
+            check("the referenced-file set was reported to the host",
+                  page.evaluate("() => !!__assetWatchSent"
+                                " && JSON.parse(__assetWatchSent).some(p => p.endsWith('images/test.png'))"),
+                  True)
+            # A re-render with the same set must not post again (live-edit keystrokes).
+            page.evaluate("() => { window.__sentIpc.length = 0; }")
+            page.evaluate("async () => { await renderMarkdown(currentMarkdown); }")
+            sent = page.evaluate("() => window.__sentIpc.slice()")
+            check("an unchanged set posts no assetwatch:",
+                  any(m.startswith("assetwatch:") for m in sent), False)
+            # Host-side change notification: debounced, then re-fetch with ?v=1.
+            page.evaluate("() => { window.__survivor = 1; window.__onAssetChanged(); window.__onAssetChanged(); }")
+            page.wait_for_function("() => /\\?v=1$/.test(document.querySelector('#preview img[src*=\"test.png\"]').getAttribute('src'))")
+            check("__onAssetChanged bumps the generation once (debounced)",
+                  page.evaluate("() => __assetGen"), 1)
+            # F5 / Ctrl+R: app reload, never the browser's page reload.
+            for label, key, ctrl in [("F5", "F5", False), ("Ctrl+R", "r", True)]:
+                page.evaluate("() => { window.__sentIpc.length = 0; }")
+                gen = page.evaluate("() => __assetGen")
+                press(page, key, ctrl=ctrl)
+                sent = page.evaluate("() => window.__sentIpc.slice()")
+                check("%s posts reload:" % label, "reload:" in sent, True)
+                check("%s bumps the generation" % label, page.evaluate("() => __assetGen"), gen + 1)
+                check("%s does not reload the page" % label,
+                      page.evaluate("() => window.__survivor"), 1)
+            # In a text field the browser reload is still suppressed, but the
+            # app does nothing.
+            page.evaluate("""() => { const i = document.createElement('input');
+                i.id = '__f5probe'; document.body.appendChild(i); i.focus();
+                window.__sentIpc.length = 0; }""")
+            press(page, "F5")
+            check("F5 in a text field posts nothing and keeps the page",
+                  page.evaluate("() => [window.__sentIpc.length, window.__survivor]"), [0, 1])
+            page.evaluate("() => { document.getElementById('__f5probe').remove(); document.body.focus(); }")
+
             # ---------- negative: modifiers must suppress plain keys ----------
             page.evaluate("() => { window.__sentIpc.length = 0; }")
             before = body_has(page, "wide")

@@ -129,6 +129,16 @@ enum CustomEvent {
     // every render to flush the prior set.
     CsvWatch(PathBuf),
     CsvWatchReset,
+    // Preview JS reports the full set of local files its rendered DOM references
+    // (images, videos) — posted only when the set changed. Main loop diffs it
+    // against the current watches. When one changes on disk the watcher thread
+    // sends AssetChanged and the preview re-renders from memory with a cache-busted
+    // URL (`window.__onAssetChanged`).
+    AssetWatchSet(Vec<PathBuf>),
+    AssetChanged,
+    // F5 / Ctrl+R in the preview: re-read the current document from disk
+    // (the `.mdx` archive when one is open) exactly as an external save would.
+    ReloadRequested,
     // PDF export: print the document currently in the webview to `PathBuf`
     // via WebView2's CDP `Page.printToPDF` (see `pdf_win`). PdfExportDone is
     // posted from the async completion handler so the preview can toast.
@@ -502,6 +512,62 @@ pub(crate) fn paths_equal(a: &Path, b: &Path) -> bool {
     let na = a.to_string_lossy().to_lowercase().replace('/', "\\");
     let nb = b.to_string_lossy().to_lowercase().replace('/', "\\");
     na == nb
+}
+
+/// Fold `.` / `..` out of a path without touching the disk (the file may not
+/// exist yet, and `canonicalize` would add a `\\?\` prefix `paths_equal` cannot
+/// match against notify's event paths). A `..` above the root is dropped.
+fn normalize_lexically(p: &Path) -> PathBuf {
+    let mut out = PathBuf::new();
+    for c in p.components() {
+        match c {
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir => { out.pop(); }
+            other => out.push(other),
+        }
+    }
+    out
+}
+
+/// Resolve a referenced-file path reported by the preview (`assetwatch:`): an
+/// absolute path as-is, a relative one against the document's directory, both
+/// with `..` folded. `None` when it is relative and no document is open.
+fn resolve_asset_path(raw: &str, doc_dir: Option<&Path>) -> Option<PathBuf> {
+    let raw = raw.trim();
+    if raw.is_empty() {
+        return None;
+    }
+    let p = PathBuf::from(raw.replace('/', std::path::MAIN_SEPARATOR_STR));
+    let abs = if p.is_absolute() { p } else { doc_dir?.join(p) };
+    Some(normalize_lexically(&abs))
+}
+
+/// Does `p` lie inside `root` (or equal it)? Case-insensitive like [`paths_equal`].
+/// Used to skip a per-file watch for a referenced file the workspace's recursive
+/// root watch already covers.
+fn path_is_under(p: &Path, root: &Path) -> bool {
+    let np = p.to_string_lossy().to_lowercase().replace('/', "\\");
+    let mut nr = root.to_string_lossy().to_lowercase().replace('/', "\\");
+    if np == nr {
+        return true;
+    }
+    if !nr.ends_with('\\') {
+        nr.push('\\');
+    }
+    np.starts_with(&nr)
+}
+
+/// Is a notify event path one of the preview's referenced files (and not the
+/// document itself, nor a plotly/model3d file — those already re-render from disk
+/// through `FileChanged`)? Then the preview must re-fetch it: `AssetChanged`.
+fn is_changed_asset(p: &Path, assets: &HashSet<PathBuf>, active: Option<&Path>, csvs: &HashSet<PathBuf>) -> bool {
+    if active.map_or(false, |a| paths_equal(p, a)) {
+        return false;
+    }
+    if csvs.iter().any(|c| paths_equal(p, c)) {
+        return false;
+    }
+    assets.iter().any(|a| paths_equal(p, a))
 }
 
 /// Format a file's mtime as an RFC 7231 IMF-fixdate (`Sun, 06 Nov 1994 08:49:37 GMT`),
@@ -2781,6 +2847,20 @@ fn main() -> wry::Result<()> {
             }
         } else if message == "editor:close:" {
             let _ = ipc_event_proxy.send_event(CustomEvent::EditorCloseRequested);
+        } else if message == "reload:" {
+            let _ = ipc_event_proxy.send_event(CustomEvent::ReloadRequested);
+        } else if let Some(json) = message.strip_prefix("assetwatch:") {
+            match serde_json::from_str::<Vec<String>>(json) {
+                Ok(list) => {
+                    let dir = current_file_dir(&ipc_current_file);
+                    let paths: Vec<PathBuf> = list
+                        .iter()
+                        .filter_map(|s| resolve_asset_path(s, dir.as_deref()))
+                        .collect();
+                    let _ = ipc_event_proxy.send_event(CustomEvent::AssetWatchSet(paths));
+                }
+                Err(e) => eprintln!("assetwatch: bad payload: {}", e),
+            }
         } else if message == "csvwatchreset:" {
             let _ = ipc_event_proxy.send_event(CustomEvent::CsvWatchReset);
         } else if let Some(rel) = message.strip_prefix("csvwatch:") {
@@ -2937,6 +3017,13 @@ fn main() -> wry::Result<()> {
     // CsvWatch / CsvWatchReset events. Used by the watcher thread to trigger
     // a re-render of the active .md when any tracked CSV changes on disk.
     let watched_csvs: Arc<Mutex<HashSet<PathBuf>>> = Arc::new(Mutex::new(HashSet::new()));
+    // Local files the rendered preview references (images, videos), replaced
+    // wholesale by every `assetwatch:` (AssetWatchSet). Membership is what the
+    // watcher thread tests; `asset_own_watches` is the subset that holds a watch
+    // of its own — in workspace mode a file under the root is already covered by
+    // the recursive root watch, so only files outside it get one.
+    let watched_assets: Arc<Mutex<HashSet<PathBuf>>> = Arc::new(Mutex::new(HashSet::new()));
+    let mut asset_own_watches: HashSet<PathBuf> = HashSet::new();
 
     // Initial watch: directory if workspace was provided, else the file.
     if let Some(ref dpath) = dir_path {
@@ -2976,6 +3063,7 @@ fn main() -> wry::Result<()> {
         let current_file_clone = current_file.clone();
         let suppressed = suppressed_saves.clone();
         let watched_csvs_clone = watched_csvs.clone();
+        let watched_assets_clone = watched_assets.clone();
         std::thread::spawn(move || {
             loop {
                 match watcher_rx.recv() {
@@ -2989,6 +3077,29 @@ fn main() -> wry::Result<()> {
                             !paths.is_empty() && paths.iter().all(|p| s.contains(p))
                         };
                         if all_suppressed { continue; }
+                        // A referenced image / video was rewritten → the preview
+                        // re-fetches it (independent of, and in addition to, any
+                        // re-render of the document itself below).
+                        let asset_dirty = matches!(
+                            kind,
+                            notify::EventKind::Modify(_) | notify::EventKind::Create(_)
+                        ) && {
+                            let assets = watched_assets_clone.lock().unwrap();
+                            if assets.is_empty() {
+                                false
+                            } else {
+                                let csvs = watched_csvs_clone.lock().unwrap();
+                                let active = if is_dir {
+                                    current_file_clone.lock().unwrap().clone()
+                                } else {
+                                    watched_path_clone.lock().unwrap().clone()
+                                };
+                                paths.iter().any(|p| is_changed_asset(p, &assets, active.as_deref(), &csvs))
+                            }
+                        };
+                        if asset_dirty {
+                            let _ = event_proxy_clone.send_event(CustomEvent::AssetChanged);
+                        }
                         if is_dir {
                             // Workspace mode: branch by event kind.
                             let mut tree_dirty = false;
@@ -3184,6 +3295,57 @@ fn main() -> wry::Result<()> {
                     }
                 } else {
                     load_and_render(&path, &webview, &current_dir, &current_file, &editor_registry);
+                }
+            }
+            Event::UserEvent(CustomEvent::AssetWatchSet(list)) => {
+                let next: HashSet<PathBuf> = list.into_iter().collect();
+                // In workspace mode the root's recursive watch already reports
+                // every file under it; only a file outside it needs its own.
+                let root = if *watched_is_dir.lock().unwrap() {
+                    watched_path.lock().unwrap().clone()
+                } else {
+                    None
+                };
+                let want: HashSet<PathBuf> = next
+                    .iter()
+                    .filter(|p| root.as_deref().map_or(true, |r| !path_is_under(p, r)))
+                    .cloned()
+                    .collect();
+                // Never unwatch a path some other role still needs (the document
+                // itself, or a plotly / model3d file on the csvwatch channel).
+                let active = watched_path.lock().unwrap().clone();
+                let csvs = watched_csvs.lock().unwrap().clone();
+                if let Some(w) = watcher.lock().unwrap().as_mut() {
+                    for p in asset_own_watches.difference(&want) {
+                        let shared = active.as_deref().map_or(false, |a| paths_equal(p, a))
+                            || csvs.iter().any(|c| paths_equal(p, c));
+                        if !shared {
+                            let _ = w.unwatch(p);
+                        }
+                    }
+                    for p in want.difference(&asset_own_watches) {
+                        if let Err(e) = w.watch(p, RecursiveMode::NonRecursive) {
+                            dbg_log!("assetwatch: cannot watch {:?}: {}", p, e);
+                        }
+                    }
+                }
+                asset_own_watches = want;
+                *watched_assets.lock().unwrap() = next;
+            }
+            Event::UserEvent(CustomEvent::AssetChanged) => {
+                if let Ok(wv) = webview.lock() {
+                    eval_js_fn(&wv, "__onAssetChanged", &[]);
+                }
+            }
+            Event::UserEvent(CustomEvent::ReloadRequested) => {
+                let target = mdx_session
+                    .lock()
+                    .unwrap()
+                    .as_ref()
+                    .map(|s| s.mdx_path.clone())
+                    .or_else(|| current_file.lock().unwrap().clone());
+                if let Some(t) = target {
+                    let _ = event_proxy.send_event(CustomEvent::FileChanged(t));
                 }
             }
             Event::UserEvent(CustomEvent::CsvWatchReset) => {
@@ -4100,6 +4262,36 @@ mod tests {
     }
 
     // ---- paths_equal -------------------------------------------------------
+
+    #[test]
+    fn resolve_asset_path_joins_relative_and_folds_dotdot() {
+        let dir = Path::new(r"C:\docs\sub");
+        assert_eq!(resolve_asset_path("img/a.png", Some(dir)), Some(PathBuf::from(r"C:\docs\sub\img\a.png")));
+        assert_eq!(resolve_asset_path("../img/./a.png", Some(dir)), Some(PathBuf::from(r"C:\docs\img\a.png")));
+        assert_eq!(resolve_asset_path("C:/x/y.png", None), Some(PathBuf::from(r"C:\x\y.png")));
+        assert_eq!(resolve_asset_path("img/a.png", None), None);
+        assert_eq!(resolve_asset_path("  ", Some(dir)), None);
+    }
+
+    #[test]
+    fn path_is_under_needs_a_separator_boundary() {
+        let root = Path::new(r"C:\Work");
+        assert!(path_is_under(Path::new(r"c:\work\img\a.png"), root));
+        assert!(path_is_under(Path::new(r"C:\Work"), root));
+        assert!(!path_is_under(Path::new(r"C:\Workbench\a.png"), root));
+        assert!(!path_is_under(Path::new(r"C:\other\a.png"), root));
+    }
+
+    #[test]
+    fn is_changed_asset_excludes_the_document_and_csvwatch_files() {
+        let assets: HashSet<PathBuf> = [PathBuf::from(r"C:\d\a.png"), PathBuf::from(r"C:\d\m.csv")].into_iter().collect();
+        let csvs: HashSet<PathBuf> = [PathBuf::from(r"C:\d\m.csv")].into_iter().collect();
+        let doc = Path::new(r"C:\d\doc.md");
+        assert!(is_changed_asset(Path::new(r"c:\D\A.png"), &assets, Some(doc), &csvs));
+        assert!(!is_changed_asset(Path::new(r"C:\d\m.csv"), &assets, Some(doc), &csvs));
+        assert!(!is_changed_asset(doc, &assets, Some(doc), &csvs));
+        assert!(!is_changed_asset(Path::new(r"C:\d\b.png"), &assets, None, &csvs));
+    }
 
     #[test]
     fn paths_equal_folds_case_and_separators() {
