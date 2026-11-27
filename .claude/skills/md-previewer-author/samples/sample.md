@@ -85,6 +85,8 @@ greet("World");
 
 ![Test Image](images/test.png)
 
+Overwrite `images/test.png` with another picture and the preview updates on its own — referenced images, videos and data files are watched like the document itself. `F5` / `Ctrl+R` reloads everything by hand.
+
 ### Image sizing (Obsidian-style pipe syntax)
 
 Width only — `![alt|200](path)`:

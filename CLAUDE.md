@@ -77,7 +77,7 @@ README.md 「対応している記法・機能」.
 | Copy table for PowerPoint (rich-HTML clipboard); Edit table (writes back to the `.md`) | `preview-tables.md` |
 | Right-click a rendered figure → save it alone as SVG / PNG, or copy it to the clipboard as SVG / PNG (canvas engines: PNG only); right-click **empty** preview space → save every figure into one picked folder, plus the app's own back / forward (which that menu displaced) | `preview-blocks.md`, `preview-files-media.md` |
 | Clickable task-list checkboxes — a click rewrites that one `- [ ]` line in the `.md` (both pipelines; inert in every export) | `preview-markdown-ext.md` |
-| Images via the `/userfile/` route with `\|WxH` sizing and `../` paths; video + YouTube embeds; cross-file `.md` links with back/forward history; `Ctrl`+click opens a new window; drag & drop; `Ctrl+N` new file; `Ctrl+D` install dir | `preview-files-media.md` |
+| Images via the `/userfile/` route with `\|WxH` sizing and `../` paths; referenced images / video re-fetched when overwritten on disk (`assetwatch:` + `?v=` cache generation) and `F5` / `Ctrl+R` manual reload; video + YouTube embeds; cross-file `.md` links with back/forward history; `Ctrl`+click opens a new window; drag & drop; `Ctrl+N` new file; `Ctrl+D` install dir | `preview-files-media.md` |
 | Marp slides (`marp: true`), 3 views (`P`), autofit (`A`), laser pointer (`Z`), 8-colour theme family, selection highlighter | `marp.md` |
 | Body text size (`Ctrl` `+`/`-`/`0`, `Ctrl`+wheel, and an `S`-modal row) — a layout multiplier, so it reaches the PDF / HTML export | `styles-theming.md` |
 | Content width (an `S`-modal row) — the second layout multiplier; `W` full-width is released when it is used | `styles-theming.md` |
